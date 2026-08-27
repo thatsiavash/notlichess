@@ -7923,6 +7923,11 @@ function scanCoverage() {
 function scannable(g) {
   return g && !g.analysed && !g.scanned && !g.bl && g.plies >= 16 && isEligible(g.perf);
 }
+/* the last lane ignores the format filter: the fish works until EVERYTHING
+   is analysed — untracked formats go last, but they go */
+function scannableAny(g) {
+  return g && !g.analysed && !g.scanned && !g.bl && g.plies >= 16;
+}
 
 /* The scan never stops while anything is scannable — it rotates in batches
    so every consumer gets fed early and keeps getting fed: fresh games always
@@ -7963,6 +7968,9 @@ function nextScanTarget() {
         return g;
       }
     }
+  }
+  for (i = 0; i < data.games.length; i++) {
+    if (scannableAny(data.games[i])) return data.games[i];
   }
   return null;
 }
@@ -8090,6 +8098,14 @@ function bulkRetain() {
       if (g2) { ids.push(g2.id); got = true; }
     }
     if (!got) break;
+  }
+  if (ids.length < 150) {
+    var seenIds = {};
+    ids.forEach(function (id) { seenIds[id] = 1; });
+    for (var gi = 0; gi < data.games.length && ids.length < 150; gi++) {
+      var g4 = data.games[gi];
+      if (scannableAny(g4) && !g4.mv && !seenIds[g4.id]) ids.push(g4.id);
+    }
   }
   if (!ids.length) { bulkState.busy = false; return Promise.resolve(0); }
   return request('/api/games/export/_ids?moves=true&clocks=true',
