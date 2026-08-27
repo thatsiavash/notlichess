@@ -4902,6 +4902,8 @@ function blunderPiece(it) {
 
 function startCustomSession(spec) {
   var gf = customGameFilter(spec);
+  var srs = srsLoad(), now = Date.now();
+  var dealtToday = dayLoad().dealt || {};
   var items = [];
   allBlunders().forEach(function (it) {
     if (!trainable(it) || !gf(it.g)) return;
@@ -4909,9 +4911,18 @@ function startCustomSession(spec) {
     if (spec.type === 'clock' && blunderClockBand(it) !== spec.mode) return;
     if (spec.type === 'kind' && it.b.k !== spec.kind) return;
     if (spec.type === 'phase' && blunderPhase(it) !== spec.phase) return;
-    items.push({ kind: 'blunder', it: it });
+    /* selection order is spaced-repetition first, monotony last:
+       due > never seen > resting > mastered, anything already dealt today
+       to the very back, and a shuffle within each band so two overlapping
+       specs stop dealing the same newest handful */
+    var rec = srs[it.g.id + ':' + it.b.p];
+    var band = rec
+      ? (rec.due == null || rec.due <= now ? 0 : (rec.mastered ? 3 : 2))
+      : 1;
+    if (dealtToday[it.g.id + ':' + it.b.p]) band += 4;
+    items.push({ kind: 'blunder', it: it, _band: band, _r: Math.random() });
   });
-  items.sort(function (a, b) { return b.it.g.ts - a.it.g.ts; });
+  items.sort(function (a, b) { return a._band - b._band || a._r - b._r; });
   items = items.slice(0, Math.max(4, setSize() - PUZZLES_PER_SESSION));
   if (items.length < 3) {
     notice('Only ' + items.length + ' analysed positions match so far — the engine is '
@@ -5054,6 +5065,12 @@ function loadSessionItem() {
 
   if (item.kind === 'blunder') {
     var it = item.it;
+    var dayD = dayLoad();
+    dayD.dealt = dayD.dealt || {};
+    if (!dayD.dealt[it.g.id + ':' + it.b.p]) {
+      dayD.dealt[it.g.id + ':' + it.b.p] = 1;
+      store.set(dayKey(), dayD);
+    }
     var st = stateAtPly(it.g.mv, it.b.p);
     var probe = st ? cloneState(st) : null;
     var mv = probe ? sanApply(probe, it.b.bs) : null;
