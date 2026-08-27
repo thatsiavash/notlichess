@@ -3697,8 +3697,20 @@ function renderCoach() {
   var focusChips = '';
   if (weak.length > 1) {
     focusChips = segControl('focus', weak.map(function (r) {
+      /* the number is the GAP to peers, signed — so colour and meaning can
+         never disagree: red means behind by this much, green means ahead */
+      var stat, cls;
+      if (r.peer != null && r.rel != null) {
+        var mag = Math.abs(Math.round(r.mine - r.peer));
+        var behindR = r.rel < 1;
+        stat = (behindR ? '−' : '+') + mag + (r.unit === '' ? '' : r.unit.trim());
+        cls = behindR ? verdictClass(r.verdict) : 'win';
+      } else {
+        stat = fmtSkill(r);
+        cls = verdictClass(r.verdict);
+      }
       return { text: r.phrase, k: r.key, act: 'focus', on: focus && r.key === focus.key,
-               stat: fmtSkill(r), statClass: verdictClass(r.verdict) };
+               stat: stat, statClass: cls };
     }));
   }
 
@@ -8401,7 +8413,8 @@ function buildSeries() {
 function deltaBadge(p) {
   var d = data.deltas && data.deltas[p];
   if (d == null || !isFinite(d) || Math.abs(d) < 1) return '';
-  return ' <span class="' + (d > 0 ? 'win' : 'loss')
+  /* up is green, down is grey — a dip is information, not a punishment */
+  return ' <span class="' + (d > 0 ? 'win' : 'dim')
     + ' tnum" style="font-size:.82em" title="past 30 days">'
     + (d > 0 ? '▲' : '▼') + Math.abs(Math.round(d)) + '</span>';
 }
