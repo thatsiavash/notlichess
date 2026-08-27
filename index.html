@@ -768,7 +768,6 @@ var PERF_TCS = { bullet: ['1+0'], blitz: ['5+0','3+0'],
                  rapid: ['10+0'], classical: ['30+0'] };
 var cfg = {
   user: urlUser || store.get('nl:user', ''),
-  token: store.get('nl:token', ''),
   tcs: store.get('nl:tcs', DEFAULT_TC.slice()),
   sound: store.get('nl:sound', true),
   perfs: store.get('nl:perfs', null),   /* the formats being trained; null = derive from tcs */
@@ -869,9 +868,6 @@ function openingHref(name) {
   );
 }
 
-var TOKEN_CREATE = L + '/account/oauth/token/create'
-  + '?scopes%5B%5D=puzzle:read&scopes%5B%5D=study:read&description=notlichess.org';
-
 /* ── 5. API layer ────────────────────────────────────────────────────── */
 /* Lichess policy is one request at a time, and 429 carries no Retry-After,
    so we serialise every call and back off blind for 60s. */
@@ -893,7 +889,6 @@ function queued(fn) {
 function request(path, opts) {
   opts = opts || {};
   var headers = { Accept: opts.accept || 'application/json' };
-  if (cfg.token) headers.Authorization = 'Bearer ' + cfg.token;
   return queued(function () {
     return fetch(L + path, {
       headers: headers,
@@ -1715,7 +1710,6 @@ function stale(myGen) { return myGen !== gen; }
 var data = {
   user: null, history: null, games: [], gamesErr: null,
   playing: null, tv: null, broadcast: null, tours: null, studies: null,
-  puzzle: null, puzzleAuth: false,
   sections: {}   /* per-section load state: 'loading' | 'ok' | 'fail' */
 };
 
@@ -2676,28 +2670,6 @@ var detectors = [
     };
   }},
 
-  { id: 'puzzle-theme', name: 'Weakest puzzle theme', blurb: 'Needs a connected account', cat: 'puzzles', run: function () {
-    var d = data.puzzle;
-    if (!d || !d.themes || !d.global) return null;
-    var worst = null;
-    Object.keys(d.themes).forEach(function (k) {
-      var t = d.themes[k];
-      if (!t || t.nb < 10 || t.performance == null) return;
-      if (!worst || t.performance < worst.performance) { worst = t; worst.key = k; }
-    });
-    if (!worst || d.global.performance == null) return null;
-    var gap = d.global.performance - worst.performance;
-    if (gap < 60) return null;
-    return {
-      id: 'puzzle-theme', cat: 'puzzles', severity: Math.min(60, Math.round(gap / 4)),
-      headline: worst.theme + ' is your weakest puzzle theme.',
-      evidence: worst.performance + ' performance there · ' + d.global.performance + ' overall · ' + worst.nb + ' puzzles',
-      note: worst.theme + ' ' + worst.performance,
-      compare: d.global.performance + ' overall · ' + worst.nb + ' puzzles',
-      peerRelative: false,
-      action: { label: 'Train ' + worst.theme, href: L + '/training/' + worst.key }
-    };
-  }},
 
   { id: 'opening-leak', name: 'Opening leak', blurb: 'A line scoring below what players at your rating get from it', cat: 'opening', run: function () {
     var perf = mainPerf();
@@ -4564,8 +4536,6 @@ function puzzleDifficulty() {
 function focusTheme() {
   var dk = dominantKind();
   if (dk) return { key: KIND_THEME[dk.kind][0], why: KIND_THEME[dk.kind][1] };
-  var wt = weakestTheme();
-  if (wt && wt.key) return { key: wt.key, why: wt.theme + ' is your weakest puzzle theme' };
   var focus = coachFocus();
   var map = {
     opening: ['opening', 'the opening is the focus'],
@@ -5957,19 +5927,6 @@ function streakInfo() {
 }
 function streakDays() { return streakInfo().sets; }
 
-function weakestTheme() {
-  var d = data.puzzle;
-  if (!d || !d.themes) return null;
-  var worst = null;
-  Object.keys(d.themes).forEach(function (k) {
-    var t = d.themes[k];
-    if (!t || t.nb < 10 || t.performance == null) return;
-    if (!worst || t.performance < worst.performance) { worst = { key: k, theme: t.theme, performance: t.performance }; }
-  });
-  return worst;
-}
-
-
 /* ── Opponent prep (#8) ──────────────────────────────────────────────────
    Thirty seconds before a match: their book, their colours, their leaks.
    One request, cached per name for the session.                            */
@@ -6608,17 +6565,6 @@ function renderSettings() {
         }).join('')
       + '</div></div>'
 
-    + '<div class="set-block"><span class="kicker-sm">connection</span>'
-      + (cfg.token
-        ? '<div class="sec" style="font-size:14px">Connected. Puzzle history and private studies are available.</div>'
-          + '<div style="margin-top:8px"><a class="chip-sm" data-act="clearToken">Disconnect</a></div>'
-        : '<div class="sec" style="font-size:14px">Optional. Without it the page still works; the puzzle dashboard and private studies do not.</div>'
-          + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">'
-          + '<a class="chip-sm" href="' + TOKEN_CREATE + '">Generate a token</a>'
-          + '<input class="input input-sm" id="setToken" placeholder="paste it here" spellcheck="false" style="width:190px">'
-          + '<a class="chip-sm" data-act="saveToken">Save</a></div>')
-      + '</div>'
-
     + '<div class="set-block"><span class="kicker-sm">lost streak? 😟</span>'
       + '<div class="sec" style="font-size:14px;margin-bottom:8px">Streaks live in this browser. '
       + 'If you switched browsers or cleared your data, restore the count you had.</div>'
@@ -7196,12 +7142,6 @@ document.addEventListener('click', function (e) {
     case 'limit':
       setLimit(parseInt(t.getAttribute('data-n'), 10));
       break;
-    case 'saveToken': {
-      var v = el('setToken') ? el('setToken').value.trim() : '';
-      if (v) { cfg.token = v; saveCfg('token'); notice('Connected. Reloading your private data.'); boot(); }
-      break;
-    }
-    case 'clearToken': cfg.token = ''; saveCfg('token'); notice('Disconnected.'); boot(); break;
     case 'det': {
       var body = document.getElementById(t.getAttribute('data-d'));
       if (body) body.hidden = !body.hidden;
@@ -7846,23 +7786,7 @@ function loadGames() {
 
 function loadPlaying() {
   var myGen = gen;
-  /* With a token, /api/account/playing carries whose turn it is and the clock.
-     Without one, /api/user/{u}/current-game still tells us a game exists. */
-  var p = cfg.token
-    ? getJSON('/api/account/playing?nb=1', { quiet: true }).then(function (r) {
-        var g = r && r.nowPlaying && r.nowPlaying[0];
-        if (!g) return null;
-        var name = (g.opponent && (g.opponent.username || (g.opponent.ai ? 'Stockfish ' + g.opponent.ai : null))) || 'Anonymous';
-        return {
-          opp: name,
-          oppId: g.opponent && g.opponent.id ? g.opponent.id : (g.opponent && g.opponent.username ? g.opponent.username.toLowerCase() : null),
-          oppR: g.opponent && g.opponent.rating,
-          perf: g.perf || g.speed, tc: null,
-          turn: !!g.isMyTurn, left: g.secondsLeft != null ? g.secondsLeft : null,
-          url: L + '/' + (g.fullId || g.gameId)
-        };
-      })
-    : getJSON('/api/user/' + encodeURIComponent(cfg.user) + '/current-game', { quiet: true }).then(function (g) {
+  var p = getJSON('/api/user/' + encodeURIComponent(cfg.user) + '/current-game', { quiet: true }).then(function (g) {
         /* This endpoint returns the LAST game, finished or not — without the
            status check it shows a stale "in progress" for hours. */
         if (!g || !g.players || (g.status !== 'started' && g.status !== 'created')) return null;
@@ -8015,28 +7939,6 @@ function shapeSwiss(t) {
     at: starts,
     url: L + '/swiss/' + t.id
   };
-}
-
-function loadPuzzleDash() {
-  var myGen = gen;
-  if (!cfg.token) { data.puzzle = null; return Promise.resolve(); }
-  /* Handoff §3 gotcha: this answers 303 to an HTML page without puzzle:read,
-     so the redirect is caught rather than parsed as if it were JSON. */
-  return request('/api/puzzle/dashboard/30', { manualRedirect: true }).then(function (res) {
-    if (res.type === 'opaqueredirect' || res.status === 303 || !res.ok) {
-      data.puzzleAuth = false;
-      notice('Your token has no puzzle:read scope, so the puzzle dashboard stays closed.');
-      return;
-    }
-    var ct = res.headers.get('content-type') || '';
-    if (ct.indexOf('json') === -1) { data.puzzleAuth = false; return; }
-    return res.json().then(function (d) {
-      if (stale(myGen)) return;
-      data.puzzle = d;
-      data.puzzleAuth = true;
-      renderFindings();
-    });
-  }).catch(function () { data.puzzle = null; });
 }
 
 /* ── 16. Boot ────────────────────────────────────────────────────────── */
@@ -8264,7 +8166,7 @@ function boot() {
   data.sections = { user:'loading', games:'loading', peaks:'loading',
                     tours:'loading', watch:'loading', studies:'loading' };
   data.playing = null; data.h2h = null; data.broadcast = null; data.tv = null;
-  data.tours = null; data.studies = null; data.puzzle = null; data.streamers = null;
+  data.tours = null; data.studies = null; data.streamers = null;
   data.daily = null; data.storm = null;
   data.peaks = {}; data.pstat = {}; data.series = {}; data.deltas = {};
   data.customSpecs = []; data.scanFocus = null; data.autoStarted = false;
@@ -8293,7 +8195,6 @@ function boot() {
     .then(function () { finishNarration(); })
     .then(loadPeaks)
     .then(refreshTours)
-    .then(loadPuzzleDash)
     .then(function () { renderAll(); })
     .then(function () {
       engineLoad().catch(function () {});
