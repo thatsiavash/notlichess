@@ -1165,6 +1165,8 @@ function compact(g, meId) {
        retention step, so the first scan batch needs zero extra fetches */
     mvTmp: !(g.analysis && g.analysis.length) && g.moves
       && (!g.variant || g.variant === 'standard') ? g.moves : null,
+    ckTmp: !(g.analysis && g.analysis.length) && g.clocks
+      && (!g.variant || g.variant === 'standard') ? g.clocks : null,
     acpl: an && an.acpl != null ? an.acpl : null,
     acc: an && an.accuracy != null ? an.accuracy : null,
     blunders: an && an.blunder != null ? an.blunder : null,
@@ -2810,6 +2812,70 @@ var detectors = [
     };
   }},
 
+  /* Blunders vs the clock — we hold the seconds-in-hand at every mistake.
+     Separates "loses to the clock" from "loses with the clock in hand",
+     which prescribe opposite training. --------------------------------- */
+  { id: 'blunder-clock', name: 'Blunders vs the clock', blurb: 'Were your mistakes rushed, or unhurried?', cat: 'habits', run: function () {
+    var hi = 0, lo = 0, n = 0;
+    data.games.forEach(function (g) {
+      if (!g.bl || !isEligible(g.perf)) return;
+      g.bl.forEach(function (b) {
+        var band = blunderClockBand({ g: g, b: b });
+        if (!band) return;
+        n++;
+        if (band === 'high') hi++;
+        else if (band === 'low') lo++;
+      });
+    });
+    if (n < 20) return null;
+    var hiP = Math.round(hi * 100 / n), loP = Math.round(lo * 100 / n);
+    if (hiP >= 55) {
+      return {
+        id: 'blunder-clock', cat: 'habits', severity: Math.min(72, 40 + hiP - 55),
+        headline: 'Your blunders are not the clock\'s fault.',
+        evidence: hiP + '% of your ' + n + ' measured blunders came with a third or more '
+          + 'of your clock still in hand — attention, not time pressure',
+        note: '<span class="loss">' + hiP + '%</span> unhurried blunders',
+        compare: loP + '% happened in real time trouble',
+        peerRelative: false,
+        custom: { type: 'clock', mode: 'high', label: 'Unhurried blunders',
+                  why: 'The mistakes you had time to avoid — a blunder-check habit, drilled.' }
+      };
+    }
+    if (loP >= 50) {
+      return {
+        id: 'blunder-clock', cat: 'habits', severity: Math.min(70, 40 + loP - 50),
+        headline: 'Time trouble is where your games bleed.',
+        evidence: loP + '% of your ' + n + ' measured blunders came with under 15% of '
+          + 'your clock left — the chess is fine until the clock is not',
+        note: '<span class="loss">' + loP + '%</span> time-trouble blunders',
+        compare: hiP + '% happened with time in hand',
+        peerRelative: false,
+        custom: { type: 'clock', mode: 'low', label: 'Time-trouble blunders',
+                  why: 'The positions the clock took from you — see them again with time to think.' }
+      };
+    }
+    return null;
+  }},
+
+  /* A worsening month is a finding; an improving one is praise and lives in
+     the read. ---------------------------------------------------------- */
+  { id: 'trend-up', name: 'Blunder rate rising', blurb: 'This month vs last, across every analysed game', cat: 'habits', run: function () {
+    var tr = blunderTrend(mainPerf());
+    if (!tr || tr.delta > -12) return null;
+    return {
+      id: 'trend-up', cat: 'habits', severity: Math.min(74, 46 + Math.round(-tr.delta / 2)),
+      headline: 'You are blundering more than a month ago.',
+      evidence: tr.now.toFixed(1) + ' blunders per 100 moves over your last ' + tr.nNow
+        + ' covered games · ' + tr.prev.toFixed(1) + ' the month before',
+      note: '<span class="loss">' + tr.now.toFixed(1) + '</span> per 100 moves, rising',
+      compare: 'a month ago: ' + tr.prev.toFixed(1),
+      peerRelative: false,
+      custom: { type: 'window', days: 30, label: 'This month\'s new mistakes',
+                why: 'The month the rate rose — its mistakes, retried until they stop.' }
+    };
+  }},
+
   /* Session fatigue — only computable because we hold the timestamps. No
      Lichess screen shows this. ------------------------------------------ */
   { id: 'session-fatigue', name: 'Session length', blurb: 'How you score deep into a sitting', cat: 'stamina', run: function () {
@@ -3411,6 +3477,33 @@ function goalProgress(goal, focus) {
   return { n: since.length, val: null };
 }
 
+/* Blunders per 100 of the player's own moves, across every game that has
+   analysis material — the unbiased number the analysed-only stats can't be. */
+function blunderRateOf(gs) {
+  var moves = 0, bls = 0;
+  gs.forEach(function (g) {
+    moves += Math.floor(g.plies / 2);
+    if (g.bl) bls += g.bl.length;
+  });
+  return moves >= 300 ? { rate: bls * 100 / moves, moves: moves } : null;
+}
+function blunderTrend(perf) {
+  var now = Date.now(), M = 30 * 864e5;
+  var cur = [], prev = [];
+  data.games.forEach(function (g) {
+    if (g.perf !== perf || !(g.analysed || g.scanned)) return;
+    var age = now - g.ts;
+    if (age < M) cur.push(g);
+    else if (age < 2 * M) prev.push(g);
+  });
+  if (cur.length < 25 || prev.length < 25) return null;
+  var a = blunderRateOf(cur), b = blunderRateOf(prev);
+  if (!a || !b || !b.rate) return null;
+  return { now: a.rate, prev: b.rate,
+           delta: (b.rate - a.rate) * 100 / b.rate,
+           nNow: cur.length, nPrev: prev.length };
+}
+
 function coachRead() {
   var prof = skillProfile();
   if (!prof.rows.length) return null;
@@ -3419,6 +3512,18 @@ function coachRead() {
   var strong = scored.filter(function (r) { return r.rel != null && r.rel >= 1 && !r.contextual; });
   var focus = coachFocus();
   var bits = [];
+
+  /* 0. Trajectory — the one number that moves week to week. Spoken only
+     when it has actually moved. */
+  var tr = blunderTrend(prof.perf);
+  if (tr && Math.abs(tr.delta) >= 12) {
+    bits.push(tr.delta > 0
+      ? 'First, the number that matters most is moving: ' + tr.now.toFixed(1)
+        + ' blunders per 100 moves this month, down from ' + tr.prev.toFixed(1)
+        + ' — a ' + Math.round(tr.delta) + '% drop. Whatever you are doing, keep doing it.'
+      : 'The number to watch: your blunder rate is up this month — ' + tr.now.toFixed(1)
+        + ' per 100 moves against ' + tr.prev.toFixed(1) + ' last month.');
+  }
 
   /* 1. What is genuinely good — said first, because it is true and because a
      player who only hears criticism stops listening. */
@@ -3570,6 +3675,13 @@ function renderCoach() {
       know.push(line);
     }
   }
+  var trS = blunderTrend(mainPerf());
+  if (trS) {
+    var col = trS.delta >= 5 ? 'win' : (trS.delta <= -5 ? 'loss' : '');
+    know.push('Blunder rate: <b class="' + col + ' tnum">' + trS.now.toFixed(1)
+      + '</b> per 100 moves · month before: <span class="tnum">' + trS.prev.toFixed(1)
+      + '</span> · every game with analysis counts, not just the ones you chose to analyse.');
+  }
 
 
 
@@ -3623,7 +3735,8 @@ function renderCoach() {
   found.slice(0, 3).forEach(function (f) {
     if (f.custom) {
       pushCustom({ type: f.custom.type, name: f.custom.name, family: f.custom.family,
-                   colour: f.custom.colour, label: f.custom.label,
+                   colour: f.custom.colour, mode: f.custom.mode, days: f.custom.days,
+                   label: f.custom.label,
                    theme: f.custom.type === 'opening' ? 'opening' : null,
                    why: f.custom.why },
         f.headline);
@@ -3672,7 +3785,7 @@ function renderCoach() {
         + (peak && peak.rating > now ? ' · peak ' + peak.rating + ', ' + (peak.rating - now) + ' away' : '')
         + (masteredCount() ? ' · ' + masteredCount() + ' mistakes trained' : '')
       + '</div>'
-      + (know.length ? '<div class="story-goal">' + know[0] + '</div>' : '')
+      + know.map(function (k) { return '<div class="story-goal">' + k + '</div>'; }).join('')
       + '</div>';
   }
 
@@ -4731,7 +4844,7 @@ function startSession(startKey, quiet) {
    re-renders never grow it */
 function registerSpec(spec) {
   data.customSpecs = data.customSpecs || [];
-  var key = [spec.type, spec.name, spec.family, spec.colour].join('|');
+  var key = [spec.type, spec.name, spec.family, spec.colour, spec.mode, spec.days].join('|');
   for (var i = 0; i < data.customSpecs.length; i++) {
     if (data.customSpecs[i]._k === key) return i;
   }
@@ -4750,8 +4863,25 @@ function customGameFilter(spec) {
       return g.color === spec.colour && g.opening === spec.name;
     if (spec.type === 'colour') return g.color === spec.colour;
     if (spec.type === 'piece') return true;   /* narrowed per-blunder below */
+    if (spec.type === 'clock') return true;   /* narrowed per-blunder below */
+    if (spec.type === 'window')
+      return g.ts >= Date.now() - (spec.days || 30) * 864e5;
     return false;
   };
+}
+
+function tcInitialSecs(tc) {
+  if (!tc) return null;
+  var m = String(tc).split('+')[0];
+  var mins = parseFloat(m);
+  return isFinite(mins) && mins > 0 ? mins * 60 : null;
+}
+/* clock specs narrow at the blunder level: how much clock was in hand */
+function blunderClockBand(it) {
+  var init = tcInitialSecs(it.g.tc);
+  if (init == null || it.b.c == null) return null;
+  var frac = it.b.c / init;
+  return frac >= 0.33 ? 'high' : (frac <= 0.15 ? 'low' : 'mid');
 }
 
 /* piece specs narrow at the blunder level: which piece made the move */
@@ -4768,6 +4898,7 @@ function startCustomSession(spec) {
   allBlunders().forEach(function (it) {
     if (!trainable(it) || !gf(it.g)) return;
     if (spec.type === 'piece' && blunderPiece(it) !== spec.piece) return;
+    if (spec.type === 'clock' && blunderClockBand(it) !== spec.mode) return;
     items.push({ kind: 'blunder', it: it });
   });
   items.sort(function (a, b) { return b.it.g.ts - a.it.g.ts; });
@@ -5536,7 +5667,8 @@ function missionList() {
     runDetectors().slice(0, 4).forEach(function (f) {
       if (!f.custom) return;
       var i2 = registerSpec({ type: f.custom.type, name: f.custom.name,
-        family: f.custom.family, colour: f.custom.colour, label: f.custom.label,
+        family: f.custom.family, colour: f.custom.colour, mode: f.custom.mode,
+        days: f.custom.days, label: f.custom.label,
         theme: f.custom.type === 'opening' ? 'opening' : null, why: f.custom.why });
       add({ key: 'cs:' + data.customSpecs[i2]._k, i: i2,
             label: f.custom.label, sub: f.note ? String(f.note).replace(/<[^>]*>/g, '') : '' });
@@ -7483,6 +7615,8 @@ function bootWorker(code) {
 /* One position at a time; each caller gets {cp, mate, bestUci, pv[]} with the
    score from WHITE's point of view. */
 function engineEval(fen, movetime, priority) {
+  /* movetime as a number = milliseconds; as {nodes: N} = a fixed node
+     budget, which buys the SAME analysis quality on a phone and a desktop */
   return new Promise(function (resolve, reject) {
     var job = { fen: fen, movetime: movetime || 80, resolve: resolve, reject: reject };
     /* a player is waiting on priority jobs; the scan can wait */
@@ -7498,7 +7632,9 @@ function enginePump() {
     var last = null;
     var whiteToMove = job.fen.split(' ')[1] === 'w';
     var done = false;
-    var t = setTimeout(function () { finish(null); }, job.movetime + 8000);
+    var nodes = job.movetime && job.movetime.nodes;
+    var guardMs = (nodes ? Math.ceil(nodes / 15) : job.movetime) + 8000;
+    var t = setTimeout(function () { finish(null); }, guardMs);
     function finish(res) {
       if (done) return;
       done = true;
@@ -7527,7 +7663,7 @@ function enginePump() {
       }
     };
     w.postMessage('position fen ' + job.fen);
-    w.postMessage('go movetime ' + job.movetime);
+    w.postMessage(nodes ? 'go nodes ' + nodes : 'go movetime ' + job.movetime);
   }).catch(function () { SF.busy = false; job.reject(new Error('no engine')); });
 }
 
@@ -7611,14 +7747,15 @@ function uciLine(st0, uciMoves) {
   return out;
 }
 
-var TRIAGE_MS = 30;   /* detection depth: big swings are shallow-visible;
-                         the deep look happens per-position at deal time */
+var TRIAGE_NODES = 40000; /* fixed node budget: identical detection quality
+                             on a phone and a desktop, faster than 30ms on
+                             most desktops */
 function scanGame(g) {
   /* Retained movetext scans fetch nothing; only games outside the retained
      batch still cost one export call. */
   var myGen = gen;
   var src = g.mv && !g.bl
-    ? Promise.resolve({ moves: g.mv, clocks: null })
+    ? Promise.resolve({ moves: g.mv, clocks: g.ck || null })
     : getJSON('/game/export/' + g.id + '?moves=true&clocks=true', { quiet: true })
         .catch(function () { return null; });
   return src
@@ -7628,13 +7765,22 @@ function scanGame(g) {
       var meWhite = g.color === 'white';
       var st = chessStart();
       var evals = [];             /* white-POV cp after each ply */
+      var extreme = 0;            /* consecutive evals with winP pinned */
       var chain = Promise.resolve();
       toks.forEach(function (tok, i) {
         chain = chain.then(function () {
           if (stale(myGen)) throw new Error('stale');
           if (!sanApply(st, tok)) throw new Error('san');
           if (i < 8 || i >= 120) { evals[i] = null; return; }
-          return engineEval(stateFen(st), TRIAGE_MS).then(function (r) { evals[i] = r; });
+          /* a game that is utterly decided has no 20-point swings left to
+             find — once win chance pins past ~96 for four plies, stop paying
+             for the corpse */
+          if (extreme >= 4) { evals[i] = null; return; }
+          return engineEval(stateFen(st), { nodes: TRIAGE_NODES }).then(function (r) {
+            evals[i] = r;
+            var wp = winPct(r.cp);
+            extreme = (wp > 96 || wp < 4) ? extreme + 1 : 0;
+          });
         });
       });
       return chain.then(function () {
@@ -7663,6 +7809,7 @@ function scanGame(g) {
         bl.sort(function (a, b) { return (b.wb - b.wa) - (a.wb - a.wa); });
         g.bl = bl.length ? bl.slice(0, 4).sort(function (a, b) { return a.p - b.p; }) : null;
         g.mv = g.bl ? full.moves : null;   /* movetext stays only where cards live */
+        delete g.ck;                        /* the clocks did their job */
         g.scanned = 1;
         /* the scanned game joins the profile with the same metrics as a
            Lichess-analysed one: build a pseudo-analysis from the engine evals */
@@ -7782,9 +7929,11 @@ function retainMovetext() {
     if (!g.analysed && !g.scanned && !g.bl && !g.mv && g.plies >= 16 && isEligible(g.perf)
         && (kept[g.perf] || 0) < RETAIN_PER_FORMAT) {
       g.mv = g.mvTmp;
+      if (g.ckTmp) g.ck = g.ckTmp;
       kept[g.perf] = (kept[g.perf] || 0) + 1;
     }
     delete g.mvTmp;
+    delete g.ckTmp;
   });
 }
 
