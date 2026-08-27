@@ -4844,7 +4844,7 @@ function startSession(startKey, quiet) {
    re-renders never grow it */
 function registerSpec(spec) {
   data.customSpecs = data.customSpecs || [];
-  var key = [spec.type, spec.name, spec.family, spec.colour, spec.mode, spec.days].join('|');
+  var key = [spec.type, spec.name, spec.family, spec.colour, spec.mode, spec.days, spec.kind, spec.phase].join('|');
   for (var i = 0; i < data.customSpecs.length; i++) {
     if (data.customSpecs[i]._k === key) return i;
   }
@@ -4864,10 +4864,18 @@ function customGameFilter(spec) {
     if (spec.type === 'colour') return g.color === spec.colour;
     if (spec.type === 'piece') return true;   /* narrowed per-blunder below */
     if (spec.type === 'clock') return true;   /* narrowed per-blunder below */
+    if (spec.type === 'kind') return true;    /* narrowed per-blunder below */
+    if (spec.type === 'phase') return true;   /* narrowed per-blunder below */
     if (spec.type === 'window')
       return g.ts >= Date.now() - (spec.days || 30) * 864e5;
+    if (spec.type === 'stronger')
+      return g.oppR != null && g.myR != null && g.oppR - g.myR >= 50;
     return false;
   };
+}
+
+function blunderPhase(it) {
+  return it.b.p < 30 ? 'open' : (it.b.p < 60 ? 'mid' : 'end');
 }
 
 function tcInitialSecs(tc) {
@@ -4899,6 +4907,8 @@ function startCustomSession(spec) {
     if (!trainable(it) || !gf(it.g)) return;
     if (spec.type === 'piece' && blunderPiece(it) !== spec.piece) return;
     if (spec.type === 'clock' && blunderClockBand(it) !== spec.mode) return;
+    if (spec.type === 'kind' && it.b.k !== spec.kind) return;
+    if (spec.type === 'phase' && blunderPhase(it) !== spec.phase) return;
     items.push({ kind: 'blunder', it: it });
   });
   items.sort(function (a, b) { return b.it.g.ts - a.it.g.ts; });
@@ -6689,6 +6699,61 @@ function ratingPayoff(r) {
   return Math.round(pts / 5) * 5;
 }
 
+/* The shapes of a player's mistakes — kind, phase, opposition. These are
+   not peer comparisons; they are self-portraits, and every account with a
+   handful of analysed games has them. Each one is a set. */
+var KIND_LABEL = { hung: 'Hung pieces', tactic: 'Missed tactics',
+                   slip: 'Won games slipping', collapse: 'Level positions collapsing' };
+var PHASE_LABEL = { open: 'Opening mistakes', mid: 'Middlegame mistakes', end: 'Endgame mistakes' };
+var PHASE_HINT = { open: 'before move 15', mid: 'moves 15–30', end: 'past move 30' };
+function mistakeShapes() {
+  var all = allBlunders();
+  if (all.length < 8) return [];
+  var kinds = {}, phases = {}, strongerN = 0, strongerTotal = 0;
+  all.forEach(function (it) {
+    if (it.b.k) kinds[it.b.k] = (kinds[it.b.k] || 0) + 1;
+    var ph = blunderPhase(it);
+    phases[ph] = (phases[ph] || 0) + 1;
+    if (it.g.oppR != null && it.g.myR != null) {
+      strongerTotal++;
+      if (it.g.oppR - it.g.myR >= 50) strongerN++;
+    }
+  });
+  var rows = [];
+  var kindTop = Object.keys(kinds).sort(function (a, b) { return kinds[b] - kinds[a]; })[0];
+  if (kindTop && kinds[kindTop] >= 6) {
+    var kp = Math.round(kinds[kindTop] * 100 / all.length);
+    rows.push({
+      label: KIND_LABEL[kindTop], stat: kp + '% of your mistakes',
+      why: 'Your own ' + KIND_LABEL[kindTop].toLowerCase() + ', retried from the exact positions until the reflex changes.',
+      spec: { type: 'kind', kind: kindTop, label: KIND_LABEL[kindTop],
+              theme: (KIND_THEME[kindTop] || [null])[0],
+              why: KIND_WORD[kindTop] + ' — your most common shape' }
+    });
+  }
+  var phTop = Object.keys(phases).sort(function (a, b) { return phases[b] - phases[a]; })[0];
+  if (phTop && phases[phTop] >= 6 && phases[phTop] * 100 / all.length >= 40) {
+    var pp = Math.round(phases[phTop] * 100 / all.length);
+    rows.push({
+      label: PHASE_LABEL[phTop], stat: pp + '% happen ' + PHASE_HINT[phTop],
+      why: 'The phase where your games actually bleed — its mistakes, together.',
+      spec: { type: 'phase', phase: phTop, label: PHASE_LABEL[phTop],
+              why: pp + '% of your mistakes come ' + PHASE_HINT[phTop] }
+    });
+  }
+  if (strongerN >= 6 && strongerTotal >= 15
+      && strongerN * 100 / strongerTotal >= 45) {
+    var sp = Math.round(strongerN * 100 / strongerTotal);
+    rows.push({
+      label: 'Against stronger players', stat: sp + '% of your mistakes',
+      why: 'What +50-rated opposition does to your play — those positions, retried.',
+      spec: { type: 'stronger', label: 'Vs stronger opposition',
+              why: 'the mistakes stronger players extract from you' }
+    });
+  }
+  return rows.slice(0, 3);
+}
+
 function renderPlan() {
   var box = el('plan');
   if (!box) return;
@@ -6742,7 +6807,21 @@ function renderPlan() {
           + 'rating. The closest thing to a weak spot:</p>'
         : '')
     + '<div class="prof-head"><span class="kicker">work on this</span></div>'
-    + '<ol class="plan-list">' + steps + '</ol>'
+    + '<ol class="plan-list">' + steps
+    + mistakeShapes().filter(function (sh) {
+        return !weak.some(function (r) { return r.label === sh.label; });
+      }).map(function (sh, i) {
+        return '<li class="plan-step">'
+          + '<span class="plan-n tnum">' + (weak.length + i + 1) + '</span>'
+          + '<span class="plan-body">'
+            + '<span class="plan-what">' + esc(sh.label) + ' · '
+              + '<span class="loss">' + esc(sh.stat) + '</span></span>'
+            + '<span class="plan-why">' + esc(sh.why) + '</span>'
+          + '</span>'
+          + '<a class="btn-quiet" data-act="customSet" data-i="' + registerSpec(sh.spec) + '">Train it</a>'
+          + '</li>';
+      }).join('')
+    + '</ol>'
     + '</div>';
 }
 
