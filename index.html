@@ -6842,6 +6842,9 @@ document.addEventListener('pointerdown', function (e) {
     return;
   }
   if (e.button !== 0 || a.phase !== 'guess') return;
+  /* each gesture governs only its own click — a leftover suppression from
+     the selecting tap must not swallow the destination tap */
+  pointerState.suppressClick = false;
   /* left button: arrows clear, and a grab on an own piece starts a drag */
   if (a.shapes.length) { a.shapes = []; renderTrainerInline(); }
   var p = a.st.b[sq];
@@ -6849,6 +6852,9 @@ document.addEventListener('pointerdown', function (e) {
     pointerState.dragFrom = sq;
     pointerState.dragPiece = p;
     pointerState.moved = false;
+    /* a tap that selects must not be un-selected by its own click event —
+       that broken toggle is why tap-tap never worked on phones */
+    pointerState.justSelected = a.sel !== sq;
     if (a.sel !== sq) { a.sel = sq; renderTrainerInline(); }
   }
 });
@@ -6889,7 +6895,12 @@ document.addEventListener('pointerup', function (e) {
       a.sel = from;
       pointerState.suppressClick = true;
       sessionClick(sq);
+    } else if (!pointerState.moved && pointerState.justSelected) {
+      /* pure tap that made the selection: swallow the click so it sticks;
+         tapping the already-selected piece again still deselects */
+      pointerState.suppressClick = true;
     }
+    pointerState.justSelected = false;
   }
 });
 
