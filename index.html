@@ -3404,12 +3404,13 @@ function renderFirstVisit(prefill) {
           'One focus at a time, a dated goal, and every number measured against millions of '
           + 'games by players at exactly your rating.')
       + valueItem('Free, and actually yours',
-          'No account, no subscription, no server. Open source, runs in your browser, and '
-          + 'every action lands on your own chess site signed in as you.')
+          'No account, no subscription, no server. Open source. Your games, analysis and '
+          + 'progress are saved in this browser and nowhere else.')
     + '</div>'
 
     + '<p class="dim first-foot">Daily missions, a streak worth keeping, and everything built '
-    + 'from your own games. Nothing leaves your browser.</p>'
+    + 'from your own games. Nothing is uploaded anywhere: it all lives in this browser, '
+    + 'so your progress stays on this device for now.</p>'
     + '</div>';
   var input = el('firstUser');
   if (input) {
@@ -7360,7 +7361,7 @@ function renderSettings() {
     + '</div>'
 
     + '<div class="set-block"><span class="kicker-sm">data</span>'
-      + '<div class="sec" style="font-size:14px;margin-bottom:6px">New games are picked up automatically about once an hour. Full refresh re-pulls the whole window, for when something looks wrong.</div>'
+      + '<div class="sec" style="font-size:14px;margin-bottom:6px">New games are picked up automatically about once an hour. Full refresh re-pulls the whole window, for when something looks wrong. Everything this page knows (games, analysis, missions, streaks) is saved in this browser only: clearing site data wipes it, and another device starts fresh.</div>'
       + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'
         + '<a class="chip-sm" data-act="reload">Full refresh</a>'
         + '<span class="dim" style="font-size:13px">' + gamesLine() + '</span>'
