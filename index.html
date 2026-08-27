@@ -8091,7 +8091,7 @@ document.addEventListener('keydown', function (e) {
 var SF = { workers: [], state: 'idle', loading: null, queue: [], code: null };
 function poolSize() {
   var hc = navigator.hardwareConcurrency || 2;
-  return Math.max(1, Math.min(4, hc - 2)) + (hc >= 8 ? 1 : 0);
+  return Math.max(1, Math.min(8, hc - 2));
 }
 function engineLoad() {
   if (SF.workers.length) return Promise.resolve(SF.workers[0].w);
@@ -8150,53 +8150,84 @@ function engineEval(fen, movetime, priority) {
     enginePump();
   });
 }
+/* Pipelined pump: each worker holds a FIFO of up to PIPE jobs whose
+   position+go commands are posted UP FRONT, so the engine flows from one
+   search straight into the next with no JS round-trip between them — the
+   ~100ms-per-call handshake tax, which dominated at triage sizes, is paid
+   once per pipeline instead of once per eval. */
+var ENGINE_PIPE = 10;
+window.__kickScan = function () { autoScan(); return 'kicked'; };
+window.__engineStat = function () {
+  return JSON.stringify({
+    q: SF.queue.length,
+    state: SF.state,
+    backoffMs: Math.max(0, backoffUntil - Date.now()),
+    slots: SF.workers.map(function (sl) {
+      return { p: sl.pending ? sl.pending.length : -1, wired: !!sl.wired };
+    }),
+    scan: { trace: scanState.trace, running: scanState.running, pending: scanState.pending,
+            done: scanState.done, dirty: scanState.dirty || 0,
+            target: scanState.current ? scanState.current.id : null,
+            nextT: !!nextScanTarget() }
+  });
+};
+function slotWire(slot) {
+  if (slot.wired) return;
+  slot.wired = true;
+  slot.pending = [];
+  slot.lastInfo = null;
+  slot.w.onmessage = function (e) {
+    var m = String(e.data);
+    if (m.indexOf('info ') === 0 && m.indexOf(' score ') > 0) slot.lastInfo = m;
+    if (m.indexOf('bestmove') === 0) {
+      var job = slot.pending.shift();
+      slot.guardAt = Date.now();
+      if (!job) { slot.lastInfo = null; return; }
+      var out = { cp: 0, mate: null, bestUci: m.split(' ')[1], pv: [] };
+      var last = slot.lastInfo;
+      if (last) {
+        var sc = last.match(/score (cp|mate) (-?\d+)/);
+        if (sc) {
+          if (sc[1] === 'mate') { out.mate = parseInt(sc[2], 10); out.cp = out.mate > 0 ? 1500 : -1500; }
+          else out.cp = Math.max(-1500, Math.min(1500, parseInt(sc[2], 10)));
+        }
+        var pv = last.match(/ pv (.+)$/);
+        if (pv) out.pv = pv[1].split(' ').slice(0, 8);
+      }
+      slot.lastInfo = null;
+      if (job.fen.split(' ')[1] !== 'w') { out.cp = -out.cp; if (out.mate != null) out.mate = -out.mate; }
+      job.resolve(out);
+      enginePump();
+    }
+  };
+  /* one inactivity guard per worker: if a pipeline stalls, fail it out
+     rather than hanging every queued eval behind it */
+  slot.guardAt = Date.now();
+  slot.guardTimer = setInterval(function () {
+    if (!slot.pending.length) { slot.guardAt = Date.now(); return; }
+    if (Date.now() - slot.guardAt > 20000) {
+      var stuck = slot.pending.splice(0);
+      slot.lastInfo = null;
+      slot.guardAt = Date.now();
+      stuck.forEach(function (j) { j.reject(new Error('engine timeout')); });
+      enginePump();
+    }
+  }, 5000);
+}
 function enginePump() {
   if (!SF.queue.length) return;
   if (!SF.workers.length) { engineLoad().then(enginePump).catch(function () {}); return; }
-  var slot = null;
-  for (var wi = 0; wi < SF.workers.length; wi++) {
-    if (!SF.workers[wi].busy) { slot = SF.workers[wi]; break; }
-  }
-  if (!slot) return;
-  slot.busy = true;
-  var job = SF.queue.shift();
-  Promise.resolve(slot.w).then(function (w) {
-    var last = null;
-    var whiteToMove = job.fen.split(' ')[1] === 'w';
-    var done = false;
-    var nodes = job.movetime && job.movetime.nodes;
-    var guardMs = (nodes ? Math.ceil(nodes / 15) : job.movetime) + 8000;
-    var t = setTimeout(function () { finish(null); }, guardMs);
-    function finish(res) {
-      if (done) return;
-      done = true;
-      clearTimeout(t);
-      w.onmessage = null;
-      slot.busy = false;
-      if (res) job.resolve(res); else job.reject(new Error('engine timeout'));
-      enginePump();
+  for (var wi = 0; wi < SF.workers.length && SF.queue.length; wi++) {
+    var slot = SF.workers[wi];
+    slotWire(slot);
+    while (slot.pending.length < ENGINE_PIPE && SF.queue.length) {
+      var job = SF.queue.shift();
+      slot.pending.push(job);
+      var nodes = job.movetime && job.movetime.nodes;
+      slot.w.postMessage('position fen ' + job.fen);
+      slot.w.postMessage(nodes ? 'go nodes ' + nodes : 'go movetime ' + job.movetime);
     }
-    w.onmessage = function (e) {
-      var m = String(e.data);
-      if (m.indexOf('info ') === 0 && m.indexOf(' score ') > 0) last = m;
-      if (m.indexOf('bestmove') === 0) {
-        var out = { cp: 0, mate: null, bestUci: m.split(' ')[1], pv: [] };
-        if (last) {
-          var sc = last.match(/score (cp|mate) (-?\d+)/);
-          if (sc) {
-            if (sc[1] === 'mate') { out.mate = parseInt(sc[2], 10); out.cp = out.mate > 0 ? 1500 : -1500; }
-            else out.cp = Math.max(-1500, Math.min(1500, parseInt(sc[2], 10)));
-          }
-          var pv = last.match(/ pv (.+)$/);
-          if (pv) out.pv = pv[1].split(' ').slice(0, 8);
-        }
-        if (!whiteToMove) { out.cp = -out.cp; if (out.mate != null) out.mate = -out.mate; }
-        finish(out);
-      }
-    };
-    w.postMessage('position fen ' + job.fen);
-    w.postMessage(nodes ? 'go nodes ' + nodes : 'go movetime ' + job.movetime);
-  }).catch(function () { slot.busy = false; job.reject(new Error('no engine')); });
+  }
 }
 
 /* ── 14d. The quiet scan ─────────────────────────────────────────────────
@@ -8221,12 +8252,13 @@ function scanCoverage() {
 }
 
 function scannable(g) {
-  return g && !g.analysed && !g.scanned && !g.bl && g.plies >= 16 && isEligible(g.perf);
+  return g && !g.analysed && !g.scanned && !g.bl && !g.mvMiss
+    && g.plies >= 16 && isEligible(g.perf);
 }
 /* the last lane ignores the format filter: the fish works until EVERYTHING
    is analysed — untracked formats go last, but they go */
 function scannableAny(g) {
-  return g && !g.analysed && !g.scanned && !g.bl && g.plies >= 16;
+  return g && !g.analysed && !g.scanned && !g.bl && !g.mvMiss && g.plies >= 16;
 }
 
 /* The scan never stops while anything is scannable — it rotates in batches
@@ -8287,9 +8319,9 @@ function uciLine(st0, uciMoves) {
   return out;
 }
 
-var TRIAGE_NODES = 40000; /* fixed node budget: identical detection quality
-                             on a phone and a desktop, faster than 30ms on
-                             most desktops */
+var TRIAGE_NODES = 18000; /* fixed node budget: big swings are visible well
+                             below this, and deal-time refinement (400ms)
+                             re-checks every card before it teaches */
 function scanGame(g) {
   /* Retained movetext scans fetch nothing; only games outside the retained
      batch still cost one export call. */
@@ -8305,8 +8337,9 @@ function scanGame(g) {
       var meWhite = g.color === 'white';
       var st = chessStart();
       var evals = [];             /* white-POV cp after each ply */
-      /* one cheap walk collects every FEN, then the whole game's evals hit
-         the pool AT ONCE — with 4 analysts, 4 positions think in parallel */
+      /* one cheap walk collects every FEN, then evals hit the pool in two
+         waves: the first ~64 plies, then the tail ONLY if the game is
+         still alive — crushed games stop costing at the crush */
       var fens = [];
       var walkOk = true;
       toks.forEach(function (tok, i) {
@@ -8314,18 +8347,29 @@ function scanGame(g) {
         if (!sanApply(st, tok)) { walkOk = false; fens[i] = null; return; }
         fens[i] = (i < 8 || i >= 120) ? null : stateFen(st);
       });
-      var extreme = 0;   /* consecutive pinned evals: decided-game early-stop */
-      var jobs = [];
-      fens.forEach(function (fen, i) {
-        if (!fen) { evals[i] = null; return; }
-        jobs.push(engineEval(fen, { nodes: TRIAGE_NODES }).then(function (r) {
-          if (stale(myGen)) return;
-          evals[i] = r;
-        }).catch(function () { evals[i] = null; }));
+      var CUTOFF = 64;
+      function dispatch(from, to) {
+        var jobs = [];
+        fens.forEach(function (fen, i) {
+          if (!fen || i < from || i >= to) return;
+          jobs.push(engineEval(fen, { nodes: TRIAGE_NODES }).then(function (r) {
+            if (stale(myGen)) return;
+            evals[i] = r;
+          }).catch(function () { evals[i] = null; }));
+        });
+        return Promise.all(jobs);
+      }
+      var chain = dispatch(0, CUTOFF).then(function () {
+        if (stale(myGen)) return;
+        /* is the game decided by the cutoff? look at the last few evals */
+        var tail = [];
+        for (var ti = CUTOFF - 1; ti >= 8 && tail.length < 4; ti--) {
+          if (evals[ti]) tail.push(winPct(evals[ti].cp));
+        }
+        var dead = tail.length >= 3 && tail.every(function (wp) { return wp > 96 || wp < 4; });
+        if (dead) return;
+        return dispatch(CUTOFF, 120);
       });
-      /* early-stop compatibility: with parallel dispatch the corpse-skip
-         happens by post-filter — pinned stretches simply yield no swings */
-      var chain = Promise.all(jobs);
       return chain.then(function () {
         if (stale(myGen)) return;
         var bl = [];
@@ -8359,13 +8403,13 @@ function scanGame(g) {
         /* clip to the evaluated window: a fake 0 after ply 120 would read as
            a phantom swing against whoever was winning */
         var pseudo = evals.slice(0, 120).map(function (r) { return r ? { eval: r.cp } : { eval: 0 }; });
+        scanState.dirty = (scanState.dirty || 0) + 1;
         var em2 = evalMetrics(pseudo, meWhite, full.moves);
         if (em2) {
           g.ev = [em2.acpl, em2.best, em2.worst, em2.o, em2.m, em2.e];
           g.acc2 = [em2.acc, em2.accO, em2.accM, em2.accE, em2.ta, em2.taN];
           g.pcs = em2.pieces;
         }
-        saveGames(data.games);
       });
     });
 }
@@ -8375,7 +8419,7 @@ function scanGame(g) {
    keeps eating at 1.2s gaps instead of dropping to one fetch per 20s. */
 var bulkState = { at: 0, fails: 0, busy: false };
 function bulkAllowed() {
-  return !bulkState.busy && bulkState.fails < 3
+  return !isCC() && !bulkState.busy && bulkState.fails < 3
     && Date.now() - bulkState.at > 120000
     && Date.now() >= backoffUntil;
 }
@@ -8442,16 +8486,65 @@ function bulkRetain() {
     });
 }
 
+/* chess.com's refuel: games that lost their movetext get it back by
+   refetching their MONTHS (a couple of cheap GETs), since the single-game
+   endpoint is lichess's. */
+function ccRefuel() {
+  bulkState.busy = true;
+  bulkState.at = Date.now();
+  var myGen = gen;
+  var months = {};
+  data.games.forEach(function (g) {
+    if (!scannableAny(g) || g.mv) return;
+    var d = new Date(g.ts);
+    var ym = d.getUTCFullYear() + '/' + String(d.getUTCMonth() + 1).padStart(2, '0');
+    months[ym] = 1;
+  });
+  var list = Object.keys(months).sort().reverse().slice(0, 3);
+  if (!list.length) { bulkState.busy = false; return Promise.resolve(0); }
+  var byId = {};
+  data.games.forEach(function (g) { if (!g.mv && scannableAny(g)) byId[g.id] = g; });
+  var fed = 0;
+  var chain = Promise.resolve();
+  list.forEach(function (ym) {
+    chain = chain.then(function () {
+      if (stale(myGen)) return;
+      return ccJSON('/player/' + encodeURIComponent(cfg.user) + '/games/' + ym, { quiet: true })
+        .then(function (mo) {
+          (mo.games || []).forEach(function (raw) {
+            var shaped = ccShape(raw);
+            if (!shaped) return;
+            var g2 = byId[shaped.id];
+            if (g2 && shaped.moves) {
+              g2.mv = shaped.moves;
+              if (shaped.clocks) g2.ck = shaped.clocks;
+              delete g2.mvMiss;
+              fed++;
+            }
+          });
+        }).catch(function () {});
+    });
+  });
+  return chain.then(function () {
+    if (!stale(myGen) && fed) saveGames(data.games);
+    bulkState.busy = false;
+    return fed;
+  });
+}
+
 function autoScan() {
-  if (scanState.running || SF.state === 'failed') return;
+  scanState.trace = (scanState.trace || []).slice(-9);
+  function tr(x) { scanState.trace.push(x + '@' + (Date.now() % 100000)); }
+  if (scanState.running || SF.state === 'failed') { tr('busy/failed'); return; }
   /* the scan is the politest customer in the shop: it waits out any backoff
      with room to spare rather than being the thing that causes one */
   if (Date.now() < backoffUntil) {
+    tr('backoff');
     setTimeout(autoScan, backoffUntil - Date.now() + 30000);
     return;
   }
   var target = nextScanTarget();
-  if (!target) { scanState.current = null; scanState.pending = false; renderScanStatus(); return; }
+  if (!target) { tr('no-target'); scanState.current = null; scanState.pending = false; renderScanStatus(); return; }
   if (!target.mv && bulkAllowed()) {
     /* refuel first — the same games come back fetchless in a few seconds */
     scanState.running = true;
@@ -8462,12 +8555,30 @@ function autoScan() {
     });
     return;
   }
+  if (isCC() && !target.mv) {
+    if (!bulkState.busy && bulkState.fails < 3 && Date.now() - bulkState.at > 60000) {
+      tr('ccRefuel');
+      scanState.running = true;
+      renderScanStatus();
+      ccRefuel().then(function (fed) {
+        scanState.running = false;
+        if (!fed) bulkState.fails++;
+        setTimeout(autoScan, fed ? 300 : 1000);
+      });
+      return;
+    }
+    tr('mvMiss:' + target.id);
+    target.mvMiss = 1;          /* this month had no copy — skip it */
+    setTimeout(autoScan, 50);
+    return;
+  }
+  tr('scan:' + target.id);
   scanState.running = true;
   scanState.current = target;
   scanState.lastLocal = !!(target.mv && !target.bl);
   renderScanStatus();
   scanGame(target)
-    .catch(function () { target.scanned = 1; })
+    .catch(function (e) { console.error('scan fail', e && e.message); target.scanned = 1; })
     .then(function () {
       scanState.running = false;
       /* the fish stays awake through the breather between games — grey means
@@ -8475,10 +8586,14 @@ function autoScan() {
       scanState.pending = !!nextScanTarget();
       scanState.done++;
       renderScanStatus();
-      renderTrainerInline();
-      /* a retained-movetext scan cost no request — run the next immediately;
-         only scans that had to fetch keep the 20s courtesy gap */
-      setTimeout(autoScan, scanState.lastLocal ? 1200 : 20000);
+      /* the expensive work — serializing the cache, re-mining the trainer's
+         queues — batches across scans instead of taxing every completion */
+      if ((scanState.dirty || 0) >= 5 || !scanState.pending) {
+        scanState.dirty = 0;
+        saveGames(data.games);
+        renderTrainerInline();
+      }
+      setTimeout(autoScan, scanState.lastLocal ? 250 : 20000);
     });
 }
 var FISH = '<svg class="fish" viewBox="0 0 22 14" aria-hidden="true">'
