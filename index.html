@@ -3041,11 +3041,8 @@ function renderHeader() {
     trackedPerfs().forEach(function (p) {
       var perf = data.user.perfs[p];
       if (!perf || !perf.rating || (perf.games === 0 && p !== 'puzzle')) return;
-      var d = data.deltas && data.deltas[p];
       var label = p === 'puzzle' ? 'puzzles' : perfLabel(p);
-      bits.push('<span>' + label + ' <b>' + perf.rating + '</b>'
-        + (d ? ' <span class="' + (d > 0 ? 'win' : 'loss') + '">' + signed(d) + '</span>' : '')
-        + '</span>');
+      bits.push('<span>' + label + ' <b>' + perf.rating + '</b>' + deltaBadge(p) + '</span>');
     });
   }
   el('bar').innerHTML =
@@ -3795,6 +3792,7 @@ function renderCoach() {
       + '<div class="story-side tnum">'
         + perfLabel(perf0) + ' · 90 days'
         + (peak && peak.rating > now ? ' · peak ' + peak.rating + ', ' + (peak.rating - now) + ' away' : '')
+        + (deltaBadge(prof.perf) ? ' · past month' + deltaBadge(prof.perf) : '')
         + (masteredCount() ? ' · ' + masteredCount() + ' mistakes trained' : '')
       + '</div>'
       + know.map(function (k) { return '<div class="story-goal">' + k + '</div>'; }).join('')
@@ -3808,7 +3806,7 @@ function renderCoach() {
       var rt = data.user && data.user.perfs && data.user.perfs[pf]
         ? data.user.perfs[pf].rating : null;
       return { text: perfLabel(pf), k: pf, act: 'coachPerf', on: mainPerf() === pf,
-               stat: rt, statClass: 'dim' };
+               stat: rt != null ? rt + deltaBadge(pf) : null, statClass: 'dim' };
     }));
   }
 
@@ -8384,11 +8382,28 @@ function buildSeries() {
     data.series[p] = {
       points: recent.length >= 2 ? recent.map(rating) : list.slice(-12).map(rating)
     };
-    var today = list.filter(function (g) { return g.ts >= midnight.getTime(); });
-    if (today.length) {
-      data.deltas[p] = today.reduce(function (a, g) { return a + (g.rd || 0); }, 0);
+    /* the product's one progress window: the past 30 days, same as the
+       blunder trend. Baseline = rating after the last game older than 30d,
+       or the pre-rating of the oldest in-window game for newer accounts. */
+    var monthCut = Date.now() - 30 * 864e5;
+    var older = list.filter(function (g) { return g.ts < monthCut; });
+    var inWin = list.filter(function (g) { return g.ts >= monthCut; });
+    if (inWin.length) {
+      var base = older.length ? rating(older[older.length - 1]) : inWin[0].myR;
+      var cur = data.user && data.user.perfs && data.user.perfs[p]
+        ? data.user.perfs[p].rating : rating(list[list.length - 1]);
+      data.deltas[p] = cur - base;
     }
   });
+}
+
+/* the marker itself, everywhere a rating shows: green up, red down */
+function deltaBadge(p) {
+  var d = data.deltas && data.deltas[p];
+  if (d == null || !isFinite(d) || Math.abs(d) < 1) return '';
+  return ' <span class="' + (d > 0 ? 'win' : 'loss')
+    + ' tnum" style="font-size:.82em" title="past 30 days">'
+    + (d > 0 ? '▲' : '▼') + Math.abs(Math.round(d)) + '</span>';
 }
 
 /* The annotated 1000-game export takes Lichess several seconds to even
