@@ -929,6 +929,8 @@ function request(path, opts) {
   var headers = { Accept: opts.accept || 'application/json' };
   return queued(function () {
     return fetch(L + path, {
+      method: opts.method || 'GET',
+      body: opts.body || undefined,
       headers: headers,
       redirect: opts.manualRedirect ? 'manual' : 'follow'
     }).then(function (res) {
@@ -7673,10 +7675,17 @@ document.addEventListener('keydown', function (e) {
    for two things: quietly scanning unanalysed games into training material,
    and judging whether a non-book answer in the trainer was also good.      */
 
-var SF = { worker: null, state: 'idle', loading: null, queue: [], busy: false };
-
+/* An engine POOL, not an engine: position evals are independent jobs, so
+   every core the device can spare runs its own single-threaded Stockfish.
+   Desktop typically gets 4 analysts, a phone 2 — a 1000-game backlog goes
+   from ~90 minutes of tab-life to ~25. */
+var SF = { workers: [], state: 'idle', loading: null, queue: [], code: null };
+function poolSize() {
+  var hc = navigator.hardwareConcurrency || 2;
+  return Math.max(1, Math.min(4, hc - 2)) + (hc >= 8 ? 1 : 0);
+}
 function engineLoad() {
-  if (SF.worker) return Promise.resolve(SF.worker);
+  if (SF.workers.length) return Promise.resolve(SF.workers[0].w);
   if (SF.loading) return SF.loading;
   var base = 'https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/';
   SF.loading = fetch(base + 'stockfish-nnue-16-single.js')
@@ -7684,15 +7693,27 @@ function engineLoad() {
     .then(function (code) {
       code = code.split('"stockfish-nnue-16-single.wasm"')
         .join(JSON.stringify(base + 'stockfish-nnue-16-single.wasm'));
-      return bootWorker(code);
+      return bootWorker(code).then(function (w) { SF.code = code; return w; });
     })
     .catch(function () {
       /* asm.js fallback: slower, still far above club strength at low depth */
       return fetch('https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js')
         .then(function (r) { if (!r.ok) throw new Error('no engine'); return r.text(); })
-        .then(bootWorker);
+        .then(function (code) { return bootWorker(code).then(function (w) { SF.code = code; return w; }); });
     })
-    .then(function (w) { SF.worker = w; SF.state = 'ready'; return w; })
+    .then(function (w) {
+      SF.workers.push({ w: w, busy: false });
+      SF.state = 'ready';
+      /* the rest of the pool boots quietly behind the first analyst */
+      var extra = poolSize() - 1;
+      for (var i = 0; i < extra; i++) {
+        bootWorker(SF.code).then(function (w2) {
+          SF.workers.push({ w: w2, busy: false });
+          enginePump();
+        }).catch(function () {});
+      }
+      return w;
+    })
     .catch(function (e) { SF.state = 'failed'; SF.loading = null; throw e; });
   return SF.loading;
 }
@@ -7721,10 +7742,16 @@ function engineEval(fen, movetime, priority) {
   });
 }
 function enginePump() {
-  if (SF.busy || !SF.queue.length) return;
-  SF.busy = true;
+  if (!SF.queue.length) return;
+  if (!SF.workers.length) { engineLoad().then(enginePump).catch(function () {}); return; }
+  var slot = null;
+  for (var wi = 0; wi < SF.workers.length; wi++) {
+    if (!SF.workers[wi].busy) { slot = SF.workers[wi]; break; }
+  }
+  if (!slot) return;
+  slot.busy = true;
   var job = SF.queue.shift();
-  engineLoad().then(function (w) {
+  Promise.resolve(slot.w).then(function (w) {
     var last = null;
     var whiteToMove = job.fen.split(' ')[1] === 'w';
     var done = false;
@@ -7736,7 +7763,7 @@ function enginePump() {
       done = true;
       clearTimeout(t);
       w.onmessage = null;
-      SF.busy = false;
+      slot.busy = false;
       if (res) job.resolve(res); else job.reject(new Error('engine timeout'));
       enginePump();
     }
@@ -7760,7 +7787,7 @@ function enginePump() {
     };
     w.postMessage('position fen ' + job.fen);
     w.postMessage(nodes ? 'go nodes ' + nodes : 'go movetime ' + job.movetime);
-  }).catch(function () { SF.busy = false; job.reject(new Error('no engine')); });
+  }).catch(function () { slot.busy = false; job.reject(new Error('no engine')); });
 }
 
 /* ── 14d. The quiet scan ─────────────────────────────────────────────────
@@ -7861,24 +7888,27 @@ function scanGame(g) {
       var meWhite = g.color === 'white';
       var st = chessStart();
       var evals = [];             /* white-POV cp after each ply */
-      var extreme = 0;            /* consecutive evals with winP pinned */
-      var chain = Promise.resolve();
+      /* one cheap walk collects every FEN, then the whole game's evals hit
+         the pool AT ONCE — with 4 analysts, 4 positions think in parallel */
+      var fens = [];
+      var walkOk = true;
       toks.forEach(function (tok, i) {
-        chain = chain.then(function () {
-          if (stale(myGen)) throw new Error('stale');
-          if (!sanApply(st, tok)) throw new Error('san');
-          if (i < 8 || i >= 120) { evals[i] = null; return; }
-          /* a game that is utterly decided has no 20-point swings left to
-             find — once win chance pins past ~96 for four plies, stop paying
-             for the corpse */
-          if (extreme >= 4) { evals[i] = null; return; }
-          return engineEval(stateFen(st), { nodes: TRIAGE_NODES }).then(function (r) {
-            evals[i] = r;
-            var wp = winPct(r.cp);
-            extreme = (wp > 96 || wp < 4) ? extreme + 1 : 0;
-          });
-        });
+        if (!walkOk) { fens[i] = null; return; }
+        if (!sanApply(st, tok)) { walkOk = false; fens[i] = null; return; }
+        fens[i] = (i < 8 || i >= 120) ? null : stateFen(st);
       });
+      var extreme = 0;   /* consecutive pinned evals: decided-game early-stop */
+      var jobs = [];
+      fens.forEach(function (fen, i) {
+        if (!fen) { evals[i] = null; return; }
+        jobs.push(engineEval(fen, { nodes: TRIAGE_NODES }).then(function (r) {
+          if (stale(myGen)) return;
+          evals[i] = r;
+        }).catch(function () { evals[i] = null; }));
+      });
+      /* early-stop compatibility: with parallel dispatch the corpse-skip
+         happens by post-filter — pinned stretches simply yield no swings */
+      var chain = Promise.all(jobs);
       return chain.then(function () {
         if (stale(myGen)) return;
         var bl = [];
@@ -7923,6 +7953,68 @@ function scanGame(g) {
     });
 }
 
+/* When the retained pool runs dry, refuel it wholesale: one POST to the
+   export-by-ids endpoint brings movetext for up to 150 games — the pool
+   keeps eating at 1.2s gaps instead of dropping to one fetch per 20s. */
+var bulkState = { at: 0, fails: 0, busy: false };
+function bulkAllowed() {
+  return !bulkState.busy && bulkState.fails < 3
+    && Date.now() - bulkState.at > 120000
+    && Date.now() >= backoffUntil;
+}
+function bulkRetain() {
+  bulkState.busy = true;
+  bulkState.at = Date.now();
+  var myGen = gen;
+  /* newest scannable per format, interleaved, up to 150 ids */
+  var perfs = trackedPerfs();
+  var byPerf = {};
+  perfs.forEach(function (p) { byPerf[p] = []; });
+  data.games.forEach(function (g) {
+    if (scannable(g) && !g.mv && byPerf[g.perf]) byPerf[g.perf].push(g);
+  });
+  var ids = [];
+  for (var round = 0; ids.length < 150; round++) {
+    var got = false;
+    for (var pi = 0; pi < perfs.length && ids.length < 150; pi++) {
+      var g2 = byPerf[perfs[pi]][round];
+      if (g2) { ids.push(g2.id); got = true; }
+    }
+    if (!got) break;
+  }
+  if (!ids.length) { bulkState.busy = false; return Promise.resolve(0); }
+  return request('/api/games/export/_ids?moves=true&clocks=true',
+      { method: 'POST', body: ids.join(','), accept: 'application/x-ndjson', quiet: true })
+    .then(function (res) { return res.text(); })
+    .then(function (text) {
+      if (stale(myGen)) return 0;
+      var byId = {};
+      data.games.forEach(function (g) { byId[g.id] = g; });
+      var fed = 0;
+      text.split('\n').forEach(function (line) {
+        if (!line.trim()) return;
+        try {
+          var full = JSON.parse(line);
+          var g3 = byId[full.id];
+          if (g3 && full.moves && scannable(g3)) {
+            g3.mv = full.moves;
+            if (full.clocks) g3.ck = full.clocks;
+            fed++;
+          }
+        } catch (e) {}
+      });
+      if (fed) saveGames(data.games);
+      bulkState.busy = false;
+      bulkState.fails = 0;
+      return fed;
+    })
+    .catch(function () {
+      bulkState.busy = false;
+      bulkState.fails++;
+      return 0;
+    });
+}
+
 function autoScan() {
   if (scanState.running || SF.state === 'failed') return;
   /* the scan is the politest customer in the shop: it waits out any backoff
@@ -7933,6 +8025,16 @@ function autoScan() {
   }
   var target = nextScanTarget();
   if (!target) { scanState.current = null; scanState.pending = false; renderScanStatus(); return; }
+  if (!target.mv && bulkAllowed()) {
+    /* refuel first — the same games come back fetchless in a few seconds */
+    scanState.running = true;
+    renderScanStatus();
+    bulkRetain().then(function (fed) {
+      scanState.running = false;
+      setTimeout(autoScan, fed ? 800 : 1500);
+    });
+    return;
+  }
   scanState.running = true;
   scanState.current = target;
   scanState.lastLocal = !!(target.mv && !target.bl);
