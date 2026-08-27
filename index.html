@@ -5041,11 +5041,6 @@ function boardSvg(st, opts) {
       if (opts.sel === sq)
         out += '<rect x="' + x + '" y="' + y + '" width="' + SZ + '" height="' + SZ
           + '" fill="' + HL_SEL + '" style="pointer-events:none"/>';
-      if (opts.hint === sq) {
-        out += '<circle cx="' + (x + SZ / 2) + '" cy="' + (y + SZ / 2) + '" r="' + (SZ / 2 - 2.5)
-          + '" fill="none" stroke="rgba(182,130,53,.9)" stroke-width="3.5"'
-          + ' style="pointer-events:none" class="hint-ring"/>';
-      }
       if (opts.check === sq) {
         out += '<circle cx="' + (x + SZ / 2) + '" cy="' + (y + SZ / 2) + '" r="' + (SZ * 0.52)
           + '" fill="url(#checkglow)" style="pointer-events:none"/>';
@@ -5115,6 +5110,19 @@ function boardSvg(st, opts) {
       + '<line class="bad-arrow" x1="' + bx1 + '" y1="' + by1 + '" x2="' + btx + '" y2="' + bty
       + '" stroke="rgba(190,72,60,.8)" stroke-width="6" stroke-linecap="round"'
       + ' marker-end="url(#ahbad)" style="pointer-events:none"/>';
+  }
+  /* the hint ring paints AFTER pieces and the mistake arrow — SVG stacks
+     by order, and a hint buried under a red arrow is no hint at all */
+  if (opts.hint != null) {
+    var hf = flip ? 7 - opts.hint % 8 : opts.hint % 8;
+    var hr = flip ? (opts.hint >> 3) : 7 - (opts.hint >> 3);
+    var hx = hf * SZ + SZ / 2, hy = hr * SZ + SZ / 2;
+    out += '<circle cx="' + hx + '" cy="' + hy + '" r="' + (SZ / 2 - 2.5)
+      + '" fill="none" stroke="rgba(20,14,8,.55)" stroke-width="6"'
+      + ' style="pointer-events:none"/>'
+      + '<circle cx="' + hx + '" cy="' + hy + '" r="' + (SZ / 2 - 2.5)
+      + '" fill="none" stroke="rgba(182,130,53,.95)" stroke-width="3.5"'
+      + ' style="pointer-events:none" class="hint-ring"/>';
   }
   /* drawn shapes: the calculation scaffolding, lichess-green */
   if (opts.shapes && opts.shapes.length) {
