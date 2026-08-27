@@ -227,7 +227,7 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.7) sepia(.4);
 .fish-on .scan-count{color:var(--gold-quiet)}
 @media (prefers-reduced-motion:no-preference){
   .fish-on .fish{animation:swim 1.6s ease-in-out infinite}
-  @keyframes swim{0%,100%{transform:translateX(0)}50%{transform:translateX(-2.5px)}}
+  @keyframes swim{0%,100%{transform:translateX(0)}50%{transform:translateX(-4.5px)}}
 }
 .streak-badge{display:inline-flex;align-items:baseline;gap:5px;color:var(--gold);font-size:14px}
 .streak-badge b{font-weight:400;color:var(--link-hover)}
@@ -2937,7 +2937,8 @@ function renderHeader() {
         : '')
     + '<div class="ratings">' + (bits.join('') || '<span class="dim">&nbsp;</span>')
       + (data.sections.games === 'loading' && data.games.length
-          ? '<span class="dim" style="font-size:11px;margin-left:12px">updating games…</span>' : '')
+          ? '<span class="dim tnum" style="font-size:11px;margin-left:12px">updating games… '
+            + (data.gamesCount || 0) + ' / ' + cfg.gameLimit + '</span>' : '')
       + '</div>'
     + '<div class="bar-right">'
       + '<span class="hint"><span class="key">/</span> search · <span class="key">1</span>–<span class="key">' + VIEWS.length + '</span> tabs · <span class="key">?</span> keys</span>'
@@ -7765,7 +7766,7 @@ function loadGames() {
       }
     }
     /* Cheap: only the two places that show a count. */
-    if (n % 25 === 0) { renderFoot(); }
+    if (n % 25 === 0) { renderFoot(); if (data.games.length) renderHeader(); }
   }, function (partial) {
     if (stale(myGen)) return;
     data.games = partial;
