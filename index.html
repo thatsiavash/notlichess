@@ -1253,12 +1253,16 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
     .then(function (a) {
       var months = (a.archives || []).slice().reverse();   /* newest first */
       var idx = 0;
-      var MAX_MONTHS = 24;   /* two years of hunting is enough — floors are
-                                best-effort against genuinely rare formats */
+      var fruitful = 0;      /* months that actually contained games */
+      var MAX_FRUITFUL = 24; /* two years of PLAYING is enough — a dormant
+                                account's empty months cost nothing to skip */
       function step() {
-        if (idx >= months.length || idx >= MAX_MONTHS) return null;
+        if (idx >= months.length || fruitful >= MAX_FRUITFUL) return null;
         var merged = mergeAll();
-        if (floorsMet(merged)) return null;
+        /* the foreground walk stops the moment the window is full — the
+           per-format floor hunt continues in the background so onboarding
+           never stalls at "nearly there" */
+        if (merged.length >= cfg.gameLimit) return null;
         if (since && merged.length >= cfg.gameLimit) return null;
         var url = months[idx].replace(CC, '');
         idx++;
@@ -1288,6 +1292,7 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
             painted = true;
             onFirstPaint(mergeAll());
           }
+          if (mo.games && mo.games.length) fruitful++;
           /* incremental runs stop at the first month older than the cache */
           if (since && mo.games && mo.games.length
               && (mo.games[0].end_time || 0) * 1000 <= since) return null;
@@ -1296,6 +1301,46 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
       }
       return Promise.resolve(step()).then(function () {
         var merged = mergeAll();
+        /* floors unmet and history remains: keep walking quietly */
+        if (!floorsMet(merged) && idx < months.length && fruitful < MAX_FRUITFUL) {
+          var bgGen = gen;
+          setTimeout(function bg() {
+            if (stale(bgGen)) return;
+            var listNow = data.games;
+            var counts = {};
+            listNow.forEach(function (g6) { counts[g6.perf] = (counts[g6.perf] || 0) + 1; });
+            var done = trackedPerfs().every(function (pf) { return (counts[pf] || 0) >= effFloor; });
+            if (done || idx >= months.length || fruitful >= MAX_FRUITFUL) return;
+            var url2 = months[idx].replace(CC, '');
+            idx++;
+            ccJSON(url2, { quiet: true }).then(function (mo2) {
+              if (stale(bgGen)) return;
+              if (mo2.games && mo2.games.length) fruitful++;
+              var byId = {};
+              data.games.forEach(function (g7) { byId[g7.id] = 1; });
+              var added = 0;
+              (mo2.games || []).slice().reverse().forEach(function (raw2) {
+                if ((counts[raw2.time_class] || 0) >= effFloor) return;
+                var shaped2 = ccShape(raw2);
+                if (!shaped2 || byId[shaped2.id]) return;
+                var c2 = compact(shaped2, meId);
+                if (!c2) return;
+                c2.u = shaped2.ccUrl;
+                data.games.push(c2);
+                counts[c2.perf] = (counts[c2.perf] || 0) + 1;
+                added++;
+              });
+              if (added) {
+                data.games.sort(function (a2, b2) { return b2.ts - a2.ts; });
+                retainMovetext();
+                saveGames(data.games);
+                profileCache = null; detectorCache = null; repCache = null; lineCache = null;
+                renderAll();
+              }
+              setTimeout(bg, 900);
+            }).catch(function () { setTimeout(bg, 5000); });
+          }, 1500);
+        }
         return { games: merged, count: merged.length };
       });
     });
@@ -7730,12 +7775,6 @@ document.addEventListener('click', function (e) {
       renderFirstVisit(keepU);
       break;
     }
-    case 'narrContinue':
-      data.narrate = false;
-      data.freshOnboard = true;
-      renderShell();
-      renderAll();
-      break;
     case 'firstSet':
       data.freshOnboard = false;
       data.autoStarted = true;
@@ -8810,6 +8849,12 @@ function loadGames() {
     if (stale(myGen)) return;
     data.games = payload.games;
     data.sections.games = 'ok';
+    if (data.narrate) {
+      var totalRead = payload.games.length;
+      narrLine('games', totalRead < cfg.gameLimit
+        ? 'Read all <span class="tnum">' + totalRead + '</span> of your games — every one you have.'
+        : 'Read your last <span class="tnum">' + totalRead + '</span> games.');
+    }
     computeGreeting();
     renderTrainerInline();   /* the session auto-starts the moment games are in */
     buildSeries();
@@ -9065,7 +9110,7 @@ function renderNarration() {
     + '<div class="kicker" style="margin-bottom:18px">building your program</div>'
     + '<h1>Reading ' + esc(cfg.user) + "'s chess.</h1>"
     + '<div id="narr" class="narr" aria-live="polite"></div>'
-    + '<div id="narr-actions" style="margin-top:18px"></div>'
+
     + '</div>'
     + '<div id="narr-stage">' + narrBoards() + '</div>'
     + '<div style="max-width:720px;margin:0 auto">'
@@ -9176,16 +9221,12 @@ function finishNarration() {
         ? 'Found the gap: ' + esc(w[0].phrase) + '. Building your plan around it.'
         : 'Nothing behind players at your rating. Building your program.')
     : 'Building your program.');
-  /* games are in; now Stockfish takes over in the background. Say so in
-     plain words, keep the theater running, and let the user choose when
-     to walk through the door. */
-  narrLine('engine', 'Stockfish is now studying your games in the background. '
-    + 'Keep this tab open — every minute sharpens your coach and your trainings. '
-    + 'You can start right away.');
-  var stage = el('narr-actions');
-  if (stage) {
-    stage.innerHTML = '<a class="btn-big btn-pulse" data-act="narrContinue">Continue</a>';
-  }
+  setTimeout(function () {
+    data.narrate = false;
+    data.freshOnboard = true;   /* the first landing explains before it deals */
+    renderShell();
+    renderAll();
+  }, 900);
 }
 
 function renderNoAccount() {
