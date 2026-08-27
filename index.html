@@ -801,6 +801,8 @@ var LIMIT_CHOICES = [200, 500, 1000, 2000, 3000];
 
 var params = new URLSearchParams(location.search);
 var urlUser = (params.get('u') || params.get('user') || '').trim();
+var urlSrc = (params.get('src') || '').trim();
+var urlSrc = params.get('src');
 
 /* Defaults per format lean no-increment: the most-played pools, and a
    clean three-tile Play stage for a fresh account. Increments stay one tap
@@ -819,8 +821,11 @@ var cfg = {
   gameLimit: store.get('nl:gameLimit', 1000),
   reviewTcs: store.get('nl:reviewTcs', null),
   fromDate: store.get('nl:fromDate', null),
-  newTab: store.get('nl:newTab', true)
+  newTab: store.get('nl:newTab', true),
+  src: (urlSrc === 'chesscom' || urlSrc === 'lichess') ? urlSrc : store.get('nl:src', 'lichess')
 };
+function isCC() { return cfg.src === 'chesscom'; }
+var CC = 'https://api.chess.com/pub';
 function applyLinkTarget() {
   var b = document.getElementById('basetag');
   if (b) b.target = cfg.newTab ? '_blank' : '_self';
@@ -887,16 +892,21 @@ function setPerfs(perfs) {
 
 var L = 'https://lichess.org';
 function playHref(tc) {
+  if (isCC()) return 'https://www.chess.com/play/online';
   if (POOL_TC.indexOf(tc) !== -1) return L + '/#pool/' + tc;
   var p = tcParts(tc);
   return L + '/?time=realTime&minutesPerSide=' + p.min + '&increment=' + p.inc + '&gameMode=rated#hook';
 }
-function userHref(u) { return L + '/@/' + encodeURIComponent(u); }
+function userHref(u) {
+  if (isCC()) return 'https://www.chess.com/member/' + encodeURIComponent(u);
+  return L + '/@/' + encodeURIComponent(u);
+}
 function perfHref(u, perf) { return L + '/@/' + encodeURIComponent(u) + '/perf/' + perf; }
 function insightsHref(u, metric, dim) {
   return L + '/insights/' + encodeURIComponent(u) + (metric ? '/' + metric + '/' + dim : '');
 }
 function gameHref(id, color, ply) {
+  if (isCC()) return 'https://www.chess.com/game/live/' + id;
   return L + '/' + id + (color ? '/' + color : '') + (ply ? '#' + ply : '');
 }
 /* Tutor: the /tutor/{user}/{range}/{perf}/{angle} shape exists, but the angle
@@ -933,7 +943,7 @@ function request(path, opts) {
   opts = opts || {};
   var headers = { Accept: opts.accept || 'application/json' };
   return queued(function () {
-    return fetch(L + path, {
+    return fetch(opts.abs ? path : L + path, {
       method: opts.method || 'GET',
       body: opts.body || undefined,
       headers: headers,
@@ -1118,6 +1128,163 @@ function evalMetrics(analysis, meIsWhite, moves) {
   };
 }
 
+/* ── chess.com adapter ───────────────────────────────────────────────────
+   Emits Lichess-SHAPED game objects, so compact() and everything above it
+   — the scan pipeline, the sets, the coach, the openings — never know
+   which site the games came from. Public API, no auth, CORS-open, and
+   past-month archives never change.                                       */
+
+function ccParsePgn(pgn) {
+  var cut = pgn.lastIndexOf('\n\n');
+  var body = cut >= 0 ? pgn.slice(cut + 2) : pgn;
+  var moves = [], clocks = [];
+  var re = /\{[^}]*\}|\S+/g, m2, tok;
+  while ((m2 = re.exec(body))) {
+    tok = m2[0];
+    if (tok[0] === '{') {
+      var ck = tok.match(/%clk (\d+):(\d+):(\d+(?:\.\d+)?)/);
+      if (ck && moves.length) {
+        clocks[moves.length - 1] = Math.round(
+          ((+ck[1]) * 3600 + (+ck[2]) * 60 + parseFloat(ck[3])) * 100);
+      }
+      continue;
+    }
+    if (/^\d+\.+$/.test(tok)) continue;
+    if (tok === '1-0' || tok === '0-1' || tok === '1/2-1/2' || tok === '*') break;
+    moves.push(tok.replace(/[?!]+$/, ''));
+  }
+  for (var ci = 0; ci < moves.length; ci++) if (clocks[ci] == null) clocks[ci] = 0;
+  return { moves: moves.join(' '), clocks: clocks.some(function (c) { return c > 0; }) ? clocks : null };
+}
+
+function ccOpeningName(pgn) {
+  var m3 = pgn.match(/ECOUrl "[^"]*\/openings\/([^"]+)"/);
+  if (!m3) return null;
+  var slug = m3[1].replace(/(\.{3}|-\d+\.).*$/, '');
+  var words = slug.split('-').filter(Boolean);
+  if (!words.length) return null;
+  var name = words.join(' ');
+  /* synthesize the Family: Variation shape the rest of the app groups by */
+  if (words.length > 2) return words.slice(0, 2).join(' ') + ': ' + words.slice(2).join(' ');
+  return name;
+}
+
+var CC_STATUS = { checkmated: 'mate', timeout: 'outoftime', resigned: 'resign',
+                  abandoned: 'resign', win: '', stalemate: 'stalemate',
+                  agreed: 'draw', repetition: 'draw', insufficient: 'draw',
+                  '50move': 'draw', timevsinsufficient: 'draw' };
+
+function ccShape(g) {
+  if (g.rules !== 'chess' || g.rated !== true) return null;
+  if (['bullet', 'blitz', 'rapid'].indexOf(g.time_class) === -1) return null;
+  var tcBits = String(g.time_control).split('+');
+  var initial = parseInt(tcBits[0], 10);
+  if (!isFinite(initial) || initial <= 0) return null;
+  var parsed = ccParsePgn(g.pgn || '');
+  if (!parsed.moves) return null;
+  var wRes = g.white.result, bRes = g.black.result;
+  var winner = wRes === 'win' ? 'white' : (bRes === 'win' ? 'black' : null);
+  var loserRes = winner === 'white' ? bRes : (winner === 'black' ? wRes : wRes);
+  return {
+    id: (g.url || '').split('/').pop() || g.uuid,
+    ccUrl: g.url || null,
+    rated: true, variant: 'standard',
+    speed: g.time_class, perf: g.time_class,
+    createdAt: (g.end_time || 0) * 1000,
+    status: CC_STATUS[loserRes] || 'draw',
+    winner: winner,
+    players: {
+      white: { user: { name: g.white.username, id: String(g.white.username).toLowerCase() },
+               rating: g.white.rating },
+      black: { user: { name: g.black.username, id: String(g.black.username).toLowerCase() },
+               rating: g.black.rating }
+    },
+    opening: { name: ccOpeningName(g.pgn || '') },
+    moves: parsed.moves,
+    clocks: parsed.clocks,
+    clock: { initial: initial, increment: parseInt(tcBits[1], 10) || 0 }
+  };
+}
+
+function ccJSON(path, opts) {
+  opts = opts || {};
+  opts.abs = true;
+  return request(CC + path, opts).then(function (res) {
+    if (res.status === 404) { var e = new Error('404'); e.code = 404; throw e; }
+    if (!res.ok) throw new Error('cc ' + res.status);
+    return res.json();
+  });
+}
+
+/* the walker: newest months first, until the window and every tracked
+   format's floor are satisfied (or history runs out) */
+function ccFetchGames(meId, onProgress, onFirstPaint) {
+  var cached = loadCachedGames();
+  if (!cached.games.length && data.games.length) {
+    cached = { games: data.games, ts: 0, perfs: '' };
+  }
+  var since = cached.ts || 0;
+  var got = [], painted = false, n = 0;
+  var mergeAll = function () {
+    var seen = {}, out = [];
+    got.concat(cached.games).forEach(function (c) {
+      if (!c || seen[c.id]) return;
+      seen[c.id] = 1;
+      out.push(c);
+    });
+    out.sort(function (a, b) { return b.ts - a.ts; });
+    return out;
+  };
+  var floorsMet = function (list) {
+    if (list.length >= cfg.gameLimit) {
+      var counts = {};
+      list.forEach(function (g) { counts[g.perf] = (counts[g.perf] || 0) + 1; });
+      return trackedPerfs().every(function (pf) {
+        return (counts[pf] || 0) >= MIN_PER_FORMAT;
+      });
+    }
+    return false;
+  };
+  return ccJSON('/player/' + encodeURIComponent(cfg.user) + '/games/archives', { quiet: true })
+    .then(function (a) {
+      var months = (a.archives || []).slice().reverse();   /* newest first */
+      var idx = 0;
+      function step() {
+        if (idx >= months.length) return null;
+        var merged = mergeAll();
+        if (floorsMet(merged)) return null;
+        if (since && merged.length >= cfg.gameLimit) return null;
+        var url = months[idx].replace(CC, '');
+        idx++;
+        return ccJSON(url, { quiet: idx > 2 }).then(function (mo) {
+          (mo.games || []).slice().reverse().forEach(function (raw) {
+            var shaped = ccShape(raw);
+            if (!shaped) return;
+            if (since && shaped.createdAt <= since) return;
+            var c = compact(shaped, meId);
+            if (!c) return;
+            c.u = shaped.ccUrl;
+            got.push(c);
+            n++;
+            if (onProgress) onProgress(n);
+          });
+          if (!painted && mergeAll().length >= FIRST_PAINT && onFirstPaint) {
+            painted = true;
+            onFirstPaint(mergeAll());
+          }
+          /* incremental runs stop at the first month older than the cache */
+          if (since && mo.games && mo.games.length
+              && (mo.games[0].end_time || 0) * 1000 <= since) return null;
+          return step();
+        }).catch(function () { return step(); });
+      }
+      return Promise.resolve(step()).then(function () {
+        var merged = mergeAll();
+        return { games: merged, count: merged.length };
+      });
+    });
+}
+
 function compact(g, meId) {
   var w = g.players && g.players.white, b = g.players && g.players.black;
   if (!w || !b) return null;
@@ -1196,7 +1363,11 @@ function compact(g, meId) {
 }
 
 var CACHE_VERSION = 9;   /* bump whenever the compact record shape changes */
-function cacheKey() { return 'nl:games:' + String(cfg.user).toLowerCase(); }
+function cacheKey() {
+  /* lichess keeps its historical key; chess.com namespaces to avoid a
+     same-name collision across sites */
+  return 'nl:games:' + (isCC() ? 'cc:' : '') + String(cfg.user).toLowerCase();
+}
 
 function loadCachedGames() {
   var c = store.get(cacheKey(), null);
@@ -1250,6 +1421,7 @@ function saveGames(games) {
 var GAME_PARAMS = 'rated=true&evals=true&accuracy=true&opening=true&clocks=true&division=true&sort=dateDesc';
 
 function fetchGames(meId, onProgress, onFirstPaint) {
+  if (isCC()) return ccFetchGames(meId, onProgress, onFirstPaint);
   var cached = loadCachedGames();
   /* a format change invalidates the stored cache, but what is already on
      screen is still real — merge against it so nothing vanishes mid-fetch */
@@ -1700,6 +1872,10 @@ function fenAtPly(gameId, moves, plies) {
   return out;
 }
 function analysisHref(fen, color) {
+  if (isCC()) {
+    return 'https://www.chess.com/analysis?fen=' + encodeURIComponent(fen)
+      + (color === 'black' ? '&flip=true' : '');
+  }
   return L + '/analysis/standard/' + fen.replace(/ /g, '_')
     + (color === 'black' ? '?color=black' : '');
 }
@@ -1803,16 +1979,27 @@ var BOOK = {"source":"lichess_db_standard_rated_2026-07","games":6707721,"depth"
 
 function peerOpening(family, colour, rating) {
   if (!PEER.openings || rating == null) return null;
-  var b = rating < 1200 ? 1000 : (rating < 1600 ? 1400 : (rating < 2000 ? 1800 : 2200));
+  var r2 = bandEquivRating(mainPerf(), rating);
+  var b = r2 < 1200 ? 1000 : (r2 < 1600 ? 1400 : (r2 < 2000 ? 1800 : 2200));
   var band = PEER.openings[String(b)];
   var row = band && band[family];
   if (!row) return null;
   return colour === 'white' ? row[0] : row[1];
 }
 
+/* chess.com and Lichess ratings live on different scales. Published
+   equivalences put club-level Lichess numbers a few hundred above
+   chess.com's, widest in blitz. All peer/book comparisons band on the
+   Lichess-equivalent rating; the site's own rating still displays raw. */
+var CC_OFFSET = { bullet: 250, blitz: 300, rapid: 150 };
+function bandEquivRating(perf, rating) {
+  if (rating == null) return null;
+  return isCC() ? rating + (CC_OFFSET[perf] != null ? CC_OFFSET[perf] : 200) : rating;
+}
 function peerCell(perf, rating) {
   if (!PEER.cells || rating == null) return null;
-  var b = Math.max(800, Math.min(2400, Math.floor(rating / 100) * 100));
+  var r = bandEquivRating(perf, rating);
+  var b = Math.max(800, Math.min(2400, Math.floor(r / 100) * 100));
   return PEER.cells[perf + '|' + b] || null;
 }
 
@@ -2142,6 +2329,7 @@ function skillProfile() {
   var rows = [];
 
   SKILLS.forEach(function (sk) {
+    if (sk.key === 'review' && isCC()) return;   /* lichess-only concept */
     var mine = null;
     try { mine = sk.compute(gs); } catch (e) { mine = null; }
     if (!mine) return;
@@ -3081,13 +3269,21 @@ function renderFirstVisit(prefill) {
     + '<div class="kicker" style="margin-bottom:16px">notlichess.org</div>'
     + '<h1>Stop repeating your mistakes.</h1>'
     + '<p class="lede">You play, you lose the same way twice, nothing changes. This page reads '
-    + 'your Lichess games and turns them into daily missions: retry the exact positions where '
+    + 'your Lichess or chess.com games and turns them into daily missions: retry the exact positions where '
     + 'you lost points, spaced out until they stay fixed. Learn and drill your opening book '
     + 'against the moves your rating actually faces. A coach that picks one thing to fix, '
     + 'measured against millions of games at your level.</p>'
 
+    + '<div class="chips" style="margin-bottom:10px">'
+      + [['lichess', 'lichess.org'], ['chesscom', 'chess.com']].map(function (o) {
+          var on = cfg.src === o[0];
+          return '<a class="chip-sm ' + (on ? 'chip-on' : 'chip-off') + '" data-act="srcPick" data-k="'
+            + o[0] + '">' + (on ? '✓ ' : '') + o[1] + '</a>';
+        }).join('')
+    + '</div>'
     + '<div class="first-form">'
-      + '<input class="input" id="firstUser" placeholder="Your Lichess username" autocomplete="off" '
+      + '<input class="input" id="firstUser" placeholder="Your ' + (isCC() ? 'chess.com' : 'Lichess')
+      + ' username" autocomplete="off" '
       + 'spellcheck="false" value="' + esc(prefill || '') + '" style="width:250px">'
       + '<button class="btn-outline" data-act="setUser">Analyze games</button>'
     + '</div>'
@@ -3104,7 +3300,7 @@ function renderFirstVisit(prefill) {
           + 'games by players at exactly your rating.')
       + valueItem('Free, and actually yours',
           'No account, no subscription, no server. Open source, runs in your browser, and '
-          + 'every action lands on lichess.org signed in as you.')
+          + 'every action lands on your own chess site signed in as you.')
     + '</div>'
 
     + '<p class="dim first-foot">Daily missions, a streak worth keeping, and everything built '
@@ -3402,12 +3598,18 @@ function renderPlay() {
     + '<div class="tiles">' + tiles + '</div>'
     + editPanel
     + '<div class="set-head" style="margin-top:26px;padding-bottom:8px"><span class="kicker">sharpen</span></div>'
-    + '<div class="chips">'
-      + '<a class="chip" href="' + L + '/training">Puzzles</a>'
-      + '<a class="chip" href="' + L + '/storm">Storm</a>'
-      + '<a class="chip" href="' + L + '/racer">Racer</a>'
-      + '<a class="chip" href="' + L + '/training/daily">Daily puzzle</a>'
-    + '</div>'
+    + (isCC()
+        ? '<div class="chips">'
+          + '<a class="chip" href="https://www.chess.com/puzzles/rated">Puzzles</a>'
+          + '<a class="chip" href="https://www.chess.com/puzzles/rush">Puzzle Rush</a>'
+          + '<a class="chip" href="https://www.chess.com/daily-chess-puzzle">Daily puzzle</a>'
+          + '</div>'
+        : '<div class="chips">'
+          + '<a class="chip" href="' + L + '/training">Puzzles</a>'
+          + '<a class="chip" href="' + L + '/storm">Storm</a>'
+          + '<a class="chip" href="' + L + '/racer">Racer</a>'
+          + '<a class="chip" href="' + L + '/training/daily">Daily puzzle</a>'
+          + '</div>')
     + '</div>';
 }
 
@@ -3965,7 +4167,7 @@ function myBand() {
   var perf = mainPerf();
   var r = data.user && data.user.perfs && data.user.perfs[perf]
     ? data.user.perfs[perf].rating : null;
-  return bandFor(r);
+  return bandFor(bandEquivRating(perf, r));
 }
 function posKey(st) {
   var f = stateFen(st).split(' ');
@@ -6220,7 +6422,8 @@ function renderTrainerInline() {
       + (a.kind === 'blunder'
           ? '<a href="' + gameHref(a.it.g.id, a.it.g.color, a.it.b.p) + '" style="font-size:13px">Open the game</a>'
           : a.kind === 'opening' || a.kind === 'openlearn'
-          ? '<a href="' + analysisHref(stateFen(a.st), a.line.colour) + '" style="font-size:13px">Explore on lichess</a>'
+          ? '<a href="' + analysisHref(stateFen(a.st), a.line.colour) + '" style="font-size:13px">'
+            + (isCC() ? 'Open analysis board' : 'Explore on lichess') + '</a>'
           : '')
     + '</div>'
     + '</div>'
@@ -6333,7 +6536,7 @@ function prepFetch(name) {
   var key = name.toLowerCase();
   data.prep = data.prep || {};
   if (data.prep[key]) { renderPrep(); return; }
-  var kept = store.get('nl:cache:prep:' + key, null);
+  var kept = store.get('nl:cache:prep:' + cfg.src + ':' + key, null);
   if (kept && kept.at && Date.now() - kept.at < 12 * 3600 * 1000) {
     data.prep[key] = kept.v;
     renderPrep();
@@ -6343,9 +6546,7 @@ function prepFetch(name) {
   renderPrep();
   var games = [];
   var myGen = gen;
-  getND('/api/games/user/' + encodeURIComponent(name)
-      + '?rated=true&max=120&opening=true&perfType=' + trackedPerfs().join(','),
-    function (g) {
+  var collect = function (g) {
       var w = g.players && g.players.white, b = g.players && g.players.black;
       if (!w || !b) return;
       var isWhite = !!(w.user && w.user.id === key);
@@ -6355,12 +6556,33 @@ function prepFetch(name) {
       games.push({
         colour: colour,
         res: g.winner ? (g.winner === colour ? 'win' : 'loss') : 'draw',
-        fam: g.opening ? g.opening.name.split(':')[0].trim() : null,
+        fam: g.opening ? (g.opening.name || '').split(':')[0].trim() : null,
         status: g.status,
         rating: (isWhite ? w : b).rating || null
       });
-    }
-  ).then(function () {
+    };
+  var src = isCC()
+    ? ccJSON('/player/' + encodeURIComponent(name) + '/games/archives', { quiet: true })
+        .then(function (a) {
+          var months = (a.archives || []).slice(-3).reverse();
+          var chain = Promise.resolve();
+          months.forEach(function (mUrl) {
+            chain = chain.then(function () {
+              if (games.length >= 120 || stale(myGen)) return;
+              return ccJSON(mUrl.replace(CC, ''), { quiet: true }).then(function (mo) {
+                (mo.games || []).slice().reverse().forEach(function (raw) {
+                  if (games.length >= 120) return;
+                  var shaped = ccShape(raw);
+                  if (shaped) collect(shaped);
+                });
+              }).catch(function () {});
+            });
+          });
+          return chain;
+        })
+    : getND('/api/games/user/' + encodeURIComponent(name)
+        + '?rated=true&max=120&opening=true&perfType=' + trackedPerfs().join(','), collect);
+  src.then(function () {
     if (stale(myGen)) return;
     if (!games.length) { data.prep[key] = { empty: true, name: name }; renderPrep(); return; }
     function side(colour) {
@@ -6385,10 +6607,11 @@ function prepFetch(name) {
       white: side('white'), black: side('black'),
       flagRate: losses.length >= 10 ? Math.round(flags.length * 100 / losses.length) : null
     };
-    store.set('nl:cache:prep:' + key, { at: Date.now(), v: data.prep[key] });
+    store.set('nl:cache:prep:' + cfg.src + ':' + key, { at: Date.now(), v: data.prep[key] });
     renderPrep();
     /* the lifetime record, from Lichess's own ledger */
-    getJSON('/api/crosstable/' + encodeURIComponent(cfg.user) + '/' + encodeURIComponent(name))
+    (isCC() ? Promise.reject(new Error('n/a'))
+      : getJSON('/api/crosstable/' + encodeURIComponent(cfg.user) + '/' + encodeURIComponent(name)))
       .then(function (x) {
         if (stale(myGen) || !data.prep[key]) return;
         if (x && x.nbGames) {
@@ -6397,7 +6620,7 @@ function prepFetch(name) {
             n: x.nbGames,
             me: x.users && x.users[meK] != null ? x.users[meK] : null
           };
-          store.set('nl:cache:prep:' + key, { at: Date.now(), v: data.prep[key] });
+          store.set('nl:cache:prep:' + cfg.src + ':' + key, { at: Date.now(), v: data.prep[key] });
           renderPrep();
         }
       }).catch(function () {});
@@ -7475,6 +7698,13 @@ document.addEventListener('click', function (e) {
     }
     case 'skillRow': ui.openSkill = ui.openSkill === k ? null : k; renderProfile(); break;
     case 'train': startSession(t.getAttribute('data-key') || null); break;
+    case 'srcPick': {
+      cfg.src = k;
+      saveCfg('src');
+      var keepU = el('firstUser') ? el('firstUser').value : '';
+      renderFirstVisit(keepU);
+      break;
+    }
     case 'firstSet':
       data.freshOnboard = false;
       data.autoStarted = true;
@@ -8080,6 +8310,8 @@ function bulkAllowed() {
     && Date.now() >= backoffUntil;
 }
 function bulkRetain() {
+  /* chess.com games arrive with their movetext in hand — nothing to refuel */
+  if (isCC()) return Promise.resolve(0);
   bulkState.busy = true;
   bulkState.at = Date.now();
   var myGen = gen;
@@ -8250,7 +8482,7 @@ function retainMovetext() {
   data.games.forEach(function (g) {
     if (!g.mvTmp) return;
     if (!g.analysed && !g.scanned && !g.bl && !g.mv && g.plies >= 16 && isEligible(g.perf)
-        && (kept[g.perf] || 0) < RETAIN_PER_FORMAT) {
+        && (isCC() || (kept[g.perf] || 0) < RETAIN_PER_FORMAT)) {
       g.mv = g.mvTmp;
       if (g.ckTmp) g.ck = g.ckTmp;
       kept[g.perf] = (kept[g.perf] || 0) + 1;
@@ -8261,6 +8493,7 @@ function retainMovetext() {
 }
 
 function topUpFormats() {
+  if (isCC()) return;   /* the archive walker enforces the floors itself */
   if (data.sections.games !== 'ok') return;
   data.topups = data.topups || {};
   var meId = String(cfg.user).toLowerCase();
@@ -8326,8 +8559,29 @@ function cachedJSON(key, ttlMs, fetcher) {
 function loadUser() {
   var myGen = gen;
   data.sections.user = 'loading';
-  return cachedJSON('user:' + String(cfg.user).toLowerCase(), 30 * 60 * 1000, function () {
-    return getJSON('/api/user/' + encodeURIComponent(cfg.user));
+  return cachedJSON('user:' + cfg.src + ':' + String(cfg.user).toLowerCase(), 30 * 60 * 1000, function () {
+    if (!isCC()) return getJSON('/api/user/' + encodeURIComponent(cfg.user));
+    return ccJSON('/player/' + encodeURIComponent(cfg.user)).then(function (prof) {
+      return ccJSON('/player/' + encodeURIComponent(cfg.user) + '/stats').then(function (st) {
+        var perfs = {};
+        var peaks = {};
+        [['chess_bullet', 'bullet'], ['chess_blitz', 'blitz'], ['chess_rapid', 'rapid']]
+          .forEach(function (pair) {
+            var v = st[pair[0]];
+            if (!v || !v.last) return;
+            var rec = v.record || {};
+            perfs[pair[1]] = {
+              rating: v.last.rating,
+              games: (rec.win || 0) + (rec.loss || 0) + (rec.draw || 0),
+              prog: 0
+            };
+            if (v.best) peaks[pair[1]] = { rating: v.best.rating };
+          });
+        return { id: String(prof.username || cfg.user).toLowerCase(),
+                 username: prof.username || cfg.user,
+                 perfs: perfs, ccPeaks: peaks };
+      });
+    });
   }).then(function (u) {
     if (stale(myGen)) return;
     data.user = u;
@@ -8362,6 +8616,11 @@ function loadPeaks() {
   var myGen = gen;
   data.sections.peaks = 'loading';
   data.pstat = data.pstat || {};
+  if (isCC()) {
+    data.peaks = (data.user && data.user.ccPeaks) || {};
+    data.sections.peaks = 'ok';
+    return Promise.resolve();
+  }
   return trackedPerfs().reduce(function (chain, p) {
     return chain.then(function () {
       return cachedJSON('perf:' + String(cfg.user).toLowerCase() + ':' + p, 12 * 3600 * 1000, function () {
@@ -8535,6 +8794,7 @@ function loadGames() {
 }
 
 function loadPlaying() {
+  if (isCC()) { data.playing = null; return Promise.resolve(); }
   var myGen = gen;
   var p = getJSON('/api/user/' + encodeURIComponent(cfg.user) + '/current-game', { quiet: true }).then(function (g) {
         /* This endpoint returns the LAST game, finished or not — without the
@@ -8597,6 +8857,7 @@ function splitTours() {
 }
 
 function refreshTours() {
+  if (isCC()) { data.sections.tours = 'ok'; data.toursRaw = []; renderArena(); return Promise.resolve(); }
   var myGen = gen;
   /* schedules are written far in advance — a stored feed inside its six-hour
      window is the answer, not a request */
