@@ -3457,6 +3457,11 @@ function renderViews() {
 }
 
 function renderShell() {
+  /* once the app is up, the URL must not carry ?u=&src= — a refresh should
+     boot from the stored login and cache, never look like a new login */
+  if (location.search) {
+    try { history.replaceState(null, '', location.pathname + (location.hash || '#train')); } catch (e3) {}
+  }
   el('main').innerHTML =
     '<div class="page">'
     + '<nav class="views" id="views" role="tablist"></nav>'
@@ -7793,6 +7798,13 @@ document.addEventListener('click', function (e) {
         boot();
         break;
       }
+      if (data.finishReady) {
+        data.finishReady = 0;
+        data.narrate = false;
+        data.freshOnboard = true;
+        renderShell(); renderAll();
+        break;
+      }
       if (data.narrate) renderNarration();
       else { renderShell(); renderAll(); }
       break;
@@ -7858,7 +7870,7 @@ document.addEventListener('click', function (e) {
       break;
     case 'home':
       if (cfg.user) {
-        try { history.pushState(null, '', '?u=' + encodeURIComponent(cfg.user) + '#train'); } catch (e2) {}
+        try { history.pushState(null, '', location.pathname + '#train'); } catch (e2) {}
         setView('train', true);
       }
       break;
@@ -8936,7 +8948,11 @@ function deltaBadge(p) {
    begin sending. The theater cannot wait for that: a 12-game moves-only
    fetch returns instantly and fills the boards while the big one warms up. */
 function loadNarrPreview() {
-  if (!data.narrate || (data.narrPreview && data.narrPreview.length >= 4)) return Promise.resolve();
+  /* chess.com has no cheap last-N endpoint, and asking LICHESS for a
+     chess.com username can stream a stranger's games onto the boards —
+     the archive walker feeds the strip itself, games arrive with month 1 */
+  if (isCC()) return Promise.resolve();
+  if (!data.narrate || (data.narrPreview && data.narrPreview.length >= 3)) return Promise.resolve();
   var myGen = gen;
   var got = [];
   return getND('/api/games/user/' + encodeURIComponent(cfg.user)
@@ -8958,7 +8974,7 @@ function loadNarrPreview() {
     if (stale(myGen) || !data.narrate) return;
     data.narrPreview = (got.concat(data.narrPreview || [])).slice(0, 15);
     var stage0 = el('narr-stage');
-    if (stage0 && !stage0.firstChild && data.narrPreview.length >= 4) {
+    if (stage0 && !stage0.firstChild && data.narrPreview.length >= 3) {
       stage0.innerHTML = narrBoards();
     }
   }).catch(function () {});
@@ -8981,7 +8997,7 @@ function loadGames() {
         /* mount the strip THE MOMENT there is enough to show — the polling
            timer gets starved while the stream chews through games, so this
            cannot wait for it */
-        if (data.narrPreview.length === 4) {
+        if (data.narrPreview.length === 3) {
           var stage0 = el('narr-stage');
           if (stage0 && !stage0.firstChild) stage0.innerHTML = narrBoards();
         }
@@ -9265,11 +9281,11 @@ function renderObQuestions() {
 /* The loading theater: the user's own games replay on a slow-drifting strip
    of boards while the count climbs — the wait shows the work. */
 function narrBoards() {
-  var src = (data.narrPreview && data.narrPreview.length >= 4)
+  var src = (data.narrPreview && data.narrPreview.length >= 3)
     ? data.narrPreview
     : data.games;
   var gs = src.slice(0, 10).filter(function (g) { return g.op16; });
-  if (gs.length < 4) return '';
+  if (gs.length < 3) return '';
   /* each board keeps its own live cursor: position, next token, next beat */
   data.narrLive = gs.map(function (g, i) {
     return { toks: (g.mv40 || g.op16).split(' '), st: chessStart(), ply: 0,
@@ -9312,7 +9328,7 @@ function renderNarration() {
     if (!live.length || !cards.length) return;
     var now = Date.now();
     var n = live.length;
-    var pool = (data.narrPreview && data.narrPreview.length >= 4)
+    var pool = (data.narrPreview && data.narrPreview.length >= 3)
       ? data.narrPreview
       : data.games.filter(function (g) { return g.op16; });
     live.forEach(function (b, i) {
@@ -9393,6 +9409,9 @@ function narrLine(id, html) {
 }
 function finishNarration() {
   if (!data.narrate) return;
+  /* the load can finish while the setup questions are still on screen —
+     hold the reveal until the user answers (obDone picks it up) */
+  if (!el('narr')) { data.finishReady = 1; return; }
   var prof = skillProfile();
   var w = behindSkills();
   narrLine('done', prof.rows.length
@@ -9446,6 +9465,7 @@ function boot() {
   buildSeries();
   data.narrate = !data.games.length;
   data.narrPreview = null; data.narrStart = null; data.narrTick = 0;
+  data.finishReady = 0;
   /* the setup questions belong to the person logging in, not to whoever
      used this browser before — a fresh login always asks, cached or not */
   var askOb = !!data.freshLogin;
@@ -9461,13 +9481,16 @@ function boot() {
 
   /* Serial by policy. Order is: what the header needs, then the heavy game
      export, then everything that only fills one card. */
+  /* the 12-game board preview is independent of the header fetch — fire
+     it immediately so the strip can be up before the questions settle */
+  var previewEarly = loadNarrPreview();
   loadUser()
     .then(function () {
       if (data.sections.user === 'fail' && data.userErr === 404) {
         var e = new Error('no account'); e.stop = true; throw e;
       }
     })
-    .then(loadNarrPreview)
+    .then(function () { return previewEarly; })
     .then(loadGames)
     .then(loadPlaying)
     .then(function () { finishNarration(); })
