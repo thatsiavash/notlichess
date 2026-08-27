@@ -791,13 +791,14 @@ var POOL_TC = ['1+0','2+1','3+0','3+2','5+0','5+3','10+0','10+5','15+10','30+0',
 var MAX_TC = 6;
 var DEFAULT_TC = ['10+0','5+0','3+0'];
 var FIRST_PAINT = 200;      /* render as soon as this many are in */
-var MIN_PER_FORMAT = 200;
+/* aggregate ceiling for progress display: quota x tracked formats */
+function windowCap() { return cfg.perFormat * Math.max(1, trackedPerfs().length); }
 var RETAIN_PER_FORMAT = 100; /* newest unanalysed games per format that keep
                                 their movetext for the fetch-free scan batch */   /* every tracked format keeps at least this
                                many recent games — a 1000-game window of
                                mostly blitz must not starve the rapid coach */
 var MAX_GAMES = 3000;       /* ~2 minutes at Lichess's ~24 games/sec */
-var LIMIT_CHOICES = [200, 500, 1000, 2000, 3000];
+var LIMIT_CHOICES = [100, 250, 500, 1000];
 
 var params = new URLSearchParams(location.search);
 var urlUser = (params.get('u') || params.get('user') || '').trim();
@@ -818,7 +819,7 @@ var cfg = {
   perfs: store.get('nl:perfs', null),   /* the formats being trained; null = derive from tcs */
   hidden: store.get('nl:hidden', {}),
   findingsOff: store.get('nl:findingsOff', {}),
-  gameLimit: store.get('nl:gameLimit', 1000),
+  perFormat: store.get('nl:perFormat', 500),  /* rated games kept per tracked format */
   reviewTcs: store.get('nl:reviewTcs', null),
   fromDate: store.get('nl:fromDate', null),
   newTab: store.get('nl:newTab', true),
@@ -1239,19 +1240,17 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
     out.sort(function (a, b) { return b.ts - a.ts; });
     return out;
   };
-  /* the per-format floor scales down with small windows: a 200-game test
-     window must not demand 200 of every format */
-  var effFloor = Math.min(MIN_PER_FORMAT,
-    Math.max(50, Math.floor(cfg.gameLimit / Math.max(1, trackedPerfs().length))));
-  var floorsMet = function (list) {
-    if (list.length >= cfg.gameLimit) {
-      var counts = {};
-      list.forEach(function (g) { counts[g.perf] = (counts[g.perf] || 0) + 1; });
-      return trackedPerfs().every(function (pf) {
-        return (counts[pf] || 0) >= effFloor;
-      });
-    }
-    return false;
+  /* every tracked format gets its own quota — a dominant format can no
+     longer squeeze the others out of a shared window */
+  var Q = cfg.perFormat;
+  var countsOf = function (list) {
+    var c = {};
+    list.forEach(function (g) { c[g.perf] = (c[g.perf] || 0) + 1; });
+    return c;
+  };
+  var quotasMet = function (list) {
+    var c = countsOf(list);
+    return trackedPerfs().every(function (pf) { return (c[pf] || 0) >= Q; });
   };
   return ccJSON('/player/' + encodeURIComponent(cfg.user) + '/games/archives', { quiet: true })
     .then(function (a) {
@@ -1268,12 +1267,12 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
       function step() {
         if (idx >= months.length || idx >= MAX_WALK || fruitful >= MAX_FRUITFUL) return null;
         var merged = mergeAll();
-        /* a fresh walk stops the moment the window is full — the per-format
-           floor hunt continues in the background so onboarding never stalls
-           at "nearly there". Incremental runs keep walking even when full:
-           new months must still land, and the cache-boundary check after
-           each month ends the walk once nothing newer remains. */
-        if (merged.length >= cfg.gameLimit && !since) return null;
+        /* a fresh walk hands off to the background hunt once one quota's
+           worth of games is in — onboarding starts on a solid base while
+           the rest streams in. Incremental runs keep walking even when
+           full: new months must still land, and the cache-boundary check
+           after each month ends the walk once nothing newer remains. */
+        if (!since && (quotasMet(merged) || merged.length >= Q)) return null;
         var url = months[idx].replace(CC, '');
         idx++;
         return ccJSON(url, { quiet: idx > 2 }).then(function (mo) {
@@ -1291,8 +1290,7 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
                are worth keeping — no hoarding 18,000 blitz games while
                hunting two-year-old rapid. Games newer than the cache always
                enter: the save-time trim drops the oldest, never the newest. */
-            if (total >= cfg.gameLimit && !fresh
-                && (counts[raw.time_class] || 0) >= effFloor) return;
+            if (!fresh && (counts[raw.time_class] || 0) >= Q) return;
             var shaped = ccShape(raw);
             if (!shaped) return;
             /* cached months are skipped only when history is known complete —
@@ -1307,19 +1305,22 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
             total++;
             kept++;
             n++;
-            if (onProgress) onProgress(Math.min(n, cfg.gameLimit));
+            if (onProgress) onProgress(Math.min(n, windowCap()));
           });
           if (!painted && mergeAll().length >= FIRST_PAINT && onFirstPaint) {
             painted = true;
             onFirstPaint(mergeAll());
           }
           if (kept) fruitful++;
+          /* nothing found yet: let the narration say how deep we are
+             instead of sitting on a frozen zero */
+          if (!n && onProgress) onProgress(0, idx);
           /* crossing the cache boundary ends the incremental walk — unless
              the cached history is incomplete and the window still has room,
              in which case older months keep back-filling */
           if (since && mo.games && mo.games.length
               && (mo.games[0].end_time || 0) * 1000 <= since
-              && (histDone || mergeAll().length >= cfg.gameLimit)) return null;
+              && (histDone || quotasMet(mergeAll()))) return null;
           return step();
         }).catch(function () { return step(); });
       }
@@ -1328,14 +1329,14 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
         if (idx >= months.length) histDone = true;
         data.ccHistDone = histDone;
         /* floors unmet and history remains: keep walking quietly */
-        if (!floorsMet(merged) && idx < months.length && fruitful < MAX_FRUITFUL) {
+        if (!quotasMet(merged) && idx < months.length && idx < MAX_WALK && fruitful < MAX_FRUITFUL) {
           var bgGen = gen;
           setTimeout(function bg() {
             if (stale(bgGen)) return;
             var listNow = data.games;
             var counts = {};
             listNow.forEach(function (g6) { counts[g6.perf] = (counts[g6.perf] || 0) + 1; });
-            var done = trackedPerfs().every(function (pf) { return (counts[pf] || 0) >= effFloor; });
+            var done = trackedPerfs().every(function (pf) { return (counts[pf] || 0) >= Q; });
             if (idx >= months.length) data.ccHistDone = true;
             if (done || idx >= months.length || idx >= MAX_WALK || fruitful >= MAX_FRUITFUL) return;
             var url2 = months[idx].replace(CC, '');
@@ -1347,7 +1348,7 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
               var added = 0;
               (mo2.games || []).slice().reverse().forEach(function (raw2) {
                 if (trackedPerfs().indexOf(raw2.time_class) === -1) return;
-                if ((counts[raw2.time_class] || 0) >= effFloor) return;
+                if ((counts[raw2.time_class] || 0) >= Q) return;
                 var shaped2 = ccShape(raw2);
                 if (!shaped2 || byId[shaped2.id]) return;
                 var c2 = compact(shaped2, meId);
@@ -1451,7 +1452,7 @@ function compact(g, meId) {
   };
 }
 
-var CACHE_VERSION = 10;  /* bump whenever the compact record shape changes */
+var CACHE_VERSION = 11;  /* bump whenever the compact record shape changes */
 function cacheKey() {
   /* lichess keeps its historical key; chess.com namespaces to avoid a
      same-name collision across sites */
@@ -1469,20 +1470,16 @@ function loadCachedGames() {
 }
 
 function trimGames(games) {
-  var cap = Math.max(cfg.gameLimit, FIRST_PAINT);
-  if (games.length <= cap) return games;
-  var head = games.slice(0, cap);
-  var counts = {};
-  head.forEach(function (g) { counts[g.perf] = (counts[g.perf] || 0) + 1; });
-  var extra = [];
-  trackedPerfs().forEach(function (p) {
-    var need = MIN_PER_FORMAT - (counts[p] || 0);
-    for (var i = cap; i < games.length && need > 0; i++) {
-      if (games[i].perf === p) { extra.push(games[i]); need--; }
-    }
-  });
-  if (!extra.length) return head;
-  return head.concat(extra).sort(function (a, b) { return b.ts - a.ts; });
+  /* newest quota per tracked format; untracked formats take no space */
+  var Q = cfg.perFormat, per = {}, out = [];
+  for (var i = 0; i < games.length; i++) {
+    var p = games[i].perf;
+    if (trackedPerfs().indexOf(p) === -1) continue;
+    if ((per[p] || 0) >= Q) continue;
+    per[p] = (per[p] || 0) + 1;
+    out.push(games[i]);
+  }
+  return out;
 }
 
 function saveGames(games) {
@@ -1518,20 +1515,11 @@ function fetchGames(meId, onProgress, onFirstPaint) {
   if (!cached.games.length && data.games.length) {
     cached = { games: data.games, ts: 0, perfs: '' };
   }
-  var perfs = trackedPerfs().join(',');
-  var path = '/api/games/user/' + encodeURIComponent(cfg.user)
-    + '?perfType=' + perfs + '&' + GAME_PARAMS;
-
-  /* Incremental: only ask for what happened since the newest cached game. */
   var incremental = cached.games.length && cached.ts;
-  if (incremental) {
-    path += '&since=' + (cached.ts - 12 * 3600 * 1000) + '&max=' + cfg.gameLimit;
-  } else {
-    path += '&max=' + cfg.gameLimit;
-  }
-
-  var fresh = [], painted = false;
-  return getND(path, function (g) {
+  data.ccHistDone = cached.hd === 1;
+  var fresh = [], painted = false, rawN = 0;
+  var collect = function (g) {
+    rawN++;
     var c = compact(g, meId);
     if (!c) return;
     fresh.push(c);
@@ -1541,8 +1529,35 @@ function fetchGames(meId, onProgress, onFirstPaint) {
       painted = true;
       if (onFirstPaint) onFirstPaint(merge(fresh, cached.games));
     }
-  }).then(function () {
-    return saveGames(merge(fresh, cached.games));
+  };
+  var work;
+  if (incremental) {
+    /* only ask for what happened since the newest cached game */
+    work = getND('/api/games/user/' + encodeURIComponent(cfg.user)
+      + '?perfType=' + trackedPerfs().join(',') + '&' + GAME_PARAMS
+      + '&since=' + (cached.ts - 12 * 3600 * 1000) + '&max=' + windowCap(), collect);
+  } else {
+    /* one stream per tracked format, so each fills its own quota instead
+       of sharing a window the dominant format would hog */
+    var allShort = true;
+    work = Promise.resolve();
+    trackedPerfs().forEach(function (p) {
+      work = work.then(function () {
+        var before = rawN;
+        return getND('/api/games/user/' + encodeURIComponent(cfg.user)
+          + '?perfType=' + p + '&' + GAME_PARAMS + '&max=' + cfg.perFormat, collect
+        ).then(function () {
+          if (rawN - before >= cfg.perFormat) allShort = false;
+        });
+      });
+    });
+    /* every stream came back short: we now hold every rated game they have */
+    work = work.then(function () { data.ccHistDone = allShort; });
+  }
+  return work.then(function () {
+    var pay = saveGames(merge(fresh, cached.games));
+    pay.all = data.ccHistDone;
+    return pay;
   }).catch(function (err) {
     if (cached.games.length) return cached;   /* stale beats empty */
     throw err;
@@ -3345,7 +3360,7 @@ function renderHeader() {
     + '<div class="ratings">' + (bits.join('') || '<span class="dim">&nbsp;</span>')
       + (data.sections.games === 'loading' && data.games.length
           ? '<span class="dim tnum" style="font-size:11px;margin-left:12px">updating games… '
-            + (data.gamesCount || 0) + ' / ' + cfg.gameLimit + '</span>' : '')
+            + (data.gamesCount || 0) + ' / ' + windowCap() + '</span>' : '')
       + '</div>'
     + '<div class="bar-right">'
       + '<span class="hint"><span class="key">/</span> search · <span class="key">1</span>–<span class="key">' + VIEWS.length + '</span> tabs · <span class="key">?</span> keys</span>'
@@ -7286,7 +7301,7 @@ function renderFindings() {
 function gamesLine() {
   if (data.sections.games === 'loading') {
     return data.gamesCount
-      ? data.gamesCount + ' of ' + cfg.gameLimit + ' games…'
+      ? data.gamesCount + ' of ' + windowCap() + ' games…'
       : 'loading games…';
   }
   var cached = loadCachedGames();
@@ -7319,7 +7334,7 @@ function renderSettings() {
     + '<div class="set-grid">'
 
     + '<div class="set-block"><span class="kicker-sm">training formats</span>'
-      + '<div class="sec" style="font-size:14px;margin-bottom:6px">Everything follows this — the coach, the sessions, the play buttons. One or two formats read best; every tracked format keeps at least ' + MIN_PER_FORMAT + ' of your recent games.</div>'
+      + '<div class="sec" style="font-size:14px;margin-bottom:6px">Everything follows this — the coach, the sessions, the play buttons. One or two formats read best; every format you track gets its own pool of up to ' + cfg.perFormat + ' recent rated games.</div>'
       + '<div class="chips">'
       + ['rapid','blitz','bullet','classical'].map(function (pf) {
           var cur = trackedPerfs();
@@ -7350,10 +7365,10 @@ function renderSettings() {
         + '<a class="chip-sm" data-act="reload">Full refresh</a>'
         + '<span class="dim" style="font-size:13px">' + gamesLine() + '</span>'
       + '</div>'
-      + '<div class="caption" style="margin-bottom:6px">Games kept in the window:</div>'
+      + '<div class="caption" style="margin-bottom:6px">Rated games kept per format:</div>'
       + '<div class="chips">'
       + LIMIT_CHOICES.map(function (n) {
-          return '<a class="chip-sm ' + (cfg.gameLimit === n ? 'chip-on' : 'chip-off') + '" data-act="limit" data-n="' + n + '">' + n + '</a>';
+          return '<a class="chip-sm ' + (cfg.perFormat === n ? 'chip-on' : 'chip-off') + '" data-act="limit" data-n="' + n + '">' + n + '</a>';
         }).join('')
       + '</div></div>'
 
@@ -7528,12 +7543,12 @@ function paletteKeys(e) {
 
 function setLimit(n) {
   if (!n || isNaN(n)) return;
-  n = Math.max(FIRST_PAINT, Math.min(MAX_GAMES, Math.round(n)));
-  var grew = n > cfg.gameLimit;
-  cfg.gameLimit = n;
-  saveCfg('gameLimit');
-  if (grew) store.del(cacheKey());   /* a bigger window has to be refetched */
-  else data.games = data.games.slice(0, n);
+  n = Math.max(100, Math.min(1000, Math.round(n)));
+  var grew = n > cfg.perFormat;
+  cfg.perFormat = n;
+  saveCfg('perFormat');
+  if (grew) store.del(cacheKey());   /* a bigger quota has to be refetched */
+  else data.games = trimGames(data.games);
   renderFoot();
   loadGames();
 }
@@ -8716,12 +8731,12 @@ function topUpFormats() {
   trackedPerfs().forEach(function (p) {
     var have = 0;
     data.games.forEach(function (g) { if (g.perf === p) have++; });
-    if (have >= MIN_PER_FORMAT || data.topups[p]) return;
+    if (have >= cfg.perFormat || data.topups[p]) return;
     data.topups[p] = 1;
     chain = chain.then(function () {
       if (stale(myGen)) return;
       return getND('/api/games/user/' + encodeURIComponent(cfg.user)
-          + '?perfType=' + p + '&' + GAME_PARAMS + '&max=' + MIN_PER_FORMAT,
+          + '?perfType=' + p + '&' + GAME_PARAMS + '&max=' + cfg.perFormat,
         function (g) {
           var c = compact(g, meId);
           if (c) data.games.push(c);
@@ -8967,7 +8982,7 @@ function loadGames() {
       /* one DOM write per ~15 games, not per game — the stream must not
          starve the paint */
       if (n % 15 === 0 || n < 5) {
-        var limit = cfg.gameLimit;
+        var limit = windowCap();
         var pctDone = Math.min(100, Math.round(n * 100 / limit));
         var eta = '';
         var elapsed = (Date.now() - data.narrStart) / 1000;
@@ -8976,9 +8991,16 @@ function loadGames() {
           var left = Math.max(0, (limit - n) / rate);
           eta = left < 8 ? ' · nearly there' : ' · about ' + (Math.round(left / 5) * 5) + 's left';
         }
-        narrLine('games', 'Reading your games… <span class="tnum">' + n + ' / ' + limit + '</span>'
-          + '<span class="dim">' + eta + '</span>'
-          + '<span class="narr-bar"><span class="narr-fill" style="width:' + pctDone + '%"></span></span>');
+        if (!n && typeof c2 === 'number' && c2 > 2) {
+          /* a dormant account: months are being walked with nothing kept
+             yet — show the depth so the search never looks frozen */
+          narrLine('games', 'Searching your archives… <span class="tnum">' + c2
+            + '</span> months back<span class="dim"> · looking for your rated games</span>');
+        } else {
+          narrLine('games', 'Reading your games… <span class="tnum">' + n + ' / ' + limit + '</span>'
+            + '<span class="dim">' + eta + '</span>'
+            + '<span class="narr-bar"><span class="narr-fill" style="width:' + pctDone + '%"></span></span>');
+        }
       }
     }
     /* Cheap: only the two places that show a count. */
@@ -8995,9 +9017,14 @@ function loadGames() {
     data.sections.games = 'ok';
     if (data.narrate) {
       var totalRead = payload.games.length;
-      narrLine('games', totalRead < cfg.gameLimit && payload.all !== false
-        ? 'Read all <span class="tnum">' + totalRead + '</span> of your games — every one you have.'
-        : 'Read your last <span class="tnum">' + totalRead + '</span> games.');
+      var byP = {};
+      payload.games.forEach(function (g2) { byP[g2.perf] = (byP[g2.perf] || 0) + 1; });
+      var perBits = trackedPerfs().map(function (p2) {
+        return perfLabel(p2) + ' <span class="tnum">' + (byP[p2] || 0) + '</span>';
+      }).join(' · ');
+      narrLine('games', (totalRead < windowCap() && payload.all !== false
+        ? 'Read every rated game you have: '
+        : 'Read your recent rated games: ') + perBits + '.');
     }
     computeGreeting();
     renderTrainerInline();   /* the session auto-starts the moment games are in */
