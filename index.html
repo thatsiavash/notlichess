@@ -1235,12 +1235,16 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
     out.sort(function (a, b) { return b.ts - a.ts; });
     return out;
   };
+  /* the per-format floor scales down with small windows: a 200-game test
+     window must not demand 200 of every format */
+  var effFloor = Math.min(MIN_PER_FORMAT,
+    Math.max(50, Math.floor(cfg.gameLimit / Math.max(1, trackedPerfs().length))));
   var floorsMet = function (list) {
     if (list.length >= cfg.gameLimit) {
       var counts = {};
       list.forEach(function (g) { counts[g.perf] = (counts[g.perf] || 0) + 1; });
       return trackedPerfs().every(function (pf) {
-        return (counts[pf] || 0) >= MIN_PER_FORMAT;
+        return (counts[pf] || 0) >= effFloor;
       });
     }
     return false;
@@ -1249,15 +1253,25 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
     .then(function (a) {
       var months = (a.archives || []).slice().reverse();   /* newest first */
       var idx = 0;
+      var MAX_MONTHS = 24;   /* two years of hunting is enough — floors are
+                                best-effort against genuinely rare formats */
       function step() {
-        if (idx >= months.length) return null;
+        if (idx >= months.length || idx >= MAX_MONTHS) return null;
         var merged = mergeAll();
         if (floorsMet(merged)) return null;
         if (since && merged.length >= cfg.gameLimit) return null;
         var url = months[idx].replace(CC, '');
         idx++;
         return ccJSON(url, { quiet: idx > 2 }).then(function (mo) {
+          var counts = {};
+          mergeAll().forEach(function (g5) { counts[g5.perf] = (counts[g5.perf] || 0) + 1; });
+          var total = mergeAll().length;
           (mo.games || []).slice().reverse().forEach(function (raw) {
+            /* once the window is full, only formats still under their floor
+               are worth keeping — no hoarding 18,000 blitz games while
+               hunting two-year-old rapid */
+            if (total >= cfg.gameLimit
+                && (counts[raw.time_class] || 0) >= effFloor) return;
             var shaped = ccShape(raw);
             if (!shaped) return;
             if (since && shaped.createdAt <= since) return;
@@ -1265,8 +1279,10 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
             if (!c) return;
             c.u = shaped.ccUrl;
             got.push(c);
+            counts[c.perf] = (counts[c.perf] || 0) + 1;
+            total++;
             n++;
-            if (onProgress) onProgress(n);
+            if (onProgress) onProgress(Math.min(n, cfg.gameLimit));
           });
           if (!painted && mergeAll().length >= FIRST_PAINT && onFirstPaint) {
             painted = true;
@@ -6798,6 +6814,15 @@ function tourCol(label, list, allHref) {
 function renderArena() {
   var box = el('play-tours');
   if (!box) return;
+  if (isCC()) {
+    box.innerHTML = '<div class="set-head" style="margin-top:26px;padding-bottom:8px">'
+      + '<span class="kicker">tournaments</span></div>'
+      + '<div class="chips">'
+      + '<a class="chip" href="https://www.chess.com/tournaments">Tournaments</a>'
+      + '<a class="chip" href="https://www.chess.com/play/arena">Arenas</a>'
+      + '</div>';
+    return;
+  }
   var head = '<div class="set-head" style="margin-top:26px;padding-bottom:8px">'
     + '<span class="kicker">tournaments</span>'
     + '<span class="set-spacer"></span>'
@@ -7705,6 +7730,12 @@ document.addEventListener('click', function (e) {
       renderFirstVisit(keepU);
       break;
     }
+    case 'narrContinue':
+      data.narrate = false;
+      data.freshOnboard = true;
+      renderShell();
+      renderAll();
+      break;
     case 'firstSet':
       data.freshOnboard = false;
       data.autoStarted = true;
@@ -9034,6 +9065,7 @@ function renderNarration() {
     + '<div class="kicker" style="margin-bottom:18px">building your program</div>'
     + '<h1>Reading ' + esc(cfg.user) + "'s chess.</h1>"
     + '<div id="narr" class="narr" aria-live="polite"></div>'
+    + '<div id="narr-actions" style="margin-top:18px"></div>'
     + '</div>'
     + '<div id="narr-stage">' + narrBoards() + '</div>'
     + '<div style="max-width:720px;margin:0 auto">'
@@ -9144,12 +9176,16 @@ function finishNarration() {
         ? 'Found the gap: ' + esc(w[0].phrase) + '. Building your plan around it.'
         : 'Nothing behind players at your rating. Building your program.')
     : 'Building your program.');
-  setTimeout(function () {
-    data.narrate = false;
-    data.freshOnboard = true;   /* the first landing explains before it deals */
-    renderShell();
-    renderAll();
-  }, 900);
+  /* games are in; now Stockfish takes over in the background. Say so in
+     plain words, keep the theater running, and let the user choose when
+     to walk through the door. */
+  narrLine('engine', 'Stockfish is now studying your games in the background. '
+    + 'Keep this tab open — every minute sharpens your coach and your trainings. '
+    + 'You can start right away.');
+  var stage = el('narr-actions');
+  if (stage) {
+    stage.innerHTML = '<a class="btn-big btn-pulse" data-act="narrContinue">Continue</a>';
+  }
 }
 
 function renderNoAccount() {
