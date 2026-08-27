@@ -1257,11 +1257,16 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
     .then(function (a) {
       var months = (a.archives || []).slice().reverse();   /* newest first */
       var idx = 0;
-      var fruitful = 0;      /* months that actually contained games */
-      var MAX_FRUITFUL = 24; /* two years of PLAYING is enough — a dormant
-                                account's empty months cost nothing to skip */
+      var fruitful = 0;      /* months that yielded games we KEPT — a month
+                                of daily-only correspondence must not burn
+                                the budget, or a returning player's old
+                                blitz/rapid era is never reached */
+      var MAX_FRUITFUL = 24; /* two years of tracked PLAYING is enough */
+      var MAX_WALK = 120;    /* absolute bound: ten years of months, so an
+                                account with no tracked games ever still
+                                terminates */
       function step() {
-        if (idx >= months.length || fruitful >= MAX_FRUITFUL) return null;
+        if (idx >= months.length || idx >= MAX_WALK || fruitful >= MAX_FRUITFUL) return null;
         var merged = mergeAll();
         /* a fresh walk stops the moment the window is full — the per-format
            floor hunt continues in the background so onboarding never stalls
@@ -1275,6 +1280,7 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
           var counts = {};
           mergeAll().forEach(function (g5) { counts[g5.perf] = (counts[g5.perf] || 0) + 1; });
           var total = mergeAll().length;
+          var kept = 0;
           (mo.games || []).slice().reverse().forEach(function (raw) {
             /* formats the user does not track must not squat in the
                window — lichess filters server-side via perfType, chess.com
@@ -1299,6 +1305,7 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
             got.push(c);
             counts[c.perf] = (counts[c.perf] || 0) + 1;
             total++;
+            kept++;
             n++;
             if (onProgress) onProgress(Math.min(n, cfg.gameLimit));
           });
@@ -1306,7 +1313,7 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
             painted = true;
             onFirstPaint(mergeAll());
           }
-          if (mo.games && mo.games.length) fruitful++;
+          if (kept) fruitful++;
           /* crossing the cache boundary ends the incremental walk — unless
              the cached history is incomplete and the window still has room,
              in which case older months keep back-filling */
@@ -1330,12 +1337,11 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
             listNow.forEach(function (g6) { counts[g6.perf] = (counts[g6.perf] || 0) + 1; });
             var done = trackedPerfs().every(function (pf) { return (counts[pf] || 0) >= effFloor; });
             if (idx >= months.length) data.ccHistDone = true;
-            if (done || idx >= months.length || fruitful >= MAX_FRUITFUL) return;
+            if (done || idx >= months.length || idx >= MAX_WALK || fruitful >= MAX_FRUITFUL) return;
             var url2 = months[idx].replace(CC, '');
             idx++;
             ccJSON(url2, { quiet: true }).then(function (mo2) {
               if (stale(bgGen)) return;
-              if (mo2.games && mo2.games.length) fruitful++;
               var byId = {};
               data.games.forEach(function (g7) { byId[g7.id] = 1; });
               var added = 0;
@@ -1352,6 +1358,7 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
                 added++;
               });
               if (added) {
+                fruitful++;
                 data.games.sort(function (a2, b2) { return b2.ts - a2.ts; });
                 retainMovetext();
                 saveGames(data.games);
