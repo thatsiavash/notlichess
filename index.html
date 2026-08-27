@@ -5548,8 +5548,9 @@ function renderTrainerInline() {
               + 'as White and Black, and ' + mCount + ' missions for today. '
             : 'Your games are in. As you play, your mistakes and opening lines feed the missions here. ')
         + 'Everything below starts with one tap — no setup, ever.</p>'
-        + '<p class="trainer-sub">A set is a handful of positions from your own games. '
-        + 'Finish one and your streak starts. The first move is explained as you go.</p>'
+        + '<p class="trainer-sub">The whole product works in sets — short, finishable rounds. '
+        + 'Finish a set and its mission checks off; finish one tomorrow and your streak begins. '
+        + 'The first moves are explained as you go.</p>'
         + '<div class="trainer-foot">'
         + '<a class="btn-gold btn-pulse" data-act="firstSet">Start your first set</a>'
         + '</div></div>'
@@ -7957,12 +7958,14 @@ function shapeSwiss(t) {
    says so. */
 var NARR_WISDOM = [
   'This takes about half a minute, once. After today the page opens instantly.',
+  'Everything here comes in sets — short, finishable rounds built from your games.',
   'Most players replay their wins. The rating lives in the losses.',
   'A mistake you retry from the exact position is worth ten you read about.',
+  'Finish a set and the day is won. Finish one tomorrow and the streak begins.',
   'Your worst positions will come back just before you would forget them. That is the trick.',
   'Three spaced successes and a mistake counts as trained, for good.',
-  'One focus at a time. Players who fix one thing outpace players who browse ten.',
-  'The plan will be specific: doses and deadlines, not advice.'
+  'Missions are just sets with names: your mistakes, your openings, your gaps.',
+  'One focus at a time. Players who fix one thing outpace players who browse ten.'
 ];
 function renderObQuestions() {
   var size = store.get('nl:setSize', 14);
