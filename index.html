@@ -5501,9 +5501,20 @@ function startPuzzleRun() {
   loadSessionItem();
 }
 
+function scrollTrainerTop() {
+  if (window.innerWidth > 720) return;
+  var elT = el('trainer-inline');
+  if (!elT || !elT.offsetParent) return;
+  var y = elT.getBoundingClientRect().top + window.pageYOffset - 6;
+  try { window.scrollTo({ top: y, behavior: 'smooth' }); }
+  catch (e) { window.scrollTo(0, y); }
+}
 function loadSessionItem() {
   var ss = ui.session;
   if (!ss) return;
+  /* the header and streak block eat a phone's viewport — every new card
+     brings its own board and buttons back into view */
+  setTimeout(scrollTrainerTop, 80);
   if (ss.idx >= ss.items.length) {
     if (!ss.finished) {
       ss.finished = true;
@@ -5608,8 +5619,9 @@ function loadSessionItem() {
       played: it.g.mv.split(' ')[it.b.p] || '?',
       why: item.refresher
         ? 'Spot check — you trained this one the hard way. Prove it stuck.'
-        : 'You played ' + (it.g.mv.split(' ')[it.b.p] || '?') + '? here'
-          + (it.b.k ? ' — ' + KIND_WORD[it.b.k] : '')
+        : (it.b.k
+            ? KIND_WORD[it.b.k].charAt(0).toUpperCase() + KIND_WORD[it.b.k].slice(1)
+            : 'The red arrow lost you the game')
           + ' (' + Math.round(it.b.wb) + '% win chance fell to ' + Math.round(it.b.wa)
           + '%). Find the better move.'
     };
