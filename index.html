@@ -7571,6 +7571,11 @@ function setUser(name) {
   cfg.user = name;
   saveCfg('user');
   data.freshLogin = true;   /* logins always re-ask the setup questions */
+  /* a login always lands on Today — the previous session's tab (stored
+     view and stale hash both) must not leak into the new account */
+  ui.view = 'train';
+  store.set('nl:view', 'train');
+  try { history.replaceState(null, '', location.pathname + '#train'); } catch (e) {}
   boot();
 }
 
