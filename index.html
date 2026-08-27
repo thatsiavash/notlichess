@@ -6857,6 +6857,8 @@ document.addEventListener('pointerdown', function (e) {
     pointerState.dragFrom = sq;
     pointerState.dragPiece = p;
     pointerState.moved = false;
+    pointerState.startX = e.clientX;
+    pointerState.startY = e.clientY;
     /* a tap that selects must not be un-selected by its own click event —
        that broken toggle is why tap-tap never worked on phones */
     pointerState.justSelected = a.sel !== sq;
@@ -6867,6 +6869,10 @@ document.addEventListener('pointerdown', function (e) {
 document.addEventListener('pointermove', function (e) {
   if (pointerState.dragFrom < 0) return;
   if (!pointerState.moved) {
+    /* a thumb never taps perfectly still — a few pixels of jitter is still
+       a tap, not a drag. Only real travel starts the drag. */
+    var jdx = e.clientX - pointerState.startX, jdy = e.clientY - pointerState.startY;
+    if (jdx * jdx + jdy * jdy < 64) return;
     pointerState.moved = true;
     /* the ghost appears on first movement, sized to the board's squares */
     var rect0 = document.querySelector('.board rect[data-sq]');
