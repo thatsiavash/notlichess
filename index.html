@@ -7565,6 +7565,7 @@ function setUser(name) {
   }
   cfg.user = name;
   saveCfg('user');
+  data.freshLogin = true;   /* logins always re-ask the setup questions */
   boot();
 }
 
@@ -7786,6 +7787,12 @@ document.addEventListener('click', function (e) {
       break;
     case 'obDone':
       store.set('nl:obDone', true);
+      /* formats changed while the fetch was already running: reboot so the
+         games actually match the choice just made */
+      if (data.fetchPerfs && data.fetchPerfs !== trackedPerfs().slice().sort().join(',')) {
+        boot();
+        break;
+      }
       if (data.narrate) renderNarration();
       else { renderShell(); renderAll(); }
       break;
@@ -9227,7 +9234,7 @@ function renderObQuestions() {
   var size = store.get('nl:setSize', 14);
   el('main').innerHTML = '<div class="first first-lean">'
     + '<div class="kicker" style="margin-bottom:16px">two questions</div>'
-    + '<h1 style="font-size:clamp(26px,6vw,36px)">While I read your games…</h1>'
+    + '<h1 style="font-size:clamp(26px,6vw,36px)">' + (data.narrate ? 'While I read your games…' : 'How do you want to train?') + '</h1>'
     + '<div class="ob-q">'
       + '<div class="ob-label">What are you training?</div>'
       + '<div class="caption" style="margin-bottom:6px">One or two reads best — the coach sharpens with depth. Pick more if you truly play more.</div>'
@@ -9439,11 +9446,17 @@ function boot() {
   buildSeries();
   data.narrate = !data.games.length;
   data.narrPreview = null; data.narrStart = null; data.narrTick = 0;
+  /* the setup questions belong to the person logging in, not to whoever
+     used this browser before — a fresh login always asks, cached or not */
+  var askOb = !!data.freshLogin;
+  data.freshLogin = false;
+  data.fetchPerfs = trackedPerfs().slice().sort().join(',');
   if (data.narrate) {
     renderHeader();
-    if (!store.get('nl:obDone', false)) renderObQuestions();
+    if (askOb || !store.get('nl:obDone', false)) renderObQuestions();
     else renderNarration();
   }
+  else if (askOb) { renderHeader(); renderObQuestions(); }
   else { renderShell(); renderAll(); }
 
   /* Serial by policy. Order is: what the header needs, then the heavy game
