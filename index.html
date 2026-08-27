@@ -1224,6 +1224,10 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
     cached = { games: data.games, ts: 0, perfs: '' };
   }
   var since = cached.ts || 0;
+  /* hd=1 on the cache means a prior walk reached the end of this account's
+     history, so months older than the cache hold nothing new */
+  var histDone = cached.hd === 1;
+  data.ccHistDone = histDone;
   var got = [], painted = false, n = 0;
   var mergeAll = function () {
     var seen = {}, out = [];
@@ -1259,11 +1263,12 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
       function step() {
         if (idx >= months.length || fruitful >= MAX_FRUITFUL) return null;
         var merged = mergeAll();
-        /* the foreground walk stops the moment the window is full — the
-           per-format floor hunt continues in the background so onboarding
-           never stalls at "nearly there" */
-        if (merged.length >= cfg.gameLimit) return null;
-        if (since && merged.length >= cfg.gameLimit) return null;
+        /* a fresh walk stops the moment the window is full — the per-format
+           floor hunt continues in the background so onboarding never stalls
+           at "nearly there". Incremental runs keep walking even when full:
+           new months must still land, and the cache-boundary check after
+           each month ends the walk once nothing newer remains. */
+        if (merged.length >= cfg.gameLimit && !since) return null;
         var url = months[idx].replace(CC, '');
         idx++;
         return ccJSON(url, { quiet: idx > 2 }).then(function (mo) {
@@ -1271,14 +1276,23 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
           mergeAll().forEach(function (g5) { counts[g5.perf] = (counts[g5.perf] || 0) + 1; });
           var total = mergeAll().length;
           (mo.games || []).slice().reverse().forEach(function (raw) {
+            /* formats the user does not track must not squat in the
+               window — lichess filters server-side via perfType, chess.com
+               archives arrive unfiltered */
+            if (trackedPerfs().indexOf(raw.time_class) === -1) return;
+            var fresh = since && ((raw.end_time || 0) * 1000) > since;
             /* once the window is full, only formats still under their floor
                are worth keeping — no hoarding 18,000 blitz games while
-               hunting two-year-old rapid */
-            if (total >= cfg.gameLimit
+               hunting two-year-old rapid. Games newer than the cache always
+               enter: the save-time trim drops the oldest, never the newest. */
+            if (total >= cfg.gameLimit && !fresh
                 && (counts[raw.time_class] || 0) >= effFloor) return;
             var shaped = ccShape(raw);
             if (!shaped) return;
-            if (since && shaped.createdAt <= since) return;
+            /* cached months are skipped only when history is known complete —
+               a truncated cache (interrupted or buggy first walk) back-fills
+               right here, the id-dedup absorbing the overlap */
+            if (since && histDone && shaped.createdAt <= since) return;
             var c = compact(shaped, meId);
             if (!c) return;
             c.u = shaped.ccUrl;
@@ -1293,14 +1307,19 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
             onFirstPaint(mergeAll());
           }
           if (mo.games && mo.games.length) fruitful++;
-          /* incremental runs stop at the first month older than the cache */
+          /* crossing the cache boundary ends the incremental walk — unless
+             the cached history is incomplete and the window still has room,
+             in which case older months keep back-filling */
           if (since && mo.games && mo.games.length
-              && (mo.games[0].end_time || 0) * 1000 <= since) return null;
+              && (mo.games[0].end_time || 0) * 1000 <= since
+              && (histDone || mergeAll().length >= cfg.gameLimit)) return null;
           return step();
         }).catch(function () { return step(); });
       }
       return Promise.resolve(step()).then(function () {
         var merged = mergeAll();
+        if (idx >= months.length) histDone = true;
+        data.ccHistDone = histDone;
         /* floors unmet and history remains: keep walking quietly */
         if (!floorsMet(merged) && idx < months.length && fruitful < MAX_FRUITFUL) {
           var bgGen = gen;
@@ -1310,6 +1329,7 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
             var counts = {};
             listNow.forEach(function (g6) { counts[g6.perf] = (counts[g6.perf] || 0) + 1; });
             var done = trackedPerfs().every(function (pf) { return (counts[pf] || 0) >= effFloor; });
+            if (idx >= months.length) data.ccHistDone = true;
             if (done || idx >= months.length || fruitful >= MAX_FRUITFUL) return;
             var url2 = months[idx].replace(CC, '');
             idx++;
@@ -1320,6 +1340,7 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
               data.games.forEach(function (g7) { byId[g7.id] = 1; });
               var added = 0;
               (mo2.games || []).slice().reverse().forEach(function (raw2) {
+                if (trackedPerfs().indexOf(raw2.time_class) === -1) return;
                 if ((counts[raw2.time_class] || 0) >= effFloor) return;
                 var shaped2 = ccShape(raw2);
                 if (!shaped2 || byId[shaped2.id]) return;
@@ -1341,7 +1362,7 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
             }).catch(function () { setTimeout(bg, 5000); });
           }, 1500);
         }
-        return { games: merged, count: merged.length };
+        return { games: merged, count: merged.length, all: histDone };
       });
     });
 }
@@ -1423,7 +1444,7 @@ function compact(g, meId) {
   };
 }
 
-var CACHE_VERSION = 9;   /* bump whenever the compact record shape changes */
+var CACHE_VERSION = 10;  /* bump whenever the compact record shape changes */
 function cacheKey() {
   /* lichess keeps its historical key; chess.com namespaces to avoid a
      same-name collision across sites */
@@ -1463,6 +1484,7 @@ function saveGames(games) {
     v: CACHE_VERSION,
     games: trimmed,
     ts: trimmed.length ? trimmed[0].ts : 0,
+    hd: data.ccHistDone ? 1 : 0,
     at: Date.now(),
     perfs: trackedPerfs().sort().join(',')
   };
@@ -8966,7 +8988,7 @@ function loadGames() {
     data.sections.games = 'ok';
     if (data.narrate) {
       var totalRead = payload.games.length;
-      narrLine('games', totalRead < cfg.gameLimit
+      narrLine('games', totalRead < cfg.gameLimit && payload.all !== false
         ? 'Read all <span class="tnum">' + totalRead + '</span> of your games — every one you have.'
         : 'Read your last <span class="tnum">' + totalRead + '</span> games.');
     }
