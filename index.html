@@ -389,6 +389,8 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.7) sepia(.4);
 }
 .subtab:hover{color:var(--display)}
 .subtab-on{color:var(--display);border-bottom-color:var(--gold)}
+.subtab-stat{font-size:12px;margin-left:2px}
+.subtab:not(.subtab-on):not(:hover) .subtab-stat.dim{opacity:.7}
 .verdict-lesson{color:var(--gold-quiet)}
 .verdict-lesson b{color:var(--gold)}
 .how-btn{
@@ -804,6 +806,8 @@ var urlUser = (params.get('u') || params.get('user') || '').trim();
    away in the edit panel. */
 var PERF_TCS = { bullet: ['1+0'], blitz: ['5+0','3+0'],
                  rapid: ['10+0'], classical: ['30+0'] };
+var PERF_HINT = { bullet: '1–2 min games', blitz: '3–5 min',
+                  rapid: '10–15 min', classical: '30+ min' };
 var cfg = {
   user: urlUser || store.get('nl:user', ''),
   tcs: store.get('nl:tcs', DEFAULT_TC.slice()),
@@ -3380,6 +3384,7 @@ function renderPlay() {
     editPanel = '<div class="panel" style="max-width:640px"><div class="panel-lead">'
       + (full ? 'Six is the limit — tap a checked one to drop it.'
               : left + ' slot' + (left === 1 ? '' : 's') + ' left. Tap to add or remove; the tiles above set the big one.')
+      + ' <span class="dim">Numbers are minutes + seconds added per move: 10+0 is a 10-minute game.</span>'
       + '</div><div class="chips">'
       + ALL_TC.map(function (tc) {
           var on = cfg.tcs.indexOf(tc) !== -1;
@@ -3617,7 +3622,11 @@ function segControl(label, items) {
     + items.map(function (it) {
         return '<a class="subtab' + (it.on ? ' subtab-on' : '') + '" data-act="' + it.act
           + '" data-k="' + esc(it.k) + '" role="button" aria-pressed="' + !!it.on + '">'
-          + esc(it.text) + '</a>';
+          + esc(it.text)
+          + (it.stat != null
+              ? ' <span class="subtab-stat tnum ' + (it.statClass || '') + '">' + it.stat + '</span>'
+              : '')
+          + '</a>';
       }).join('')
     + '</span></div>';
 }
@@ -3691,7 +3700,8 @@ function renderCoach() {
   var focusChips = '';
   if (weak.length > 1) {
     focusChips = segControl('focus', weak.map(function (r) {
-      return { text: r.phrase, k: r.key, act: 'focus', on: focus && r.key === focus.key };
+      return { text: r.phrase, k: r.key, act: 'focus', on: focus && r.key === focus.key,
+               stat: fmtSkill(r), statClass: verdictClass(r.verdict) };
     }));
   }
 
@@ -3795,7 +3805,10 @@ function renderCoach() {
   var perfPick = '';
   if (coachable.length > 1) {
     perfPick = segControl('coaching', coachable.map(function (pf) {
-      return { text: perfLabel(pf), k: pf, act: 'coachPerf', on: mainPerf() === pf };
+      var rt = data.user && data.user.perfs && data.user.perfs[pf]
+        ? data.user.perfs[pf].rating : null;
+      return { text: perfLabel(pf), k: pf, act: 'coachPerf', on: mainPerf() === pf,
+               stat: rt, statClass: 'dim' };
     }));
   }
 
@@ -6979,7 +6992,8 @@ function renderSettings() {
           var cur = trackedPerfs();
           var on = cur.indexOf(pf) !== -1;
           return '<a class="chip-sm ' + (on ? 'chip-on' : 'chip-off') + '" data-act="perf" data-k="' + pf + '">'
-            + (on ? '✓ ' + pf : pf) + '</a>';
+            + (on ? '✓ ' + pf : pf)
+            + ' <span class="dim" style="font-size:11px">' + PERF_HINT[pf] + '</span></a>';
         }).join('')
       + '</div></div>'
 
@@ -8667,7 +8681,8 @@ function renderObQuestions() {
       + ['rapid','blitz','bullet','classical'].map(function (pf) {
           var on = trackedPerfs().indexOf(pf) !== -1;
           return '<a class="chip ' + (on ? 'chip-on' : '') + '" data-act="narrPerf" data-k="' + pf + '">'
-            + (on ? '✓ ' + pf : pf) + '</a>';
+            + (on ? '✓ ' + pf : pf)
+            + ' <span class="dim" style="font-size:11px">' + PERF_HINT[pf] + '</span></a>';
         }).join('')
       + '</div>'
     + '</div>'
