@@ -6629,7 +6629,10 @@ function renderSettings() {
       + 'take the code, change it, share it.</div></div>'
 
     + '</div>'
-    + '<div class="more"><a data-act="settings">close</a><a data-act="wipe">Clear cached games</a></div>'
+    + '<div class="more"><a data-act="settings">close</a>'
+    + '<a data-act="wipe" class="' + (ui.wipeArmed ? 'loss' : '') + '">'
+    + (ui.wipeArmed ? 'Tap again to erase everything — streaks, training history, all of it'
+                    : 'Start fresh (erase everything)') + '</a></div>'
     + '</div>';
 }
 
@@ -7001,9 +7004,12 @@ document.addEventListener('click', function (e) {
       renderHeader();
       renderFirstVisit();
       break;
-    case 'settings': ui.settingsOpen = !ui.settingsOpen; renderSettings();
-      if (ui.settingsOpen) el('settings').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    case 'settings': {
+      ui.settingsOpen = !ui.settingsOpen; ui.wipeArmed = false; renderSettings();
+      var sEl = el('settings');
+      if (ui.settingsOpen && sEl) sEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
       break;
+    }
     case 'view': setView(k); break;
     case 'narrPerf': {
       var curN = trackedPerfs();
@@ -7220,7 +7226,25 @@ document.addEventListener('click', function (e) {
         : 'No peer baseline is loaded.');
       break;
     case 'reload': store.del(cacheKey()); boot(); break;
-    case 'wipe': store.del(cacheKey()); notice('Cached games cleared.'); boot(); break;
+    case 'wipe': {
+      /* full reset: every nl:* key goes — games, SRS, streaks, learned
+         lines, adopted openings, caches, settings, the user itself — then
+         a clean reload lands on the logged-out first visit. Two taps,
+         because this erases a streak someone may care about. */
+      if (!ui.wipeArmed) {
+        ui.wipeArmed = true;
+        renderSettings();
+        break;
+      }
+      var doomed = [];
+      for (var wi = 0; wi < localStorage.length; wi++) {
+        var wk = localStorage.key(wi);
+        if (wk && wk.indexOf('nl:') === 0) doomed.push(wk);
+      }
+      doomed.forEach(function (wk2) { localStorage.removeItem(wk2); });
+      location.href = location.pathname;   /* clean boot, no ?u, no hash */
+      break;
+    }
   }
 });
 
