@@ -4529,6 +4529,75 @@ function startOpeningSession(colour, fam, mode) {
   setTimeout(tick, 900);
 }
 
+/* Diagnostics: for each spec type this account can produce, run the REAL
+   selector and report what it picked — category fields, swing, age — so
+   set quality is checkable mechanically. Read-only. */
+window.__audit = function () {
+  var out = { user: cfg.user, games: data.games.length,
+              covered: data.games.filter(function (g) { return g.analysed || g.scanned; }).length,
+              blunders: allBlunders().length, specs: {} };
+  var specs = [];
+  mistakeShapes().forEach(function (sh) { specs.push(sh.spec); });
+  specs.push({ type: 'colour', colour: 'white', label: 'as white' });
+  specs.push({ type: 'colour', colour: 'black', label: 'as black' });
+  specs.push({ type: 'clock', mode: 'high', label: 'unhurried' });
+  specs.push({ type: 'clock', mode: 'low', label: 'time-trouble' });
+  specs.push({ type: 'window', days: 30, label: 'this month' });
+  specs.push({ type: 'stronger', label: 'vs stronger' });
+  var famsW = colourFamilies('white'), famsB = colourFamilies('black');
+  if (famsW[0]) specs.push({ type: 'opening', family: famsW[0].family,
+                             colour: 'white', label: 'top opening' });
+  else if (famsB[0]) specs.push({ type: 'opening', family: famsB[0].family,
+                                  colour: 'black', label: 'top opening' });
+  specs.forEach(function (sp) {
+    var picked = selectCustomItems(sp).slice(0, 10);
+    out.specs[sp.label] = {
+      pool: selectCustomItems(sp).length,
+      picked: picked.map(function (x) {
+        var it = x.it;
+        var init = tcInitialSecs(it.g.tc);
+        return { d: Math.round((Date.now() - it.g.ts) / 864e5),
+                 k: it.b.k || null, ph: blunderPhase(it),
+                 cf: init && it.b.c != null ? Math.round(it.b.c * 100 / init) : null,
+                 sw: Math.round(it.b.wb - it.b.wa),
+                 col: it.g.color, od: it.g.oppR != null && it.g.myR != null ? it.g.oppR - it.g.myR : null,
+                 fam: it.g.opening ? it.g.opening.split(':')[0].trim() : null };
+      })
+    };
+  });
+  return JSON.stringify(out);
+};
+
+window.__auditSummary = function () {
+  var raw = JSON.parse(window.__audit());
+  var out = { u: raw.user, g: raw.games, cov: raw.covered, bl: raw.blunders, s: {} };
+  Object.keys(raw.specs).forEach(function (label) {
+    var sp = raw.specs[label];
+    var viol = 0, ds = [], sws = [];
+    sp.picked.forEach(function (x) {
+      ds.push(x.d); sws.push(x.sw);
+      if (label.indexOf('as ') === 0 && x.col !== label.slice(3)) viol++;
+      if (label === 'unhurried' && (x.cf == null || x.cf < 33)) viol++;
+      if (label === 'time-trouble' && (x.cf == null || x.cf > 15)) viol++;
+      if (label === 'this month' && x.d > 30) viol++;
+      if (label === 'vs stronger' && (x.od == null || x.od < 50)) viol++;
+      if (label === 'Hung pieces' && x.k !== 'hung') viol++;
+      if (label === 'Missed tactics' && x.k !== 'tactic') viol++;
+      if (label === 'Won games slipping' && x.k !== 'slip') viol++;
+      if (label === 'Level positions collapsing' && x.k !== 'collapse') viol++;
+      if (label === 'Opening mistakes' && x.ph !== 'open') viol++;
+      if (label === 'Middlegame mistakes' && x.ph !== 'mid') viol++;
+      if (label === 'Endgame mistakes' && x.ph !== 'end') viol++;
+    });
+    ds.sort(function (a, b) { return a - b; });
+    sws.sort(function (a, b) { return a - b; });
+    out.s[label] = { pool: sp.pool, n: sp.picked.length, viol: viol,
+                     medD: ds.length ? ds[ds.length >> 1] : null,
+                     medSw: sws.length ? sws[sws.length >> 1] : null };
+  });
+  return JSON.stringify(out);
+};
+
 /* ── The board ── */
 /* Classic colours and the cburnett pieces — the board every Lichess player
    already reads fluently. Squares #f0d9b5/#b58863, last-move green, quiet
@@ -4902,7 +4971,7 @@ function blunderPiece(it) {
   return t0 === 'O' ? 'K' : ('NBRQK'.indexOf(t0) !== -1 ? t0 : 'P');
 }
 
-function startCustomSession(spec) {
+function selectCustomItems(spec) {
   var gf = customGameFilter(spec);
   var srs = srsLoad(), now = Date.now();
   var dealtToday = dayLoad().dealt || {};
@@ -4936,7 +5005,11 @@ function startCustomSession(spec) {
     items.push({ kind: 'blunder', it: it, _band: band, _s: score });
   });
   items.sort(function (a, b) { return a._band - b._band || b._s - a._s; });
-  items = items.slice(0, Math.max(4, setSize() - PUZZLES_PER_SESSION));
+  return items;
+}
+
+function startCustomSession(spec) {
+  var items = selectCustomItems(spec).slice(0, Math.max(4, setSize() - PUZZLES_PER_SESSION));
   if (items.length < 3) {
     notice('Only ' + items.length + ' analysed positions match so far — the engine is '
       + 'prioritising those games now. Try again in a few minutes.');
@@ -5726,7 +5799,7 @@ function missionsPanel() {
   var ss = ui.session;
   var doneN = list.filter(function (m) { return m.count > 0; }).length;
   return '<div class="missions">'
-    + '<div class="missions-head"><span class="kicker-sm">today\'s missions</span>'
+    + '<div class="missions-head"><span class="kicker-sm">missions</span>'
       + '<span class="dim tnum" style="font-size:11px">' + doneN + ' / ' + list.length + '</span></div>'
     + list.map(function (m) {
         var active = ss && !ss.finished && ss.missionKey === m.key;
