@@ -233,6 +233,8 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.7) sepia(.4);
 .trainer-head a{font-size:18px;line-height:1;color:var(--dim)}
 .trainer-prompt{margin:12px 0 2px;color:var(--primary);font-size:15px}
 .trainer-sub{margin:0 0 12px;color:var(--secondary);font-size:14px;min-height:1.4em}
+.trainer-ask{margin:0 0 12px;color:var(--primary);font-size:16px;min-height:1.4em}
+.trainer-ask b{color:var(--gold);font-weight:600}
 .trainer-foot{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 .fish-ic{display:inline-flex;align-items:center;gap:6px;color:var(--dim);align-self:center;position:relative;top:1.5px}
 .scan-count:empty{display:none}
@@ -546,6 +548,10 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.7) sepia(.4);
 .verdict{font-size:16px;margin:12px 0 2px}
 .verdict-good{color:var(--win)}
 .verdict-bad{color:var(--loss)}
+.verdict-checking{color:var(--gold-quiet);animation:checkPulse 1.2s ease-in-out infinite}
+.check-spin{display:inline-block;width:11px;height:11px;margin-right:8px;border:1.5px solid var(--gold-quiet);border-top-color:transparent;border-radius:50%;animation:checkSpin .8s linear infinite;vertical-align:-1px}
+@keyframes checkSpin{to{transform:rotate(360deg)}}
+@keyframes checkPulse{0%,100%{opacity:.65}50%{opacity:1}}
 .inline-trainer{max-width:920px;padding:8px 0 20px}
 .inline-trainer .set-bar{max-width:480px}
 .inline-why{font-size:14px;color:var(--gold-quiet);margin:0 0 10px}
@@ -797,13 +803,11 @@ var RETAIN_PER_FORMAT = 100; /* newest unanalysed games per format that keep
                                 their movetext for the fetch-free scan batch */   /* every tracked format keeps at least this
                                many recent games — a 1000-game window of
                                mostly blitz must not starve the rapid coach */
-var MAX_GAMES = 3000;       /* ~2 minutes at Lichess's ~24 games/sec */
 var LIMIT_CHOICES = [100, 250, 500, 1000];
 
 var params = new URLSearchParams(location.search);
 var urlUser = (params.get('u') || params.get('user') || '').trim();
 var urlSrc = (params.get('src') || '').trim();
-var urlSrc = params.get('src');
 
 /* Defaults per format lean no-increment: the most-played pools, and a
    clean three-tile Play stage for a fresh account. Increments stay one tap
@@ -902,10 +906,17 @@ function userHref(u) {
   if (isCC()) return 'https://www.chess.com/member/' + encodeURIComponent(u);
   return L + '/@/' + encodeURIComponent(u);
 }
-function perfHref(u, perf) { return L + '/@/' + encodeURIComponent(u) + '/perf/' + perf; }
+function perfHref(u, perf) {
+  if (isCC()) {
+    var ccp = ['bullet', 'blitz', 'rapid', 'daily'].indexOf(perf) !== -1 ? perf : 'rapid';
+    return 'https://www.chess.com/stats/live/' + ccp + '/' + encodeURIComponent(u);
+  }
+  return L + '/@/' + encodeURIComponent(u) + '/perf/' + perf;
+}
 function insightsHref(u, metric, dim) {
   return L + '/insights/' + encodeURIComponent(u) + (metric ? '/' + metric + '/' + dim : '');
 }
+function tvHref() { return isCC() ? 'https://www.chess.com/tv' : L + '/tv'; }
 function gameHref(id, color, ply) {
   if (isCC()) return 'https://www.chess.com/game/live/' + id;
   return L + '/' + id + (color ? '/' + color : '') + (ply ? '#' + ply : '');
@@ -1229,6 +1240,8 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
      history, so months older than the cache hold nothing new */
   var histDone = cached.hd === 1;
   data.ccHistDone = histDone;
+  var monthFail = false;
+  data.progressTarget = cfg.perFormat;   /* the foreground walk's real goal */
   var got = [], painted = false, n = 0;
   var mergeAll = function () {
     var seen = {}, out = [];
@@ -1243,6 +1256,12 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
   /* every tracked format gets its own quota — a dominant format can no
      longer squeeze the others out of a shared window */
   var Q = cfg.perFormat;
+  /* chess.com serves only these three; a tracked format outside them
+     (classical) must not make the quota unsatisfiable */
+  var ccPerfs = trackedPerfs().filter(function (pf) {
+    return ['bullet', 'blitz', 'rapid'].indexOf(pf) !== -1;
+  });
+  if (!ccPerfs.length) ccPerfs = ['rapid', 'blitz'];
   var countsOf = function (list) {
     var c = {};
     list.forEach(function (g) { c[g.perf] = (c[g.perf] || 0) + 1; });
@@ -1250,7 +1269,7 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
   };
   var quotasMet = function (list) {
     var c = countsOf(list);
-    return trackedPerfs().every(function (pf) { return (c[pf] || 0) >= Q; });
+    return ccPerfs.every(function (pf) { return (c[pf] || 0) >= Q; });
   };
   return ccJSON('/player/' + encodeURIComponent(cfg.user) + '/games/archives', { quiet: true })
     .then(function (a) {
@@ -1322,21 +1341,21 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
               && (mo.games[0].end_time || 0) * 1000 <= since
               && (histDone || quotasMet(mergeAll()))) return null;
           return step();
-        }).catch(function () { return step(); });
+        }).catch(function () { monthFail = true; return step(); });
       }
       return Promise.resolve(step()).then(function () {
         var merged = mergeAll();
-        if (idx >= months.length) histDone = true;
+        if (idx >= months.length && !monthFail) histDone = true;
         data.ccHistDone = histDone;
         /* floors unmet and history remains: keep walking quietly */
-        if (!quotasMet(merged) && idx < months.length && idx < MAX_WALK && fruitful < MAX_FRUITFUL) {
+        if (!quotasMet(merged) && !histDone && idx < months.length && idx < MAX_WALK && fruitful < MAX_FRUITFUL) {
           var bgGen = gen;
           setTimeout(function bg() {
             if (stale(bgGen)) return;
             var listNow = data.games;
             var counts = {};
             listNow.forEach(function (g6) { counts[g6.perf] = (counts[g6.perf] || 0) + 1; });
-            var done = trackedPerfs().every(function (pf) { return (counts[pf] || 0) >= Q; });
+            var done = ccPerfs.every(function (pf) { return (counts[pf] || 0) >= Q; });
             if (idx >= months.length) data.ccHistDone = true;
             if (done || idx >= months.length || idx >= MAX_WALK || fruitful >= MAX_FRUITFUL) return;
             var url2 = months[idx].replace(CC, '');
@@ -1483,7 +1502,13 @@ function trimGames(games) {
 }
 
 function saveGames(games) {
-  var trimmed = trimGames(games);
+  if (!cfg.user) return { games: games };
+  var trimmed = trimGames(games).map(function (g) {
+    if (g.mvTmp === undefined && g.ckTmp === undefined) return g;
+    var c = {}, k;
+    for (k in g) { if (g.hasOwnProperty(k) && k !== 'mvTmp' && k !== 'ckTmp') c[k] = g[k]; }
+    return c;
+  });
   var payload = {
     v: CACHE_VERSION,
     games: trimmed,
@@ -1517,6 +1542,7 @@ function fetchGames(meId, onProgress, onFirstPaint) {
   }
   var incremental = cached.games.length && cached.ts;
   data.ccHistDone = cached.hd === 1;
+  data.progressTarget = null;
   var fresh = [], painted = false, rawN = 0;
   var collect = function (g) {
     rawN++;
@@ -1559,7 +1585,7 @@ function fetchGames(meId, onProgress, onFirstPaint) {
     pay.all = data.ccHistDone;
     return pay;
   }).catch(function (err) {
-    if (cached.games.length) return cached;   /* stale beats empty */
+    if (cached.games.length) { cached.all = false; return cached; }
     throw err;
   });
 }
@@ -2159,8 +2185,11 @@ var SKILLS = [
       return m && m.n >= 12 ? { v: m.v, n: m.n } : null;
     },
     plan: function () {
-      return { label: 'Puzzles from your own games',
-               href: L + '/training/of-player?name=' + encodeURIComponent(cfg.user),
+      return { label: 'A set from your own games',
+               custom: { type: 'window', days: 90, label: 'Your recent mistakes', theme: 'mix',
+                         why: 'The exact positions you got wrong, dealt back as a set.' },
+               href: isCC() ? null : L + '/training/of-player?name=' + encodeURIComponent(cfg.user),
+               hrefLabel: 'Puzzles on lichess',
                why: 'These are the exact positions you got wrong.' };
     } },
 
@@ -2174,10 +2203,14 @@ var SKILLS = [
     plan: function () {
       var w = worstOpening();
       return w
-        ? { label: 'Study the ' + w.family, href: openingHref(w.family),
+        ? { label: 'Train the ' + w.family,
+            custom: { type: 'opening', family: w.family, colour: w.colour, theme: 'opening',
+                      label: w.family + ' as ' + w.colour,
+                      why: 'Your mistakes from ' + w.family + ' games as ' + w.colour + '.' },
+            href: openingHref(w.family), hrefLabel: 'Study it on lichess',
             why: 'Your weakest line as ' + w.colour + ': ' + pct(w.rate) + ' over ' + w.n + ' games.' }
-        : { label: 'Browse the openings', href: L + '/opening',
-            why: 'Learn the first fifteen moves of what you actually play.' };
+        : { label: 'Learn your openings here', act: 'repDrillFocus',
+            why: 'Learn the first fifteen moves of what you actually play, move by move.' };
     } },
 
   { key: 'middlegame', label: 'Middlegame', phrase: 'the middlegame', unit: '%', peer: 'acc_mid', scale: 3,
@@ -2188,7 +2221,10 @@ var SKILLS = [
       return m && m.n >= 12 ? { v: m.v, n: m.n } : null;
     },
     plan: function () {
-      return { label: 'Middlegame puzzles', href: L + '/training/middlegame',
+      return { label: 'Train your middlegame mistakes',
+               custom: { type: 'phase', phase: 'mid', label: 'Middlegame mistakes', theme: 'mix',
+                         why: 'Your own mistakes from moves 16 to 30, until they stay fixed.' },
+               href: L + '/training/middlegame', hrefLabel: 'Middlegame puzzles on lichess',
                why: 'Pattern work where most of the evaluation is lost.' };
     } },
 
@@ -2200,8 +2236,11 @@ var SKILLS = [
       return m && m.n >= 10 ? { v: m.v, n: m.n } : null;
     },
     plan: function () {
-      return { label: 'Endgame practice', href: L + '/practice',
-               why: "Lichess's own endgame chapters, then endgame puzzles." };
+      return { label: 'Train your endgame mistakes',
+               custom: { type: 'phase', phase: 'end', label: 'Endgame mistakes', theme: 'mix',
+                         why: 'Your own endings from move 31 on — where half points leak away.' },
+               href: L + '/practice', hrefLabel: 'Endgame practice on lichess',
+               why: 'Your own endings first; the practice chapters teach the rest.' };
     } },
 
   { key: 'tactical', label: 'Tactical awareness', phrase: 'tactical awareness', unit: '%', peer: 'ta', scale: 3.5,
@@ -2213,8 +2252,11 @@ var SKILLS = [
       return m && m.n >= 10 ? { v: m.v, n: m.n } : null;
     },
     plan: function () {
-      return { label: 'Punishment puzzles', href: L + '/training/crushing',
-               why: 'Ten a day: spot the blunder, find the refutation.' };
+      return { label: 'Train your missed tactics',
+               custom: { type: 'kind', kind: 'tactic', label: 'Missed tactics', theme: 'mix',
+                         why: 'Positions where your opponent blundered and the punishment was there.' },
+               href: L + '/training/crushing', hrefLabel: 'Punishment puzzles on lichess',
+               why: 'Spot the blunder, find the refutation — from your own games.' };
     } },
 
   { key: 'speed', label: 'Speed', phrase: 'your speed', unit: '%', peer: 'spd', scale: 4,
@@ -2255,7 +2297,10 @@ var SKILLS = [
       return { v: won * 100 / chance.length, n: chance.length };
     },
     plan: function () {
-      return { label: 'Winning-position puzzles', href: L + '/training/advantage',
+      return { label: 'Train your slipped wins',
+               custom: { type: 'kind', kind: 'slip', label: 'Slipped wins', theme: 'mix',
+                         why: 'Games you were winning and let go — retried from the slip itself.' },
+               href: L + '/training/advantage', hrefLabel: 'Winning-position puzzles on lichess',
                why: 'Practise turning an advantage into a point.' };
     } },
 
@@ -2269,7 +2314,10 @@ var SKILLS = [
       return { v: saved * 100 / chance.length, n: chance.length };
     },
     plan: function () {
-      return { label: 'Defensive puzzles', href: L + '/training/defensiveMove',
+      return { label: 'Train your collapses',
+               custom: { type: 'kind', kind: 'collapse', label: 'Collapsed positions', theme: 'mix',
+                         why: 'Level positions that became lost — hold them this time.' },
+               href: L + '/training/defensiveMove', hrefLabel: 'Defensive puzzles on lichess',
                why: 'A worse position is not a lost one.' };
     } },
 
@@ -2552,6 +2600,14 @@ function mainPerf() {
    which made every gap test wrong for anything slower than bullet. */
 function idleGap(later, earlier) {
   if (!later || !earlier) return Infinity;
+  /* lichess ts = game START (secs then gives the end); chess.com ts is the
+     END already — subtract an estimated duration from the later game so cc
+     gaps aren't inflated by that game's own length */
+  if (isCC()) {
+    var estSecs = Math.min((tcInitialSecs(later.tc) || 300) * 2.2,
+                           later.plies * ((tcInitialSecs(later.tc) || 300) / 40));
+    return (later.ts - estSecs * 1000) - earlier.ts;
+  }
   var earlierEnd = earlier.ts + (earlier.secs != null ? earlier.secs * 1000 : 0);
   return later.ts - earlierEnd;
 }
@@ -2845,7 +2901,8 @@ var detectors = [
       note: '<span class="loss">' + pct(worst.rate) + '</span> on ' + name + 's',
       compare: pct(base) + ' overall',
       peerRelative: false,
-      action: { label: 'Puzzles instead that day', href: L + '/training' }
+      custom: { type: 'window', days: 60, label: 'A set instead that day',
+                why: 'Your own recent mistakes, dealt as a set — no rating at stake.' }
     };
   }},
 
@@ -2871,7 +2928,8 @@ var detectors = [
       note: '<span class="loss">' + pct(f) + '</span> when cold',
       compare: pct(r) + ' once warm',
       peerRelative: false,
-      action: { label: 'Warm up with three puzzles', href: L + '/training' }
+      custom: { type: 'window', days: 60, label: 'Warm-up set',
+                why: 'A few of your own mistakes before the first game — cold starts cost you.' }
     };
   }},
 
@@ -2954,7 +3012,7 @@ var detectors = [
         note: '<span class="loss">' + streak + ' losses</span> in a row',
         compare: 'this session · ' + signed(delta) + ' rating',
         peerRelative: false,
-        action: { label: 'Watch TV instead', href: L + '/tv' }
+        action: { label: 'Watch TV instead', href: tvHref() }
       };
     }
 
@@ -2976,7 +3034,7 @@ var detectors = [
       note: pct(a) + ' after a loss',
       compare: pct(b) + ' otherwise · ' + after.length + ' games',
       peerRelative: false,
-      action: { label: 'Watch TV instead', href: L + '/tv' }
+      action: { label: 'Watch TV instead', href: tvHref() }
     };
   }},
 
@@ -2984,6 +3042,7 @@ var detectors = [
      size of the pile: a wider window always holds a bigger backlog, and that
      says nothing about whether you are reviewing what you play. ---------- */
   { id: 'review-debt', name: 'Review backlog', blurb: 'Whether you analyse the games you play', cat: 'backlog', run: function () {
+    if (isCC()) return null;   /* chess.com games carry no lichess analysis */
     var queue = reviewQueue();
     if (queue.length < 10) return null;
     var sel = reviewSelection();
@@ -3201,7 +3260,7 @@ var detectors = [
       note: '<span class="loss">' + pct(l) + '</span> after 3 games',
       compare: pct(e) + ' in the first three · ' + late.length + ' later games',
       peerRelative: false,
-      action: { label: 'Watch TV instead', href: L + '/tv' }
+      action: { label: 'Watch TV instead', href: tvHref() }
     };
   }},
 
@@ -3230,7 +3289,8 @@ var detectors = [
       note: '<span class="loss">' + pct(l) + '</span> after midnight',
       compare: pct(n) + ' the rest of the day · ' + late.length + ' late games',
       peerRelative: false,
-      action: { label: 'Puzzles instead', href: L + '/training' }
+      custom: { type: 'window', days: 60, label: 'A short set instead',
+                why: 'Your own mistakes, no rating at stake.' }
     };
   }},
 
@@ -3792,6 +3852,14 @@ function goalProgress(goal, focus) {
     if (mine.length < 5) return { n: mine.length, val: null };
     return { n: mine.length, val: winRate(mine) };
   }
+  /* every other skill re-runs its own compute over the games since the
+     goal was set — the same number the profile row shows, just windowed */
+  for (var di = 0; di < SKILLS.length; di++) {
+    if (SKILLS[di].key !== focus.key) continue;
+    var res = null;
+    try { res = SKILLS[di].compute(since); } catch (e5) {}
+    return { n: since.length, val: res ? res.v : null };
+  }
   return { n: since.length, val: null };
 }
 
@@ -4056,7 +4124,12 @@ function renderCoach() {
                        label: 'Drill the book', act: 'repDrillFocus' });
         }
       } catch (e) {}
-    } else {
+    } else if (pl.custom) {
+      pushCustom(pl.custom, DOSES[focus.key] || pl.why, true);
+    } else if (pl.act) {
+      moves.push({ gold: true, text: DOSES[focus.key] || pl.why,
+                   label: pl.label, act: pl.act });
+    } else if (pl.href && !(isCC() && pl.href.indexOf(L) === 0)) {
       moves.push({ gold: true, text: DOSES[focus.key] || pl.why,
                    label: pl.label, href: pl.href });
     }
@@ -4075,12 +4148,13 @@ function renderCoach() {
                    theme: f.custom.type === 'opening' ? 'opening' : null,
                    why: f.custom.why },
         f.headline);
-    } else if (f.action && f.action.href) {
+    } else if (f.action && f.action.href
+               && !(isCC() && f.action.href.indexOf(L) === 0)) {
       moves.push({ text: f.headline, label: f.action.label, href: f.action.href });
     }
   });
   var rq = reviewQueue();
-  if (rq.length) {
+  if (!isCC() && rq.length) {
     moves.push({ text: 'Analysed games feed the trainer — your newest is waiting.',
                  label: 'Analyse it', href: gameHref(rq[0].id, rq[0].color) });
   }
@@ -5252,7 +5326,7 @@ function startSession(startKey, quiet) {
    re-renders never grow it */
 function registerSpec(spec) {
   data.customSpecs = data.customSpecs || [];
-  var key = [spec.type, spec.name, spec.family, spec.colour, spec.mode, spec.days, spec.kind, spec.phase].join('|');
+  var key = [spec.type, spec.name, spec.family, spec.colour, spec.mode, spec.days, spec.kind, spec.phase, spec.piece].join('|');
   for (var i = 0; i < data.customSpecs.length; i++) {
     if (data.customSpecs[i]._k === key) return i;
   }
@@ -5968,9 +6042,17 @@ function revealAnswer() {
     return;
   }
   if (a.kind === 'blunder') {
-    var name0 = moveNameOf(st, { from: a.best.from, to: a.best.to, promo: a.bestPromo });
-    applyMove(st, { from: a.best.from, to: a.best.to, promo: a.bestPromo || null, ep: -1 });
-    a.lastMove = [a.best.from, a.best.to];
+    /* replay the SAN itself: a castling or en-passant answer needs its
+       special-move semantics, which a bare from/to rebuild loses */
+    var name0 = null, revMv = null;
+    var sanBest = a.it && a.it.b && a.it.b.bs;
+    if (sanBest) { revMv = sanApply(st, sanBest); if (revMv) name0 = sanBest; }
+    if (!revMv) {
+      name0 = moveNameOf(st, { from: a.best.from, to: a.best.to, promo: a.bestPromo });
+      applyMove(st, { from: a.best.from, to: a.best.to, promo: a.bestPromo || null, ep: -1 });
+      revMv = a.best;
+    }
+    a.lastMove = [revMv.from, revMv.to];
     pushHist(a, name0);
     walkOutLine(a);
   } else {
@@ -6285,12 +6367,19 @@ function renderTrainerInline() {
             + '<a class="btn-gold btn-pulse" data-act="train">Keep going!</a>'
             + '<a class="btn-quiet" href="' + playHref(cfg.tcs[0]) + '">Play one ' + cfg.tcs[0] + '</a></div>'
           : '<div class="loading">dealing today\'s set…</div>')
-      + '<div class="caption-after">Positions come from the ' + an
-      + ' of your games with analysis'
-      + (reviewQueue().length
-          ? ' — <a href="' + gameHref(reviewQueue()[0].id, reviewQueue()[0].color)
-            + '">analyse your newest game</a> and the pool grows'
-          : '') + '.</div></div>'
+      + '<div class="caption-after">Positions come from the '
+      + (isCC()
+          ? (function () {
+              var n2 = 0;
+              data.games.forEach(function (g5) { if (g5.scanned || g5.bl || g5.analysed) n2++; });
+              return n2 + ' of your games Stockfish has read — it keeps reading in the background';
+            })()
+          : an + ' of your games with analysis'
+            + (reviewQueue().length
+                ? ' — <a href="' + gameHref(reviewQueue()[0].id, reviewQueue()[0].color)
+                  + '">analyse your newest game</a> and the pool grows'
+                : ''))
+      + '.</div></div>'
       + missionsPanel();
     return;
   }
@@ -6366,13 +6455,15 @@ function renderTrainerInline() {
   var firstRun = !store.get('nl:introSeen', false);
   var verdict = '', prompt;
   if (a.phase === 'checking') {
-    prompt = 'Asking the engine about ' + esc(a.moveName) + '…';
+    prompt = 'Not the move I trained for — but is it also good?';
+    verdict = '<p class="verdict verdict-checking"><span class="check-spin"></span>'
+      + 'Checking ' + esc(a.moveName) + ' with the engine…</p>';
   } else if (a.phase === 'guess') {
     prompt = a.kind === 'openlearn'
       ? 'Copy the shown move.'
       : a.kind === 'opening'
-      ? (a.di === 0 ? 'Your move in this line.' : 'Your move.')
-      : (a.st.w ? 'White' : 'Black') + ' to move — find the best move.'
+      ? '<b>Your move</b>' + (a.di === 0 ? ' in this line.' : '.')
+      : '<b>' + (a.st.w ? 'White' : 'Black') + ' to move</b> — find the best move.'
         + (firstRun && ss.idx === 0 ? ' Tap a piece or drag it, like on lichess.' : '');
     if ((a.kind === 'opening' || a.kind === 'openlearn') && a.stepNote)
       verdict = '<p class="verdict' + (a.kind === 'openlearn' ? ' verdict-lesson' : ' verdict-good') + '">' + a.stepNote + '</p>';
@@ -6383,7 +6474,7 @@ function renderTrainerInline() {
       }
     }
     if (a.flash) {
-      verdict = '<p class="verdict verdict-bad">✗ '
+      verdict += '<p class="verdict verdict-bad">✗ '
         + (a.flashEval
             ? esc(a.flashEval.san) + ' drops your win chance to ' + a.flashEval.mine
               + '% — the position holds ' + a.flashEval.best + '%. Keep looking'
@@ -6405,12 +6496,18 @@ function renderTrainerInline() {
       verdict = '<p class="verdict verdict-good">✓ Trained — three in a row. '
         + 'This mistake is behind you.</p>';
     } else if (a.altGood) {
+      /* the alt gets a fresh deeper search while the stored pick carries a
+         triage number — a small inversion is depth noise, and the copy must
+         never read as Stockfish beating itself */
       verdict = '<p class="verdict verdict-good">✓ ' + esc(a.altGood)
         + ' also works' + (a.result === 'first' ? ', first try' : '')
         + (a.altEval
-            ? ' — it keeps ' + a.altEval.mine + '% win chance against the '
-              + a.altEval.best + '% of Stockfish\'s own pick, ' + esc(a.it.b.bs) + ', shown in gold.'
-            : '. Stockfish\'s own pick was ' + esc(a.it.b.bs) + ', shown in gold.') + '</p>';
+            ? (a.altEval.mine >= a.altEval.best - 1
+                ? ' — it keeps ' + a.altEval.mine + '% win chance, every bit as strong as '
+                  + esc(a.it.b.bs) + ', the move shown in gold.'
+                : ' — it keeps ' + a.altEval.mine + '% win chance, close behind the '
+                  + a.altEval.best + '% of ' + esc(a.it.b.bs) + ', shown in gold.')
+            : '. Stockfish\'s other pick was ' + esc(a.it.b.bs) + ', shown in gold.') + '</p>';
     } else {
       var lines = a.result === 'first'
         ? ['✓ Found it straight away.', '✓ First look, right move.', '✓ Clean — no detours.']
@@ -6514,7 +6611,7 @@ function renderTrainerInline() {
         : '')
     + '</div>'
     + verdict
-    + '<p class="trainer-sub">' + prompt + '</p>'
+    + '<p class="' + (a.phase === 'guess' ? 'trainer-ask' : 'trainer-sub') + '">' + prompt + '</p>'
     + nav
     + '<div class="trainer-foot">'
       + (a.phase === 'done'
@@ -7128,7 +7225,9 @@ function renderProfile() {
                 ? ' <a data-act="customSet" data-i="' + registerSpec(pl2.custom) + '">Train it →</a>'
                 : (pl2.act
                     ? ' <a data-act="' + pl2.act + '">' + esc(pl2.label) + ' →</a>'
-                    : ' <a href="' + pl2.href + '">' + esc(pl2.label) + ' →</a>');
+                    : pl2.href && !(isCC() && pl2.href.indexOf(L) === 0)
+                      ? ' <a href="' + pl2.href + '">' + esc(pl2.label) + ' →</a>'
+                      : '');
             })()
           : '')
       + '</div>'
@@ -7261,13 +7360,17 @@ function renderPlan() {
       + (pl.custom
           ? '<a class="' + (i === 0 ? 'btn-gold' : 'btn-quiet') + '" data-act="customSet" data-i="'
             + registerSpec(pl.custom) + '">Train it</a>'
-            + '<a href="' + pl.href + '" class="btn-quiet btn-out">' + esc(pl.hrefLabel || pl.label)
-            + ' <span class="out-mark">↗</span></a>'
+            + (pl.href && !(isCC() && pl.href.indexOf(L) === 0)
+                ? '<a href="' + pl.href + '" class="btn-quiet btn-out">' + esc(pl.hrefLabel || pl.label)
+                  + ' <span class="out-mark">↗</span></a>'
+                : '')
           : pl.act
             ? '<a class="' + (i === 0 ? 'btn-gold' : 'btn-quiet') + '" data-act="' + pl.act + '">'
               + esc(pl.label) + '</a>'
-            : '<a class="' + (i === 0 ? 'btn-gold' : 'btn-quiet') + '" href="' + pl.href + '">'
-              + esc(pl.label) + '</a>')
+            : pl.href && !(isCC() && pl.href.indexOf(L) === 0)
+              ? '<a class="' + (i === 0 ? 'btn-gold' : 'btn-quiet') + '" href="' + pl.href + '">'
+                + esc(pl.label) + '</a>'
+              : '')
       + '</li>';
   }).join('');
 
@@ -7768,6 +7871,14 @@ document.addEventListener('click', function (e) {
       store.del('nl:perfs');
       store.del('nl:focus');
       store.del('nl:goal');
+      try {
+        var gk = [];
+        for (var gi2 = 0; gi2 < localStorage.length; gi2++) {
+          var kk = localStorage.key(gi2);
+          if (kk && kk.indexOf('nl:goal:') === 0) gk.push(kk);
+        }
+        gk.forEach(function (kk2) { localStorage.removeItem(kk2); });
+      } catch (e4) {}
       ui.settingsOpen = false;
       ui.session = null;
       data.narrate = false;
@@ -7875,7 +7986,9 @@ document.addEventListener('click', function (e) {
       break;
     case 'home':
       if (cfg.user) {
-        try { history.pushState(null, '', location.pathname + '#train'); } catch (e2) {}
+        if (location.hash !== '#train') {
+          try { history.pushState(null, '', location.pathname + '#train'); } catch (e2) {}
+        }
         setView('train', true);
       }
       break;
@@ -8192,7 +8305,13 @@ function engineLoad() {
       }
       return w;
     })
-    .catch(function (e) { SF.state = 'failed'; SF.loading = null; throw e; });
+    .catch(function (e) {
+      SF.state = 'failed';
+      SF.loading = null;
+      /* jobs already queued must settle, or every caller waits forever */
+      SF.queue.splice(0).forEach(function (j) { j.reject(e); });
+      throw e;
+    });
   return SF.loading;
 }
 function bootWorker(code) {
@@ -8240,11 +8359,32 @@ window.__engineStat = function () {
             nextT: !!nextScanTarget() }
   });
 };
+function slotKill(slot, why) {
+  /* a worker that stalled or crashed cannot be trusted again: its late
+     bestmoves would pair with the wrong queued jobs. Kill it, fail its
+     jobs (the callers retry or skip), and boot a fresh analyst. */
+  var at = SF.workers.indexOf(slot);
+  if (at !== -1) SF.workers.splice(at, 1);
+  if (slot.guardTimer) clearInterval(slot.guardTimer);
+  try { slot.w.terminate(); } catch (e2) {}
+  (slot.pending || []).splice(0).forEach(function (j) { j.reject(new Error(why)); });
+  SF.respawns = (SF.respawns || 0);
+  if (SF.code && SF.respawns < 4) {
+    SF.respawns++;
+    bootWorker(SF.code).then(function (w2) {
+      SF.workers.push({ w: w2, busy: false });
+      enginePump();
+    }).catch(function () {});
+  }
+  if (!SF.workers.length && !SF.loading) SF.state = 'idle';
+  enginePump();
+}
 function slotWire(slot) {
   if (slot.wired) return;
   slot.wired = true;
   slot.pending = [];
   slot.lastInfo = null;
+  slot.w.onerror = function () { slotKill(slot, 'engine crashed'); };
   slot.w.onmessage = function (e) {
     var m = String(e.data);
     if (m.indexOf('info ') === 0 && m.indexOf(' score ') > 0) slot.lastInfo = m;
@@ -8274,13 +8414,7 @@ function slotWire(slot) {
   slot.guardAt = Date.now();
   slot.guardTimer = setInterval(function () {
     if (!slot.pending.length) { slot.guardAt = Date.now(); return; }
-    if (Date.now() - slot.guardAt > 20000) {
-      var stuck = slot.pending.splice(0);
-      slot.lastInfo = null;
-      slot.guardAt = Date.now();
-      stuck.forEach(function (j) { j.reject(new Error('engine timeout')); });
-      enginePump();
-    }
+    if (Date.now() - slot.guardAt > 20000) slotKill(slot, 'engine timeout');
   }, 5000);
 }
 function enginePump() {
@@ -8289,7 +8423,10 @@ function enginePump() {
   for (var wi = 0; wi < SF.workers.length && SF.queue.length; wi++) {
     var slot = SF.workers[wi];
     slotWire(slot);
-    while (slot.pending.length < ENGINE_PIPE && SF.queue.length) {
+    /* slot 0 stays shallow: priority jobs land at the queue's head and
+       must not wait behind a ten-deep pipeline of scan searches */
+    var cap = wi === 0 && SF.workers.length > 1 ? 2 : ENGINE_PIPE;
+    while (slot.pending.length < cap && SF.queue.length) {
       var job = SF.queue.shift();
       slot.pending.push(job);
       var nodes = job.movetime && job.movetime.nodes;
@@ -8320,14 +8457,22 @@ function scanCoverage() {
   return { covered: covered, total: total };
 }
 
+function scanMiss(g) {
+  scanState.miss = scanState.miss || {};
+  scanState.miss[g.id] = (scanState.miss[g.id] || 0) + 1;
+}
+function scanBlocked(g) {
+  return scanState.miss && scanState.miss[g.id] >= 3;
+}
 function scannable(g) {
-  return g && !g.analysed && !g.scanned && !g.bl && !g.mvMiss
+  return g && !g.analysed && !g.scanned && !g.bl && !g.mvMiss && !scanBlocked(g)
     && g.plies >= 16 && isEligible(g.perf);
 }
 /* the last lane ignores the format filter: the fish works until EVERYTHING
    is analysed — untracked formats go last, but they go */
 function scannableAny(g) {
-  return g && !g.analysed && !g.scanned && !g.bl && !g.mvMiss && g.plies >= 16;
+  return g && !g.analysed && !g.scanned && !g.bl && !g.mvMiss && !scanBlocked(g)
+    && g.plies >= 16;
 }
 
 /* The scan never stops while anything is scannable — it rotates in batches
@@ -8401,7 +8546,13 @@ function scanGame(g) {
         .catch(function () { return null; });
   return src
     .then(function (full) {
-      if (stale(myGen) || !full || !full.moves) { g.scanned = 1; return; }
+      if (stale(myGen)) return;
+      if (!full || !full.moves) {
+        /* a failed fetch is not a game with nothing to teach — count the
+           miss and let a later pass retry; never persist it as scanned */
+        scanMiss(g);
+        return;
+      }
       var toks = full.moves.split(' ');
       var meWhite = g.color === 'white';
       var st = chessStart();
@@ -8441,6 +8592,9 @@ function scanGame(g) {
       });
       return chain.then(function () {
         if (stale(myGen)) return;
+        var got = 0;
+        evals.forEach(function (r) { if (r) got++; });
+        if (!got) { scanMiss(g); return; }
         var bl = [];
         for (var i = 9; i < toks.length; i++) {
           if (!evals[i] || !evals[i - 1]) continue;
@@ -8591,6 +8745,15 @@ function ccRefuel() {
               fed++;
             }
           });
+          /* this month has now been read in full: any of its games still
+             without movetext truly has no copy to fetch */
+          Object.keys(byId).forEach(function (id2) {
+            var g6 = byId[id2];
+            if (g6.mv) return;
+            var d6 = new Date(g6.ts);
+            var ym6 = d6.getUTCFullYear() + '/' + String(d6.getUTCMonth() + 1).padStart(2, '0');
+            if (ym6 === ym) g6.mvMiss = 1;
+          });
         }).catch(function () {});
     });
   });
@@ -8604,6 +8767,7 @@ function ccRefuel() {
 function autoScan() {
   scanState.trace = (scanState.trace || []).slice(-9);
   function tr(x) { scanState.trace.push(x + '@' + (Date.now() % 100000)); }
+  if (!cfg.user) { scanState.running = false; scanState.pending = false; return; }
   if (scanState.running || SF.state === 'failed') { tr('busy/failed'); return; }
   /* the scan is the politest customer in the shop: it waits out any backoff
      with room to spare rather than being the thing that causes one */
@@ -8631,14 +8795,16 @@ function autoScan() {
       renderScanStatus();
       ccRefuel().then(function (fed) {
         scanState.running = false;
-        if (!fed) bulkState.fails++;
+        if (fed) bulkState.fails = 0; else bulkState.fails++;
         setTimeout(autoScan, fed ? 300 : 1000);
       });
       return;
     }
-    tr('mvMiss:' + target.id);
-    target.mvMiss = 1;          /* this month had no copy — skip it */
-    setTimeout(autoScan, 50);
+    /* refuel is cooling down: wait for its window rather than branding
+       the game — only a refetched month that truly lacks the game may
+       mark mvMiss (ccRefuel does that precisely) */
+    tr('mv-wait');
+    setTimeout(autoScan, 8000);
     return;
   }
   tr('scan:' + target.id);
@@ -8647,7 +8813,7 @@ function autoScan() {
   scanState.lastLocal = !!(target.mv && !target.bl);
   renderScanStatus();
   scanGame(target)
-    .catch(function (e) { console.error('scan fail', e && e.message); target.scanned = 1; })
+    .catch(function (e) { console.error('scan fail', e && e.message); scanMiss(target); })
     .then(function () {
       scanState.running = false;
       /* the fish stays awake through the breather between games — grey means
@@ -8855,6 +9021,7 @@ function loadUser() {
        views that speak in band terms repaint now, not at chain end */
     renderOpenings(); renderCoach(); renderProfile();
   }).catch(function (err) {
+    if (stale(myGen)) return;
     data.sections.user = 'fail';
     data.userErr = err && err.code;
     /* only a true 404 means the account is wrong — a rate limit or a bad
@@ -8881,6 +9048,7 @@ function loadPeaks() {
         return getJSON('/api/user/' + encodeURIComponent(cfg.user) + '/perf/' + p, { quiet: true });
       })
         .then(function (r) {
+          if (stale(myGen)) return;
           var st = r && r.stat;
           if (!st) return;
           if (st.highest && st.highest.int) {
@@ -8994,6 +9162,7 @@ function loadGames() {
   var meId = String(cfg.user).toLowerCase();
 
   return fetchGames(meId, function (n, c2) {
+    if (stale(myGen)) return;
     data.gamesCount = n;
     if (data.narrate) {
       if (c2 && c2.op16) {
@@ -9011,7 +9180,7 @@ function loadGames() {
       /* one DOM write per ~15 games, not per game — the stream must not
          starve the paint */
       if (n % 15 === 0 || n < 5) {
-        var limit = windowCap();
+        var limit = data.progressTarget || windowCap();
         var pctDone = Math.min(100, Math.round(n * 100 / limit));
         var eta = '';
         var elapsed = (Date.now() - data.narrStart) / 1000;
@@ -9062,6 +9231,7 @@ function loadGames() {
     saveGames(data.games);
     renderHeader(); renderFindings(); renderProfile(); renderPlan(); renderFoot();
     topUpFormats();
+    setTimeout(autoScan, 2500);   /* fresh games always wake the fish */
   }).catch(function (err) {
     data.sections.games = 'fail';
     data.gamesErr = err.code === 429 ? 'Rate limited — try again in a minute.' : '';
@@ -9451,6 +9621,7 @@ window.addEventListener('offline', function () { notice('You are offline. Showin
 
 function boot() {
   gen++;
+  var myGenBoot = gen;
   applyLinkTarget();
   if (typeof navigator.onLine === 'boolean' && !navigator.onLine) {
     notice('You are offline. Showing the last cached read.');
@@ -9498,7 +9669,7 @@ function boot() {
     .then(function () { return previewEarly; })
     .then(loadGames)
     .then(loadPlaying)
-    .then(function () { finishNarration(); })
+    .then(function () { if (!stale(myGenBoot)) finishNarration(); })
     .then(loadPeaks)
     .then(refreshTours)
     .then(function () { renderAll(); })
