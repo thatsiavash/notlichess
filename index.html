@@ -6540,23 +6540,25 @@ function renderSettings() {
         }).join('')
       + '</div></div>'
 
-    + '<div class="set-block"><span class="kicker-sm">data</span>'
-      + '<div class="sec" style="font-size:14px;margin-bottom:6px">New games are picked up automatically about once an hour — no need to refresh by hand. The button below does a full re-pull of your latest '
-      + cfg.gameLimit + ' games, for when something looks wrong.</div>'
-      + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'
-        + '<a class="chip-sm" data-act="reload">Full refresh</a>'
-        + '<span class="dim" style="font-size:13px">' + gamesLine() + '</span>'
-      + '</div>'
-      + '<label class="check" style="margin:2px 0 10px"><input type="checkbox" data-act="sound"'
-      + (cfg.sound !== false ? ' checked' : '') + '>'
-      + '<span' + (cfg.sound !== false ? '' : ' class="off"') + '>Trainer sounds</span></label>'
-      + '<div class="caption" style="margin-bottom:6px">Daily set size:</div>'
-      + '<div class="chips" style="margin-bottom:10px">'
+    + '<div class="set-block"><span class="kicker-sm">daily set</span>'
+      + '<div class="sec" style="font-size:14px;margin-bottom:6px">How much you train in a sitting.</div>'
+      + '<div class="chips" style="margin-bottom:12px">'
       + [[8, '8 · about 5 minutes'], [14, '14 · about 15'], [20, '20 · half an hour']].map(function (o) {
           var on = setSize() === o[0];
           return '<a class="chip-sm ' + (on ? 'chip-on' : 'chip-off') + '" data-act="obSize" data-k="' + o[0] + '">'
             + (on ? '✓ ' : '') + o[1] + '</a>';
         }).join('')
+      + '</div>'
+      + '<label class="check"><input type="checkbox" data-act="sound"'
+      + (cfg.sound !== false ? ' checked' : '') + '>'
+      + '<span' + (cfg.sound !== false ? '' : ' class="off"') + '>Trainer sounds</span></label>'
+    + '</div>'
+
+    + '<div class="set-block"><span class="kicker-sm">data</span>'
+      + '<div class="sec" style="font-size:14px;margin-bottom:6px">New games are picked up automatically about once an hour. Full refresh re-pulls the whole window, for when something looks wrong.</div>'
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">'
+        + '<a class="chip-sm" data-act="reload">Full refresh</a>'
+        + '<span class="dim" style="font-size:13px">' + gamesLine() + '</span>'
       + '</div>'
       + '<div class="caption" style="margin-bottom:6px">Games kept in the window:</div>'
       + '<div class="chips">'
