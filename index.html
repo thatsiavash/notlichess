@@ -423,8 +423,16 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.7) sepia(.4);
   box-shadow:0 8px 30px rgba(0,0,0,.5);
 }
 .board-wrap{position:relative;max-width:min(88vw,400px)}
+/* wide desks earn a bigger board */
+@media (min-width:1250px){
+  .train-main{max-width:560px;flex-basis:480px}
+  .board-wrap{max-width:min(88vw,480px)}
+  .board-wrap .board{width:min(88vw,480px)}
+  .inline-trainer{max-width:1000px}
+}
 @media (max-width:820px){
   .train-main{max-width:none}
+  .train-side{max-width:none;flex-basis:100%}
   .board-wrap{
     max-width:none;
     width:calc(100% + 2*clamp(14px,4vw,22px));
@@ -767,7 +775,9 @@ var POOL_TC = ['1+0','2+1','3+0','3+2','5+0','5+3','10+0','10+5','15+10','30+0',
 var MAX_TC = 6;
 var DEFAULT_TC = ['10+0','5+0','3+0'];
 var FIRST_PAINT = 200;      /* render as soon as this many are in */
-var MIN_PER_FORMAT = 200;   /* every tracked format keeps at least this
+var MIN_PER_FORMAT = 200;
+var RETAIN_PER_FORMAT = 100; /* newest unanalysed games per format that keep
+                                their movetext for the fetch-free scan batch */   /* every tracked format keeps at least this
                                many recent games — a 1000-game window of
                                mostly blitz must not starve the rapid coach */
 var MAX_GAMES = 3000;       /* ~2 minutes at Lichess's ~24 games/sec */
@@ -1138,6 +1148,10 @@ function compact(g, meId) {
     plies: (g.moves ? g.moves.split(' ').length : (g.analysis ? g.analysis.length : 0)),
     tc: g.clock ? (Math.round(g.clock.initial / 60) + '+' + g.clock.increment) : null,
     analysed: !!(g.analysis && g.analysis.length),
+    /* in-memory only: unanalysed games carry their movetext up to the
+       retention step, so the first scan batch needs zero extra fetches */
+    mvTmp: !(g.analysis && g.analysis.length) && g.moves
+      && (!g.variant || g.variant === 'standard') ? g.moves : null,
     acpl: an && an.acpl != null ? an.acpl : null,
     acc: an && an.accuracy != null ? an.accuracy : null,
     blunders: an && an.blunder != null ? an.blunder : null,
@@ -2992,7 +3006,7 @@ function renderFirstVisit(prefill) {
     + '<div class="first-form">'
       + '<input class="input" id="firstUser" placeholder="Your Lichess username" autocomplete="off" '
       + 'spellcheck="false" value="' + esc(prefill || '') + '" style="width:250px">'
-      + '<button class="btn-outline" data-act="setUser">Read my games</button>'
+      + '<button class="btn-outline" data-act="setUser">Analyze games</button>'
     + '</div>'
 
     + '<div class="value">'
@@ -4833,6 +4847,57 @@ function loadSessionItem() {
   var item = ss.items[ss.idx];
   ss.active = null;
 
+  if (item.kind === 'blunder' && item.it.b.j === 'scan' && !item.it.b.rf) {
+    /* triage found it at 30ms; before we teach it, a 400ms look confirms
+       the swing and upgrades the answer. A refuted card quietly leaves. */
+    var itR = item.it;
+    var ssR = ss;
+    ss.active = null;
+    ss.refineNote = true;
+    renderTrainerInline();
+    var preR = stateAtPly(itR.g.mv, itR.b.p);
+    var meW = itR.g.color === 'white';
+    if (!preR) { itR.b.rf = 1; loadSessionItem(); return; }
+    var postR = cloneState(preR);
+    var playedTok = itR.g.mv.split(' ')[itR.b.p] || '';
+    if (!sanApply(postR, playedTok)) { itR.b.rf = 1; loadSessionItem(); return; }
+    engineEval(stateFen(preR), 400, true).then(function (r1) {
+      return engineEval(stateFen(postR), 400, true).then(function (r2) {
+        if (ui.session !== ssR) return;
+        var wb2 = winPct(meW ? r1.cp : -r1.cp);
+        var wa2 = winPct(meW ? r2.cp : -r2.cp);
+        ssR.refineNote = false;
+        if (wb2 - wa2 < 15) {
+          /* the deep engine disagrees — this was never a real mistake */
+          itR.g.bl = (itR.g.bl || []).filter(function (b2) { return b2 !== itR.b; });
+          if (itR.g.bl && !itR.g.bl.length) itR.g.bl = null;
+          saveGames(data.games);
+          ssR.items.splice(ssR.idx, 1);
+          loadSessionItem();
+          return;
+        }
+        var bm2 = r1.bestUci ? uciToMove(preR, r1.bestUci) : null;
+        if (bm2) {
+          var line2 = uciLine(preR, [r1.bestUci].concat((r1.pv || []).slice(1, 7)));
+          itR.b.bs = moveNameOf(preR, bm2);
+          itR.b.bv = line2.join(' ');
+          itR.b.k = classifyBlunder(preR, playedTok, itR.b.bs, wb2, wa2);
+        }
+        itR.b.wb = wb2;
+        itR.b.wa = wa2;
+        itR.b.rf = 1;
+        saveGames(data.games);
+        loadSessionItem();
+      });
+    }).catch(function () {
+      if (ui.session !== ssR) return;
+      ssR.refineNote = false;
+      itR.b.rf = 1;   /* engine unavailable: teach the triage answer */
+      loadSessionItem();
+    });
+    return;
+  }
+
   if (item.kind === 'blunder') {
     var it = item.it;
     var st = stateAtPly(it.g.mv, it.b.p);
@@ -5671,7 +5736,11 @@ function renderTrainerInline() {
   if (!a) {
     box.innerHTML = setHeaderHtml(segPos(ss))
       + '<div class="inline-trainer">' + setProgressHtml(ss)
-      + '<div class="loading">fetching a ' + esc(item.theme ? item.theme.key : '') + ' puzzle from Lichess…</div></div>';
+      + '<div class="loading">'
+      + (ss.refineNote
+          ? 'double-checking this position with a deeper engine look…'
+          : 'fetching a ' + esc(item && item.theme ? item.theme.key : '') + ' puzzle from Lichess…')
+      + '</div></div>';
     return;
   }
 
@@ -7484,6 +7553,21 @@ function nextScanTarget() {
   for (i = 0; i < Math.min(SCAN_RECENT, data.games.length); i++) {
     if (scannable(data.games[i])) return data.games[i];
   }
+  /* tier 0.5: the retained batch, rotating across tracked formats so every
+     format's RECENT games get analysis first — the floor is a floor of
+     recent analyzed games per format, not just recent games */
+  var perfs = trackedPerfs();
+  var fStart = (scanState.frr || 0) % perfs.length;
+  for (var fs = 0; fs < perfs.length; fs++) {
+    var pf = perfs[(fStart + fs) % perfs.length];
+    for (i = 0; i < data.games.length; i++) {
+      g = data.games[i];
+      if (g.perf === pf && g.mv && scannable(g)) {
+        scanState.frr = (fStart + fs + 1) % perfs.length;
+        return g;
+      }
+    }
+  }
   var specs = (data.scanFocus ? [data.scanFocus] : []).concat(data.customSpecs || []);
   var lanes = specs.map(function (sp) { return { gf: customGameFilter(sp) }; });
   lanes.push({ gf: null });   /* the general pool is a lane like any other */
@@ -7514,12 +7598,17 @@ function uciLine(st0, uciMoves) {
   return out;
 }
 
+var TRIAGE_MS = 30;   /* detection depth: big swings are shallow-visible;
+                         the deep look happens per-position at deal time */
 function scanGame(g) {
-  /* Full game data is not in the cache for unanalysed games — refetch the
-     one game to get its movetext, then walk it with the engine. */
+  /* Retained movetext scans fetch nothing; only games outside the retained
+     batch still cost one export call. */
   var myGen = gen;
-  return getJSON('/game/export/' + g.id + '?moves=true&clocks=true', { quiet: true })
-    .catch(function () { return null; })
+  var src = g.mv && !g.bl
+    ? Promise.resolve({ moves: g.mv, clocks: null })
+    : getJSON('/game/export/' + g.id + '?moves=true&clocks=true', { quiet: true })
+        .catch(function () { return null; });
+  return src
     .then(function (full) {
       if (stale(myGen) || !full || !full.moves) { g.scanned = 1; return; }
       var toks = full.moves.split(' ');
@@ -7532,7 +7621,7 @@ function scanGame(g) {
           if (stale(myGen)) throw new Error('stale');
           if (!sanApply(st, tok)) throw new Error('san');
           if (i < 8 || i >= 120) { evals[i] = null; return; }
-          return engineEval(stateFen(st), 70).then(function (r) { evals[i] = r; });
+          return engineEval(stateFen(st), TRIAGE_MS).then(function (r) { evals[i] = r; });
         });
       });
       return chain.then(function () {
@@ -7560,7 +7649,7 @@ function scanGame(g) {
         }
         bl.sort(function (a, b) { return (b.wb - b.wa) - (a.wb - a.wa); });
         g.bl = bl.length ? bl.slice(0, 4).sort(function (a, b) { return a.p - b.p; }) : null;
-        g.mv = g.bl ? full.moves : null;
+        g.mv = g.bl ? full.moves : null;   /* movetext stays only where cards live */
         g.scanned = 1;
         /* the scanned game joins the profile with the same metrics as a
            Lichess-analysed one: build a pseudo-analysis from the engine evals */
@@ -7590,6 +7679,7 @@ function autoScan() {
   if (!target) { scanState.current = null; scanState.pending = false; renderScanStatus(); return; }
   scanState.running = true;
   scanState.current = target;
+  scanState.lastLocal = !!(target.mv && !target.bl);
   renderScanStatus();
   scanGame(target)
     .catch(function () { target.scanned = 1; })
@@ -7601,9 +7691,9 @@ function autoScan() {
       scanState.done++;
       renderScanStatus();
       renderTrainerInline();
-      /* one export fetch per ~20s, not per engine-finish — the scan works
-         through the window all day without ever crowding real requests */
-      setTimeout(autoScan, 20000);
+      /* a retained-movetext scan cost no request — run the next immediately;
+         only scans that had to fetch keep the 20s courtesy gap */
+      setTimeout(autoScan, scanState.lastLocal ? 1200 : 20000);
     });
 }
 var FISH = '<svg class="fish" viewBox="0 0 22 14" aria-hidden="true">'
@@ -7668,6 +7758,23 @@ function perfsChanged() {
 /* A player who mostly blitzes still deserves a real rapid read: after the
    main window lands, any tracked format sitting under its floor gets its
    own quiet per-format fetch, merged and deduped in the background. */
+function retainMovetext() {
+  var kept = {};
+  /* count what is already retained so repeat passes respect the cap */
+  data.games.forEach(function (g) {
+    if (g.mv && !g.bl && !g.scanned && !g.analysed) kept[g.perf] = (kept[g.perf] || 0) + 1;
+  });
+  data.games.forEach(function (g) {
+    if (!g.mvTmp) return;
+    if (!g.analysed && !g.scanned && !g.bl && !g.mv && g.plies >= 16 && isEligible(g.perf)
+        && (kept[g.perf] || 0) < RETAIN_PER_FORMAT) {
+      g.mv = g.mvTmp;
+      kept[g.perf] = (kept[g.perf] || 0) + 1;
+    }
+    delete g.mvTmp;
+  });
+}
+
 function topUpFormats() {
   if (data.sections.games !== 'ok') return;
   data.topups = data.topups || {};
@@ -7695,6 +7802,7 @@ function topUpFormats() {
           seen[g.id] = 1;
           return true;
         }).sort(function (a, b) { return b.ts - a.ts; });
+        retainMovetext();
         saveGames(data.games);
         profileCache = null; detectorCache = null; repCache = null; lineCache = null;
         renderAll();
@@ -7912,6 +8020,8 @@ function loadGames() {
     computeGreeting();
     renderTrainerInline();   /* the session auto-starts the moment games are in */
     buildSeries();
+    retainMovetext();
+    saveGames(data.games);
     renderHeader(); renderFindings(); renderProfile(); renderPlan(); renderFoot();
     topUpFormats();
   }).catch(function (err) {
