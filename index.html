@@ -183,12 +183,6 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.7) sepia(.4);
 .first p{margin:0 0 32px;max-width:46em;color:#a9a49a;text-align:justify}
 /* keyboard hints mean nothing to a thumb */
 @media (hover:none),(max-width:760px){.bar-right .hint{display:none}}
-.first-hero{display:flex;gap:48px;align-items:flex-start;flex-wrap:wrap}
-.first-copy{flex:1 1 380px;min-width:300px}
-.first-board{flex:0 1 340px;min-width:260px;max-width:360px;transition:opacity .45s ease}
-.first-board .board{width:100%;box-shadow:0 4px 18px rgba(0,0,0,.45)}
-#demo-board{transition:opacity .45s ease}
-#demo-board.narr-fade{opacity:0}
 .first-form{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:38px}
 .input{
   background:var(--raised);border:1px solid var(--edge);border-radius:4px;color:var(--primary);
@@ -2954,15 +2948,9 @@ function renderHeader() {
     + '</div>';
 }
 
-/* The landing's living proof: a great miniature replays itself on the same
-   board the trainer uses. Morphy's Opera Game — public domain, 17 moves of
-   exactly the patterns the sets teach. */
-var DEMO_GAME = 'e4 e5 Nf3 d6 d4 Bg4 dxe5 Bxf3 Qxf3 dxe5 Bc4 Nf6 Qb3 Qe7 Nc3 c6 Bg5 b5 Nxb5 cxb5 Bxb5+ Nbd7 O-O-O Rd8 Rxd7 Rxd7 Rd1 Qe6 Bxd7+ Nxd7 Qb8+ Nxb8 Rd8#';
 function renderFirstVisit(prefill) {
   el('main').innerHTML =
     '<div class="first first-lean">'
-    + '<div class="first-hero">'
-    + '<div class="first-copy">'
     + '<div class="kicker" style="margin-bottom:16px">notlichess.org</div>'
     + '<h1>Stop repeating your mistakes.</h1>'
     + '<p class="lede">You play, you lose the same way twice, nothing changes. This page reads '
@@ -2975,14 +2963,6 @@ function renderFirstVisit(prefill) {
       + '<input class="input" id="firstUser" placeholder="Your Lichess username" autocomplete="off" '
       + 'spellcheck="false" value="' + esc(prefill || '') + '" style="width:250px">'
       + '<button class="btn-outline" data-act="setUser">Read my games</button>'
-    + '</div>'
-    + '</div>'
-
-    + '<div class="first-board">'
-      + '<div id="demo-board">' + boardSvg(chessStart(), {}) + '</div>'
-      + '<span class="narr-card-cap" style="display:block;text-align:center;margin-top:8px">'
-      + 'Morphy · the Opera Game, 1858 — the patterns your sets teach</span>'
-    + '</div>'
     + '</div>'
 
     + '<div class="value">'
@@ -3010,38 +2990,6 @@ function renderFirstVisit(prefill) {
       if (e.key === 'Enter') setUser(input.value);
     });
   }
-  startDemoBoard();
-}
-
-function startDemoBoard() {
-  var toks = DEMO_GAME.split(' ');
-  var st = chessStart(), ply = 0;
-  var timer = setInterval(function () {
-    var box = el('demo-board');
-    if (!box) { clearInterval(timer); return; }
-    if (document.hidden) return;
-    var anim = null;
-    if (ply >= toks.length) {
-      /* mate on the board gets its moment, then the curtain */
-      box.classList.add('narr-fade');
-      setTimeout(function () {
-        var b2 = el('demo-board');
-        if (!b2) return;
-        st = chessStart(); ply = 0;
-        b2.innerHTML = boardSvg(st, {});
-        b2.classList.remove('narr-fade');
-      }, 500);
-      ply = -1;   /* sentinel: wait one beat during the fade */
-      return;
-    }
-    if (ply < 0) { ply = 0; return; }
-    var mv = sanApply(st, toks[ply]);
-    ply++;
-    if (!mv) { st = chessStart(); ply = 0; return; }
-    anim = [mv.from, mv.to];
-    box.innerHTML = boardSvg(st, { anim: anim, check: checkedKingSq(st) });
-    releaseAnims(box);
-  }, 850);
 }
 
 function valueItem(title, body) {
