@@ -4873,10 +4873,16 @@ function openingItems(maxN) {
     var out = [], seen = {};
     repDeviations().forEach(function (d) {
       var l = lineForNode(d.nd);
-      if (l && l.status !== 'new' && !seen[l.key] && out.length < maxN) {
-        seen[l.key] = 1;
-        out.push({ kind: 'opening', line: l, dev: d });
-      }
+      if (!l || l.status === 'new' || seen[l.key] || out.length >= maxN) return;
+      /* a deviation reopens the lab only if the game came AFTER the last
+         successful training of this line — a line retrained since that
+         game rests until its own schedule says otherwise. Without this,
+         the same trained line re-deals daily until the game ages out. */
+      var rec = l.rec;
+      var resting = rec && rec.due != null && rec.due > Date.now();
+      if (resting && (rec.last || 0) >= d.g.ts) return;
+      seen[l.key] = 1;
+      out.push({ kind: 'opening', line: l, dev: d });
     });
     var all = repLines();
     var due = all.white.concat(all.black).filter(function (l) { return l.status === 'due'; });
