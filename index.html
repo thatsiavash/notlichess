@@ -11,12 +11,12 @@
         y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
     })(window, document, "clarity", "script", "y95daq5rao");
 </script>
-<meta name="description" content="Stop repeating your chess mistakes. Reads your Lichess games, finds the exact positions where you lose points, and retrains them — spaced, until they stay fixed.">
+<meta name="description" content="Stop repeating your chess mistakes. Reads your lichess or chess.com games, finds the exact positions where you lose points, and retrains them — spaced, until they stay fixed.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#161512">
 <meta name="referrer" content="no-referrer">
 <meta property="og:title" content="notlichess.org — stop repeating your chess mistakes">
-<meta property="og:description" content="Reads your Lichess games, finds the exact positions where you lose points, and retrains them until they stay fixed. Free, no account, no ads.">
+<meta property="og:description" content="Reads your lichess or chess.com games, finds the exact positions where you lose points, and retrains them until they stay fixed. Free, no account, no ads.">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <base id="basetag" target="_blank">
@@ -2185,7 +2185,7 @@ var SKILLS = [
     } },
 
   { key: 'accuracy', label: 'Accuracy', phrase: 'accuracy', unit: '%', peer: 'acc', scale: 3,
-    hint: 'move accuracy on Lichess\'s win-chance formula, across analysed games',
+    hint: 'move accuracy on the engine\'s win-chance formula, across analysed games',
     sent: function (m, p) { return 'Your moves grade ' + m + ' on the engine\'s accuracy scale' + (p ? '; peers ' + p : '') + '.'; },
     compute: function (gs) {
       var m = meanOf(gs, function (g) { return g.acc2 ? g.acc2[0] : null; });
@@ -6476,7 +6476,7 @@ function renderTrainerInline() {
     ? (a.memTest ? 'memory test · ' : 'your repertoire · ') + esc(a.line.fam) + ' as ' + a.line.colour
     : a.kind === 'openlearn'
     ? 'lesson · ' + esc(a.line.fam) + ' as ' + a.line.colour
-    : 'lichess puzzle' + (a.rating ? ' · rated ' + a.rating : '');
+    : 'puzzle' + (a.rating ? ' · rated ' + a.rating : '');
 
 
   var firstRun = !store.get('nl:introSeen', false);
@@ -6491,7 +6491,7 @@ function renderTrainerInline() {
       : a.kind === 'opening'
       ? '<b>Your move</b>' + (a.di === 0 ? ' in this line.' : '.')
       : '<b>' + (a.st.w ? 'White' : 'Black') + ' to move</b> — find the best move.'
-        + (firstRun && ss.idx === 0 ? ' Tap a piece or drag it, like on lichess.' : '');
+        + (firstRun && ss.idx === 0 ? ' Tap a piece or drag it.' : '');
     if ((a.kind === 'opening' || a.kind === 'openlearn') && a.stepNote)
       verdict = '<p class="verdict' + (a.kind === 'openlearn' ? ' verdict-lesson' : ' verdict-good') + '">' + a.stepNote + '</p>';
     if (a.flash) {
@@ -7695,7 +7695,7 @@ function setUser(name) {
   name = String(name || '').trim();
   if (!name) return;
   if (!/^[a-zA-Z0-9_-]{2,30}$/.test(name)) {
-    notice('That is not a Lichess username — letters, numbers, underscore and hyphen only.');
+    notice('That is not a ' + (isCC() ? 'chess.com' : 'Lichess') + ' username — letters, numbers, underscore and hyphen only.');
     return;
   }
   cfg.user = name;
@@ -8216,7 +8216,7 @@ var SHORTCUTS = [
   ['g', 'Your profile', function () { go(userHref(cfg.user)); }],
   ['s', 'Settings', function () { ui.settingsOpen = !ui.settingsOpen; renderSettings(); }],
   ['?', 'This list', function () { toggleHelp(); }],
-  ['/', 'Search everything on Lichess', function () { openPalette(); }]
+  ['/', 'Search everything', function () { openPalette(); }]
 ];
 
 function toggleHelp() {
@@ -8870,7 +8870,7 @@ function scanEnough(c) { return c.covered >= 50 || c.covered >= c.total; }
 
 function scanTip() {
   var c = scanCoverage();
-  if (SF.state === 'failed') return 'The engine could not load — training uses your Lichess-analysed games only.';
+  if (SF.state === 'failed') return 'The engine could not load — training uses only games that already have analysis.';
   if (c.covered >= c.total) return 'All ' + c.total + ' of your games are analysed.';
   if (scanEnough(c))
     return 'Training is fully stocked — ' + c.covered + ' games analysed, and the fish keeps '
