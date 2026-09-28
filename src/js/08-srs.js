@@ -1,15 +1,20 @@
 /* ── Practice memory: spaced repetition, days, streaks, focus ───────────────
    One record per mistake in nl:srs:<user>, keyed gameId:ply:
    { box, streak, due, last, lapses, learned, tricky, skips, ls, lt }.
-   The ladder (days): 1, 3, 7, 16, 35, 90. A position is Learned after a
-   clean first-try solve that came 16 or more days after the previous one;
-   it then returns once, 90 days later, as a spot check. */
+   The ladder (days): 1, 3, 7, 16, 35, 90. A position is Learned after its
+   third clean solve in a row, the last one 16 or more days after the one
+   before; it then returns once, 90 days later, as a spot check, and a clean
+   spot check retires it. Intervals of three days or more are spread by up to
+   15% either way, fixed per position, so one busy day does not come back as
+   one busy day. */
 
 var SRS_DAYS = [1, 3, 7, 16, 35, 90];
 var DAY = 864e5;
 var srsRevision = 0;
 var srsMem = null;
-function srsKey() { return 'nl:srs:' + String(cfg.user).toLowerCase(); }
+/* progress is kept per site and player: one handle on two sites is two people */
+function playerId() { return (typeof isCC === 'function' && isCC() ? 'cc:' : '') + String(cfg.user).toLowerCase(); }
+function srsKey() { return 'nl:srs:' + playerId(); }
 /* the retired opening trainer kept its lines in the same map under l|...;
    they are set aside, untouched, and written back with every save, so the
    progress survives if that trainer ever returns */
@@ -39,6 +44,12 @@ function isLearned(rec) { return !!(rec && (rec.learned || rec.mastered)); }
 /* result: 'first' (no miss, no hint), 'hint' (a hint, or good-then-best),
    'retry' (solved after a miss), 'fail' (shown the answer), 'skip'.
    info: { ms: solve time, gameMove: the game move was tried again } */
+function spreadDays(days, key) {
+  if (days < 3) return days;
+  var h = 0, s = String(key);
+  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return days * (0.85 + (Math.abs(h) % 1000) / 1000 * 0.3);
+}
 function srsRecord(it, result, info) {
   info = info || {};
   var map = srsLoad(), now = Date.now();
@@ -49,26 +60,35 @@ function srsRecord(it, result, info) {
   if (result === 'skip') {
     rec.skips = (rec.skips || 0) + 1;
     if (dueNow) rec.due = now + DAY;
+  } else if (result === 'first' && info.alt) {
+    /* a move that works too is a pass, not the lesson: sooner, like a hint */
+    rec.due = now + Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)) * DAY;
+    rec.ls = now;
   } else if (result === 'first') {
-    if (fresh) rec.box = info.ms != null && info.ms < 20000 ? 3 : 1;
+    /* a first sighting solved fast may still be a lucky guess: a week, not 16 days */
+    if (fresh) rec.box = info.ms != null && info.ms < 20000 ? 2 : 1;
     else if (dueNow) rec.box = Math.min(rec.box + 1, SRS_DAYS.length - 2);
+    var spotCheck = rec.learned && dueNow;
     if (fresh || dueNow) rec.streak = (rec.streak || 0) + 1;
-    if (!fresh && dueNow && prevGap >= 15.5 * DAY && rec.streak >= 2) rec.learned = true;
-    rec.due = now + (rec.learned ? SRS_DAYS[SRS_DAYS.length - 1] : SRS_DAYS[rec.box]) * DAY;
+    if (!fresh && dueNow && prevGap >= 15.5 * DAY && rec.streak >= 3) rec.learned = true;
+    if (spotCheck) { rec.retired = 1; rec.due = null; }
+    else rec.due = now + spreadDays(rec.learned ? SRS_DAYS[SRS_DAYS.length - 1] : SRS_DAYS[rec.box], it.key) * DAY;
     rec.ls = now;
   } else if (result === 'hint') {
     /* hard, not failed: the schedule holds its place, a little sooner */
-    rec.due = now + Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)) * DAY;
+    rec.due = now + spreadDays(Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)), it.key) * DAY;
     rec.ls = now;
   } else if (result === 'retry') {
     rec.streak = 0;
     rec.learned = false;
+    delete rec.retired;
     rec.box = Math.max(0, rec.box - 2);
     rec.due = now + SRS_DAYS[rec.box] * DAY;
   } else {
     rec.lapses = (rec.lapses || 0) + 1;
     rec.streak = 0;
     rec.learned = false;
+    delete rec.retired;
     rec.box = rec.box >= 3 ? 1 : 0;
     rec.due = now + SRS_DAYS[rec.box] * DAY;
   }
@@ -104,7 +124,7 @@ function dayStamp(d) {
   d = d || new Date();
   return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
 }
-function dayKeyFor(d) { return 'nl:day:' + String(cfg.user).toLowerCase() + ':' + dayStamp(d); }
+function dayKeyFor(d) { return 'nl:day:' + playerId() + ':' + dayStamp(d); }
 function dayKey() { return dayKeyFor(new Date()); }
 function dayLoad() { return store.get(dayKey(), { answered: 0, solved: 0, first: 0, fresh: 0 }); }
 function daySave(day) { store.set(dayKey(), day); }
@@ -117,33 +137,36 @@ function dayBump(result, fresh, attempted) {
   if (fresh && result !== 'skip') day.fresh = (day.fresh || 0) + 1;
   daySave(day);
 }
-/* a day counts once five positions were tried (a reveal-only tap does not
-   count), a session of three or more was finished, or everything due was
-   cleared; old records count too */
+/* a day counts only on positions really tried: five in the day, a finished
+   session with three or more, or one that cleared everything due. Skips and
+   reveal-only taps never count */
 function dayCounts(rec) {
   if (!rec) return false;
-  return Math.max(rec.solved || 0, rec.attempted || 0) >= 5 || !!rec.cleared || (rec.sessions || 0) >= 1
-    || (rec.sets || 0) >= 1 || (rec.trained || 0) >= 5;
+  return (rec.attempted || 0) >= 5 || !!rec.cleared || (rec.sessions || 0) >= 1;
 }
 function dayRecOf(d) { return store.get(dayKeyFor(d), null); }
-/* the run of days, forgiving: two missed days in any seven are free, the
-   third breaks it. Today not yet done never breaks anything. */
-function streakInfo() {
-  var d = new Date(), days = 0, misses = [], best = store.get('nl:bestStreak:' + String(cfg.user).toLowerCase(), 0);
-  if (!dayCounts(dayRecOf(d))) d.setDate(d.getDate() - 1);
-  for (var i = 0; i < 400; i++) {
-    if (dayCounts(dayRecOf(d))) days++;
-    else {
-      misses.push(i);
-      var recent = misses.filter(function (m) { return i - m < 7; }).length;
-      if (recent > 2) break;
-    }
-    d.setDate(d.getDate() - 1);
-  }
-  if (days > best) { best = days; store.set('nl:bestStreak:' + String(cfg.user).toLowerCase(), best); }
-  return { days: days, best: best, today: dayCounts(dayRecOf(new Date())) };
-}
 function weekGoal() { return store.get('nl:weekGoal', 4); }
+/* consistency counted in weeks: the run of Monday-to-Sunday weeks that met
+   the goal, this week included once it is met; a week still under way never
+   breaks the run */
+function weeksAtGoal() {
+  var goal = weekGoal(), n = 0, d = new Date();
+  d.setHours(12, 0, 0, 0);
+  var dow = (d.getDay() + 6) % 7, monday = new Date(d);
+  monday.setDate(d.getDate() - dow);
+  var count = function (mon, days) {
+    var c = 0;
+    for (var i = 0; i < days; i++) { var x = new Date(mon); x.setDate(mon.getDate() + i); if (dayCounts(dayRecOf(x))) c++; }
+    return c;
+  };
+  if (count(monday, dow + 1) >= goal) n++;
+  for (var w = 1; w < 105; w++) {
+    var m = new Date(monday);
+    m.setDate(monday.getDate() - 7 * w);
+    if (count(m, 7) >= goal) n++; else break;
+  }
+  return n;
+}
 function weekDays() {
   var d = new Date(), n = 0, dow = (d.getDay() + 6) % 7;   /* Monday = 0 */
   for (var i = 0; i <= dow; i++) {

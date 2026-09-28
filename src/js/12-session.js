@@ -5,13 +5,13 @@
    toward the day. A session survives a reload. */
 
 function sessionSize() { return store.get('nl:sessionSize', 10); }
-function sessKey() { return 'nl:sess:' + String(cfg.user).toLowerCase(); }
+function sessKey() { return 'nl:sess:' + playerId(); }
 function saveSession() {
   var ss = ui.session;
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
-                         progress: ss.progress || {} });
+                         progress: ss.progress || {}, attempted: ss.attempted || 0 });
 }
 function savedSession() {
   var s = store.get(sessKey(), null);
@@ -27,6 +27,11 @@ function cardEase(it) {
   if (bu) { pre = stateAtPly(it.g.mv, it.b.p); var m = pre && uciToMove(pre, bu); capture = !!(m && (pre.b[m.to] || m.ep >= 0)); }
   if (t === 'mateMissed' && it.b.mb === 1) return 3;
   if (t === 'missedMaterial' || (fam === 'safety' && t === 'hung')) return capture ? 3 : 2;
+  /* "what can they take now?" is as easy to see as a free piece of theirs */
+  if (fam === 'safety' && pre) {
+    var post = cloneState(pre), pm = uciToMove(pre, uciOfSan(it.g.mv, it.b.p)), r0 = unpackUci(it.b.ru)[0];
+    if (pm) { applyMove(post, pm); var rm = r0 && uciToMove(post, r0); if (rm && (post.b[rm.to] || rm.ep >= 0)) return 3; }
+  }
   if (fam === 'chances' || fam === 'safety' || fam === 'king') return 2;
   return 1;
 }
@@ -40,10 +45,9 @@ function teachability(it) {
   if (b.wb > 92 || b.wb < 22) s *= 0.7;
   return s;
 }
-function newCardScore(it, focusFam, since) {
+function newCardScore(it, since) {
   var s = teachability(it);
   if (it.b.d) s *= 1.7;                                   /* the move that lost the game */
-  if (focusFam && familyOf(patternOf(it.b)).key === focusFam) s *= 1.5;
   if (since && it.g.ts > since) s *= 1.4;                 /* played since the last visit */
   var ageDays = (Date.now() - it.g.ts) / DAY;
   s *= 0.5 + Math.exp(-ageDays / 45);
@@ -52,15 +56,27 @@ function newCardScore(it, focusFam, since) {
 }
 /* candidates never seen before, best first */
 function buildCandidates(n, spec) {
+  /* only a settled focus steers the mix: a provisional leader is not evidence */
   var srs = srsLoad(), focus = currentFocus(), since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
+  if (focus && focus.provisional) focus = null;
   var filter = spec ? specFilter(spec) : null;
   var list = allMistakes().filter(function (it) {
     return trainable(it) && !srs[it.key] && (!filter || filter(it));
   });
-  list.sort(function (x, y) {
-    return newCardScore(y, focus && focus.fam, since) - newCardScore(x, focus && focus.fam, since);
-  });
-  return list.slice(0, n);
+  list.sort(function (x, y) { return newCardScore(y, since) - newCardScore(x, since); });
+  if (spec || !focus) return list.slice(0, n);
+  /* the focus family takes turns with the rest, never more than half: a
+     mix trains the question "which danger is live now?" */
+  var inF = function (it) { return familyOf(patternOf(it.b)).key === focus.fam; };
+  var mine = list.filter(inF), rest = list.filter(function (it) { return !inF(it); }), out = [];
+  var capF = Math.ceil(n / 2), fi = 0, ri = 0, takeF = mine.length && (!rest.length || newCardScore(mine[0], since) >= newCardScore(rest[0], since));
+  while (out.length < n && (ri < rest.length || (fi < mine.length && fi < capF))) {
+    if (takeF && fi < mine.length && fi < capF) out.push(mine[fi++]);
+    else if (ri < rest.length) out.push(rest[ri++]);
+    else if (fi < mine.length && fi < capF) out.push(mine[fi++]);
+    takeF = !takeF;
+  }
+  return out;
 }
 function dueCards(spec) {
   var srs = srsLoad(), end = Date.now() + 12 * 3600 * 1000;
@@ -86,7 +102,21 @@ function todayPlan() {
   var firstTime = total < 3;
   if (firstTime) freshAllowed = Math.min(size, 5);
   var fresh = buildCandidates(freshAllowed + 6);
-  if (firstTime) fresh.sort(function (x, y) { return cardEase(y) - cardEase(x); });
+  if (firstTime) {
+    fresh = fresh.concat(buildCandidates(60).filter(function (x) { return fresh.indexOf(x) === -1; }));
+    fresh.sort(function (x, y) { return cardEase(y) - cardEase(x) || (y.b.d ? 1 : 0) - (x.b.d ? 1 : 0) || y.g.ts - x.g.ts; });
+    /* the first card of all is the move that lost the latest game, when it
+       is not a quiet one */
+    var lostLast = fresh.filter(function (it) { return it.b.d && it.g.res === 'loss' && cardEase(it) >= 2; })
+      .sort(function (x, y) { return y.g.ts - x.g.ts; })[0];
+    if (lostLast) fresh = [lostLast].concat(fresh.filter(function (x) { return x !== lostLast; }));
+  }
+  /* a reserved slot: the best new mistake from games since the last visit */
+  var since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
+  if (since && !firstTime && freshAllowed > 0) {
+    var newest = fresh.concat(buildCandidates(40)).filter(function (it) { return it.g.ts > since; })[0];
+    if (newest) fresh = [newest].concat(fresh.filter(function (x) { return x !== newest; }));
+  }
   fresh = fresh.slice(0, freshAllowed);
   var dueTake = due.slice(0, Math.max(0, size - fresh.length));
   /* the warm-up: the most familiar due card, or the gentlest new one */
@@ -113,26 +143,42 @@ function startSession(mode, keys, label, spec) {
   data.freshOnboard = false;
   saveSession();
   setView('train', false);
+  pushSessionState();
   loadCard();
   track('session_start_' + mode);
   return true;
+}
+/* a session is a place in the history: Back ends it (and keeps every
+   answer) instead of leaving the site */
+function pushSessionState() {
+  try { if (!(history.state && history.state.nlSession)) history.pushState({ nlSession: 1 }, '', location.pathname + '#train'); } catch (e) {}
 }
 function startToday() {
   var plan = todayPlan();
   if (!plan.keys.length) { notice('Nothing to practise yet. Your mistakes are still being found.'); return; }
   startSession('today', plan.keys, 'Today');
 }
-function keepGoing() {
+/* more practice: due reviews first, then new positions within the day's
+   cap, so extra taps never pile up future reviews */
+function morePracticeKeys() {
   var keys = dueCards().map(function (x) { return x.key; });
-  buildCandidates(Math.max(0, 5 - keys.length)).forEach(function (x) { keys.push(x.key); });
+  var dayCap = Math.max(8, Math.round(sessionSize() * 0.8)), room = Math.max(0, dayCap - (dayLoad().fresh || 0));
+  buildCandidates(Math.min(room, Math.max(0, 5 - keys.length))).forEach(function (x) { keys.push(x.key); });
+  return keys;
+}
+function keepGoing() {
+  var keys = morePracticeKeys();
+  if (!keys.length) { notice('That is all for today. New positions join a few at a time, so tomorrow brings more.'); return; }
   startSession('more', keys.slice(0, 5), 'More practice');
 }
 function resumeSession() {
   var s = savedSession();
   if (!s) return false;
   ui.session = { mode: s.mode, label: s.label, keys: s.keys, idx: s.idx, results: s.results || {},
-                 relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {} };
+                 relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {},
+                 attempted: s.attempted || 0 };
   setView('train', false);
+  pushSessionState();
   /* a card answered before the reload is not asked again */
   var ss = ui.session, k = ss.keys[ss.idx];
   var again = ss.relearnOf[k] && ss.keys.indexOf(k) !== ss.idx;
@@ -172,8 +218,8 @@ function drillItems(spec, n) {
     return isLearned(r) ? 3 : 2;
   };
   if (spec.type === 'game') {
-    /* one game reads best in the order it was played */
-    list.sort(function (x, y) { return x.b.p - y.b.p; });
+    /* the move that decided the game first, then the rest in the order played */
+    list.sort(function (x, y) { return (y.b.d ? 1 : 0) - (x.b.d ? 1 : 0) || x.b.p - y.b.p; });
     return list.slice(0, n || 8);
   }
   list.sort(function (x, y) {
@@ -195,36 +241,73 @@ function finishSession() {
   if (!ss) return;
   ss.finished = true;
   ss.active = null;
-  var day = dayLoad();
-  var answered = Object.keys(ss.results).filter(function (k) { return ss.results[k] !== 'skip'; }).length;
-  if (answered >= 3) day.sessions = (day.sessions || 0) + 1;
-  if (!dueCards().length) day.cleared = 1;
+  /* the day counts only on real tries: skips and reveal-only taps earn nothing */
+  var day = dayLoad(), tried = ss.attempted || 0;
+  if (tried >= 3) day.sessions = (day.sessions || 0) + 1;
+  if (tried >= 1 && !dueCards().length) day.cleared = 1;
   daySave(day);
+  if (weekDays() >= weekGoal() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
+    store.set('nl:goalSent:' + playerId(), weeksAtGoal());
+    track('week_goal_met');
+  }
   store.del(sessKey());
+  /* progress now matters: ask the browser not to clear this site's storage */
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {}); } catch (e) {}
   snd('set');
   track('session_done_' + ss.mode);
   renderHeader();
+  renderViews();
   renderTrain();
+  window.scrollTo(0, 0);
+  var rh = el('recap-h');
+  if (rh) rh.focus({ preventScroll: true });
 }
-function endSession() {
+/* ending a session midway pauses it: every answer is kept, and Today
+   offers to resume where it stopped */
+function endSession(fromPop) {
+  var ss = ui.session;
+  if (!ss) return;
+  var open = ss.active, done = sessionDoneCount(ss), total = ss.keys.length;
+  if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints)) keepProgress(open);
+  var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints)));
+  if (keep) saveSession(); else store.del(sessKey());
   ui.session = null;
-  store.del(sessKey());
+  if (!fromPop && history.state && history.state.nlSession) { try { history.replaceState(null, '', location.pathname + '#train'); } catch (e) {} }
+  renderViews();
   renderTrain();
+  window.scrollTo(0, 0);
+  if (keep) notice('Session paused. ' + done + ' of ' + total + ' done.', { act: 'resume', label: 'Resume' });
+  makeFocusable(el('trainbox'));
+  var st = document.querySelector('#trainbox .hero .btn-big, #trainbox .hero [data-act]');
+  if (st) st.focus({ preventScroll: true });
 }
 
 /* ── the focus: one family at a time, held for at least a week ──────────── */
-function focusKey() { return 'nl:focus2:' + String(cfg.user).toLowerCase(); }
+function focusKey() { return 'nl:focus2:' + playerId(); }
+/* The focus is the player's biggest leak, so it is only fixed on good
+   evidence: enough games read (60, or all of them) and a lead over the
+   second family that is not noise (L - R >= 1.645 sqrt(L + R), games
+   decided, draws half). Until then the leader is shown as provisional,
+   nothing is stored and nothing is boosted. A focus the player chose holds;
+   an automatic one holds until another family clearly leads. */
 function currentFocus() {
   var f = store.get(focusKey(), null), fams = insightFamiliesQuick();
   var valid = function (key) { return fams.some(function (x) { return x.fam.key === key && x.count - x.learned >= 3; }); };
-  if (f && valid(f.fam) && (f.user || Date.now() - f.since < 7 * DAY)) return f;
-  var pick = fams.filter(function (x) { return x.count - x.learned >= 3; })[0];
-  if (!pick) return f && valid(f.fam) ? f : null;
-  if (!f || f.fam !== pick.fam.key) {
-    f = { fam: pick.fam.key, since: Date.now(), user: false };
+  if (f && f.user && valid(f.fam)) return f;
+  var ranked = fams.filter(function (x) { return x.count - x.learned >= 3; });
+  if (!ranked.length) return f && valid(f.fam) ? f : null;
+  var lead = ranked[0], L = lead.cost, R = ranked[1] ? ranked[1].cost : 0;
+  var n = analysisNumbers();
+  var readDone = n.total > 0 && n.covered >= n.total && !n.working;
+  var enough = readDone || n.covered >= 60;
+  var clear = L >= 5 && L - R >= 1.645 * Math.sqrt(L + R);
+  if (f && valid(f.fam) && (f.fam === lead.fam.key || !clear)) return f;
+  if ((enough && clear) || readDone) {
+    f = { fam: lead.fam.key, since: Date.now(), user: false };
     store.set(focusKey(), f);
+    return f;
   }
-  return f;
+  return { fam: lead.fam.key, since: Date.now(), user: false, provisional: true };
 }
 function setFocus(fam) {
   store.set(focusKey(), { fam: fam, since: Date.now(), user: true });
@@ -239,19 +322,5 @@ function insightFamiliesQuick() {
     ps.forEach(function (s) { agg.count += s.count; agg.cost += s.cost; agg.pts += s.pts; agg.learned += s.fixed; });
     return agg;
   }).filter(function (a) { return a.count > 0; }).sort(function (a, b) { return b.cost - a.cost || b.pts - a.pts; });
-}
-/* this family's rate in real games since the focus began, against before */
-function focusProgress(f) {
-  if (!f) return null;
-  var fam = FAMILIES.filter(function (x) { return x.key === f.fam; })[0];
-  if (!fam) return null;
-  var before = { m: 0, n: 0, g: 0 }, after = { m: 0, n: 0, g: 0 };
-  coveredGames().forEach(function (g) {
-    var bucket = g.ts >= f.since ? after : before;
-    bucket.g++;
-    bucket.n += ownMoves(g);
-    gameMistakes(g).forEach(function (b) { if (fam.types.indexOf(patternOf(b)) !== -1) bucket.m++; });
-  });
-  return { before: before, after: after };
 }
 

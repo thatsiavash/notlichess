@@ -1,0 +1,76 @@
+// Boots the whole built app (index.html's main script) in Node with a small DOM stub, and reaches its
+// internals through window.__nlTest.ev (enabled because location.hostname is 'localhost').
+// Usage: const A = require('./app-realm')({ now, storage: {...}, session: {...} });
+//        A.ev('todayPlan()'); A.setNow(ms); A.storage
+// Nothing reaches the network (fetch never resolves) and no engine runs (Worker throws), so everything
+// tested here is the app's own bookkeeping.
+const fs = require('fs'), path = require('path');
+const FILE = process.env.NL_HTML || path.join(__dirname, '..', 'index.html');
+
+module.exports = function makeApp(opts) {
+  opts = opts || {};
+  const html = fs.readFileSync(FILE, 'utf8');
+  const src = html.split('<script>').slice(1).map((p) => p.split('</script>')[0]).sort((a, b) => b.length - a.length)[0];
+  let now = opts.now || Date.now();
+  const RealDate = Date;
+  class FakeDate extends RealDate {
+    constructor(...a) { if (a.length) super(...a); else super(now); }
+    static now() { return now; }
+  }
+  const mkStore = (init) => {
+    const data = Object.assign({}, init || {});
+    return {
+      data,
+      api: {
+        getItem: (k) => (k in data ? data[k] : null),
+        setItem: (k, v) => { data[k] = String(v); },
+        removeItem: (k) => { delete data[k]; },
+        key: (i) => Object.keys(data)[i] || null,
+        get length() { return Object.keys(data).length; },
+      },
+    };
+  };
+  const local = mkStore(opts.storage), session = mkStore(opts.session);
+  const elStub = () => ({
+    innerHTML: '', textContent: '', style: {}, dataset: {}, hidden: false,
+    classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+    querySelector: () => null, querySelectorAll: () => [], appendChild() {}, addEventListener() {},
+    setAttribute() {}, getAttribute: () => null, removeAttribute() {}, focus() {}, remove() {}, contains: () => false,
+    getBoundingClientRect: () => ({ top: 0, width: 45 }), scrollTop: 0,
+  });
+  const els = { main: elStub(), overlay: elStub() };
+  const timers = [];
+  const document = {
+    getElementById: (id) => els[id] || null, querySelector: () => null, querySelectorAll: () => [],
+    addEventListener() {}, createElement: () => elStub(), body: elStub(), documentElement: elStub(), hidden: false, title: '',
+  };
+  const window = {
+    addEventListener() {}, console, matchMedia: () => ({ matches: false }), scrollTo() {}, innerWidth: 1200,
+    pageYOffset: 0, scrollY: 0,
+  };
+  const loc = { search: opts.search || '', hash: '', pathname: '/', hostname: 'localhost', href: '' };
+  const ctx = {
+    window, document, localStorage: local.api, sessionStorage: session.api, console, Math, JSON, Date: FakeDate, Promise,
+    Object, Array, String, Number, RegExp, Error, isFinite, isNaN, parseInt, parseFloat, URLSearchParams,
+    Blob: function () {}, URL: { createObjectURL: () => '', revokeObjectURL() {} },
+    location: loc, history: { state: null, replaceState() {}, pushState(s) { this.state = s; }, back() {} },
+    navigator: { onLine: true, hardwareConcurrency: 4, storage: { persist: () => Promise.resolve(true) } },
+    setTimeout: (fn) => { timers.push(fn); return timers.length; }, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
+    requestAnimationFrame() {}, fetch: () => new Promise(() => {}), Worker: function () { throw new Error('no workers in node'); },
+    MutationObserver: function () { this.observe = function () {}; }, TextDecoder, KeyboardEvent: function () {},
+  };
+  window.localStorage = local.api;
+  window.document = document;
+  const keep = ['Math', 'JSON', 'Promise', 'Object', 'Array', 'String', 'Number', 'RegExp', 'Error', 'isFinite', 'isNaN',
+    'parseInt', 'parseFloat', 'console', 'TextDecoder', 'URLSearchParams'];
+  const names = Object.keys(ctx).filter((k) => keep.indexOf(k) === -1);
+  const fn = new Function(...names, src);
+  fn(...names.map((k) => ctx[k]));
+  const ev = (code) => window.__nlTest.ev(code);
+  return {
+    ev, storage: local.data, session: session.data, timers, loc,
+    setNow: (t) => { now = t; }, getNow: () => now,
+    /* run queued timers once (not recursively forever) */
+    flush: (rounds) => { for (let r = 0; r < (rounds || 1); r++) { const t = timers.splice(0); t.forEach((f) => { try { f(); } catch (e) {} }); } },
+  };
+};
