@@ -11,7 +11,7 @@ function saveSession() {
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
-                         progress: ss.progress || {}, attempted: ss.attempted || 0 });
+                         progress: ss.progress || {}, attempted: ss.attempted || 0, checks: ss.checks || 0, checksFound: ss.checksFound || 0 });
 }
 function savedSession() {
   var s = store.get(sessKey(), null);
@@ -56,9 +56,7 @@ function newCardScore(it, since) {
 }
 /* candidates never seen before, best first */
 function buildCandidates(n, spec) {
-  /* only a settled focus steers the mix: a provisional leader is not evidence */
   var srs = srsLoad(), focus = currentFocus(), since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
-  if (focus && focus.provisional) focus = null;
   var filter = spec ? specFilter(spec) : null;
   var list = allMistakes().filter(function (it) {
     return trainable(it) && !srs[it.key] && (!filter || filter(it));
@@ -176,7 +174,7 @@ function resumeSession() {
   if (!s) return false;
   ui.session = { mode: s.mode, label: s.label, keys: s.keys, idx: s.idx, results: s.results || {},
                  relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {},
-                 attempted: s.attempted || 0 };
+                 attempted: s.attempted || 0, checks: s.checks || 0, checksFound: s.checksFound || 0 };
   setView('train', false);
   pushSessionState();
   /* a card answered before the reload is not asked again */
@@ -241,10 +239,11 @@ function finishSession() {
   if (!ss) return;
   ss.finished = true;
   ss.active = null;
-  /* the day counts only on real tries: skips and reveal-only taps earn nothing */
-  var day = dayLoad(), tried = ss.attempted || 0;
-  if (tried >= 3) day.sessions = (day.sessions || 0) + 1;
-  if (tried >= 1 && !dueCards().length) day.cleared = 1;
+  /* the day counts on real tries only (DAY_RULE) */
+  var day = dayLoad(), tried = ss.attempted || 0, n = 0, seen = {};
+  ss.keys.forEach(function (k) { if (!seen[k]) { seen[k] = 1; n++; } });
+  if (tried >= 1 && tried >= Math.min(3, n)) day.sessions = (day.sessions || 0) + 1;
+  else day.short = 1;
   daySave(day);
   if (weekDays() >= weekGoal() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
     store.set('nl:goalSent:' + playerId(), weeksAtGoal());
@@ -283,36 +282,20 @@ function endSession(fromPop) {
 }
 
 /* ── the focus: one family at a time, held for at least a week ──────────── */
-function focusKey() { return 'nl:focus2:' + playerId(); }
-/* The focus is the player's biggest leak, so it is only fixed on good
-   evidence: enough games read (60, or all of them) and a lead over the
-   second family that is not noise (L - R >= 1.645 sqrt(L + R), games
-   decided, draws half). Until then the leader is shown as provisional,
-   nothing is stored and nothing is boosted. A focus the player chose holds;
-   an automatic one holds until another family clearly leads. */
+/* The focus is a function, never a record: the family that decided the most
+   games, shown only on good evidence, 60 games of the window read (or all
+   of them) and a lead over the second family that is not noise
+   (L - R >= 1.645 sqrt(L + R), games decided, draws half). Today and
+   Insights both ask this one function. */
 function currentFocus() {
-  var f = store.get(focusKey(), null), fams = insightFamiliesQuick();
-  var valid = function (key) { return fams.some(function (x) { return x.fam.key === key && x.count - x.learned >= 3; }); };
-  if (f && f.user && valid(f.fam)) return f;
-  var ranked = fams.filter(function (x) { return x.count - x.learned >= 3; });
-  if (!ranked.length) return f && valid(f.fam) ? f : null;
-  var lead = ranked[0], L = lead.cost, R = ranked[1] ? ranked[1].cost : 0;
+  var fams = insightFamiliesQuick().filter(function (x) { return x.count - x.learned >= 3; });
+  if (!fams.length) return null;
+  var lead = fams[0], L = lead.cost, R = fams[1] ? fams[1].cost : 0;
   var n = analysisNumbers();
   var readDone = n.total > 0 && n.covered >= n.total && !n.working;
-  var enough = readDone || n.covered >= 60;
-  var clear = L >= 5 && L - R >= 1.645 * Math.sqrt(L + R);
-  if (f && valid(f.fam) && (f.fam === lead.fam.key || !clear)) return f;
-  if ((enough && clear) || readDone) {
-    f = { fam: lead.fam.key, since: Date.now(), user: false };
-    store.set(focusKey(), f);
-    return f;
-  }
-  return { fam: lead.fam.key, since: Date.now(), user: false, provisional: true };
-}
-function setFocus(fam) {
-  store.set(focusKey(), { fam: fam, since: Date.now(), user: true });
-  closeSheet();
-  renderTrain();
+  if (!(readDone || n.covered >= 60)) return null;
+  if (!(L >= 5 && L - R >= 1.645 * Math.sqrt(L + R))) return null;
+  return { fam: lead.fam.key };
 }
 function insightFamiliesQuick() {
   var stats = patternStats();

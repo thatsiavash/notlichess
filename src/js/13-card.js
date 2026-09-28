@@ -8,10 +8,8 @@ var STRONGER_TOL = 10;    /* within this: good, but look for more */
 
 /* the player's help level: the defaults change with rating (novices get
    more guidance, strong players get the whole line and no hints) */
+/* the help level follows the tracked format's current rating */
 function playerTier() {
-  var pref = store.get('nl:help', 'auto');
-  if (pref === 'more') return 1;
-  if (pref === 'less') return 3;
   var r = null, perf = trackedPerfs()[0];
   if (data.user && data.user.perfs && perf && data.user.perfs[perf]) r = bandEquivRating(perf, data.user.perfs[perf].rating);
   if (r == null) return 2;
@@ -62,6 +60,17 @@ function cpFromWin(w) {
   var x = w / 50 - 1;
   return Math.round(-Math.log(2 / (x + 1) - 1) / 0.00368208);
 }
+
+/* one line on a phone is 80 characters: the first candidate that fits,
+   else the shortest (candidates run from fullest to barest) */
+var LINE_MAX = 80;
+function fitLine(cands) {
+  cands = cands.filter(Boolean);
+  for (var i = 0; i < cands.length; i++) if (cands[i].length <= LINE_MAX) return cands[i];
+  return cands.reduce(function (x, y) { return y.length < x.length ? y : x; });
+}
+/* a sentence cut back to its first clause, keeping the move it names */
+function firstClause(s) { var i = s.indexOf(': '); return i > 0 ? s.slice(0, i) + '.' : s; }
 
 /* ── starting a card ─────────────────────────────────────────────────────── */
 function cardFor(it) {
@@ -125,7 +134,6 @@ function cardFor(it) {
       }
     }
   }
-  if (kept && kept.c) a.check1Missed = true;
   return a;
 }
 function currentItem() {
@@ -225,44 +233,32 @@ function gradeMove(m) {
   if (u === a.playedUci) { sameAsGame(m); return; }
   checkMove(m, u, false);
 }
-/* step 1 of the blunder check, graded without the engine: the stored
-   reply, or any capture of the same piece, is what the move allowed */
+/* the blunder check, graded without the engine: the stored reply, or any
+   capture on the same square, is what the move allowed. One question per
+   showing: found or not, the card is then answered, with the better move as
+   a worked example; the fix is asked when the card comes back */
 function checkStep(m, u) {
-  var a = ui.session.active, c1 = a.check1, cardKey = a.key;
+  var a = ui.session.active, c1 = a.check1, ss = ui.session;
   var found = !!m && (u === c1.uci || (c1.capture && m.to === c1.reply.to && a.st.b[m.to] != null));
   var san = m ? sanOf(a.st, m) : '';
+  c1.found = found;
+  ss.checks = (ss.checks || 0) + 1;
+  if (found) ss.checksFound = (ss.checksFound || 0) + 1;
   if (found) {
-    applyMove(a.st, m);
-    a.lastMove = [m.from, m.to];
-    a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. That is what your move allowed. Now find a better move.' };
+    a.checkVerdict = '✓ ' + esc(san) + '. That is what your move allowed.';
     snd('good');
-    track('check_first');
   } else {
-    /* one try: the real reply is played, with the card's own sentence */
-    c1.missed = true;
-    a.check1Missed = true;
-    keepProgress(a);
-    applyMove(a.st, c1.reply);
-    a.lastMove = [c1.reply.from, c1.reply.to];
-    a.animMove = [c1.reply.from, c1.reply.to];
-    var said = 'Your ' + (a.cls.sentences.short || a.cls.sentences.game);
-    a.verdict = { cls: 'verdict-bad', html: '✗ ' + (a.it.g.color === 'white' ? 'Black' : 'White') + ' had ' + esc(c1.san) + '. ' + esc(said) };
+    a.checkVerdict = '✗ ' + (a.it.g.color === 'white' ? 'Black' : 'White') + ' had ' + esc(c1.san) + '.';
     snd('bad');
-    track('check_miss');
   }
-  a.phase = 'reply';
-  renderCard();
-  setTimeout(function () {
-    var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== cardKey || a2.phase !== 'reply') return;
-    /* step 2: back to the position before the mistake */
-    a2.st = cloneState(a2.pre);
-    a2.lastMove = a2.preLast;
-    a2.animMove = null;
-    a2.check1.done = true;
-    a2.phase = 'guess';
-    renderCard();
-  }, found ? 1600 : 2600);
+  track((found ? 'check_first_t' : 'check_miss_t') + a.tier);
+  /* the answered view starts from the position before the mistake */
+  a.st = cloneState(a.pre);
+  a.lastMove = a.preLast;
+  a.animMove = null;
+  a.check1.done = true;
+  if (!found) a.revealed = true;
+  finishCard(found ? 'first' : 'fail');
 }
 /* the forcing line, move by move: my move, then theirs is played for me */
 function stepLine(m, u) {
@@ -306,7 +302,7 @@ function sameAsGame(m) {
   var said = (a.cls.sentences.short || a.cls.sentences.game).replace(/^\S+\s/, 'It ');
   var bestSan = sanOf(a.pre, a.best);
   if (said.indexOf(bestSan) >= 0 || familyOf(patternOf(it.b)).key === 'chances') said = 'There is something stronger here.';
-  a.verdict = { cls: 'verdict-bad', html: '✗ Your game move again. ' + esc(said) };
+  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ Your game move again. ' + said, '✗ Your game move again. ' + firstClause(said), '✗ Your game move again.'])) };
   escalate(line);
 }
 /* misses and hints outlive a reload, so a retry is never scored first-try */
@@ -314,7 +310,7 @@ function keepProgress(a) {
   var ss = ui.session;
   if (!ss || !a) return;
   ss.progress = ss.progress || {};
-  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts, c: a.check1Missed ? 1 : 0 };
+  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts };
   saveSession();
 }
 /* the second miss brings the first hint; the third shows the answer */
@@ -393,6 +389,7 @@ function checkMove(m, u, inLine) {
     }
     var stronger = close;
     if (stronger) {
+      track('close_shown');
       a2.foundGood = { san: sanOf(a2.st, m), win: wMove };
       keepProgress(a2);
       a2.phase = 'guess';
@@ -433,7 +430,8 @@ function miss(m, u, info) {
       : san + (a.tier === 1 ? ' does not lose anything, but there is something stronger here.'
         : ' keeps ' + Math.round(info.win) + '%. There is something stronger here.');
   }
-  a.verdict = { cls: 'verdict-bad', html: '✗ ' + esc(why || san + ' does not work.') };
+  why = why || san + ' does not work.';
+  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ ' + why, '✗ ' + firstClause(why), '✗ ' + san + ' does not work.'])) };
   escalate(line);
 }
 /* show a line of moves from the current position, then put the board back */
@@ -473,7 +471,7 @@ function solved(m, u, alt, lineDone) {
   var ss = ui.session, a = ss.active;
   if (m) { applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = null; }
   a.alt = alt && u !== a.bestUci ? alt : null;
-  var result = a.misses ? 'retry' : ((a.hints || a.foundGood || a.check1Missed) ? 'hint' : 'first');
+  var result = a.misses ? 'retry' : ((a.hints || a.foundGood) ? 'hint' : 'first');
   finishCard(result);
   snd('good');
 }
@@ -504,7 +502,7 @@ function hintText(a) {
     if (c.mateFor) return 'There is a forced mate. Look at every check.';
     /* the first hint names the prize, never the move */
     var prize = c.bestLine ? (captureWord(c.bestLine, c.bSettle) || materialWord(c.matBest)) : '';
-    if (a.hints < 2 && prize && c.matBest >= 1) return 'You can win ' + prize + ' here. Look at every check and capture.';
+    if (a.hints < 2 && prize && c.matBest >= 1) return fitLine(['You can win ' + prize + ' here. Look at every check and capture.', 'You can win ' + prize + ' here.']);
     if (mt.fork && c.matBest >= 2) return mt.fork.ply === 1 ? 'There is a fork: one of your pieces can hit two targets.' : 'Your first move sets up a fork.';
     if (mt.pin && mt.pin.ply === 1 && mt.pin.piece !== 'P') return 'Look along the lines: something can be pinned.';
     if (t === 'missedMaterial') return 'Something of theirs is undefended. Can you take it?';
@@ -527,8 +525,8 @@ function hintText(a) {
     }
   }
   var key = (k && g.nodes[k]) || r1, word = { forkAllowed: ', a fork', pinAllowed: ', a pin', discoveredAllowed: ', a discovered attack' }[t] || '';
-  return 'Your move allowed ' + sanOf(r1.before, r1.move)
-    + (key !== r1 ? ', then ' + sanOf(key.before, key.move) : '') + word + '. Find a move that stops it.';
+  var said = 'Your move allowed ' + sanOf(r1.before, r1.move) + (key !== r1 ? ', then ' + sanOf(key.before, key.move) : '') + word + '.';
+  return fitLine([said + ' Find a move that stops it.', said]);
 }
 function finishCard(result) {
   var ss = ui.session, a = ss.active;
@@ -560,6 +558,7 @@ function finishCard(result) {
   /* the board keeps showing what was just played: the move found, the
      alternative that also works, or the end of the forcing line */
   if (a.revealed || result === 'fail') a.view = { line: 'refute', idx: -1 };
+  else if (a.check1 && a.check1.done) a.view = { line: 'best', idx: -1 };
   else if (a.alt && a.lines.yours && a.lines.yours.states.length) a.view = { line: 'yours', idx: Math.min(a.yours.at || 0, a.lines.yours.states.length - 1) };
   else a.view = { line: 'best', idx: Math.min(a.sol ? a.solIdx - 1 : 0, a.lines.best.states.length - 1) };
   saveSession();

@@ -137,13 +137,12 @@ function dayBump(result, fresh, attempted) {
   if (fresh && result !== 'skip') day.fresh = (day.fresh || 0) + 1;
   daySave(day);
 }
-/* a day counts only on positions really tried: five in the day, a finished
-   session with three or more, or one that cleared everything due. Skips and
-   reveal-only taps never count */
-function dayCounts(rec) {
-  if (!rec) return false;
-  return (rec.attempted || 0) >= 5 || !!rec.cleared || (rec.sessions || 0) >= 1;
-}
+/* one rule, said the same way in Settings: a day counts when you finish a
+   session in which you tried at least 3 positions, or all of them if it had
+   fewer. Tried means a move was played; skips and reveal-only taps never
+   count */
+var DAY_RULE = 'A day counts when you finish a session in which you tried at least 3 positions, or all of them if it had fewer.';
+function dayCounts(rec) { return !!(rec && (rec.sessions || 0) >= 1); }
 function dayRecOf(d) { return store.get(dayKeyFor(d), null); }
 function weekGoal() { return store.get('nl:weekGoal', 4); }
 /* consistency counted in weeks: the run of Monday-to-Sunday weeks that met

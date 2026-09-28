@@ -65,6 +65,15 @@ const OPEN = `function openCard(it, guess) {
     eq(r.counts, false, 'day counts');
   });
 
+  await test('a finished two-card session with both tried earns the day', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var its = allMistakes().filter(trainable);
+      ui.session = { mode: 't', label: 't', keys: [its[5].key, its[6].key], idx: 1, results: {}, relearn: [], relearnOf: {} };
+      ui.session.attempted = 2; finishSession(); return JSON.stringify({ counts: dayCounts(dayLoad()) }); })()`));
+    eq(r.counts, true, 'day counts');
+  });
+
   await test('a finished session with three real tries earns the day', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
@@ -73,21 +82,30 @@ const OPEN = `function openCard(it, guess) {
     eq(r.counts, true, 'day counts'); eq(r.day.sessions, 1, 'sessions'); eq(r.week, 1, 'week days');
   });
 
-  await test('while the read is short, the focus is provisional, stored nowhere and boosts nothing', () => {
+  await test('while the read is short, there is no focus, and nothing is stored', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       analysisNumbers = function () { return { covered: 12, total: 50, ready: 20, working: true }; };
-      var f = currentFocus(); return JSON.stringify({ f: f, stored: store.get(focusKey(), null) }); })()`));
-    ok(!r.f || r.f.provisional, 'provisional'); eq(r.stored, null, 'stored');
+      return JSON.stringify({ f: currentFocus() }); })()`));
+    eq(r.f, null, 'focus');
+    ok(!Object.keys(A.storage).some((k) => /focus/.test(k)), 'no focus key');
+  });
+  await test('a 5-to-0 lead after 5 games is not a focus', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      analysisNumbers = function () { return { covered: 5, total: 5, ready: 5, working: false }; };
+      insightFamiliesQuick = function () { return [{ fam: FAMILIES[0], count: 5, cost: 4, learned: 0 }]; };
+      return JSON.stringify({ f: currentFocus() }); })()`));
+    eq(r.f, null, 'focus');
   });
 
-  await test('after the read, a clear leader is stored and equals the first family in Insights', () => {
+  await test('after the read, a clear leader is the focus, and it is the first family in Insights', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       analysisNumbers = function () { return { covered: 50, total: 50, ready: 40, working: false }; };
       var f = currentFocus(), top = insightReport().families[0];
-      return JSON.stringify({ f: f, top: top && top.fam.key, stored: store.get(focusKey(), null) }); })()`));
-    ok(r.f && !r.f.provisional, 'settled'); eq(r.f.fam, r.top, 'family'); ok(r.stored && r.stored.fam === r.top, 'stored');
+      return JSON.stringify({ f: f, top: top && top.fam.key }); })()`));
+    ok(r.f, 'shown'); eq(r.f.fam, r.top, 'family');
   });
 
   await test('the focus family takes at most half of the new positions', () => {
@@ -152,20 +170,28 @@ const OPEN = `function openCard(it, guess) {
     ok(r.eligible >= 0.5 * r.safetyKing, r.eligible + ' of ' + r.safetyKing);
   });
 
-  await test('step 1 needs no engine, and missing it caps the card at "with help"', () => {
+  await test('the blunder check is one question, graded with no engine: found is a first try, missed a fail', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var it = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && a.check1; })[0];
-      var a = openCard(it, false), q0 = SF.queue.length;
-      ui.session.active = a;
-      var wrong = legalMoves(a.st).filter(function (x) { return moveUci(x) !== a.check1.uci && x.to !== a.check1.reply.to; })[0];
+      var elig = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && a.check1; });
+      var a = openCard(elig[0], false), q0 = SF.queue.length;
+      gradeMove(uciToMove(a.st, a.check1.uci));
+      var found = { result: a.result, phase: a.phase, q: SF.queue.length - q0 };
+      var b = openCard(elig[1], false);
+      var own = b.st.b.map(function (p, i) { return p && isW(p) !== b.st.w ? i : -1; }).filter(function (i) { return i >= 0; })[0];
+      sessionClick(own);
+      var afterOwnTap = b.phase;
+      var wrong = legalMoves(b.st).filter(function (x) { return moveUci(x) !== b.check1.uci && x.to !== b.check1.reply.to; })[0];
       gradeMove(wrong);
-      var q1 = SF.queue.length;
-      /* step 2 begins after a pause */
-      a.st = cloneState(a.pre); a.phase = 'guess'; a.check1.done = true;
-      gradeMove(uciToMove(a.st, a.bestUci));
-      return JSON.stringify({ q0: q0, q1: q1, result: a.result, missed: !!a.check1Missed }); })()`));
-    eq(r.q1, r.q0, 'engine requests'); eq(r.missed, true, 'missed'); eq(r.result, 'hint', 'result');
+      var missed = { result: b.result, phase: b.phase, q: SF.queue.length - q0 };
+      srsRecord(elig[1], 'fail', {});
+      var review = cardFor(elig[1]);
+      return JSON.stringify({ found: found, missed: missed, own: afterOwnTap, reviewCheck: !!(review && review.check1),
+        recap: [ui.session.checks, ui.session.checksFound] }); })()`));
+    eq(r.found.result, 'first', 'found result'); eq(r.found.phase, 'done', 'found answered'); eq(r.found.q, 0, 'engine');
+    eq(r.own, 'check', 'own-piece tap spends nothing');
+    eq(r.missed.result, 'fail', 'missed result'); eq(r.missed.phase, 'done', 'missed answered'); eq(r.missed.q, 0, 'engine');
+    eq(r.reviewCheck, false, 'reviews have no check step');
   });
 
   await test('replaying the game move never names the answer', () => {
@@ -197,6 +223,82 @@ const OPEN = `function openCard(it, guess) {
       });
       return JSON.stringify(out); })()`));
     eq(bad.length, 0, 'leaks: ' + bad.slice(0, 2).join(' | '));
+  });
+
+  await test('every message on the phone line is 80 characters or fewer, at every level', () => {
+    const A = boot();
+    const bad = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], strip = function (h) { return String(h || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"'); };
+      var line = function (a) { var m = /<div class="card-task[^"]*"[^>]*>([\\s\\S]*?)<\\/div>/.exec(cardTaskHtml(a)); return strip(m ? m[1] : ''); };
+      var keep = function (what, t) { if (t.length > 80 || /\u2014/.test(t)) out.push(what + ' (' + t.length + '): ' + t); };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var a = openCard(it, false);
+          if (!a) return;
+          a.tier = tier;
+          if (a.check1) keep('check prompt', line(a));
+          a = openCard(it, true); a.tier = tier;
+          keep('prompt', line(a));
+          a.hints = 1; keep('hint 1', strip(hintText(a))); a.hints = 2; keep('hint 2', strip(hintText(a))); a.hints = 0;
+          gradeMove(uciToMove(a.st, a.playedUci)); keep('game move again', strip(a.verdict && a.verdict.html));
+          a = openCard(it, true); a.tier = tier; reveal(); keep('answered, shown', line(a));
+          a = openCard(it, true); a.tier = tier;
+          if (!a.sol) { solved(uciToMove(a.st, a.bestUci), a.bestUci, null); keep('answered, found', line(a)); }
+        });
+      });
+      return JSON.stringify(out); })()`));
+    eq(bad.length, 0, bad.length + ' too long, first: ' + bad.slice(0, 3).join(' | '));
+  });
+
+  await test('one format by default: the most played among those played in the last 90 days', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var now = Date.now(), d = 864e5;
+      var cc = { perfs: { blitz: { games: 1205, last: now - 400 * d }, rapid: { games: 900, last: now - 3 * d }, bullet: { games: 40, last: now - 2 * d } } };
+      var stale = { perfs: { blitz: { games: 5000, last: now - 100 * d }, rapid: { games: 20, last: now - 10 * d } } };
+      var li = { perfs: { bullet: { games: 45308 }, rapid: { games: 2458 }, blitz: { games: 900 } } };
+      var none = { perfs: { rapid: { games: 50, last: now - 200 * d }, blitz: { games: 10, last: now - 300 * d } } };
+      return JSON.stringify([autoPerfs(cc), autoPerfs(stale), autoPerfs(li), autoPerfs(none)]); })()`));
+    eq(JSON.stringify(r[0]), '["rapid"]', 'chess.com, blitz gone quiet');
+    eq(JSON.stringify(r[1]), '["rapid"]', 'a format last played 100 days ago');
+    eq(JSON.stringify(r[2]), '["bullet"]', 'lichess, lifetime counts');
+    eq(JSON.stringify(r[3]), '["rapid"]', 'nothing recent: the most played');
+  });
+
+  await test('the first session opens on the move that decided the latest loss, when it is not a quiet one', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var p = todayPlan(), m = model(), first = m.byKey[p.keys[0]];
+      var cands = allMistakes().filter(trainable).filter(function (it) { return it.b.d && it.g.res === 'loss' && cardEase(it) >= 2; })
+        .sort(function (x, y) { return y.g.ts - x.g.ts; });
+      return JSON.stringify({ firstTime: p.firstTime, first: first && first.key, expect: cands[0] && cands[0].key }); })()`));
+    eq(r.firstTime, true, 'first session'); eq(r.first, r.expect, 'card 1');
+  });
+
+  await test('the coarse events carry no names or ratings', () => {
+    const calls = [];
+    const A = boot();
+    A.ev(`(function () { window.clarity = function () { window.__calls = (window.__calls || []).concat([Array.prototype.slice.call(arguments)]); }; return 1; })()`);
+    A.ev(`(function () { store.set('nl:firstSeen:' + playerId(), Date.now() - 3 * 864e5); returnEvents(); track('check_first_t2'); track('close_shown'); return 1; })()`);
+    const got = JSON.parse(A.ev('JSON.stringify(window.__calls || [])'));
+    ok(got.some((c) => c[1] === 'return_d2_7'), JSON.stringify(got));
+    ok(got.some((c) => c[1] === 'active_days'), 'active days');
+    ok(!JSON.stringify(got).includes('tester') && !/opponent\d/.test(JSON.stringify(got)), 'names in events');
+  });
+
+  await test('the manifest and its icons are what they claim', () => {
+    const root = path.join(__dirname, '..');
+    const m = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+    eq(m.name, 'notlichess', 'name'); eq(m.start_url, '/#train', 'start_url'); eq(m.display, 'standalone', 'display');
+    m.icons.forEach((ic) => {
+      const b = fs.readFileSync(path.join(root, ic.src.replace(/^\//, '')));
+      const w = b.readUInt32BE(16), h = b.readUInt32BE(20);
+      eq(w + 'x' + h, ic.sizes, ic.src);
+    });
+    const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    ok(html.includes('rel="manifest"') && html.includes('apple-touch-icon'), 'linked from the page');
+    ok(!html.includes('cdn.jsdelivr.net'), 'no CDN engine');
   });
 
   results.forEach((l) => console.log(l));

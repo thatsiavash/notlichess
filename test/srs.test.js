@@ -186,12 +186,12 @@ test('the retired opening lines stored beside the cards survive every save', () 
 
 /* ── days ───────────────────────────────────────────────────────────────── */
 function practise(s, n, result) { for (let i = 0; i < n; i++) s.srsRecord(card('d' + s.clock.now + ':' + i), result || 'first', { ms: 30000, attempted: true }); }
-test('a day counts after five tried positions', () => {
+test('tried positions alone do not count the day: finishing a session does', () => {
   const s = sandbox(T0);
-  practise(s, 4);
-  eq(s.dayCounts(s.dayLoad()), false, 'four');
-  practise(s, 1);
-  eq(s.dayCounts(s.dayLoad()), true, 'five');
+  practise(s, 6);
+  eq(s.dayCounts(s.dayLoad()), false, 'tries only');
+  const d = s.dayLoad(); d.sessions = 1; s.daySave(d);
+  eq(s.dayCounts(s.dayLoad()), true, 'a counted session');
 });
 test('reveal-only taps do not count toward the day', () => {
   const s = sandbox(T0);
@@ -217,7 +217,7 @@ test('new positions are counted per day', () => {
 /* ── weeks at the goal ─────────────────────────────────────────────────── */
 function dayOn(s, daysAgo) {
   const d = new s.Date(s.clock.now); d.setDate(d.getDate() - daysAgo);
-  s.store.set(s.dayKeyFor(d), { answered: 5, solved: 5, attempted: 5 });
+  s.store.set(s.dayKeyFor(d), { answered: 5, solved: 5, attempted: 5, sessions: 1 });
 }
 test('no practice ever means no weeks at the goal', () => {
   const s = sandbox(T0);
