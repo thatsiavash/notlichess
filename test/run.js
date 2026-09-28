@@ -41,12 +41,15 @@ fx.forEach((r, i) => {
 check('motifs vs lichess tagger', !dis.length, fx.length + ' mistakes' + (dis.length ? ', ' + dis.length + ' disagreements, first ' + dis[0] : ''));
 
 /* 3. every mistake is explained */
-let empty = [];
+let empty = [], long = [];
 fx.forEach((r, i) => {
   const c = C.classifyMistake(C.stateFromFen(r.fen), r.played, { pv: r.best.pv, mate: r.best.mate },
     r.refutation ? { pv: r.refutation.pv, mate: r.refutation.mate == null ? null : -r.refutation.mate } : { pv: [], mate: null },
     r.wb, r.wa, r.ply);
   if (!c.t || !c.sentences.game) empty.push('#' + i);
+  /* the short form fits a phone's two-line prompt (about 84 characters) */
+  if ((c.sentences.short || '').length > 84 || /\u2014/.test(c.sentences.game + c.sentences.best)) long.push('#' + i + ' ' + c.sentences.short);
 });
 check('explanations', !empty.length, fx.length + ' mistakes' + (empty.length ? ', missing: ' + empty.slice(0, 5).join(' ') : ''));
+check('short sentences fit a phone', !long.length, long.length ? long.length + ' too long, first ' + long[0] : 'all 84 characters or fewer');
 process.exit(failed ? 1 : 0);
