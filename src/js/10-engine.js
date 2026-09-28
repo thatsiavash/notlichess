@@ -58,7 +58,7 @@ function engineLoad() {
   /* Stockfish 17.1 with its neural network, served from this site (sf/).
      There is no fallback: every game is judged by the same engine, and a
      browser that cannot run it says so */
-  SF.loading = bootWorker({ url: 'sf/stockfish.js' }).then(function (w) { SF.code = { url: 'sf/stockfish.js' }; SF.build = 'sf17'; return w; })
+  SF.loading = bootWorker({ url: 'sf/stockfish.js' }).then(function (w) { SF.code = { url: 'sf/stockfish.js' }; SF.build = 'sf17.1'; return w; })
     .then(function (w) {
       SF.workers.push({ w: w });
       SF.state = 'ready';
@@ -77,10 +77,13 @@ function bootWorker(code) {
       w = code && code.url ? new Worker(code.url)
         : new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
     } catch (e0) { reject(e0); return; }
-    /* two minutes: the first visit downloads about 7 MB before the engine
-       can answer, and a slow connection must not look like a failure */
-    var t = setTimeout(function () { reject(new Error('engine boot timeout')); w.terminate(); }, 120000);
+    /* the clock starts at the worker's first word: the first visit downloads
+       about 7 MB before the engine can speak, and a slow connection must not
+       look like a failure (ten minutes of silence is the only give-up) */
+    var fail = function (why) { return function () { reject(new Error(why)); w.terminate(); }; };
+    var t = setTimeout(fail('engine never answered'), 600000), heard = false;
     w.onmessage = function (e) {
+      if (!heard) { heard = true; clearTimeout(t); t = setTimeout(fail('engine boot timeout'), 45000); }
       if (String(e.data) === 'uciok') { clearTimeout(t); resolve(w); }
     };
     w.onerror = function (e) { clearTimeout(t); reject(e); };

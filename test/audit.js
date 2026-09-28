@@ -31,6 +31,11 @@ if (process.argv.indexOf('--assert') !== -1) {
   if (tally.OK[1] < floors.OK) bad.push('exact kept ' + tally.OK[1] + ' < ' + floors.OK);
   if (tally.ACC[1] < floors.ACC) bad.push('defensible kept ' + tally.ACC[1] + ' < ' + floors.ACC);
   if (tally.WRONG[0] - tally.WRONG[1] < floors.WRONGchanged) bad.push('wrong changed ' + (tally.WRONG[0] - tally.WRONG[1]) + ' < ' + floors.WRONGchanged);
+  /* every changed name that a person had graded exact carries a verdict */
+  const verdicts = fs.readFileSync(path.join(__dirname, 'data', 'exact-changes.md'), 'utf8');
+  changes.filter(({ r }) => r.name === 'OK').forEach(({ r, c }) => {
+    if (verdicts.indexOf(r.fen + ' | ' + r.played + ' | ' + r.shownPattern + ' -> ' + c.t + ' |') === -1) bad.push('no verdict for ' + r.fen + ' ' + r.played + ' (' + r.shownPattern + ' -> ' + c.t + ')');
+  });
   console.log((bad.length ? 'FAIL ' : 'ok   ') + 'graded names: ' + (bad.length ? bad.join(', ') : 'at or above the floors'));
   if (bad.length) process.exit(1);
 }

@@ -66,9 +66,10 @@ function deepEnrich(it, prio) {
     p = engineEval(stateFen(pre), { nodes: DEEP_NODES }, ctx.prio, { multipv: 2, tag: key })
       .then(function (r) { r1 = r; return engineEval(stateFen(post), { nodes: DEEP_NODES }, ctx.prio, { tag: key }); })
       .then(function (r2) {
-        /* a close call on a thin board is searched again, four times deeper */
+        /* a close call on a thin board is searched again, four times deeper,
+           but only in the background: a player never waits on it */
         var drop = winPct(sign * r1.cp) - winPct(sign * r2.cp);
-        if (stale(myGen) || !thinBoard(pre) || drop < bar || drop >= bar + 10) return r2;
+        if (stale(myGen) || ctx.prio || !thinBoard(pre) || drop < bar || drop >= bar + 10) return r2;
         return engineEval(stateFen(pre), { nodes: CONFIRM_NODES }, ctx.prio, { multipv: 2, tag: key }).then(function (r) {
           r1 = r;
           return engineEval(stateFen(post), { nodes: CONFIRM_NODES }, ctx.prio, { tag: key });

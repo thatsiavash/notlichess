@@ -298,7 +298,7 @@ function scanGame(g) {
         g.mv = g.bl ? full.moves : null;   /* movetext stays only where cards live */
         delete g.ck;                        /* the clocks did their job */
         g.scanned = 1;
-        g.eng = SF.build || 'sf17';         /* which engine judged this game */
+        g.eng = SF.build || 'sf17.1';       /* which engine judged this game */
         scanState.dirty = (scanState.dirty || 0) + 1;
         /* accuracy metrics: unevaluated plies carry the last value forward */
         var lastCp = 20;
