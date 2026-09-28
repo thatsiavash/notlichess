@@ -15,12 +15,15 @@ function renderFirstVisit(prefill) {
       + '<button class="src-btn' + (!cc ? ' src-on' : '') + '" data-act="srcPick" data-k="lichess" aria-pressed="' + !cc + '">lichess</button>'
       + '<button class="src-btn' + (cc ? ' src-on' : '') + '" data-act="srcPick" data-k="chesscom" aria-pressed="' + cc + '">chess.com</button>'
     + '</div>'
+    /* an iPhone home-screen app keeps its storage apart from Safari */
+    + (navigator.standalone === true ? '<p class="handoff">Used notlichess in Safari? Export your progress there in Settings, then import it here. '
+      + '<a class="btn-line" data-act="importProgress">Import progress</a></p>' : '')
     + '<div class="first-form">'
-      + '<input class="input" id="firstUser" data-clarity-mask="true" placeholder="Your ' + (cc ? 'chess.com' : 'lichess') + ' username" autocomplete="off" '
+      + '<input class="input" id="firstUser" placeholder="Your ' + (cc ? 'chess.com' : 'lichess') + ' username" autocomplete="off" '
       + 'autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-label="Your ' + (cc ? 'chess.com' : 'lichess') + ' username" value="' + esc(prefill || '') + '">'
       + '<button class="btn-big" data-act="setUser">Find my mistakes</button>'
     + '</div>'
-    + '<p class="first-foot">Free and unlimited. No account. Your games stay in this browser.</p>'
+    + '<p class="first-foot">Free, with no account. Your games stay in this browser.</p>'
     + '</div>'
     + (ex ? '<div class="landing-ex" aria-hidden="true"><div class="kicker">Example</div>'
       + boardSvg(ex, { flip: true, bad: [45, 35], mark: [28, 35], decor: true })
@@ -30,7 +33,7 @@ function renderFirstVisit(prefill) {
       + valueItem('The why, not just the what', 'What your move allowed, the better move, and what really happened next.')
       + valueItem('What costs you games', 'Hanging pieces, missed forks, slipped wins: ranked by the games they lost you.')
     + '</div>'
-    + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with player names hidden, to show how the site is used.</p>'
+    + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
     + '</div>';
   var input = el('firstUser');
   if (input) {
@@ -48,12 +51,12 @@ function renderNoAccount() {
   /* a name that does not exist is not remembered: the next visit starts fresh */
   if (store.get('nl:user', '') === cfg.user) store.del('nl:user');
   el('main').innerHTML = '<div class="first"><div class="kicker">not found</div>'
-    + '<h1 data-clarity-mask="true">' + site + ' has no account called ' + esc(cfg.user) + '.</h1>'
+    + '<h1>' + site + ' has no account called ' + esc(cfg.user) + '.</h1>'
     + '<p class="lede">Check the spelling, or switch site.</p>'
     + '<div class="src-pick">'
       + '<button class="src-btn' + (!isCC() ? ' src-on' : '') + '" data-act="srcPick" data-k="lichess">lichess</button>'
       + '<button class="src-btn' + (isCC() ? ' src-on' : '') + '" data-act="srcPick" data-k="chesscom">chess.com</button></div>'
-    + '<div class="first-form"><input class="input" id="firstUser" data-clarity-mask="true" value="' + esc(cfg.user) + '" autocomplete="off" spellcheck="false">'
+    + '<div class="first-form"><input class="input" id="firstUser" value="' + esc(cfg.user) + '" autocomplete="off" spellcheck="false">'
     + '<button class="btn-big" data-act="setUser">Try again</button></div><div id="other-site"></div></div>';
   var input = el('firstUser');
   if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') setUser(input.value); });
@@ -63,7 +66,7 @@ function renderNoAccount() {
     .then(function (p) {
       var box = el('other-site');
       if (!box || !p || cfg.user !== name) return;
-      box.innerHTML = '<div class="hero state other-site"><h2 data-clarity-mask="true">Found ' + esc(p.username || name) + ' on ' + (other === 'chesscom' ? 'chess.com' : 'lichess') + '.</h2>'
+      box.innerHTML = '<div class="hero state other-site"><h2>Found ' + esc(p.username || name) + ' on ' + (other === 'chesscom' ? 'chess.com' : 'lichess') + '.</h2>'
         + '<div class="acts"><a class="btn-big" data-act="useOtherSite" data-k="' + other + '">Use that</a></div></div>';
     }, function () {});
 }
@@ -81,6 +84,10 @@ function returnEvents() {
     store.set(sent, dayStamp());
     var days = (now - first) / DAY;
     track(days < 2 ? 'return_d1' : (days < 8 ? 'return_d2_7' : (days < 29 ? 'return_w2_4' : 'return_m2')));
+    /* how many of the last 28 days counted, as a bucket */
+    var act = 0;
+    for (var i = 0; i < 28; i++) { var d = new Date(now - i * DAY); if (dayCounts(dayRecOf(d))) act++; }
+    if (window.clarity) window.clarity('set', 'active_days', act === 0 ? '0' : act === 1 ? '1' : act <= 3 ? '2-3' : act <= 7 ? '4-7' : act <= 14 ? '8-14' : '15+');
   } catch (e) {}
 }
 function forgetLink() { try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:linkSrc'); } catch (e) {} }
@@ -100,10 +107,10 @@ function setUser(name) {
   track('login_' + cfg.src);
   boot();
 }
-/* the formats to learn from, picked from the profile: the ones played
-   most, bullet only when it is what the player mostly plays. Where the site
-   says when a format was last played (chess.com), a format untouched for 90
-   days gives way to the ones played now */
+/* one format by default, the rating the player is trying to raise: among
+   the formats played in the last 90 days (where the site says when, as
+   chess.com does), the one with the most games. More are a choice in
+   Settings. */
 function autoPerfs(u) {
   var counts = [];
   ['rapid', 'blitz', 'bullet', 'classical'].forEach(function (p) {
@@ -112,14 +119,9 @@ function autoPerfs(u) {
   });
   var recent = counts.filter(function (c) { return c[2] && Date.now() - c[2] < 90 * DAY; });
   if (recent.length) counts = recent;
-  if (!counts.length) return ['rapid', 'blitz'];
-  var total = counts.reduce(function (a, c) { return a + c[1]; }, 0);
+  if (!counts.length) return ['rapid'];
   counts.sort(function (a, b) { return b[1] - a[1]; });
-  var pick = counts.filter(function (c) {
-    if (c[0] === 'bullet' && counts[0][0] !== 'bullet') return false;
-    return c[1] >= 20 && c[1] / total >= 0.1;
-  }).map(function (c) { return c[0]; }).slice(0, 2);
-  return pick.length ? pick : [counts[0][0]];
+  return [counts[0][0]];
 }
 
 var NARR_WISDOM = [
@@ -151,7 +153,7 @@ function identityHtml() {
   var games = trackedPerfs().reduce(function (a, p) { return a + ((u.perfs && u.perfs[p] && u.perfs[p].games) || 0); }, 0);
   return '<div class="confirm">' + (u.avatar ? '<img src="' + esc(u.avatar) + '" alt="">' : '')
     + '<div class="who"><b>' + esc(u.username || cfg.user) + '</b><span>' + perfs + (games ? ' · ' + games + ' rated games' : '')
-    + '<br>Learning from your ' + trackedPerfs().map(function (p) { return perfLabel(p).toLowerCase(); }).join(' and ') + ' games. '
+    + '<br>Training on your ' + trackedPerfs().map(function (p) { return perfLabel(p).toLowerCase(); }).join(' and ') + ' games. '
     + '<a data-act="settings">Change</a></span></div>'
     + '<a class="btn-quiet" data-act="logout">Not you?</a></div>';
 }
@@ -159,9 +161,9 @@ function renderNarration() {
   el('main').innerHTML = '<div class="first" style="max-width:none">'
     + '<div style="max-width:720px;margin:0 auto">'
     + '<div class="kicker" style="margin-bottom:18px">finding your mistakes</div>'
-    + '<h1 data-clarity-mask="true">Reading ' + esc(cfg.user) + "'s games.</h1>"
-    + '<div id="identity" data-clarity-mask="true">' + identityHtml() + '</div>'
-    + '<div id="narr" class="narr" aria-live="polite" data-clarity-mask="true"></div>'
+    + '<h1>Reading ' + esc(cfg.user) + "'s games.</h1>"
+    + '<div id="identity">' + identityHtml() + '</div>'
+    + '<div id="narr" class="narr" aria-live="polite"></div>'
     + '</div>'
     + '<div id="narr-stage">' + narrBoards() + '</div>'
     + '<div style="max-width:720px;margin:0 auto"><p id="narr-wisdom" class="narr-wisdom"></p></div></div>';
@@ -328,7 +330,7 @@ function exportProgress() {
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
       if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:focus2:' + u)
+      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0)
         out.keys[k] = JSON.parse(localStorage.getItem(k));
     }
   } catch (e) {}
@@ -350,6 +352,9 @@ function importProgress() {
     f.text().then(function (txt) {
       var d = JSON.parse(txt);
       if (!d || !d.keys) throw new Error('bad file');
+      /* on a first run (an iPhone home-screen app), the file says who you are */
+      var fresh = !cfg.user && /^[a-zA-Z0-9_-]{2,30}$/.test(String(d.user || ''));
+      if (fresh) { cfg.user = d.user; cfg.src = d.src === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('user'); saveCfg('src'); }
       if (String(d.user).toLowerCase() !== String(cfg.user).toLowerCase() || (d.src || 'lichess') !== cfg.src) {
         notice('That file belongs to ' + d.user + '. Log in as them to load it.');
         return;
@@ -368,7 +373,7 @@ function importProgress() {
       srsRevision++;
       modelDirty();
       notice('Progress loaded.');
-      renderAll();
+      if (fresh) boot(); else renderAll();
     }).catch(function () { notice('That file could not be read.'); });
   };
   inp.click();
@@ -436,7 +441,6 @@ document.addEventListener('click', function (e) {
     case 'keepGoing': keepGoing(); break;
     case 'endSession': endSession(); break;
     case 'drill': { var sp = parseSpec(t); if (sp) startDrill(sp); break; }
-    case 'setFocus': setFocus(k); break;
     case 'sheet': openSheet(k); break;
     case 'closeSheet': if (e.target === t) closeSheet(); break;
     case 'hint': giveHint(); break;
@@ -467,7 +471,6 @@ document.addEventListener('click', function (e) {
     case 'limit': setLimit(parseInt(k, 10)); break;
     case 'size': store.set('nl:sessionSize', parseInt(k, 10)); renderSettings(); renderTrain(); break;
     case 'weekGoal': store.set('nl:weekGoal', parseInt(k, 10)); renderSettings(); renderTrain(); break;
-    case 'help': store.set('nl:help', k); renderSettings(); break;
     case 'reload': checkForGames(); break;
     case 'exportProgress': exportProgress(); break;
     case 'importProgress': importProgress(); break;
@@ -479,7 +482,7 @@ document.addEventListener('click', function (e) {
         var del = [];
         for (var i = 0; i < localStorage.length; i++) {
           var kk = localStorage.key(i);
-          if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === 'nl:focus2:' + u || kk === sessKey())) del.push(kk);
+          if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === sessKey())) del.push(kk);
         }
         del.forEach(function (x) { localStorage.removeItem(x); });
         /* the mistakes' records go; the retired trainer's lines stay */
@@ -513,7 +516,6 @@ document.addEventListener('change', function (e) {
   if (!t || !t.getAttribute) return;
   var act = t.getAttribute('data-act');
   if (act === 'sound') { cfg.sound = !!t.checked; saveCfg('sound'); }
-  if (act === 'evalbarToggle') { store.set('nl:evalbar', !!t.checked); renderCard(); }
 });
 document.addEventListener('keydown', function (e) {
   if (e.target && e.target.id === 'kbmove' && e.key === 'Enter') { e.preventDefault(); typedMove(e.target.value); return; }

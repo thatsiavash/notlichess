@@ -239,14 +239,6 @@ function splitND(text, onLine) {
 }
 
 /* ── 6. Game cache and normalisation ─────────────────────────────────── */
-/* Raw exports with clocks and evals are far too big for localStorage, so each
-   game is reduced to the fields the detectors read, once, at ingest. */
-
-
-/* Mirrors baselines.py move for move: same 1500cp clamp, same 1000cp cap on a
-   single move's loss, same 0-30 / 30-60 / 60+ ply buckets, same +/-200
-   thresholds. If this drifts from the script, every peer comparison silently
-   becomes a comparison of two different measurements. */
 
 /* one move's accuracy on Lichess's own curve */
 function moveAcc(wb, wa) {
@@ -811,18 +803,12 @@ function merge(fresh, old) {
   return all;
 }
 
-
-
 /* ── 6c. Blunder taxonomy ────────────────────────────────────────────────
    A mistake with a name teaches more than a bare eval swing. Heuristics
    only, no engine needed at classification time, so they are chosen to be
    right when they speak and silent when unsure.                            */
 
 var PIECE_VAL = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 99 };
-
-
-
-
 
 /* ── 6b. SAN replay ──────────────────────────────────────────────────────
    Just enough chess to turn a Lichess movetext into the FEN at any ply, so
@@ -1015,7 +1001,6 @@ function stateFen(st) {
   return rows.join('/') + ' ' + (st.w ? 'w' : 'b') + ' ' + (st.cast || '-')
     + ' ' + ep + ' ' + st.half + ' ' + st.full;
 }
-
 
 function cloneState(st) {
   return { b: st.b.slice(), w: st.w, cast: st.cast, ep: st.ep, half: st.half, full: st.full };

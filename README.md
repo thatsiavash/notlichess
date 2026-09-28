@@ -11,8 +11,8 @@ rank your mistakes by the games they decided.
 
 One static HTML file plus the engine. No server, no account, no ads. Your
 games and progress are saved in your browser, not on our servers. Microsoft
-Clarity records clicks and the screen, with player names hidden, to show how
-the site is used.
+Clarity records clicks and the screen, with all text hidden, to show how the
+site is used.
 
 ## Run it
 

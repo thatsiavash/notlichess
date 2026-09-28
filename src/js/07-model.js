@@ -21,7 +21,22 @@ function modelToken() {
 }
 /* the formats being trained: a change in Settings takes effect at once,
    while other formats' games stay stored for switching back */
-function inScope(g) { return trackedPerfs().indexOf(g.perf) !== -1; }
+/* one window for every number: the last 12 months of the tracked format,
+   and at least its latest 150 games (the player as they are now) */
+var windowMemo = { key: '', cut: {} };
+function windowCut(perf) {
+  var key = data.games.length + '|' + (data.games.length ? data.games[0].ts + '|' + data.games[data.games.length - 1].ts : '') + '|' + trackedPerfs().join(',');
+  if (windowMemo.key !== key) {
+    var cut = {}, year = Date.now() - 365 * DAY;
+    trackedPerfs().forEach(function (p) {
+      var ts = data.games.filter(function (g) { return g.perf === p; }).map(function (g) { return g.ts; }).sort(function (a, b) { return b - a; });
+      cut[p] = ts.length > 150 ? Math.min(year, ts[149]) : 0;
+    });
+    windowMemo = { key: key, cut: cut };
+  }
+  return windowMemo.cut[perf] || 0;
+}
+function inScope(g) { return trackedPerfs().indexOf(g.perf) !== -1 && g.ts >= windowCut(g.perf); }
 function scopedGames() { return data.games.filter(inScope); }
 function model() {
   var tok = modelToken();

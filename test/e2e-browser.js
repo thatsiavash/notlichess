@@ -34,7 +34,7 @@
     T.ev("ui.session = null; store.del(sessKey()); setView('train', false); renderTrain(); 'ok'");
     await sleep(300);
     const stats = T.stats();
-    ok('engine is Stockfish 17 and ready', stats.engine === 'sf17' && stats.state === 'ready', stats.engine + '/' + stats.state);
+    ok('engine is Stockfish 17.1 and ready', stats.engine === 'sf17.1' && stats.state === 'ready', stats.engine + '/' + stats.state);
     ok('account has at least 12 trainable mistakes', stats.trainable >= 12, 'trainable ' + stats.trainable);
     /* Today offers a start, or says the day is done (the daily cap on new positions) */
     ok('Today offers a start or a finished day', !!($('[data-act=startToday]') || $('[data-act=keepGoing]') || /Done for today|Nothing due/.test(text('#trainbox'))), text('#trainbox').slice(0, 120));
@@ -49,12 +49,21 @@
     ok('first card opens', !!c);
     if (!c) throw new Error('no card');
     if (c.phase === 'check') {
-      /* the blunder check: play what the game move allowed, then the card */
+      /* the blunder check is the whole question on first sight: then the card is answered */
       ok('the blunder check asks what the opponent can do', /What can (White|Black) do now/.test(text('#cpanel')));
       T.play(c.check1);
-      c = await until(() => { const x = T.card(); return x.phase === 'guess' ? x : null; }, 8000);
-      ok('after the blunder check, the card asks for a better move', !!c && /better move/i.test(text('#cpanel')));
-      if (!c) throw new Error('no step 2');
+      const d = await until(() => { const x = T.card(); return x.phase === 'done' ? x : null; }, 8000);
+      ok('finding the reply answers the card as a first try', !!d && d.result === 'first' && /You saw it/.test(text('#cpanel')), d && d.result);
+      ok('the answered check card shows the better move', /better move was/i.test(text('#cpanel')));
+      click('[data-act=next]');
+      c = await until(() => { const x = T.card(); return x.phase === 'guess' || x.phase === 'check' ? x : null; }, 30000);
+      while (c && c.phase === 'check') { T.play(c.check1); await until(() => T.card().phase === 'done', 8000); click('[data-act=next]'); c = await until(() => { const x = T.card(); return x.phase === 'guess' || x.phase === 'check' ? x : (x.finished ? x : null); }, 30000); }
+      if (!c || c.finished) {
+        /* every card in this session was a check card: go on with a family that has none */
+        T.ev("endSession(); startDrill({ type: 'family', fam: 'chances', label: 'e2e' }); 'ok'");
+        c = await until(() => { const x = T.card(); return x.phase === 'guess' ? x : null; }, 30000);
+        if (!c) throw new Error('no guess card');
+      }
     }
     ok('session mode hides the site chrome', document.body.classList.contains('in-session'));
     ok('the session bar has an end button and progress', !!$('.sb-end') && !!$('.dots'));
@@ -72,20 +81,23 @@
     ok('no pawn number on the board', !/[+-]\d+\.\d/.test(text('#ebar-lab')));
     const idx0 = c.view.idx;
     await sleep(3200);
-    ok('the answer line plays forward by itself', T.card().view.idx > idx0 || T.card().view.line !== 'best', 'idx ' + idx0 + ' -> ' + T.card().view.idx);
+    ok('the answer line plays forward by itself', T.card().view.idx > idx0 || T.card().view.line !== 'best' || (c.lines && c.lines.best.length <= idx0 + 1), 'idx ' + idx0 + ' -> ' + T.card().view.idx);
     click('.tline.tl-bad');
     await sleep(200);
     ok('tapping the red line plays your game move', T.card().view.line === 'refute');
     ok('the red arrow shows alone at the start of its line', !!$('#bwrap .bad-arrow') && !$('#bwrap .good-arrow'));
 
     /* ── the next card: the game move again, then misses and escalation ─ */
+    const at = T.card().idx;
     click('[data-act=next]');
-    c = await until(() => { const x = T.card(); return (x.phase === 'guess' || x.phase === 'check') && x.idx === 1 ? x : null; }, 30000);
+    c = await until(() => { const x = T.card(); return (x.phase === 'guess' || x.phase === 'check') && x.idx === at + 1 ? x : null; }, 30000);
     ok('Next opens the second card', !!c);
     if (c && c.phase === 'check') {
       click('[data-act=checkShow]');
-      c = await until(() => { const x = T.card(); return x.phase === 'guess' ? x : null; }, 8000);
-      ok('Show me plays the reply and moves on', !!c);
+      const d2 = await until(() => { const x = T.card(); return x.phase === 'done' ? x : null; }, 8000);
+      ok('Show me on the check counts as missed and answers the card', !!d2 && d2.result === 'fail', d2 && d2.result);
+      click('[data-act=next]');
+      c = await until(() => { const x = T.card(); return x.phase === 'guess' ? x : null; }, 30000);
     }
     if (c) {
       T.play(c.played);
@@ -170,7 +182,7 @@
     /* ── typed moves ─────────────────────────────────────────────────── */
     T.ev("startDrill({ type: 'family', fam: familyOf(patternOf(allMistakes().filter(trainable)[0].b)).key, label: 'e2e' }); 'ok'");
     c = await until(() => { const x = T.card(); return x.phase === 'guess' || x.phase === 'check' ? x : null; }, 30000);
-    if (c && c.phase === 'check') { T.play(c.check1); c = await until(() => { const x = T.card(); return x.phase === 'guess' ? x : null; }, 8000); }
+    while (c && c.phase === 'check') { T.play(c.check1); await until(() => T.card().phase === 'done', 8000); click('[data-act=next]'); c = await until(() => { const x = T.card(); return x.phase === 'guess' || x.phase === 'check' ? x : null; }, 30000); }
     if (c) {
       const inp = $('#kbmove');
       ok('the typed-move box exists', !!inp);

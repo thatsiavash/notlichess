@@ -160,11 +160,10 @@ function renderTrain() {
   var day = dayLoad();
   /* the day has a finish line: the chosen session done means done for today */
   var doneToday = (day.sessions || 0) > 0 || (!saved && !todayPlan().keys.length);
-  var fmt = '<p class="fmt-line">From your ' + trackedPerfs().map(function (p) { return perfLabel(p).toLowerCase(); }).join(' and ') + ' games · <a data-act="settings">Change</a></p>';
   box.innerHTML = '<div class="today today-grid"><div class="today-main">' + since
     + (saved ? resumeHtml(saved) : (doneToday ? doneTodayHtml() : heroHtml()))
     + focusHtml()
-    + '<p class="status" id="astat">' + analysisLine(n) + '</p>' + fmt
+    + '<p class="status" id="astat">' + analysisLine(n) + '</p>'
     + '</div>' + latestGamesHtml() + '</div>';
 }
 /* the latest games, each one a way into its own mistakes */
@@ -195,7 +194,7 @@ function latestGamesHtml() {
       + '<small>' + esc(g.perf || '') + ' · ' + agoWords(g.ts) + ' · as ' + g.color + '</small></span>'
       + right + '</' + tag + '>';
   }).join('');
-  return '<aside class="latest" id="latest" data-clarity-mask="true"><div class="latest-head"><div class="kicker">Your latest games</div>'
+  return '<aside class="latest" id="latest"><div class="latest-head"><div class="kicker">Your latest games</div>'
     + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>' + rows
     + '<p class="lg-foot dim">Tap a game to go through its mistakes in order.</p></aside>';
 }
@@ -207,7 +206,7 @@ function agoWords(ts) {
   if (days < 7) return days + ' days ago';
   return gameDateLine({ ts: ts });
 }
-function sinceHtml() { return data.greeting ? '<p class="since" data-clarity-mask="true">' + data.greeting + '</p>' : ''; }
+function sinceHtml() { return data.greeting ? '<p class="since">' + data.greeting + '</p>' : ''; }
 /* the weekly goal as its own shape: one segment per day of the goal */
 function weekHtml() {
   var goal = weekGoal(), done = Math.min(weekDays(), goal), today = dayCounts(dayRecOf(new Date())), segs = '';
@@ -232,9 +231,12 @@ function heroHtml() {
     if (dec) why = 'Includes the move that ' + decisiveWords(dec.g, dec.b) + ' vs ' + esc(dec.g.opp) + ', ' + agoWords(dec.g.ts) + '.';
     else why = (reviews ? plur(reviews, 'review') + (plan.fresh ? ' and ' + plan.fresh + ' new from your games.' : '.') : plan.fresh + ' new from your games.');
   }
+  /* a session finished today without enough tries: say what counts */
+  var dl = dayLoad();
+  if (dl.short && !dl.sessions) why += ' Try 3 positions to count today.';
   return '<div class="hero">'
     + '<h2 id="hero-n" data-n="' + plan.keys.length + '">' + plur(plan.keys.length, 'position') + ', about ' + mins + ' minutes</h2>'
-    + '<p class="why" data-clarity-mask="true">' + why + '</p>' + weekHtml()
+    + '<p class="why">' + why + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="startToday">Start</a></div></div>';
 }
 function resumeHtml(s) {
@@ -321,7 +323,7 @@ function focusHtml() {
     .map(function (s) { return patternInfo(s.key).plural.toLowerCase(); });
   var cost = agg.cost >= 1 ? 'Decided ' + fmtGames(agg.cost) + ' of yours' : plur(agg.count, 'position') + ' in your games';
   return '<div class="focus"><a class="focus-more" data-act="sheet" data-k="family:' + fam.key + '">Details ›</a>'
-    + '<div class="kicker">' + (f.provisional ? 'Leading so far' : 'Your biggest leak') + '</div>'
+    + '<div class="kicker">Your biggest leak</div>'
     + '<div class="focus-name">' + esc(fam.name) + '</div>'
     + '<p class="sec">' + cost + (top.length ? ', mostly ' + esc(top.join(' and ')) : '') + '.</p>'
     + '<div class="plan">' + esc(fam.habit) + '</div></div>';
@@ -386,7 +388,8 @@ function doneHtml(ss) {
     + ladderHtml(ss, uniq)
     + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
-    + (habit ? '<div class="focus recap-habit"><div class="kicker">For your next game</div><div class="plan">' + esc(habit) + '</div></div>' : '')
+    + (habit ? '<div class="focus recap-habit"><div class="kicker">For your next game</div><div class="plan">' + esc(habit)
+      + (ss.checks ? ' Today you spotted their reply on ' + (ss.checksFound || 0) + ' of ' + ss.checks + '.' : '') + '</div></div>' : '')
     + (recap ? '<div class="recap">' + recap + '</div>' : '')
     + '<div class="acts-row recap-acts">'
       + '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>'
@@ -464,16 +467,13 @@ function renderCard() {
   bw.classList.toggle('static', !(a.phase === 'guess' || a.phase === 'check' || (a.phase === 'done' && a.explore)));
   releaseAnims(bw);
   a.animMove = null;
-  /* the bar: player's view of the position, labelled once answered */
+  /* the bar: the player's view of the position, with no pawn number. It
+     fills only once the card is answered: a tall bar during the guess
+     would say "you are winning, find it" */
   var myCp = view.ev != null ? view.ev : it.b.eb;
-  var wWhite = winPct(evalWhite(it, myCp));
-  var fill = el('ebar-fill'), lab = el('ebar-lab');
-  if (store.get('nl:evalbar', true)) {
-    el('ebar').hidden = false;
-    fill.style.height = wWhite + '%';
-    /* no pawn number: winning chances are the one scale, said in words */
-    lab.textContent = '';
-  } else el('ebar').hidden = true;
+  el('ebar').classList.toggle('pending', a.phase !== 'done');
+  el('ebar-fill').style.height = winPct(evalWhite(it, myCp)) + '%';
+  el('ebar-lab').textContent = '';
   /* keyboard focus stays on the same control across a repaint, and the
      verdict is read out to screen readers */
   var foc = document.activeElement, fp = el('cpanel');
@@ -510,17 +510,19 @@ function cardTaskHtml(a) {
     /* the move is named once: "Qf8+ wins the pawn" becomes "It wins the pawn" */
     if (best && why.indexOf(best + ' ') === 0) why = 'It ' + why.slice(best.length + 1);
     act = ' data-act="lineTab" data-k="best" role="button"';
-    if (a.result === 'fail' || a.revealed) txt = 'The answer is ' + best + '. ' + why;
-    else if (a.alt) { txt = '<b>✓ ' + esc(altNames(a).mine) + ' works too.</b> The engine prefers ' + esc(altNames(a).theirs) + '.'; cls = ' good'; }
-    else { txt = '<b>✓ ' + best + '. ' + (a.result === 'first' ? 'Found it.' : 'You got there.') + '</b> ' + why; cls = ' good'; }
+    if (a.check1 && a.check1.done) { txt = fitLine([(a.checkVerdict || '') + ' Better: ' + best + '.', a.checkVerdict || '']); cls = a.check1.found ? ' good' : ''; }
+    else if (a.result === 'fail' || a.revealed) txt = fitLine(['The answer is ' + best + '. ' + why, 'The answer is ' + best + '.']);
+    else if (a.alt) { txt = fitLine(['✓ ' + esc(altNames(a).mine) + ' works too. The engine prefers ' + esc(altNames(a).theirs) + '.', '✓ ' + esc(altNames(a).mine) + ' works too.']); cls = ' good'; }
+    else { var head1 = '✓ ' + best + '. ' + (a.result === 'first' ? 'Found it.' : 'You got there.'); txt = fitLine([head1 + ' ' + why, head1]); cls = ' good'; }
   }
   else if (a.verdict) { txt = strip(a.verdict.html); cls = a.verdict.cls === 'verdict-bad' ? ' bad' : (a.verdict.cls === 'verdict-good' ? ' good' : ''); }
-  else if (a.check1 && !a.check1.done) txt = 'You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now? Move their piece.';
+  else if (a.check1 && !a.check1.done) txt = fitLine(['You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now? Move their piece.',
+    'You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now?']);
   else if (a.hints >= 1) { txt = esc(hintText(a)); cls = ' hint'; }
   else if (a.sol && a.solIdx > 0) txt = 'Move ' + (a.solIdx / 2 + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
   else {
-    var san = esc(sanOf(a.pre, a.played));
-    txt = 'You are ' + side + '. Find a better move. ' + (a.it.b.d ? 'Your ' + san + ', the red arrow, ' + decisiveWords(a.it.g, a.it.b) + '.' : 'Your ' + san + ' is the red arrow.');
+    var san = esc(sanOf(a.pre, a.played)), task = 'You are ' + side + '. Find a better move. ';
+    txt = fitLine([task + (a.it.b.d ? 'Your ' + san + ', the red arrow, ' + decisiveWords(a.it.g, a.it.b) + '.' : ''), task + 'Your ' + san + ' is the red arrow.']);
   }
   return '<div class="card-task' + cls + '"' + act + ' aria-hidden="true">' + txt + '</div>';
 }
@@ -574,12 +576,10 @@ function ctxHtml(a, answered) {
   var g = a.it.g, b = a.it.b;
   var bits = ['vs <b>' + esc(g.opp) + '</b>' + (g.oppR ? ' (' + g.oppR + ')' : ''), gameDateLine(g), perfLabel(g.perf).toLowerCase(), 'move ' + (Math.floor(b.p / 2) + 1)];
   if (b.c != null) bits.push(clockWords(b.c) + ' left');
-  var h = '<p class="ctx" data-clarity-mask="true">' + bits.join(' · ') + '</p>';
+  var h = '<p class="ctx">' + bits.join(' · ') + '</p>';
   if (answered) return h;
-  var tags = [], ss = ui.session;
-  if (ss && ss.spec && ss.spec.type === 'game' && ss.idx === 0 && b.d && ss.keys.length > 1)
-    tags.push(ss.keys.length + ' mistakes in this game. This is the one that ' + decisiveWords(g, b));
-  else if (b.d) tags.push('This move ' + decisiveWords(g, b));
+  var tags = [];
+  if (b.d) tags.push('This move ' + decisiveWords(g, b));
   if (ss_relearn(a)) tags.push('One more try');
   return h + (tags.length ? '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>' + tags.join(' · ') + '</p>' : '');
 }
@@ -607,7 +607,7 @@ function panelHtml(a, ss) {
     /* step 1: the check the player skipped in the game */
     var them = side === 'White' ? 'Black' : 'White', san1 = sanOf(a.pre, a.played);
     h += '<h2 class="task" id="task-h" tabindex="-1">You played ' + esc(san1) + '. What can ' + them + ' do now?</h2>';
-    h += '<p class="stakes">Move ' + them + '\'s piece: find the reply that punishes it. Then you will look for a better move.</p>';
+    h += '<p class="stakes">Move ' + them + '\'s piece: find the reply that punishes it.</p>';
     h += '<div class="feedback" aria-live="polite">' + (a.verdict ? '<p class="verdict ' + a.verdict.cls + '">' + a.verdict.html + '</p>' : '') + '</div>';
     if (a.phase === 'check') h += '<div class="acts-row sticky-acts guess-acts"><a class="btn-line" data-act="checkShow">Show me</a></div>';
     return h;
@@ -645,7 +645,12 @@ function panelHtml(a, ss) {
   /* done: the result, then both halves of the lesson, always on screen */
   var best = a.lines.best.san[0] || '', s = a.cls.sentences;
   var disc, head, sub = '';
-  if (a.result === 'fail' || a.revealed) {
+  if (a.check1 && a.check1.done) {
+    /* the blunder check: the question was their reply; the fix is the worked example */
+    disc = a.check1.found ? '<span class="disc" aria-hidden="true">✓</span>' : '';
+    head = a.check1.found ? esc(a.check1.san) + '. You saw it.' : 'They had ' + esc(a.check1.san) + '.';
+    sub = 'The better move was ' + esc(best) + '. You will find it yourself next time.';
+  } else if (a.result === 'fail' || a.revealed) {
     disc = '';
     head = 'The answer is ' + esc(best) + '.';
     if (a.foundGood) sub = 'Your ' + esc(a.foundGood.san) + ' was close.';
@@ -668,7 +673,7 @@ function panelHtml(a, ss) {
   h += '<div class="result' + (a.result === 'first' && !a.alt && !a.revealed ? ' first' : '') + '">'
     + '<div class="result-head">' + disc + '<h2 class="result-h" id="result-h" tabindex="-1">' + head + '</h2></div>'
     + (sub ? '<p class="result-sub">' + sub + '</p>' : '')
-    + tline('refute', 'tl-bad', esc(s.game))
+    + tline('refute', 'tl-bad', esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game))
     + (a.alt && a.lines.yours ? tline('yours', 'tl-alt', esc(altNames(a).mine) + ' also holds. Here is how it goes on.') : '')
     + tline('best', 'tl-good', esc(s.best || best + ' keeps your position together.'));
   var opp = opponentLine(a);
@@ -680,7 +685,7 @@ function panelHtml(a, ss) {
   if (a.showHabit) h += '<p class="habit">' + esc(info.habit) + '</p>';
   var repSan = a.explore && a.explore.reply && a.explore.san.length ? (function () { var m = uciToMove(a.explore.st, a.explore.reply); return m ? sanOf(a.explore.st, m) : ''; })() : '';
   if (a.explore) h += '<p class="explore-line">Your analysis: ' + esc(a.explore.san.join(' ') || 'make a move on the board')
-    + (a.explore.ev != null ? ' · ' + Math.round(winPct(a.explore.ev)) + '% winning chances for you' + (repSan ? '. Stockfish would answer ' + esc(repSan) + ' (the gold arrow)' : '') : (a.explore.san.length ? ' · thinking…' : ''))
+    + (a.explore.ev != null ? ' · ' + (a.tier === 1 ? standingWords(winPct(a.explore.ev)) : Math.round(winPct(a.explore.ev)) + '% winning chances for you') + (repSan ? '. Stockfish would answer ' + esc(repSan) + ' (the gold arrow)' : '') : (a.explore.san.length ? ' · thinking…' : ''))
     + ' · <a data-act="exploreOff">Back to the lines</a></p>';
   else h += '<p class="explore-line"><a class="btn-quiet" data-act="explore">Try your own moves</a></p>';
   var L = a.lines[a.view.line] || a.lines.best;
@@ -700,6 +705,10 @@ function opponentLine(a) {
     return 'Your opponent missed it. They played ' + esc(a.lines.game.san[1] || '') + ' and you were back in the game.';
   if (real === r1) return 'Your opponent found ' + esc(a.lines.game.san[1] || '') + ' right away.';
   return '';
+}
+/* winning chances in words, for newer players */
+function standingWords(w) {
+  return w >= 80 ? 'you are winning' : w >= 60 ? 'you are better' : w >= 40 ? 'about level' : w >= 20 ? 'you are worse' : 'you are losing';
 }
 /* when the card comes back, in a few words */
 function scheduleWords(rec, a) {
@@ -729,7 +738,11 @@ function renderInsights() {
     return;
   }
   var partial = n.covered < n.total;
-  var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + n.total + ' games so far' : plur(r.games, 'game')) + '</div>';
+  /* the window is named once, here */
+  var cg = coveredGames().map(function (g) { return g.ts; });
+  var mY = function (t) { return new Date(t).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }); };
+  var span = cg.length ? ', ' + mY(Math.min.apply(null, cg)) + ' to ' + mY(Math.max.apply(null, cg)) : '';
+  var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + n.total + ' games so far' : plur(r.games, 'game')) + span + '</div>';
   if (!r.families.length) {
     h += '<h2>Your report appears as Stockfish reads your games.</h2><p class="lead">' + n.covered + ' of ' + n.total + ' games checked. The first patterns show up after a handful of games; the full picture at about ' + INSIGHT_MIN_GAMES + '.</p></div>';
     box.innerHTML = h;
@@ -738,10 +751,7 @@ function renderInsights() {
   var cov = r.coverage, top = r.families[0];
   var head, lead = '';
   if (cov.losses >= 5) {
-    /* a count names its span */
-    var t0 = Math.min.apply(null, coveredGames().map(function (g) { return g.ts; }));
-    var since = isFinite(t0) ? ' since ' + new Date(t0).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '';
-    head = cov.decided + ' of your ' + cov.losses + ' losses' + since + ' came down to one big mistake.';
+    head = cov.decided + ' of your ' + cov.losses + ' losses came down to one big mistake.';
     if (top.cost >= 1) lead = 'The biggest leak is ' + esc(top.fam.name.toLowerCase()) + '. It decided ' + fmtGames(top.cost) + '.';
   } else head = 'Your mistakes, grouped by the habit that would prevent them.';
   h += '<h2>' + head + '</h2>' + (lead ? '<p class="lead">' + lead + '</p>' : '');
@@ -819,7 +829,7 @@ function sheetHtml(kind) {
         + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
       + '<div class="habit-block"><div class="kicker">The habit that fixes it</div><div class="plan">' + esc(fam.habit) + '</div></div>'
       + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'family', fam: k, label: fam.name })) + '">Drill ' + plur(nDrill, 'position') + '</a>' : '')
-      + (focus && focus.fam === k && !focus.provisional ? '<span class="dim">Your focus</span>' : '<a class="btn-line" data-act="setFocus" data-k="' + k + '">Make this my focus</a>') + '</div>'
+      + (focus && focus.fam === k ? '<span class="pill">Your biggest leak</span>' : '') + '</div>'
       + (rows ? '<div class="pat-list">' + rows + '</div>' : '')
       + examplesHtml({ type: 'family', fam: k });
   }
@@ -846,7 +856,7 @@ function decisiveWords(g, b) {
 function examplesHtml(spec) {
   var items = drillItems(spec, 4);
   if (!items.length) return '';
-  return '<div class="kicker" style="margin-top:24px">From your games</div><div class="ex-list" data-clarity-mask="true">' + items.map(function (it) {
+  return '<div class="kicker" style="margin-top:24px">From your games</div><div class="ex-list">' + items.map(function (it) {
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
     return '<div class="ex" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'One position' })) + '">'
@@ -878,7 +888,7 @@ function settingsHtml() {
     return '<label class="switch-row"><span>' + label + '</span><input type="checkbox" data-act="' + act + '"' + (on ? ' checked' : '') + '><i aria-hidden="true"></i></label>';
   };
   return '<h3>Settings</h3>'
-    + '<div class="set-block"><span class="kicker">Player</span><p class="set-who" data-clarity-mask="true">' + esc(cfg.user) + ' on ' + (isCC() ? 'chess.com' : 'lichess') + '</p>'
+    + '<div class="set-block"><span class="kicker">Player</span><p class="set-who">' + esc(cfg.user) + ' on ' + (isCC() ? 'chess.com' : 'lichess') + '</p>'
       + '<a class="btn-line" data-act="logout" data-k="confirm">' + (ui.logoutArmed ? 'Tap again to switch' : 'Switch player') + '</a></div>'
     + '<div class="set-block"><span class="kicker">Games to learn from</span><p>Which of your rated games to read. Most players pick the one or two they play most.</p><div class="chips">'
       + ['rapid', 'blitz', 'bullet', 'classical'].filter(function (p) { return !isCC() || p !== 'classical'; }).map(function (p) {
@@ -888,15 +898,13 @@ function settingsHtml() {
       + [[5, 'Short · 5'], [10, 'Normal · 10'], [20, 'Long · 20']].map(function (o) { return chip('size', o[0], o[1], sessionSize() === o[0]); }).join('')
       + '</div><p>Weekly goal, in days:</p><div class="chips">'
       + [3, 4, 5, 7].map(function (n) { return chip('weekGoal', n, n, weekGoal() === n); }).join('')
-      + '</div><p>Help while solving:</p><div class="chips">'
-      + [['auto', 'By my rating'], ['more', 'More'], ['less', 'Less']].map(function (o) { return chip('help', o[0], o[1], store.get('nl:help', 'auto') === o[0]); }).join('')
-      + '</div></div>'
+      + '</div><p>' + DAY_RULE + '</p></div>'
     + '<div class="set-block"><span class="kicker">Board</span>'
-      + sw('evalbarToggle', 'Evaluation bar', store.get('nl:evalbar', true)) + sw('sound', 'Sounds', cfg.sound) + '</div>'
+      + sw('sound', 'Sounds', cfg.sound) + '</div>'
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
       + '<p class="dim">' + gamesLine() + '</p>'
-      + '<p>Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with player names hidden, to show how the site is used.</p></div>'
+      + '<p>Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p></div>'
     + '<div class="set-block"><span class="kicker">Start over</span>'
       + '<a data-act="resetProgress" class="danger-row' + (ui.resetArmed ? ' armed' : '') + '">' + (ui.resetArmed ? 'Tap again to reset your practice history' : 'Reset practice history') + '</a>'
       + '<a data-act="wipe" class="danger-row' + (ui.wipeArmed ? ' armed' : '') + '">' + (ui.wipeArmed ? 'Tap again to erase everything' : 'Erase everything') + '</a></div>';
@@ -911,7 +919,7 @@ function gamesLine() {
 function renderFoot() {
   var f = el('foot');
   if (!f) return;
-  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress stay in this browser.</span>'
+  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</span>'
     + '<span class="foot-links"><a data-act="coffee">Support the developer</a>'
     + '<a href="https://lichess.org/patron">Donate to lichess</a>'
     + '<a href="https://github.com/thatsiavash/notlichess">Source</a></span>';

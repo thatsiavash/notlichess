@@ -1,14 +1,11 @@
 
-/* Openings use coarser bands than the skill cells: results move slowly with
-   rating, and four wide buckets hold far more games each. */
+
 /* ── 8b2. The reply book ─────────────────────────────────────────────────
    From the same open database: for ~2,700 opening positions, the moves
    players in each rating band actually answer with, count and White-score.
    This is what lets the openings trainer play the opponent you will really
    face, offline, with no request to anyone. Prefix-keyed in the blob;
    converted to FEN-keyed maps (merging transpositions) lazily below.       */
-
-
 
 /* chess.com and Lichess ratings live on different scales. Published
    equivalences put club-level Lichess numbers a few hundred above
@@ -20,24 +17,7 @@ function bandEquivRating(perf, rating) {
   return isCC() ? rating + (CC_OFFSET[perf] != null ? CC_OFFSET[perf] : 200) : rating;
 }
 
-
-
-
-
-
-
-
-
-
-   /* clearly below peers, short of a full "weak" step */
-
-
-/* Weakest first, but only rows that have a peer number to be weak against. */
-
-/* A registry of independent detectors. Each is a pure function over loaded
-   data and returns null or a finding. Nothing here invents a peer baseline:
-   Lichess's peer numbers are not exposed to third parties, so every
-   comparison is self-relative and says so.                                */
+   
 
 /* A format has to be a real part of how you play before this page is allowed
    to say anything about it. Three bullet games in a thousand is not a habit,
@@ -70,36 +50,11 @@ function isEligible(perf) { return !!census().set[perf]; }
    fall back to whatever you actually play most. Ranking purely by volume made
    the whole page talk about bullet to someone whose stated focus is rapid. */
 
-
-
 function perfLabel(p) { return p === 'ultraBullet' ? 'ultrabullet' : p; }
-
 
 /* ── 8d. Evidence, what opens when a skill row is clicked ─────────────
    Each panel is the concrete version of the abstract number: the actual
    games, the actual positions, the actual openings. Nothing generic.     */
-
-
-
-
-
-
-
-
-/* ── 10. Review queue ────────────────────────────────────────────────── */
-
-/* ── 11. Rendering ───────────────────────────────────────────────────── */
-
-
-
-
-
-
-
-
-
-
-
 
 /* ── 8f. The coach ───────────────────────────────────────────────────────
    The product is for the player who is stuck and annoyed, they do not want
@@ -107,25 +62,12 @@ function perfLabel(p) { return p === 'ultraBullet' ? 'ultrabullet' : p; }
    an opinion, and it ends in one directive. The data that justifies it stays
    one click deeper, in the profile rows.                                    */
 
-
-
-
-
-
-
-
-
 /* ── 8e. The trainer ─────────────────────────────────────────────────────
    Positions from your own games, retried on a board that lives on the page.
    The answer key is Lichess's own analysis: `best` and `variation` arrive
    with the export, so grading needs no engine and no server. Results feed a
    small spaced-repetition ladder, a failed position returns tomorrow, a
    solved one in 3, then 7, then 21, then 60 days.                          */
-
-
-
-
-
 
 /* ── 8g. The repertoire ──────────────────────────────────────────────────
    Mined from the user's own games, never authored on a blank page: every
@@ -135,15 +77,10 @@ function perfLabel(p) { return p === 'ultraBullet' ? 'ultrabullet' : p; }
    distribution at the user's rating. Chessable trains you against a course;
    this trains you against the people you will actually sit across.        */
 
-      /* plies mined from each game */
-       /* a position this rare is not repertoire yet */
-  /* my move within this many score points of best = keep */
-    /* opening cards folded into a daily set */
-
-
-
-
-
+      
+       
+  
+    
 
 /* ── Lines, not positions ────────────────────────────────────────────────
    The drilled unit is a LINE: a walk through the tree following keeper
@@ -157,22 +94,11 @@ function perfLabel(p) { return p === 'ultraBullet' ? 'ultrabullet' : p; }
    retrieval, per the charter, then the same line is tested from memory in
    the same session, and only then does the SRS ladder take over.          */
 
-
-
-
 /* ── Adopting a NEW opening ──────────────────────────────────────────────
    Not from your games, from the band book: pick a first move (or a reply),
    and the lines generate themselves by following the best-scoring popular
    move for your side and the most common answers for theirs. Every adopted
    line is born unlearned, so it flows through Learn before it ever tests.  */
-
-
-
-
-
-
-
-
 
 /* ── The board ── */
 /* Classic colours and the cburnett pieces, the board every Lichess player
@@ -345,32 +271,9 @@ function snd(name) {
 }
 
 /* ── Trainer state and flow ── */
-/* One session, one board, inline on the Train view. Items mix your own
-   mistakes (graded against Lichess's stored best move, scheduled by the
-   SRS ladder) with fresh Lichess puzzles pulled from /api/puzzle/next,
-   themed at the coach's focus. Every item says why it is in front of you. */
 
-
-
-
-
-
-
-/* Puzzles only, endlessly refillable, for the player who wants to keep going
-   after the day's positions are done. */
 /* A custom set: the same trainer, fed by a filter, an opponent, an opening,
    a colour. Coach cards deal these directly instead of linking away. */
-
-
-
-
-
-
-
-
-
-
-
 
 function uciToMove(st, uci) {
   if (!uci || uci.length < 4) return null;
@@ -385,59 +288,15 @@ function uciToMove(st, uci) {
   return out;
 }
 
-
-
-
-
-
-
-
-
-
-
 /* ── Missions ────────────────────────────────────────────────────────────
    Every kind of set the app can deal, in one checklist on Today: the daily
    set first, then the book drills, then whatever the coach is prescribing.
    Each is startable in one tap, checkable for the day, and repeatable -
    the check is satisfaction, never a lock.                                 */
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 /* ── Opponent prep (#8) ──────────────────────────────────────────────────
    Thirty seconds before a match: their book, their colours, their leaks.
    One request, cached per name for the session.                            */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* Hidden bar, footer, settings ---------------------------------------- */
-
-
-
-
 
 /* ── 12. Notices ─────────────────────────────────────────────────────── */
 
@@ -465,43 +324,18 @@ function notice(msg, action) {
   noticeTimer = setTimeout(function () { n.remove(); }, action ? 8000 : 5000);
 }
 
-/* ── 13. Command palette ─────────────────────────────────────────────── */
-
-
-
-
-
-
 /* ── 14. Actions ─────────────────────────────────────────────────────── */
 
-
-
-
-          /* redraw countdowns, no network at all */
-
+          
 
 /* Quiet hourly pickup: the incremental fetch is cheap (it asks only for
    games since the newest cached one), so staying current costs almost
    nothing and the user never has to think about refreshing. */
 
-
-
-
-
-
-
-
-
-
-
-
 if (window.MutationObserver) {
   new MutationObserver(function () { makeFocusable(); })
     .observe(document.body, { childList: true, subtree: true });
 }
-
-/* Enter and Space activate them the way a real button would. */
-
 
 /* ── 14c. The engine ─────────────────────────────────────────────────────
    Stockfish 16 NNUE, fetched once from a CDN and booted as a blob worker
@@ -509,8 +343,6 @@ if (window.MutationObserver) {
    CORS). Falls back to the older asm.js build if WASM is unavailable. Used
    for two things: quietly scanning unanalysed games into training material,
    and judging whether a non-book answer in the trainer was also good.      */
-
-
 
 /* ── 14d. The quiet scan ─────────────────────────────────────────────────
    Keeps a buffer of games ready to train: whenever fewer than SCAN_BUFFER
@@ -581,10 +413,7 @@ function nextScanTarget() {
   return null;
 }
 
-
- /* fixed node budget: big swings are visible well
-                             below this, and deal-time refinement (400ms)
-                             re-checks every card before it teaches */
+ 
 
 /* When the retained pool runs dry, refuel it wholesale: one POST to the
    export-by-ids endpoint brings movetext for up to 150 games, the pool
@@ -781,11 +610,6 @@ function autoScan() {
     });
 }
 
-
-
-
-
-
 /* A player who mostly blitzes still deserves a real rapid read: after the
    main window lands, any tracked format sitting under its floor gets its
    own quiet per-format fetch, merged and deduped in the background. */
@@ -923,7 +747,6 @@ function loadUser() {
   });
 }
 
-
 /* The rating curve is reconstructed from the games we already hold: the rating
    after a game is the rating it was played at plus its diff. No extra request,
    and it moves with whatever game window is loaded. */
@@ -955,7 +778,6 @@ function buildSeries() {
     }
   });
 }
-
 
 /* The annotated 1000-game export takes Lichess several seconds to even
    begin sending. The theater cannot wait for that: a 12-game moves-only
@@ -1077,17 +899,8 @@ function loadGames() {
   }).catch(function (err) {
     if (stale(myGen)) return;
     data.sections.games = 'fail';
-    data.gamesErr = err && err.code === 429 ? 'The site asked us to slow down. Try again in a minute.' : '';
+    data.gamesErr = err && err.code === 429 ? (isCC() ? 'chess.com' : 'lichess') + ' asked us to slow down. Try again in a minute.' : '';
     renderTrain(); renderFoot();
   });
 }
-
-
-/* Your record against whoever is across the board right now. Public, cheap,
-   and the single most interesting thing to know mid-game. */
-
-
-
-
-
 

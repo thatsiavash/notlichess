@@ -1,11 +1,7 @@
-/* ── 16. Boot ────────────────────────────────────────────────────────── */
-
-
 /* ── 15b. Narration, the first load, watched ────────────────────────────
    A first-time user should see their program being built, not a skeleton
    with spinners. Lines appear as the data lands; the page reveals when the
    profile is computable. Only runs when there is no cached history.        */
-
 
 /* The loading theater: the user's own games replay on a slow-drifting strip
    of boards while the count climbs, the wait shows the work. */
@@ -24,7 +20,7 @@ function narrBoards() {
   var cards = gs.map(function (g, i) {
     return '<div class="narr-card">'
       + boardSvg(data.narrLive[i].st, { flip: data.narrLive[i].flip, decor: true })
-      + '<span class="narr-card-cap" data-clarity-mask="true">' + esc(cfg.user) + ' vs ' + esc(g.opp) + '</span></div>';
+      + '<span class="narr-card-cap">' + esc(cfg.user) + ' vs ' + esc(g.opp) + '</span></div>';
   }).join('');
   return '<div class="narr-strip"><div class="narr-track">' + cards + cards + '</div></div>';
 }
@@ -42,9 +38,6 @@ function narrLine(id, html) {
   }
   row.innerHTML = html;
 }
-
-
-
 
 boot();
 

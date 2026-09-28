@@ -114,17 +114,13 @@ button{font-family:inherit}
 .brand{display:flex;align-items:baseline;gap:12px;margin-right:auto;min-width:0}
 .brand-name{font-family:var(--font-display);font-size:23px;color:var(--display);cursor:pointer;white-space:nowrap}
 .brand-name:hover{color:var(--link-hover)}
-.brand-user{font-size:13px;color:#a9a49a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.brand-out{font-size:11px;color:var(--dim)}
-.brand-out:hover{color:var(--loss)}
+
 .ratings{display:flex;flex-wrap:wrap;gap:0 16px;font-variant-numeric:tabular-nums;font-size:13px}
 .ratings span{color:var(--secondary)}
 .ratings b{color:var(--primary);font-weight:400}
 .ratings .win{color:var(--win)}
 .bar-right{display:flex;align-items:center;gap:14px;font-size:12.5px}
-.streak-badge{display:inline-flex;align-items:center;gap:5px;color:var(--gold);font-size:14px}
-.streak-badge b{font-weight:400;color:var(--link-hover)}
-.flame{width:13px;height:16px}
+
 .views{display:flex;border-bottom:1px solid var(--rule);margin-top:4px}
 .view-tab{
   padding:12px 18px 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
@@ -132,10 +128,7 @@ button{font-family:inherit}
 }
 .view-tab:hover{color:var(--link-hover)}
 .view-on{color:var(--display);border-bottom-color:var(--gold)}
-.view-tab .badge{
-  display:inline-block;min-width:18px;padding:0 5px;margin-left:6px;border-radius:9px;
-  background:var(--gold);color:#181410;font-size:10.5px;letter-spacing:0;line-height:17px;text-align:center;
-}
+
 .page{max-width:1180px;margin:0 auto;padding:0 var(--gutter)}
 
 /* buttons ────────────────────────────────────────────────────────────── */
@@ -151,7 +144,7 @@ button{font-family:inherit}
   background:transparent;cursor:pointer;
 }
 .btn-line:hover{border-color:var(--gold);color:var(--link-hover)}
-.btn-gold{border:1px solid var(--gold);border-radius:6px;padding:9px 16px;color:var(--link);font-size:14px;display:inline-flex;align-items:center;gap:6px}
+
 .btn-quiet{color:var(--secondary);font-size:13.5px;padding:9px 4px}
 .btn-quiet:hover{color:var(--link-hover)}
 .btn-off{opacity:.4;pointer-events:none}
@@ -246,23 +239,19 @@ button{font-family:inherit}
 .hero{
   border:1px solid var(--edge);border-radius:10px;padding:22px 22px 20px;background:var(--card);
 }
-.hero-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+
 .hero h2{font-family:var(--font-display);font-weight:400;font-size:30px;line-height:1.1;color:var(--display);margin:4px 0 6px}
 .hero .why{color:var(--secondary);font-size:14.5px;margin:0 0 18px}
 .hero .acts{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
 .week{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:12.5px;color:var(--secondary)}
-.week-dots{display:flex;gap:4px}
-.week-dot{display:inline-block;flex:none;width:10px;height:10px;border-radius:50%;border:1px solid var(--edge)}
-.week-dot.on{background:var(--gold);border-color:var(--gold)}
-.week-dot.is-today{border-color:var(--gold-quiet)}
+
 .focus{border:1px solid var(--rule);border-radius:10px;padding:18px 20px;margin-top:14px}
 .focus-name{font-family:var(--font-display);font-size:22px;color:var(--display);margin:4px 0 4px}
 .focus p{margin:0 0 10px;font-size:14px;color:var(--body)}
 .focus .plan{border-left:2px solid var(--gold);padding:2px 0 2px 12px;color:var(--primary);font-size:14.5px;margin:10px 0 12px}
 .focus .acts{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center}
 .status{font-size:13px;color:var(--secondary);margin:16px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.status .bar-line{flex:1 1 140px;max-width:220px;height:3px;background:var(--rule);border-radius:2px;overflow:hidden}
-.status .bar-fill{display:block;height:100%;background:var(--gold);transition:width .5s}
+
 .finding{border:1px dashed var(--edge);border-radius:10px;padding:20px 22px}
 .finding h2{font-family:var(--font-display);font-weight:400;font-size:26px;color:var(--display);margin:4px 0 6px}
 .finds{display:flex;flex-direction:column;gap:6px;margin:12px 0 16px}
@@ -275,8 +264,7 @@ button{font-family:inherit}
 .recap-item span{display:block;font-size:11.5px;color:var(--secondary);margin-top:4px;line-height:1.3}
 .recap-item .res{font-size:11px;color:var(--text-2)}
 .recap-item .res.shown{color:var(--text-3)}
-.quiet-link{color:var(--text-2)}
-.quiet-link:hover{color:var(--text-1)}
+
 a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2px 6px}
 
 /* the card ───────────────────────────────────────────────────────────── */
@@ -288,7 +276,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .dot.ok{background:var(--win)}
 .dot.bad{background:var(--loss)}
 .dot.mid{background:var(--gold-quiet)}
-.card-count{font-size:13px;color:var(--secondary);white-space:nowrap}
+
 .card-menu{margin-left:auto;font-size:13px;color:var(--secondary);position:relative}
 .menu-pop{
   position:absolute;right:0;top:26px;z-index:8;background:var(--raised);border:1px solid var(--edge);
@@ -311,8 +299,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   font-variant-numeric:tabular-nums;font-family:system-ui,sans-serif;font-weight:600;
 }
 .evalbar-label:empty{display:none}
-.evalbar-label.low{bottom:3px;color:#403d38;background:#e9e5dc}
-.evalbar-label.high{top:3px;color:#e9e5dc;background:#403d38}
+
 .board-wrap{position:relative;flex:1;min-width:0}
 .board{width:100%;display:block;user-select:none;border-radius:4px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);touch-action:none}
 .board rect[data-sq],.board use[data-sq]{cursor:pointer}
@@ -350,39 +337,23 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .acts-row{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;margin:6px 0 4px}
 .hint-note{font-size:14px;color:var(--link-hover);margin:6px 0 8px;border-left:2px solid var(--gold);padding-left:10px}
 .lines{margin:10px 0 6px}
-.line-tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
-.line-tab{
-  font-size:12.5px;padding:5px 10px;border-radius:5px;border:1px solid var(--rule);color:var(--secondary);cursor:pointer;
-}
-.line-tab:hover{color:var(--link-hover)}
-.line-tab.on{border-color:var(--gold);color:var(--display);background:rgba(182,130,53,.07)}
-.line-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
 .nav-btn{border:1px solid var(--edge);border-radius:5px;padding:2px 12px;font-size:16px;color:var(--body);line-height:1.4;cursor:pointer}
 .nav-btn:hover{border-color:var(--gold)}
 .nav-off{opacity:.35;pointer-events:none}
 .moves{display:flex;flex-wrap:wrap;gap:2px 7px;font-size:14px;color:var(--secondary);font-variant-numeric:tabular-nums}
 .mv{color:var(--secondary);cursor:pointer;padding:0 1px;border-bottom:1px solid transparent}
 .mv:hover{color:var(--link-hover)}
-.mv-n{color:var(--dim)}
-.mv-on{color:var(--link-hover);border-bottom-color:var(--gold)}
-.mv-bad{color:var(--loss)}
+
 .explain{font-size:15px;color:var(--primary);margin:10px 0 8px;line-height:1.5}
 .explain .sub{display:block;font-size:13.5px;color:var(--secondary);margin-top:4px}
-.missed-it{font-size:13px;color:var(--win)}
+
 .pchip{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--edge);border-radius:14px;padding:3px 11px;font-size:12.5px;color:var(--gold-quiet);cursor:pointer}
 .pchip:hover{border-color:var(--gold);color:var(--link-hover)}
 .habit{font-size:13.5px;color:var(--body);margin:10px 0 4px;border-left:2px solid var(--gold-quiet);padding-left:10px}
-.next-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:14px}
+
 .run{display:inline-flex;align-items:center;gap:4px}
-.run-step{width:10px;height:10px;border-radius:50%;border:1px solid var(--gold-quiet)}
-.run-won{background:var(--gold);border-color:var(--gold)}
-.run-word{font-size:12.5px;color:var(--secondary);margin-left:4px}
-.coach-mark{
-  font-size:13px;color:var(--primary);background:rgba(182,130,53,.08);border:1px solid rgba(182,130,53,.35);
-  border-radius:8px;padding:10px 12px;margin:0 0 12px;
-}
-.coach-mark ol{margin:4px 0 6px 18px;padding:0}
-.coach-mark li{margin:2px 0}
+
 @media (max-width:860px){
   .card{grid-template-columns:1fr;gap:12px}
   .board-col{margin:0 calc(-1 * var(--gutter))}
@@ -412,30 +383,13 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .ins{max-width:860px;padding:24px 0 10px}
 .ins h2{font-family:var(--font-display);font-weight:400;font-size:28px;line-height:1.15;color:var(--display);margin:4px 0 8px}
 .ins .lead{font-size:15.5px;color:var(--body);margin:0 0 18px;max-width:40em}
-.section-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:28px 0 10px;border-bottom:1px solid var(--rule);padding-bottom:8px}
+
 .fam{border:1px solid var(--rule);border-radius:10px;padding:16px 18px;margin-bottom:10px;cursor:pointer;display:block;color:inherit}
 .fam:hover{border-color:var(--edge);color:inherit}
-.fam-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.fam-name{font-family:var(--font-display);font-size:21px;color:var(--display)}
-.fam-cost{font-size:13.5px;color:var(--loss);white-space:nowrap}
-.fam-cost.none{color:var(--secondary)}
-.fam-sub{font-size:13.5px;color:var(--secondary);margin:4px 0 0}
-.fam-types{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;margin-top:8px;color:var(--body)}
-.fam-types span b{color:var(--primary);font-weight:400}
-.meter-row{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--rule);margin-top:10px;max-width:360px}
-.meter-row i{display:block;height:100%}
-.m-learned{background:var(--win)}
-.m-practice{background:var(--gold)}
+
 .slice{border-left:2px solid var(--gold-quiet);padding:4px 0 4px 14px;margin:0 0 16px}
 .slice p{margin:0 0 6px;font-size:15px;color:var(--primary)}
 .slice .n{font-size:12.5px;color:var(--dim)}
-.mrow{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px}
-.mrow-l{flex:0 0 58px;color:var(--secondary);white-space:nowrap}
-.mrow-bar{flex:1 1 auto;max-width:320px;height:8px;background:var(--rule);border-radius:4px;overflow:hidden}
-.mrow-bar i{display:block;height:100%;background:var(--gold-quiet);border-radius:4px}
-.mrow-v{flex:0 0 auto;color:var(--primary);white-space:nowrap;font-variant-numeric:tabular-nums}
-.peer-row{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:8px 0;border-bottom:1px solid var(--rule-soft)}
-.peer-row b{font-weight:400;color:var(--primary)}
 
 /* sheet (pattern details, what's new) ────────────────────────────────── */
 .scrim{position:fixed;inset:0;background:rgba(10,9,8,.72);z-index:20;display:flex;align-items:flex-end;justify-content:center}
@@ -456,7 +410,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 /* settings ───────────────────────────────────────────────────────────── */
 .settings{border-top:1px solid var(--rule);margin-top:30px;padding-top:20px}
 .settings h2{font-family:var(--font-display);font-weight:400;font-size:26px;color:var(--display);margin:0 0 4px}
-.set-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:0 40px}
+
 .set-block{border-top:1px solid var(--rule-soft);padding-top:12px;margin-top:18px}
 .set-block > .kicker{display:block;margin-bottom:6px}
 .set-block p{font-size:13.5px;color:var(--secondary);margin:0 0 8px}
@@ -497,7 +451,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .card-task.bad{color:#e0968c}
   .card-task.good{color:#9fcf8a}
 }
-.sticky-nav{display:none}
+
 @media (max-width:860px){
   .sticky-acts .sticky-nav{display:inline-flex;flex:0 0 44px;justify-content:center;align-items:center;height:46px;font-size:22px}
   .card-task.good{color:var(--primary)}
@@ -772,8 +726,6 @@ body.in-session{padding-bottom:0}
 .hero .find{font-size:14px;color:var(--text-1);margin:4px 0}
 .landing .src-btn{display:flex;align-items:center;justify-content:center;text-align:center}
 .tab-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:8px;vertical-align:2px}
-.fmt-line{font-size:13px;color:var(--text-3);margin:16px 0 0}
-.fmt-line a{color:var(--text-2)}
 
 /* phones: the latest games sit right under the Today card, the way back in after a game */
 @media (max-width:860px){
@@ -787,6 +739,9 @@ body.in-session{padding-bottom:0}
 }
 a.lg-row{color:inherit}
 .recap-ladder{color:var(--text-2);margin:-12px 0 20px}
+.handoff{font-size:14px;color:var(--text-2);margin:0 0 12px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.evalbar.pending{background:var(--line)}
+.evalbar.pending .evalbar-fill{opacity:0}
 </style>
 </head>
 <body>
@@ -795,13 +750,13 @@ a.lg-row{color:inherit}
      as shipped by lichess-org/lila. Embedded so the page stays one file. -->
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true"><symbol id="pc-wK" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linejoin="miter" d="M22.5 11.63V6M20 8h5"/><path fill="#fff" stroke-linecap="butt" stroke-linejoin="miter" d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5"/><path fill="#fff" d="M11.5 37c5.5 3.5 15.5 3.5 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-3.5-7.5-13-10.5-16-4-3 6 5 10 5 10z"/><path d="M11.5 30c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0"/></g></symbol><symbol id="pc-wQ" viewBox="0 0 45 45"><g fill="#fff" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M8 12a2 2 0 1 1-4 0 2 2 0 1 1 4 0m16.5-4.5a2 2 0 1 1-4 0 2 2 0 1 1 4 0M41 12a2 2 0 1 1-4 0 2 2 0 1 1 4 0M16 8.5a2 2 0 1 1-4 0 2 2 0 1 1 4 0M33 9a2 2 0 1 1-4 0 2 2 0 1 1 4 0"/><path stroke-linecap="butt" d="M9 26c8.5-1.5 21-1.5 27 0l2-12-7 11V11l-5.5 13.5-3-15-3 15-5.5-14V25L7 14z"/><path stroke-linecap="butt" d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1.5 2.5-1.5 2.5-1.5 1.5.5 2.5.5 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4-8.5-1.5-18.5-1.5-27 0z"/><path fill="none" d="M11.5 30c3.5-1 18.5-1 22 0M12 33.5c6-1 15-1 21 0"/></g></symbol><symbol id="pc-wR" viewBox="0 0 45 45"><g fill="#fff" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linecap="butt" d="M9 39h27v-3H9zm3-3v-4h21v4zm-1-22V9h4v2h5V9h5v2h5V9h4v5"/><path d="m34 14-3 3H14l-3-3"/><path stroke-linecap="butt" stroke-linejoin="miter" d="M31 17v12.5H14V17"/><path d="m31 29.5 1.5 2.5h-20l1.5-2.5"/><path fill="none" stroke-linejoin="miter" d="M11 14h23"/></g></symbol><symbol id="pc-wB" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><g fill="#fff" stroke-linecap="butt"><path d="M9 36c3.39-.97 10.11.43 13.5-2 3.39 2.43 10.11 1.03 13.5 2 0 0 1.65.54 3 2-.68.97-1.65.99-3 .5-3.39-.97-10.11.46-13.5-1-3.39 1.46-10.11.03-13.5 1-1.35.49-2.32.47-3-.5 1.35-1.94 3-2 3-2z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z"/></g><path stroke-linejoin="miter" d="M17.5 26h10M15 30h15m-7.5-14.5v5M20 18h5"/></g></symbol><symbol id="pc-wN" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path fill="#fff" d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21"/><path fill="#fff" d="M24 18c.38 2.91-5.55 7.37-8 9-3 2-2.82 4.34-5 4-1.042-.94 1.41-3.04 0-3-1 0 .19 1.23-1 2-1 0-4.003 1-4-4 0-2 6-12 6-12s1.89-1.9 2-3.5c-.73-.994-.5-2-.5-3 1-1 3 2.5 3 2.5h2s.78-1.992 2.5-3c1 0 1 3 1 3"/><path fill="#000" d="M9.5 25.5a.5.5 0 1 1-1 0 .5.5 0 1 1 1 0m5.433-9.75a.5 1.5 30 1 1-.866-.5.5 1.5 30 1 1 .866.5"/></g></symbol><symbol id="pc-wP" viewBox="0 0 45 45"><path fill="#fff" stroke="#000" stroke-linecap="round" stroke-width="1.5" d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z"/></symbol><symbol id="pc-bK" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linejoin="miter" d="M22.5 11.6V6"/><path fill="#000" stroke-linecap="butt" stroke-linejoin="miter" d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5"/><path fill="#000" d="M11.5 37a22.3 22.3 0 0 0 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-3.5-7.5-13-10.5-16-4-3 6 5 10 5 10z"/><path stroke-linejoin="miter" d="M20 8h5"/><path stroke="#ececec" d="M32 29.5s8.5-4 6-9.7C34.1 14 25 18 22.5 24.6v2.1-2.1C20 18 9.9 14 7 19.9c-2.5 5.6 4.8 9 4.8 9"/><path stroke="#ececec" d="M11.5 30c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0"/></g></symbol><symbol id="pc-bQ" viewBox="0 0 45 45"><g fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><g stroke="none"><circle cx="6" cy="12" r="2.75"/><circle cx="14" cy="9" r="2.75"/><circle cx="22.5" cy="8" r="2.75"/><circle cx="31" cy="9" r="2.75"/><circle cx="39" cy="12" r="2.75"/></g><path stroke-linecap="butt" d="M9 26c8.5-1.5 21-1.5 27 0l2.5-12.5L31 25l-.3-14.1-5.2 13.6-3-14.5-3 14.5-5.2-13.6L14 25 6.5 13.5z"/><path stroke-linecap="butt" d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1.5 2.5-1.5 2.5-1.5 1.5.5 2.5.5 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4-8.5-1.5-18.5-1.5-27 0z"/><path fill="none" stroke-linecap="butt" d="M11 38.5a35 35 1 0 0 23 0"/><path fill="none" stroke="#ececec" d="M11 29a35 35 1 0 1 23 0m-21.5 2.5h20m-21 3a35 35 1 0 0 22 0m-23 3a35 35 1 0 0 24 0"/></g></symbol><symbol id="pc-bR" viewBox="0 0 45 45"><g fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linecap="butt" d="M9 39h27v-3H9zm3.5-7 1.5-2.5h17l1.5 2.5zm-.5 4v-4h21v4z"/><path stroke-linecap="butt" stroke-linejoin="miter" d="M14 29.5v-13h17v13z"/><path stroke-linecap="butt" d="M14 16.5 11 14h23l-3 2.5zM11 14V9h4v2h5V9h5v2h5V9h4v5z"/><path fill="none" stroke="#ececec" stroke-linejoin="miter" stroke-width="1" d="M12 35.5h21m-20-4h19m-18-2h17m-17-13h17M11 14h23"/></g></symbol><symbol id="pc-bB" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><g fill="#000" stroke-linecap="butt"><path d="M9 36c3.4-1 10.1.4 13.5-2 3.4 2.4 10.1 1 13.5 2 0 0 1.6.5 3 2-.7 1-1.6 1-3 .5-3.4-1-10.1.5-13.5-1-3.4 1.5-10.1 0-13.5 1-1.4.5-2.3.5-3-.5 1.4-2 3-2 3-2z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z"/></g><path stroke="#ececec" stroke-linejoin="miter" d="M17.5 26h10M15 30h15m-7.5-14.5v5M20 18h5"/></g></symbol><symbol id="pc-bN" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path fill="#000" d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21"/><path fill="#000" d="M24 18c.38 2.91-5.55 7.37-8 9-3 2-2.82 4.34-5 4-1.04-.94 1.41-3.04 0-3-1 0 .19 1.23-1 2-1 0-4 1-4-4 0-2 6-12 6-12s1.89-1.9 2-3.5c-.73-1-.5-2-.5-3 1-1 3 2.5 3 2.5h2s.78-2 2.5-3c1 0 1 3 1 3"/><path fill="#ececec" stroke="#ececec" d="M9.5 25.5a.5.5 0 1 1-1 0 .5.5 0 1 1 1 0m5.43-9.75a.5 1.5 30 1 1-.86-.5.5 1.5 30 1 1 .86.5"/><path fill="#ececec" stroke="none" d="m24.55 10.4-.45 1.45.5.15c3.15 1 5.65 2.49 7.9 6.75S35.75 29.06 35.25 39l-.05.5h2.25l.05-.5c.5-10.06-.88-16.85-3.25-21.34s-5.79-6.64-9.19-7.16z"/></g></symbol><symbol id="pc-bP" viewBox="0 0 45 45"><path stroke="#000" stroke-linecap="round" stroke-width="1.5" d="M22.5 9a4 4 0 0 0-3.22 6.38 6.48 6.48 0 0 0-.87 10.65c-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47a6.46 6.46 0 0 0-.87-10.65A4.01 4.01 0 0 0 22.5 9z"/></symbol></svg>
 
-<header class="bar" id="bar"></header>
+<header class="bar" id="bar" data-clarity-mask="true"></header>
 <noscript><div style="max-width:520px;margin:80px auto;padding:0 20px;font-family:Georgia,serif;color:#c9c1ae">
 notlichess.org runs in your browser and needs JavaScript turned on. Your games and training data stay on this device.
 </div></noscript>
-<main id="main"></main>
-<footer class="foot" id="foot"></footer>
-<div id="overlay"></div>
+<main id="main" data-clarity-mask="true"></main>
+<footer class="foot" id="foot" data-clarity-mask="true"></footer>
+<div id="overlay" data-clarity-mask="true"></div>
 
 <script>
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1044,14 +999,6 @@ function splitND(text, onLine) {
 }
 
 /* ── 6. Game cache and normalisation ─────────────────────────────────── */
-/* Raw exports with clocks and evals are far too big for localStorage, so each
-   game is reduced to the fields the detectors read, once, at ingest. */
-
-
-/* Mirrors baselines.py move for move: same 1500cp clamp, same 1000cp cap on a
-   single move's loss, same 0-30 / 30-60 / 60+ ply buckets, same +/-200
-   thresholds. If this drifts from the script, every peer comparison silently
-   becomes a comparison of two different measurements. */
 
 /* one move's accuracy on Lichess's own curve */
 function moveAcc(wb, wa) {
@@ -1616,18 +1563,12 @@ function merge(fresh, old) {
   return all;
 }
 
-
-
 /* ── 6c. Blunder taxonomy ────────────────────────────────────────────────
    A mistake with a name teaches more than a bare eval swing. Heuristics
    only, no engine needed at classification time, so they are chosen to be
    right when they speak and silent when unsure.                            */
 
 var PIECE_VAL = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 99 };
-
-
-
-
 
 /* ── 6b. SAN replay ──────────────────────────────────────────────────────
    Just enough chess to turn a Lichess movetext into the FEN at any ply, so
@@ -1821,7 +1762,6 @@ function stateFen(st) {
     + ' ' + ep + ' ' + st.half + ' ' + st.full;
 }
 
-
 function cloneState(st) {
   return { b: st.b.slice(), w: st.w, cast: st.cast, ep: st.ep, half: st.half, full: st.full };
 }
@@ -1982,16 +1922,13 @@ var data = {
    page says so.                                                             */
 
 
-/* Openings use coarser bands than the skill cells: results move slowly with
-   rating, and four wide buckets hold far more games each. */
+
 /* ── 8b2. The reply book ─────────────────────────────────────────────────
    From the same open database: for ~2,700 opening positions, the moves
    players in each rating band actually answer with, count and White-score.
    This is what lets the openings trainer play the opponent you will really
    face, offline, with no request to anyone. Prefix-keyed in the blob;
    converted to FEN-keyed maps (merging transpositions) lazily below.       */
-
-
 
 /* chess.com and Lichess ratings live on different scales. Published
    equivalences put club-level Lichess numbers a few hundred above
@@ -2003,24 +1940,7 @@ function bandEquivRating(perf, rating) {
   return isCC() ? rating + (CC_OFFSET[perf] != null ? CC_OFFSET[perf] : 200) : rating;
 }
 
-
-
-
-
-
-
-
-
-
-   /* clearly below peers, short of a full "weak" step */
-
-
-/* Weakest first, but only rows that have a peer number to be weak against. */
-
-/* A registry of independent detectors. Each is a pure function over loaded
-   data and returns null or a finding. Nothing here invents a peer baseline:
-   Lichess's peer numbers are not exposed to third parties, so every
-   comparison is self-relative and says so.                                */
+   
 
 /* A format has to be a real part of how you play before this page is allowed
    to say anything about it. Three bullet games in a thousand is not a habit,
@@ -2053,36 +1973,11 @@ function isEligible(perf) { return !!census().set[perf]; }
    fall back to whatever you actually play most. Ranking purely by volume made
    the whole page talk about bullet to someone whose stated focus is rapid. */
 
-
-
 function perfLabel(p) { return p === 'ultraBullet' ? 'ultrabullet' : p; }
-
 
 /* ── 8d. Evidence, what opens when a skill row is clicked ─────────────
    Each panel is the concrete version of the abstract number: the actual
    games, the actual positions, the actual openings. Nothing generic.     */
-
-
-
-
-
-
-
-
-/* ── 10. Review queue ────────────────────────────────────────────────── */
-
-/* ── 11. Rendering ───────────────────────────────────────────────────── */
-
-
-
-
-
-
-
-
-
-
-
 
 /* ── 8f. The coach ───────────────────────────────────────────────────────
    The product is for the player who is stuck and annoyed, they do not want
@@ -2090,25 +1985,12 @@ function perfLabel(p) { return p === 'ultraBullet' ? 'ultrabullet' : p; }
    an opinion, and it ends in one directive. The data that justifies it stays
    one click deeper, in the profile rows.                                    */
 
-
-
-
-
-
-
-
-
 /* ── 8e. The trainer ─────────────────────────────────────────────────────
    Positions from your own games, retried on a board that lives on the page.
    The answer key is Lichess's own analysis: `best` and `variation` arrive
    with the export, so grading needs no engine and no server. Results feed a
    small spaced-repetition ladder, a failed position returns tomorrow, a
    solved one in 3, then 7, then 21, then 60 days.                          */
-
-
-
-
-
 
 /* ── 8g. The repertoire ──────────────────────────────────────────────────
    Mined from the user's own games, never authored on a blank page: every
@@ -2118,15 +2000,10 @@ function perfLabel(p) { return p === 'ultraBullet' ? 'ultrabullet' : p; }
    distribution at the user's rating. Chessable trains you against a course;
    this trains you against the people you will actually sit across.        */
 
-      /* plies mined from each game */
-       /* a position this rare is not repertoire yet */
-  /* my move within this many score points of best = keep */
-    /* opening cards folded into a daily set */
-
-
-
-
-
+      
+       
+  
+    
 
 /* ── Lines, not positions ────────────────────────────────────────────────
    The drilled unit is a LINE: a walk through the tree following keeper
@@ -2140,22 +2017,11 @@ function perfLabel(p) { return p === 'ultraBullet' ? 'ultrabullet' : p; }
    retrieval, per the charter, then the same line is tested from memory in
    the same session, and only then does the SRS ladder take over.          */
 
-
-
-
 /* ── Adopting a NEW opening ──────────────────────────────────────────────
    Not from your games, from the band book: pick a first move (or a reply),
    and the lines generate themselves by following the best-scoring popular
    move for your side and the most common answers for theirs. Every adopted
    line is born unlearned, so it flows through Learn before it ever tests.  */
-
-
-
-
-
-
-
-
 
 /* ── The board ── */
 /* Classic colours and the cburnett pieces, the board every Lichess player
@@ -2328,32 +2194,9 @@ function snd(name) {
 }
 
 /* ── Trainer state and flow ── */
-/* One session, one board, inline on the Train view. Items mix your own
-   mistakes (graded against Lichess's stored best move, scheduled by the
-   SRS ladder) with fresh Lichess puzzles pulled from /api/puzzle/next,
-   themed at the coach's focus. Every item says why it is in front of you. */
 
-
-
-
-
-
-
-/* Puzzles only, endlessly refillable, for the player who wants to keep going
-   after the day's positions are done. */
 /* A custom set: the same trainer, fed by a filter, an opponent, an opening,
    a colour. Coach cards deal these directly instead of linking away. */
-
-
-
-
-
-
-
-
-
-
-
 
 function uciToMove(st, uci) {
   if (!uci || uci.length < 4) return null;
@@ -2368,59 +2211,15 @@ function uciToMove(st, uci) {
   return out;
 }
 
-
-
-
-
-
-
-
-
-
-
 /* ── Missions ────────────────────────────────────────────────────────────
    Every kind of set the app can deal, in one checklist on Today: the daily
    set first, then the book drills, then whatever the coach is prescribing.
    Each is startable in one tap, checkable for the day, and repeatable -
    the check is satisfaction, never a lock.                                 */
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 /* ── Opponent prep (#8) ──────────────────────────────────────────────────
    Thirty seconds before a match: their book, their colours, their leaks.
    One request, cached per name for the session.                            */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* Hidden bar, footer, settings ---------------------------------------- */
-
-
-
-
 
 /* ── 12. Notices ─────────────────────────────────────────────────────── */
 
@@ -2448,43 +2247,18 @@ function notice(msg, action) {
   noticeTimer = setTimeout(function () { n.remove(); }, action ? 8000 : 5000);
 }
 
-/* ── 13. Command palette ─────────────────────────────────────────────── */
-
-
-
-
-
-
 /* ── 14. Actions ─────────────────────────────────────────────────────── */
 
-
-
-
-          /* redraw countdowns, no network at all */
-
+          
 
 /* Quiet hourly pickup: the incremental fetch is cheap (it asks only for
    games since the newest cached one), so staying current costs almost
    nothing and the user never has to think about refreshing. */
 
-
-
-
-
-
-
-
-
-
-
-
 if (window.MutationObserver) {
   new MutationObserver(function () { makeFocusable(); })
     .observe(document.body, { childList: true, subtree: true });
 }
-
-/* Enter and Space activate them the way a real button would. */
-
 
 /* ── 14c. The engine ─────────────────────────────────────────────────────
    Stockfish 16 NNUE, fetched once from a CDN and booted as a blob worker
@@ -2492,8 +2266,6 @@ if (window.MutationObserver) {
    CORS). Falls back to the older asm.js build if WASM is unavailable. Used
    for two things: quietly scanning unanalysed games into training material,
    and judging whether a non-book answer in the trainer was also good.      */
-
-
 
 /* ── 14d. The quiet scan ─────────────────────────────────────────────────
    Keeps a buffer of games ready to train: whenever fewer than SCAN_BUFFER
@@ -2564,10 +2336,7 @@ function nextScanTarget() {
   return null;
 }
 
-
- /* fixed node budget: big swings are visible well
-                             below this, and deal-time refinement (400ms)
-                             re-checks every card before it teaches */
+ 
 
 /* When the retained pool runs dry, refuel it wholesale: one POST to the
    export-by-ids endpoint brings movetext for up to 150 games, the pool
@@ -2764,11 +2533,6 @@ function autoScan() {
     });
 }
 
-
-
-
-
-
 /* A player who mostly blitzes still deserves a real rapid read: after the
    main window lands, any tracked format sitting under its floor gets its
    own quiet per-format fetch, merged and deduped in the background. */
@@ -2906,7 +2670,6 @@ function loadUser() {
   });
 }
 
-
 /* The rating curve is reconstructed from the games we already hold: the rating
    after a game is the rating it was played at plus its diff. No extra request,
    and it moves with whatever game window is loaded. */
@@ -2938,7 +2701,6 @@ function buildSeries() {
     }
   });
 }
-
 
 /* The annotated 1000-game export takes Lichess several seconds to even
    begin sending. The theater cannot wait for that: a 12-game moves-only
@@ -3060,19 +2822,10 @@ function loadGames() {
   }).catch(function (err) {
     if (stale(myGen)) return;
     data.sections.games = 'fail';
-    data.gamesErr = err && err.code === 429 ? 'The site asked us to slow down. Try again in a minute.' : '';
+    data.gamesErr = err && err.code === 429 ? (isCC() ? 'chess.com' : 'lichess') + ' asked us to slow down. Try again in a minute.' : '';
     renderTrain(); renderFoot();
   });
 }
-
-
-/* Your record against whoever is across the board right now. Public, cheap,
-   and the single most interesting thing to know mid-game. */
-
-
-
-
-
 
 /* ── Proper SAN, FEN parsing, material ─────────────────────────────────────
    Standard algebraic notation with every detail a reader expects: capture
@@ -4330,7 +4083,7 @@ function scanGame(g) {
         g.mv = g.bl ? full.moves : null;   /* movetext stays only where cards live */
         delete g.ck;                        /* the clocks did their job */
         g.scanned = 1;
-        g.eng = SF.build || 'sf17';         /* which engine judged this game */
+        g.eng = SF.build || 'sf17.1';       /* which engine judged this game */
         scanState.dirty = (scanState.dirty || 0) + 1;
         /* accuracy metrics: unevaluated plies carry the last value forward */
         var lastCp = 20;
@@ -4369,7 +4122,22 @@ function modelToken() {
 }
 /* the formats being trained: a change in Settings takes effect at once,
    while other formats' games stay stored for switching back */
-function inScope(g) { return trackedPerfs().indexOf(g.perf) !== -1; }
+/* one window for every number: the last 12 months of the tracked format,
+   and at least its latest 150 games (the player as they are now) */
+var windowMemo = { key: '', cut: {} };
+function windowCut(perf) {
+  var key = data.games.length + '|' + (data.games.length ? data.games[0].ts + '|' + data.games[data.games.length - 1].ts : '') + '|' + trackedPerfs().join(',');
+  if (windowMemo.key !== key) {
+    var cut = {}, year = Date.now() - 365 * DAY;
+    trackedPerfs().forEach(function (p) {
+      var ts = data.games.filter(function (g) { return g.perf === p; }).map(function (g) { return g.ts; }).sort(function (a, b) { return b - a; });
+      cut[p] = ts.length > 150 ? Math.min(year, ts[149]) : 0;
+    });
+    windowMemo = { key: key, cut: cut };
+  }
+  return windowMemo.cut[perf] || 0;
+}
+function inScope(g) { return trackedPerfs().indexOf(g.perf) !== -1 && g.ts >= windowCut(g.perf); }
 function scopedGames() { return data.games.filter(inScope); }
 function model() {
   var tok = modelToken();
@@ -4746,13 +4514,12 @@ function dayBump(result, fresh, attempted) {
   if (fresh && result !== 'skip') day.fresh = (day.fresh || 0) + 1;
   daySave(day);
 }
-/* a day counts only on positions really tried: five in the day, a finished
-   session with three or more, or one that cleared everything due. Skips and
-   reveal-only taps never count */
-function dayCounts(rec) {
-  if (!rec) return false;
-  return (rec.attempted || 0) >= 5 || !!rec.cleared || (rec.sessions || 0) >= 1;
-}
+/* one rule, said the same way in Settings: a day counts when you finish a
+   session in which you tried at least 3 positions, or all of them if it had
+   fewer. Tried means a move was played; skips and reveal-only taps never
+   count */
+var DAY_RULE = 'A day counts when you finish a session in which you tried at least 3 positions, or all of them if it had fewer.';
+function dayCounts(rec) { return !!(rec && (rec.sessions || 0) >= 1); }
 function dayRecOf(d) { return store.get(dayKeyFor(d), null); }
 function weekGoal() { return store.get('nl:weekGoal', 4); }
 /* consistency counted in weeks: the run of Monday-to-Sunday weeks that met
@@ -5049,7 +4816,7 @@ function engineLoad() {
   /* Stockfish 17.1 with its neural network, served from this site (sf/).
      There is no fallback: every game is judged by the same engine, and a
      browser that cannot run it says so */
-  SF.loading = bootWorker({ url: 'sf/stockfish.js' }).then(function (w) { SF.code = { url: 'sf/stockfish.js' }; SF.build = 'sf17'; return w; })
+  SF.loading = bootWorker({ url: 'sf/stockfish.js' }).then(function (w) { SF.code = { url: 'sf/stockfish.js' }; SF.build = 'sf17.1'; return w; })
     .then(function (w) {
       SF.workers.push({ w: w });
       SF.state = 'ready';
@@ -5068,10 +4835,13 @@ function bootWorker(code) {
       w = code && code.url ? new Worker(code.url)
         : new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
     } catch (e0) { reject(e0); return; }
-    /* two minutes: the first visit downloads about 7 MB before the engine
-       can answer, and a slow connection must not look like a failure */
-    var t = setTimeout(function () { reject(new Error('engine boot timeout')); w.terminate(); }, 120000);
+    /* the clock starts at the worker's first word: the first visit downloads
+       about 7 MB before the engine can speak, and a slow connection must not
+       look like a failure (ten minutes of silence is the only give-up) */
+    var fail = function (why) { return function () { reject(new Error(why)); w.terminate(); }; };
+    var t = setTimeout(fail('engine never answered'), 600000), heard = false;
     w.onmessage = function (e) {
+      if (!heard) { heard = true; clearTimeout(t); t = setTimeout(fail('engine boot timeout'), 45000); }
       if (String(e.data) === 'uciok') { clearTimeout(t); resolve(w); }
     };
     w.onerror = function (e) { clearTimeout(t); reject(e); };
@@ -5307,9 +5077,10 @@ function deepEnrich(it, prio) {
     p = engineEval(stateFen(pre), { nodes: DEEP_NODES }, ctx.prio, { multipv: 2, tag: key })
       .then(function (r) { r1 = r; return engineEval(stateFen(post), { nodes: DEEP_NODES }, ctx.prio, { tag: key }); })
       .then(function (r2) {
-        /* a close call on a thin board is searched again, four times deeper */
+        /* a close call on a thin board is searched again, four times deeper,
+           but only in the background: a player never waits on it */
         var drop = winPct(sign * r1.cp) - winPct(sign * r2.cp);
-        if (stale(myGen) || !thinBoard(pre) || drop < bar || drop >= bar + 10) return r2;
+        if (stale(myGen) || ctx.prio || !thinBoard(pre) || drop < bar || drop >= bar + 10) return r2;
         return engineEval(stateFen(pre), { nodes: CONFIRM_NODES }, ctx.prio, { multipv: 2, tag: key }).then(function (r) {
           r1 = r;
           return engineEval(stateFen(post), { nodes: CONFIRM_NODES }, ctx.prio, { tag: key });
@@ -5394,7 +5165,7 @@ function saveSession() {
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
-                         progress: ss.progress || {}, attempted: ss.attempted || 0 });
+                         progress: ss.progress || {}, attempted: ss.attempted || 0, checks: ss.checks || 0, checksFound: ss.checksFound || 0 });
 }
 function savedSession() {
   var s = store.get(sessKey(), null);
@@ -5439,9 +5210,7 @@ function newCardScore(it, since) {
 }
 /* candidates never seen before, best first */
 function buildCandidates(n, spec) {
-  /* only a settled focus steers the mix: a provisional leader is not evidence */
   var srs = srsLoad(), focus = currentFocus(), since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
-  if (focus && focus.provisional) focus = null;
   var filter = spec ? specFilter(spec) : null;
   var list = allMistakes().filter(function (it) {
     return trainable(it) && !srs[it.key] && (!filter || filter(it));
@@ -5559,7 +5328,7 @@ function resumeSession() {
   if (!s) return false;
   ui.session = { mode: s.mode, label: s.label, keys: s.keys, idx: s.idx, results: s.results || {},
                  relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {},
-                 attempted: s.attempted || 0 };
+                 attempted: s.attempted || 0, checks: s.checks || 0, checksFound: s.checksFound || 0 };
   setView('train', false);
   pushSessionState();
   /* a card answered before the reload is not asked again */
@@ -5624,10 +5393,11 @@ function finishSession() {
   if (!ss) return;
   ss.finished = true;
   ss.active = null;
-  /* the day counts only on real tries: skips and reveal-only taps earn nothing */
-  var day = dayLoad(), tried = ss.attempted || 0;
-  if (tried >= 3) day.sessions = (day.sessions || 0) + 1;
-  if (tried >= 1 && !dueCards().length) day.cleared = 1;
+  /* the day counts on real tries only (DAY_RULE) */
+  var day = dayLoad(), tried = ss.attempted || 0, n = 0, seen = {};
+  ss.keys.forEach(function (k) { if (!seen[k]) { seen[k] = 1; n++; } });
+  if (tried >= 1 && tried >= Math.min(3, n)) day.sessions = (day.sessions || 0) + 1;
+  else day.short = 1;
   daySave(day);
   if (weekDays() >= weekGoal() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
     store.set('nl:goalSent:' + playerId(), weeksAtGoal());
@@ -5666,36 +5436,20 @@ function endSession(fromPop) {
 }
 
 /* ── the focus: one family at a time, held for at least a week ──────────── */
-function focusKey() { return 'nl:focus2:' + playerId(); }
-/* The focus is the player's biggest leak, so it is only fixed on good
-   evidence: enough games read (60, or all of them) and a lead over the
-   second family that is not noise (L - R >= 1.645 sqrt(L + R), games
-   decided, draws half). Until then the leader is shown as provisional,
-   nothing is stored and nothing is boosted. A focus the player chose holds;
-   an automatic one holds until another family clearly leads. */
+/* The focus is a function, never a record: the family that decided the most
+   games, shown only on good evidence, 60 games of the window read (or all
+   of them) and a lead over the second family that is not noise
+   (L - R >= 1.645 sqrt(L + R), games decided, draws half). Today and
+   Insights both ask this one function. */
 function currentFocus() {
-  var f = store.get(focusKey(), null), fams = insightFamiliesQuick();
-  var valid = function (key) { return fams.some(function (x) { return x.fam.key === key && x.count - x.learned >= 3; }); };
-  if (f && f.user && valid(f.fam)) return f;
-  var ranked = fams.filter(function (x) { return x.count - x.learned >= 3; });
-  if (!ranked.length) return f && valid(f.fam) ? f : null;
-  var lead = ranked[0], L = lead.cost, R = ranked[1] ? ranked[1].cost : 0;
+  var fams = insightFamiliesQuick().filter(function (x) { return x.count - x.learned >= 3; });
+  if (!fams.length) return null;
+  var lead = fams[0], L = lead.cost, R = fams[1] ? fams[1].cost : 0;
   var n = analysisNumbers();
   var readDone = n.total > 0 && n.covered >= n.total && !n.working;
-  var enough = readDone || n.covered >= 60;
-  var clear = L >= 5 && L - R >= 1.645 * Math.sqrt(L + R);
-  if (f && valid(f.fam) && (f.fam === lead.fam.key || !clear)) return f;
-  if ((enough && clear) || readDone) {
-    f = { fam: lead.fam.key, since: Date.now(), user: false };
-    store.set(focusKey(), f);
-    return f;
-  }
-  return { fam: lead.fam.key, since: Date.now(), user: false, provisional: true };
-}
-function setFocus(fam) {
-  store.set(focusKey(), { fam: fam, since: Date.now(), user: true });
-  closeSheet();
-  renderTrain();
+  if (!(readDone || n.covered >= 60)) return null;
+  if (!(L >= 5 && L - R >= 1.645 * Math.sqrt(L + R))) return null;
+  return { fam: lead.fam.key };
 }
 function insightFamiliesQuick() {
   var stats = patternStats();
@@ -5717,10 +5471,8 @@ var STRONGER_TOL = 10;    /* within this: good, but look for more */
 
 /* the player's help level: the defaults change with rating (novices get
    more guidance, strong players get the whole line and no hints) */
+/* the help level follows the tracked format's current rating */
 function playerTier() {
-  var pref = store.get('nl:help', 'auto');
-  if (pref === 'more') return 1;
-  if (pref === 'less') return 3;
   var r = null, perf = trackedPerfs()[0];
   if (data.user && data.user.perfs && perf && data.user.perfs[perf]) r = bandEquivRating(perf, data.user.perfs[perf].rating);
   if (r == null) return 2;
@@ -5771,6 +5523,17 @@ function cpFromWin(w) {
   var x = w / 50 - 1;
   return Math.round(-Math.log(2 / (x + 1) - 1) / 0.00368208);
 }
+
+/* one line on a phone is 80 characters: the first candidate that fits,
+   else the shortest (candidates run from fullest to barest) */
+var LINE_MAX = 80;
+function fitLine(cands) {
+  cands = cands.filter(Boolean);
+  for (var i = 0; i < cands.length; i++) if (cands[i].length <= LINE_MAX) return cands[i];
+  return cands.reduce(function (x, y) { return y.length < x.length ? y : x; });
+}
+/* a sentence cut back to its first clause, keeping the move it names */
+function firstClause(s) { var i = s.indexOf(': '); return i > 0 ? s.slice(0, i) + '.' : s; }
 
 /* ── starting a card ─────────────────────────────────────────────────────── */
 function cardFor(it) {
@@ -5834,7 +5597,6 @@ function cardFor(it) {
       }
     }
   }
-  if (kept && kept.c) a.check1Missed = true;
   return a;
 }
 function currentItem() {
@@ -5934,44 +5696,32 @@ function gradeMove(m) {
   if (u === a.playedUci) { sameAsGame(m); return; }
   checkMove(m, u, false);
 }
-/* step 1 of the blunder check, graded without the engine: the stored
-   reply, or any capture of the same piece, is what the move allowed */
+/* the blunder check, graded without the engine: the stored reply, or any
+   capture on the same square, is what the move allowed. One question per
+   showing: found or not, the card is then answered, with the better move as
+   a worked example; the fix is asked when the card comes back */
 function checkStep(m, u) {
-  var a = ui.session.active, c1 = a.check1, cardKey = a.key;
+  var a = ui.session.active, c1 = a.check1, ss = ui.session;
   var found = !!m && (u === c1.uci || (c1.capture && m.to === c1.reply.to && a.st.b[m.to] != null));
   var san = m ? sanOf(a.st, m) : '';
+  c1.found = found;
+  ss.checks = (ss.checks || 0) + 1;
+  if (found) ss.checksFound = (ss.checksFound || 0) + 1;
   if (found) {
-    applyMove(a.st, m);
-    a.lastMove = [m.from, m.to];
-    a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. That is what your move allowed. Now find a better move.' };
+    a.checkVerdict = '✓ ' + esc(san) + '. That is what your move allowed.';
     snd('good');
-    track('check_first');
   } else {
-    /* one try: the real reply is played, with the card's own sentence */
-    c1.missed = true;
-    a.check1Missed = true;
-    keepProgress(a);
-    applyMove(a.st, c1.reply);
-    a.lastMove = [c1.reply.from, c1.reply.to];
-    a.animMove = [c1.reply.from, c1.reply.to];
-    var said = 'Your ' + (a.cls.sentences.short || a.cls.sentences.game);
-    a.verdict = { cls: 'verdict-bad', html: '✗ ' + (a.it.g.color === 'white' ? 'Black' : 'White') + ' had ' + esc(c1.san) + '. ' + esc(said) };
+    a.checkVerdict = '✗ ' + (a.it.g.color === 'white' ? 'Black' : 'White') + ' had ' + esc(c1.san) + '.';
     snd('bad');
-    track('check_miss');
   }
-  a.phase = 'reply';
-  renderCard();
-  setTimeout(function () {
-    var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== cardKey || a2.phase !== 'reply') return;
-    /* step 2: back to the position before the mistake */
-    a2.st = cloneState(a2.pre);
-    a2.lastMove = a2.preLast;
-    a2.animMove = null;
-    a2.check1.done = true;
-    a2.phase = 'guess';
-    renderCard();
-  }, found ? 1600 : 2600);
+  track((found ? 'check_first_t' : 'check_miss_t') + a.tier);
+  /* the answered view starts from the position before the mistake */
+  a.st = cloneState(a.pre);
+  a.lastMove = a.preLast;
+  a.animMove = null;
+  a.check1.done = true;
+  if (!found) a.revealed = true;
+  finishCard(found ? 'first' : 'fail');
 }
 /* the forcing line, move by move: my move, then theirs is played for me */
 function stepLine(m, u) {
@@ -6015,7 +5765,7 @@ function sameAsGame(m) {
   var said = (a.cls.sentences.short || a.cls.sentences.game).replace(/^\S+\s/, 'It ');
   var bestSan = sanOf(a.pre, a.best);
   if (said.indexOf(bestSan) >= 0 || familyOf(patternOf(it.b)).key === 'chances') said = 'There is something stronger here.';
-  a.verdict = { cls: 'verdict-bad', html: '✗ Your game move again. ' + esc(said) };
+  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ Your game move again. ' + said, '✗ Your game move again. ' + firstClause(said), '✗ Your game move again.'])) };
   escalate(line);
 }
 /* misses and hints outlive a reload, so a retry is never scored first-try */
@@ -6023,7 +5773,7 @@ function keepProgress(a) {
   var ss = ui.session;
   if (!ss || !a) return;
   ss.progress = ss.progress || {};
-  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts, c: a.check1Missed ? 1 : 0 };
+  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts };
   saveSession();
 }
 /* the second miss brings the first hint; the third shows the answer */
@@ -6102,6 +5852,7 @@ function checkMove(m, u, inLine) {
     }
     var stronger = close;
     if (stronger) {
+      track('close_shown');
       a2.foundGood = { san: sanOf(a2.st, m), win: wMove };
       keepProgress(a2);
       a2.phase = 'guess';
@@ -6142,7 +5893,8 @@ function miss(m, u, info) {
       : san + (a.tier === 1 ? ' does not lose anything, but there is something stronger here.'
         : ' keeps ' + Math.round(info.win) + '%. There is something stronger here.');
   }
-  a.verdict = { cls: 'verdict-bad', html: '✗ ' + esc(why || san + ' does not work.') };
+  why = why || san + ' does not work.';
+  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ ' + why, '✗ ' + firstClause(why), '✗ ' + san + ' does not work.'])) };
   escalate(line);
 }
 /* show a line of moves from the current position, then put the board back */
@@ -6182,7 +5934,7 @@ function solved(m, u, alt, lineDone) {
   var ss = ui.session, a = ss.active;
   if (m) { applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = null; }
   a.alt = alt && u !== a.bestUci ? alt : null;
-  var result = a.misses ? 'retry' : ((a.hints || a.foundGood || a.check1Missed) ? 'hint' : 'first');
+  var result = a.misses ? 'retry' : ((a.hints || a.foundGood) ? 'hint' : 'first');
   finishCard(result);
   snd('good');
 }
@@ -6213,7 +5965,7 @@ function hintText(a) {
     if (c.mateFor) return 'There is a forced mate. Look at every check.';
     /* the first hint names the prize, never the move */
     var prize = c.bestLine ? (captureWord(c.bestLine, c.bSettle) || materialWord(c.matBest)) : '';
-    if (a.hints < 2 && prize && c.matBest >= 1) return 'You can win ' + prize + ' here. Look at every check and capture.';
+    if (a.hints < 2 && prize && c.matBest >= 1) return fitLine(['You can win ' + prize + ' here. Look at every check and capture.', 'You can win ' + prize + ' here.']);
     if (mt.fork && c.matBest >= 2) return mt.fork.ply === 1 ? 'There is a fork: one of your pieces can hit two targets.' : 'Your first move sets up a fork.';
     if (mt.pin && mt.pin.ply === 1 && mt.pin.piece !== 'P') return 'Look along the lines: something can be pinned.';
     if (t === 'missedMaterial') return 'Something of theirs is undefended. Can you take it?';
@@ -6236,8 +5988,8 @@ function hintText(a) {
     }
   }
   var key = (k && g.nodes[k]) || r1, word = { forkAllowed: ', a fork', pinAllowed: ', a pin', discoveredAllowed: ', a discovered attack' }[t] || '';
-  return 'Your move allowed ' + sanOf(r1.before, r1.move)
-    + (key !== r1 ? ', then ' + sanOf(key.before, key.move) : '') + word + '. Find a move that stops it.';
+  var said = 'Your move allowed ' + sanOf(r1.before, r1.move) + (key !== r1 ? ', then ' + sanOf(key.before, key.move) : '') + word + '.';
+  return fitLine([said + ' Find a move that stops it.', said]);
 }
 function finishCard(result) {
   var ss = ui.session, a = ss.active;
@@ -6269,6 +6021,7 @@ function finishCard(result) {
   /* the board keeps showing what was just played: the move found, the
      alternative that also works, or the end of the forcing line */
   if (a.revealed || result === 'fail') a.view = { line: 'refute', idx: -1 };
+  else if (a.check1 && a.check1.done) a.view = { line: 'best', idx: -1 };
   else if (a.alt && a.lines.yours && a.lines.yours.states.length) a.view = { line: 'yours', idx: Math.min(a.yours.at || 0, a.lines.yours.states.length - 1) };
   else a.view = { line: 'best', idx: Math.min(a.sol ? a.solIdx - 1 : 0, a.lines.best.states.length - 1) };
   saveSession();
@@ -6575,11 +6328,10 @@ function renderTrain() {
   var day = dayLoad();
   /* the day has a finish line: the chosen session done means done for today */
   var doneToday = (day.sessions || 0) > 0 || (!saved && !todayPlan().keys.length);
-  var fmt = '<p class="fmt-line">From your ' + trackedPerfs().map(function (p) { return perfLabel(p).toLowerCase(); }).join(' and ') + ' games · <a data-act="settings">Change</a></p>';
   box.innerHTML = '<div class="today today-grid"><div class="today-main">' + since
     + (saved ? resumeHtml(saved) : (doneToday ? doneTodayHtml() : heroHtml()))
     + focusHtml()
-    + '<p class="status" id="astat">' + analysisLine(n) + '</p>' + fmt
+    + '<p class="status" id="astat">' + analysisLine(n) + '</p>'
     + '</div>' + latestGamesHtml() + '</div>';
 }
 /* the latest games, each one a way into its own mistakes */
@@ -6610,7 +6362,7 @@ function latestGamesHtml() {
       + '<small>' + esc(g.perf || '') + ' · ' + agoWords(g.ts) + ' · as ' + g.color + '</small></span>'
       + right + '</' + tag + '>';
   }).join('');
-  return '<aside class="latest" id="latest" data-clarity-mask="true"><div class="latest-head"><div class="kicker">Your latest games</div>'
+  return '<aside class="latest" id="latest"><div class="latest-head"><div class="kicker">Your latest games</div>'
     + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>' + rows
     + '<p class="lg-foot dim">Tap a game to go through its mistakes in order.</p></aside>';
 }
@@ -6622,7 +6374,7 @@ function agoWords(ts) {
   if (days < 7) return days + ' days ago';
   return gameDateLine({ ts: ts });
 }
-function sinceHtml() { return data.greeting ? '<p class="since" data-clarity-mask="true">' + data.greeting + '</p>' : ''; }
+function sinceHtml() { return data.greeting ? '<p class="since">' + data.greeting + '</p>' : ''; }
 /* the weekly goal as its own shape: one segment per day of the goal */
 function weekHtml() {
   var goal = weekGoal(), done = Math.min(weekDays(), goal), today = dayCounts(dayRecOf(new Date())), segs = '';
@@ -6647,9 +6399,12 @@ function heroHtml() {
     if (dec) why = 'Includes the move that ' + decisiveWords(dec.g, dec.b) + ' vs ' + esc(dec.g.opp) + ', ' + agoWords(dec.g.ts) + '.';
     else why = (reviews ? plur(reviews, 'review') + (plan.fresh ? ' and ' + plan.fresh + ' new from your games.' : '.') : plan.fresh + ' new from your games.');
   }
+  /* a session finished today without enough tries: say what counts */
+  var dl = dayLoad();
+  if (dl.short && !dl.sessions) why += ' Try 3 positions to count today.';
   return '<div class="hero">'
     + '<h2 id="hero-n" data-n="' + plan.keys.length + '">' + plur(plan.keys.length, 'position') + ', about ' + mins + ' minutes</h2>'
-    + '<p class="why" data-clarity-mask="true">' + why + '</p>' + weekHtml()
+    + '<p class="why">' + why + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="startToday">Start</a></div></div>';
 }
 function resumeHtml(s) {
@@ -6736,7 +6491,7 @@ function focusHtml() {
     .map(function (s) { return patternInfo(s.key).plural.toLowerCase(); });
   var cost = agg.cost >= 1 ? 'Decided ' + fmtGames(agg.cost) + ' of yours' : plur(agg.count, 'position') + ' in your games';
   return '<div class="focus"><a class="focus-more" data-act="sheet" data-k="family:' + fam.key + '">Details ›</a>'
-    + '<div class="kicker">' + (f.provisional ? 'Leading so far' : 'Your biggest leak') + '</div>'
+    + '<div class="kicker">Your biggest leak</div>'
     + '<div class="focus-name">' + esc(fam.name) + '</div>'
     + '<p class="sec">' + cost + (top.length ? ', mostly ' + esc(top.join(' and ')) : '') + '.</p>'
     + '<div class="plan">' + esc(fam.habit) + '</div></div>';
@@ -6801,7 +6556,8 @@ function doneHtml(ss) {
     + ladderHtml(ss, uniq)
     + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
-    + (habit ? '<div class="focus recap-habit"><div class="kicker">For your next game</div><div class="plan">' + esc(habit) + '</div></div>' : '')
+    + (habit ? '<div class="focus recap-habit"><div class="kicker">For your next game</div><div class="plan">' + esc(habit)
+      + (ss.checks ? ' Today you spotted their reply on ' + (ss.checksFound || 0) + ' of ' + ss.checks + '.' : '') + '</div></div>' : '')
     + (recap ? '<div class="recap">' + recap + '</div>' : '')
     + '<div class="acts-row recap-acts">'
       + '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>'
@@ -6879,16 +6635,13 @@ function renderCard() {
   bw.classList.toggle('static', !(a.phase === 'guess' || a.phase === 'check' || (a.phase === 'done' && a.explore)));
   releaseAnims(bw);
   a.animMove = null;
-  /* the bar: player's view of the position, labelled once answered */
+  /* the bar: the player's view of the position, with no pawn number. It
+     fills only once the card is answered: a tall bar during the guess
+     would say "you are winning, find it" */
   var myCp = view.ev != null ? view.ev : it.b.eb;
-  var wWhite = winPct(evalWhite(it, myCp));
-  var fill = el('ebar-fill'), lab = el('ebar-lab');
-  if (store.get('nl:evalbar', true)) {
-    el('ebar').hidden = false;
-    fill.style.height = wWhite + '%';
-    /* no pawn number: winning chances are the one scale, said in words */
-    lab.textContent = '';
-  } else el('ebar').hidden = true;
+  el('ebar').classList.toggle('pending', a.phase !== 'done');
+  el('ebar-fill').style.height = winPct(evalWhite(it, myCp)) + '%';
+  el('ebar-lab').textContent = '';
   /* keyboard focus stays on the same control across a repaint, and the
      verdict is read out to screen readers */
   var foc = document.activeElement, fp = el('cpanel');
@@ -6925,17 +6678,19 @@ function cardTaskHtml(a) {
     /* the move is named once: "Qf8+ wins the pawn" becomes "It wins the pawn" */
     if (best && why.indexOf(best + ' ') === 0) why = 'It ' + why.slice(best.length + 1);
     act = ' data-act="lineTab" data-k="best" role="button"';
-    if (a.result === 'fail' || a.revealed) txt = 'The answer is ' + best + '. ' + why;
-    else if (a.alt) { txt = '<b>✓ ' + esc(altNames(a).mine) + ' works too.</b> The engine prefers ' + esc(altNames(a).theirs) + '.'; cls = ' good'; }
-    else { txt = '<b>✓ ' + best + '. ' + (a.result === 'first' ? 'Found it.' : 'You got there.') + '</b> ' + why; cls = ' good'; }
+    if (a.check1 && a.check1.done) { txt = fitLine([(a.checkVerdict || '') + ' Better: ' + best + '.', a.checkVerdict || '']); cls = a.check1.found ? ' good' : ''; }
+    else if (a.result === 'fail' || a.revealed) txt = fitLine(['The answer is ' + best + '. ' + why, 'The answer is ' + best + '.']);
+    else if (a.alt) { txt = fitLine(['✓ ' + esc(altNames(a).mine) + ' works too. The engine prefers ' + esc(altNames(a).theirs) + '.', '✓ ' + esc(altNames(a).mine) + ' works too.']); cls = ' good'; }
+    else { var head1 = '✓ ' + best + '. ' + (a.result === 'first' ? 'Found it.' : 'You got there.'); txt = fitLine([head1 + ' ' + why, head1]); cls = ' good'; }
   }
   else if (a.verdict) { txt = strip(a.verdict.html); cls = a.verdict.cls === 'verdict-bad' ? ' bad' : (a.verdict.cls === 'verdict-good' ? ' good' : ''); }
-  else if (a.check1 && !a.check1.done) txt = 'You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now? Move their piece.';
+  else if (a.check1 && !a.check1.done) txt = fitLine(['You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now? Move their piece.',
+    'You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now?']);
   else if (a.hints >= 1) { txt = esc(hintText(a)); cls = ' hint'; }
   else if (a.sol && a.solIdx > 0) txt = 'Move ' + (a.solIdx / 2 + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
   else {
-    var san = esc(sanOf(a.pre, a.played));
-    txt = 'You are ' + side + '. Find a better move. ' + (a.it.b.d ? 'Your ' + san + ', the red arrow, ' + decisiveWords(a.it.g, a.it.b) + '.' : 'Your ' + san + ' is the red arrow.');
+    var san = esc(sanOf(a.pre, a.played)), task = 'You are ' + side + '. Find a better move. ';
+    txt = fitLine([task + (a.it.b.d ? 'Your ' + san + ', the red arrow, ' + decisiveWords(a.it.g, a.it.b) + '.' : ''), task + 'Your ' + san + ' is the red arrow.']);
   }
   return '<div class="card-task' + cls + '"' + act + ' aria-hidden="true">' + txt + '</div>';
 }
@@ -6989,12 +6744,10 @@ function ctxHtml(a, answered) {
   var g = a.it.g, b = a.it.b;
   var bits = ['vs <b>' + esc(g.opp) + '</b>' + (g.oppR ? ' (' + g.oppR + ')' : ''), gameDateLine(g), perfLabel(g.perf).toLowerCase(), 'move ' + (Math.floor(b.p / 2) + 1)];
   if (b.c != null) bits.push(clockWords(b.c) + ' left');
-  var h = '<p class="ctx" data-clarity-mask="true">' + bits.join(' · ') + '</p>';
+  var h = '<p class="ctx">' + bits.join(' · ') + '</p>';
   if (answered) return h;
-  var tags = [], ss = ui.session;
-  if (ss && ss.spec && ss.spec.type === 'game' && ss.idx === 0 && b.d && ss.keys.length > 1)
-    tags.push(ss.keys.length + ' mistakes in this game. This is the one that ' + decisiveWords(g, b));
-  else if (b.d) tags.push('This move ' + decisiveWords(g, b));
+  var tags = [];
+  if (b.d) tags.push('This move ' + decisiveWords(g, b));
   if (ss_relearn(a)) tags.push('One more try');
   return h + (tags.length ? '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>' + tags.join(' · ') + '</p>' : '');
 }
@@ -7022,7 +6775,7 @@ function panelHtml(a, ss) {
     /* step 1: the check the player skipped in the game */
     var them = side === 'White' ? 'Black' : 'White', san1 = sanOf(a.pre, a.played);
     h += '<h2 class="task" id="task-h" tabindex="-1">You played ' + esc(san1) + '. What can ' + them + ' do now?</h2>';
-    h += '<p class="stakes">Move ' + them + '\'s piece: find the reply that punishes it. Then you will look for a better move.</p>';
+    h += '<p class="stakes">Move ' + them + '\'s piece: find the reply that punishes it.</p>';
     h += '<div class="feedback" aria-live="polite">' + (a.verdict ? '<p class="verdict ' + a.verdict.cls + '">' + a.verdict.html + '</p>' : '') + '</div>';
     if (a.phase === 'check') h += '<div class="acts-row sticky-acts guess-acts"><a class="btn-line" data-act="checkShow">Show me</a></div>';
     return h;
@@ -7060,7 +6813,12 @@ function panelHtml(a, ss) {
   /* done: the result, then both halves of the lesson, always on screen */
   var best = a.lines.best.san[0] || '', s = a.cls.sentences;
   var disc, head, sub = '';
-  if (a.result === 'fail' || a.revealed) {
+  if (a.check1 && a.check1.done) {
+    /* the blunder check: the question was their reply; the fix is the worked example */
+    disc = a.check1.found ? '<span class="disc" aria-hidden="true">✓</span>' : '';
+    head = a.check1.found ? esc(a.check1.san) + '. You saw it.' : 'They had ' + esc(a.check1.san) + '.';
+    sub = 'The better move was ' + esc(best) + '. You will find it yourself next time.';
+  } else if (a.result === 'fail' || a.revealed) {
     disc = '';
     head = 'The answer is ' + esc(best) + '.';
     if (a.foundGood) sub = 'Your ' + esc(a.foundGood.san) + ' was close.';
@@ -7083,7 +6841,7 @@ function panelHtml(a, ss) {
   h += '<div class="result' + (a.result === 'first' && !a.alt && !a.revealed ? ' first' : '') + '">'
     + '<div class="result-head">' + disc + '<h2 class="result-h" id="result-h" tabindex="-1">' + head + '</h2></div>'
     + (sub ? '<p class="result-sub">' + sub + '</p>' : '')
-    + tline('refute', 'tl-bad', esc(s.game))
+    + tline('refute', 'tl-bad', esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game))
     + (a.alt && a.lines.yours ? tline('yours', 'tl-alt', esc(altNames(a).mine) + ' also holds. Here is how it goes on.') : '')
     + tline('best', 'tl-good', esc(s.best || best + ' keeps your position together.'));
   var opp = opponentLine(a);
@@ -7095,7 +6853,7 @@ function panelHtml(a, ss) {
   if (a.showHabit) h += '<p class="habit">' + esc(info.habit) + '</p>';
   var repSan = a.explore && a.explore.reply && a.explore.san.length ? (function () { var m = uciToMove(a.explore.st, a.explore.reply); return m ? sanOf(a.explore.st, m) : ''; })() : '';
   if (a.explore) h += '<p class="explore-line">Your analysis: ' + esc(a.explore.san.join(' ') || 'make a move on the board')
-    + (a.explore.ev != null ? ' · ' + Math.round(winPct(a.explore.ev)) + '% winning chances for you' + (repSan ? '. Stockfish would answer ' + esc(repSan) + ' (the gold arrow)' : '') : (a.explore.san.length ? ' · thinking…' : ''))
+    + (a.explore.ev != null ? ' · ' + (a.tier === 1 ? standingWords(winPct(a.explore.ev)) : Math.round(winPct(a.explore.ev)) + '% winning chances for you') + (repSan ? '. Stockfish would answer ' + esc(repSan) + ' (the gold arrow)' : '') : (a.explore.san.length ? ' · thinking…' : ''))
     + ' · <a data-act="exploreOff">Back to the lines</a></p>';
   else h += '<p class="explore-line"><a class="btn-quiet" data-act="explore">Try your own moves</a></p>';
   var L = a.lines[a.view.line] || a.lines.best;
@@ -7115,6 +6873,10 @@ function opponentLine(a) {
     return 'Your opponent missed it. They played ' + esc(a.lines.game.san[1] || '') + ' and you were back in the game.';
   if (real === r1) return 'Your opponent found ' + esc(a.lines.game.san[1] || '') + ' right away.';
   return '';
+}
+/* winning chances in words, for newer players */
+function standingWords(w) {
+  return w >= 80 ? 'you are winning' : w >= 60 ? 'you are better' : w >= 40 ? 'about level' : w >= 20 ? 'you are worse' : 'you are losing';
 }
 /* when the card comes back, in a few words */
 function scheduleWords(rec, a) {
@@ -7144,7 +6906,11 @@ function renderInsights() {
     return;
   }
   var partial = n.covered < n.total;
-  var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + n.total + ' games so far' : plur(r.games, 'game')) + '</div>';
+  /* the window is named once, here */
+  var cg = coveredGames().map(function (g) { return g.ts; });
+  var mY = function (t) { return new Date(t).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }); };
+  var span = cg.length ? ', ' + mY(Math.min.apply(null, cg)) + ' to ' + mY(Math.max.apply(null, cg)) : '';
+  var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + n.total + ' games so far' : plur(r.games, 'game')) + span + '</div>';
   if (!r.families.length) {
     h += '<h2>Your report appears as Stockfish reads your games.</h2><p class="lead">' + n.covered + ' of ' + n.total + ' games checked. The first patterns show up after a handful of games; the full picture at about ' + INSIGHT_MIN_GAMES + '.</p></div>';
     box.innerHTML = h;
@@ -7153,10 +6919,7 @@ function renderInsights() {
   var cov = r.coverage, top = r.families[0];
   var head, lead = '';
   if (cov.losses >= 5) {
-    /* a count names its span */
-    var t0 = Math.min.apply(null, coveredGames().map(function (g) { return g.ts; }));
-    var since = isFinite(t0) ? ' since ' + new Date(t0).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '';
-    head = cov.decided + ' of your ' + cov.losses + ' losses' + since + ' came down to one big mistake.';
+    head = cov.decided + ' of your ' + cov.losses + ' losses came down to one big mistake.';
     if (top.cost >= 1) lead = 'The biggest leak is ' + esc(top.fam.name.toLowerCase()) + '. It decided ' + fmtGames(top.cost) + '.';
   } else head = 'Your mistakes, grouped by the habit that would prevent them.';
   h += '<h2>' + head + '</h2>' + (lead ? '<p class="lead">' + lead + '</p>' : '');
@@ -7234,7 +6997,7 @@ function sheetHtml(kind) {
         + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
       + '<div class="habit-block"><div class="kicker">The habit that fixes it</div><div class="plan">' + esc(fam.habit) + '</div></div>'
       + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'family', fam: k, label: fam.name })) + '">Drill ' + plur(nDrill, 'position') + '</a>' : '')
-      + (focus && focus.fam === k && !focus.provisional ? '<span class="dim">Your focus</span>' : '<a class="btn-line" data-act="setFocus" data-k="' + k + '">Make this my focus</a>') + '</div>'
+      + (focus && focus.fam === k ? '<span class="pill">Your biggest leak</span>' : '') + '</div>'
       + (rows ? '<div class="pat-list">' + rows + '</div>' : '')
       + examplesHtml({ type: 'family', fam: k });
   }
@@ -7261,7 +7024,7 @@ function decisiveWords(g, b) {
 function examplesHtml(spec) {
   var items = drillItems(spec, 4);
   if (!items.length) return '';
-  return '<div class="kicker" style="margin-top:24px">From your games</div><div class="ex-list" data-clarity-mask="true">' + items.map(function (it) {
+  return '<div class="kicker" style="margin-top:24px">From your games</div><div class="ex-list">' + items.map(function (it) {
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
     return '<div class="ex" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'One position' })) + '">'
@@ -7293,7 +7056,7 @@ function settingsHtml() {
     return '<label class="switch-row"><span>' + label + '</span><input type="checkbox" data-act="' + act + '"' + (on ? ' checked' : '') + '><i aria-hidden="true"></i></label>';
   };
   return '<h3>Settings</h3>'
-    + '<div class="set-block"><span class="kicker">Player</span><p class="set-who" data-clarity-mask="true">' + esc(cfg.user) + ' on ' + (isCC() ? 'chess.com' : 'lichess') + '</p>'
+    + '<div class="set-block"><span class="kicker">Player</span><p class="set-who">' + esc(cfg.user) + ' on ' + (isCC() ? 'chess.com' : 'lichess') + '</p>'
       + '<a class="btn-line" data-act="logout" data-k="confirm">' + (ui.logoutArmed ? 'Tap again to switch' : 'Switch player') + '</a></div>'
     + '<div class="set-block"><span class="kicker">Games to learn from</span><p>Which of your rated games to read. Most players pick the one or two they play most.</p><div class="chips">'
       + ['rapid', 'blitz', 'bullet', 'classical'].filter(function (p) { return !isCC() || p !== 'classical'; }).map(function (p) {
@@ -7303,15 +7066,13 @@ function settingsHtml() {
       + [[5, 'Short · 5'], [10, 'Normal · 10'], [20, 'Long · 20']].map(function (o) { return chip('size', o[0], o[1], sessionSize() === o[0]); }).join('')
       + '</div><p>Weekly goal, in days:</p><div class="chips">'
       + [3, 4, 5, 7].map(function (n) { return chip('weekGoal', n, n, weekGoal() === n); }).join('')
-      + '</div><p>Help while solving:</p><div class="chips">'
-      + [['auto', 'By my rating'], ['more', 'More'], ['less', 'Less']].map(function (o) { return chip('help', o[0], o[1], store.get('nl:help', 'auto') === o[0]); }).join('')
-      + '</div></div>'
+      + '</div><p>' + DAY_RULE + '</p></div>'
     + '<div class="set-block"><span class="kicker">Board</span>'
-      + sw('evalbarToggle', 'Evaluation bar', store.get('nl:evalbar', true)) + sw('sound', 'Sounds', cfg.sound) + '</div>'
+      + sw('sound', 'Sounds', cfg.sound) + '</div>'
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
       + '<p class="dim">' + gamesLine() + '</p>'
-      + '<p>Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with player names hidden, to show how the site is used.</p></div>'
+      + '<p>Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p></div>'
     + '<div class="set-block"><span class="kicker">Start over</span>'
       + '<a data-act="resetProgress" class="danger-row' + (ui.resetArmed ? ' armed' : '') + '">' + (ui.resetArmed ? 'Tap again to reset your practice history' : 'Reset practice history') + '</a>'
       + '<a data-act="wipe" class="danger-row' + (ui.wipeArmed ? ' armed' : '') + '">' + (ui.wipeArmed ? 'Tap again to erase everything' : 'Erase everything') + '</a></div>';
@@ -7326,7 +7087,7 @@ function gamesLine() {
 function renderFoot() {
   var f = el('foot');
   if (!f) return;
-  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress stay in this browser.</span>'
+  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</span>'
     + '<span class="foot-links"><a data-act="coffee">Support the developer</a>'
     + '<a href="https://lichess.org/patron">Donate to lichess</a>'
     + '<a href="https://github.com/thatsiavash/notlichess">Source</a></span>';
@@ -7349,12 +7110,15 @@ function renderFirstVisit(prefill) {
       + '<button class="src-btn' + (!cc ? ' src-on' : '') + '" data-act="srcPick" data-k="lichess" aria-pressed="' + !cc + '">lichess</button>'
       + '<button class="src-btn' + (cc ? ' src-on' : '') + '" data-act="srcPick" data-k="chesscom" aria-pressed="' + cc + '">chess.com</button>'
     + '</div>'
+    /* an iPhone home-screen app keeps its storage apart from Safari */
+    + (navigator.standalone === true ? '<p class="handoff">Used notlichess in Safari? Export your progress there in Settings, then import it here. '
+      + '<a class="btn-line" data-act="importProgress">Import progress</a></p>' : '')
     + '<div class="first-form">'
-      + '<input class="input" id="firstUser" data-clarity-mask="true" placeholder="Your ' + (cc ? 'chess.com' : 'lichess') + ' username" autocomplete="off" '
+      + '<input class="input" id="firstUser" placeholder="Your ' + (cc ? 'chess.com' : 'lichess') + ' username" autocomplete="off" '
       + 'autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-label="Your ' + (cc ? 'chess.com' : 'lichess') + ' username" value="' + esc(prefill || '') + '">'
       + '<button class="btn-big" data-act="setUser">Find my mistakes</button>'
     + '</div>'
-    + '<p class="first-foot">Free and unlimited. No account. Your games stay in this browser.</p>'
+    + '<p class="first-foot">Free, with no account. Your games stay in this browser.</p>'
     + '</div>'
     + (ex ? '<div class="landing-ex" aria-hidden="true"><div class="kicker">Example</div>'
       + boardSvg(ex, { flip: true, bad: [45, 35], mark: [28, 35], decor: true })
@@ -7364,7 +7128,7 @@ function renderFirstVisit(prefill) {
       + valueItem('The why, not just the what', 'What your move allowed, the better move, and what really happened next.')
       + valueItem('What costs you games', 'Hanging pieces, missed forks, slipped wins: ranked by the games they lost you.')
     + '</div>'
-    + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with player names hidden, to show how the site is used.</p>'
+    + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
     + '</div>';
   var input = el('firstUser');
   if (input) {
@@ -7382,12 +7146,12 @@ function renderNoAccount() {
   /* a name that does not exist is not remembered: the next visit starts fresh */
   if (store.get('nl:user', '') === cfg.user) store.del('nl:user');
   el('main').innerHTML = '<div class="first"><div class="kicker">not found</div>'
-    + '<h1 data-clarity-mask="true">' + site + ' has no account called ' + esc(cfg.user) + '.</h1>'
+    + '<h1>' + site + ' has no account called ' + esc(cfg.user) + '.</h1>'
     + '<p class="lede">Check the spelling, or switch site.</p>'
     + '<div class="src-pick">'
       + '<button class="src-btn' + (!isCC() ? ' src-on' : '') + '" data-act="srcPick" data-k="lichess">lichess</button>'
       + '<button class="src-btn' + (isCC() ? ' src-on' : '') + '" data-act="srcPick" data-k="chesscom">chess.com</button></div>'
-    + '<div class="first-form"><input class="input" id="firstUser" data-clarity-mask="true" value="' + esc(cfg.user) + '" autocomplete="off" spellcheck="false">'
+    + '<div class="first-form"><input class="input" id="firstUser" value="' + esc(cfg.user) + '" autocomplete="off" spellcheck="false">'
     + '<button class="btn-big" data-act="setUser">Try again</button></div><div id="other-site"></div></div>';
   var input = el('firstUser');
   if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') setUser(input.value); });
@@ -7397,7 +7161,7 @@ function renderNoAccount() {
     .then(function (p) {
       var box = el('other-site');
       if (!box || !p || cfg.user !== name) return;
-      box.innerHTML = '<div class="hero state other-site"><h2 data-clarity-mask="true">Found ' + esc(p.username || name) + ' on ' + (other === 'chesscom' ? 'chess.com' : 'lichess') + '.</h2>'
+      box.innerHTML = '<div class="hero state other-site"><h2>Found ' + esc(p.username || name) + ' on ' + (other === 'chesscom' ? 'chess.com' : 'lichess') + '.</h2>'
         + '<div class="acts"><a class="btn-big" data-act="useOtherSite" data-k="' + other + '">Use that</a></div></div>';
     }, function () {});
 }
@@ -7415,6 +7179,10 @@ function returnEvents() {
     store.set(sent, dayStamp());
     var days = (now - first) / DAY;
     track(days < 2 ? 'return_d1' : (days < 8 ? 'return_d2_7' : (days < 29 ? 'return_w2_4' : 'return_m2')));
+    /* how many of the last 28 days counted, as a bucket */
+    var act = 0;
+    for (var i = 0; i < 28; i++) { var d = new Date(now - i * DAY); if (dayCounts(dayRecOf(d))) act++; }
+    if (window.clarity) window.clarity('set', 'active_days', act === 0 ? '0' : act === 1 ? '1' : act <= 3 ? '2-3' : act <= 7 ? '4-7' : act <= 14 ? '8-14' : '15+');
   } catch (e) {}
 }
 function forgetLink() { try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:linkSrc'); } catch (e) {} }
@@ -7434,10 +7202,10 @@ function setUser(name) {
   track('login_' + cfg.src);
   boot();
 }
-/* the formats to learn from, picked from the profile: the ones played
-   most, bullet only when it is what the player mostly plays. Where the site
-   says when a format was last played (chess.com), a format untouched for 90
-   days gives way to the ones played now */
+/* one format by default, the rating the player is trying to raise: among
+   the formats played in the last 90 days (where the site says when, as
+   chess.com does), the one with the most games. More are a choice in
+   Settings. */
 function autoPerfs(u) {
   var counts = [];
   ['rapid', 'blitz', 'bullet', 'classical'].forEach(function (p) {
@@ -7446,14 +7214,9 @@ function autoPerfs(u) {
   });
   var recent = counts.filter(function (c) { return c[2] && Date.now() - c[2] < 90 * DAY; });
   if (recent.length) counts = recent;
-  if (!counts.length) return ['rapid', 'blitz'];
-  var total = counts.reduce(function (a, c) { return a + c[1]; }, 0);
+  if (!counts.length) return ['rapid'];
   counts.sort(function (a, b) { return b[1] - a[1]; });
-  var pick = counts.filter(function (c) {
-    if (c[0] === 'bullet' && counts[0][0] !== 'bullet') return false;
-    return c[1] >= 20 && c[1] / total >= 0.1;
-  }).map(function (c) { return c[0]; }).slice(0, 2);
-  return pick.length ? pick : [counts[0][0]];
+  return [counts[0][0]];
 }
 
 var NARR_WISDOM = [
@@ -7485,7 +7248,7 @@ function identityHtml() {
   var games = trackedPerfs().reduce(function (a, p) { return a + ((u.perfs && u.perfs[p] && u.perfs[p].games) || 0); }, 0);
   return '<div class="confirm">' + (u.avatar ? '<img src="' + esc(u.avatar) + '" alt="">' : '')
     + '<div class="who"><b>' + esc(u.username || cfg.user) + '</b><span>' + perfs + (games ? ' · ' + games + ' rated games' : '')
-    + '<br>Learning from your ' + trackedPerfs().map(function (p) { return perfLabel(p).toLowerCase(); }).join(' and ') + ' games. '
+    + '<br>Training on your ' + trackedPerfs().map(function (p) { return perfLabel(p).toLowerCase(); }).join(' and ') + ' games. '
     + '<a data-act="settings">Change</a></span></div>'
     + '<a class="btn-quiet" data-act="logout">Not you?</a></div>';
 }
@@ -7493,9 +7256,9 @@ function renderNarration() {
   el('main').innerHTML = '<div class="first" style="max-width:none">'
     + '<div style="max-width:720px;margin:0 auto">'
     + '<div class="kicker" style="margin-bottom:18px">finding your mistakes</div>'
-    + '<h1 data-clarity-mask="true">Reading ' + esc(cfg.user) + "'s games.</h1>"
-    + '<div id="identity" data-clarity-mask="true">' + identityHtml() + '</div>'
-    + '<div id="narr" class="narr" aria-live="polite" data-clarity-mask="true"></div>'
+    + '<h1>Reading ' + esc(cfg.user) + "'s games.</h1>"
+    + '<div id="identity">' + identityHtml() + '</div>'
+    + '<div id="narr" class="narr" aria-live="polite"></div>'
     + '</div>'
     + '<div id="narr-stage">' + narrBoards() + '</div>'
     + '<div style="max-width:720px;margin:0 auto"><p id="narr-wisdom" class="narr-wisdom"></p></div></div>';
@@ -7662,7 +7425,7 @@ function exportProgress() {
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
       if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:focus2:' + u)
+      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0)
         out.keys[k] = JSON.parse(localStorage.getItem(k));
     }
   } catch (e) {}
@@ -7684,6 +7447,9 @@ function importProgress() {
     f.text().then(function (txt) {
       var d = JSON.parse(txt);
       if (!d || !d.keys) throw new Error('bad file');
+      /* on a first run (an iPhone home-screen app), the file says who you are */
+      var fresh = !cfg.user && /^[a-zA-Z0-9_-]{2,30}$/.test(String(d.user || ''));
+      if (fresh) { cfg.user = d.user; cfg.src = d.src === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('user'); saveCfg('src'); }
       if (String(d.user).toLowerCase() !== String(cfg.user).toLowerCase() || (d.src || 'lichess') !== cfg.src) {
         notice('That file belongs to ' + d.user + '. Log in as them to load it.');
         return;
@@ -7702,7 +7468,7 @@ function importProgress() {
       srsRevision++;
       modelDirty();
       notice('Progress loaded.');
-      renderAll();
+      if (fresh) boot(); else renderAll();
     }).catch(function () { notice('That file could not be read.'); });
   };
   inp.click();
@@ -7770,7 +7536,6 @@ document.addEventListener('click', function (e) {
     case 'keepGoing': keepGoing(); break;
     case 'endSession': endSession(); break;
     case 'drill': { var sp = parseSpec(t); if (sp) startDrill(sp); break; }
-    case 'setFocus': setFocus(k); break;
     case 'sheet': openSheet(k); break;
     case 'closeSheet': if (e.target === t) closeSheet(); break;
     case 'hint': giveHint(); break;
@@ -7801,7 +7566,6 @@ document.addEventListener('click', function (e) {
     case 'limit': setLimit(parseInt(k, 10)); break;
     case 'size': store.set('nl:sessionSize', parseInt(k, 10)); renderSettings(); renderTrain(); break;
     case 'weekGoal': store.set('nl:weekGoal', parseInt(k, 10)); renderSettings(); renderTrain(); break;
-    case 'help': store.set('nl:help', k); renderSettings(); break;
     case 'reload': checkForGames(); break;
     case 'exportProgress': exportProgress(); break;
     case 'importProgress': importProgress(); break;
@@ -7813,7 +7577,7 @@ document.addEventListener('click', function (e) {
         var del = [];
         for (var i = 0; i < localStorage.length; i++) {
           var kk = localStorage.key(i);
-          if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === 'nl:focus2:' + u || kk === sessKey())) del.push(kk);
+          if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === sessKey())) del.push(kk);
         }
         del.forEach(function (x) { localStorage.removeItem(x); });
         /* the mistakes' records go; the retired trainer's lines stay */
@@ -7847,7 +7611,6 @@ document.addEventListener('change', function (e) {
   if (!t || !t.getAttribute) return;
   var act = t.getAttribute('data-act');
   if (act === 'sound') { cfg.sound = !!t.checked; saveCfg('sound'); }
-  if (act === 'evalbarToggle') { store.set('nl:evalbar', !!t.checked); renderCard(); }
 });
 document.addEventListener('keydown', function (e) {
   if (e.target && e.target.id === 'kbmove' && e.key === 'Enter') { e.preventDefault(); typedMove(e.target.value); return; }
@@ -8173,14 +7936,10 @@ window.addEventListener('focus', onReturn);
 window.addEventListener('online', function () { notice('Back online.'); if (cfg.user && !data.narrate) checkForGames(); });
 window.addEventListener('offline', function () { notice('You are offline. Your practice keeps working.'); });
 
-/* ── 16. Boot ────────────────────────────────────────────────────────── */
-
-
 /* ── 15b. Narration, the first load, watched ────────────────────────────
    A first-time user should see their program being built, not a skeleton
    with spinners. Lines appear as the data lands; the page reveals when the
    profile is computable. Only runs when there is no cached history.        */
-
 
 /* The loading theater: the user's own games replay on a slow-drifting strip
    of boards while the count climbs, the wait shows the work. */
@@ -8199,7 +7958,7 @@ function narrBoards() {
   var cards = gs.map(function (g, i) {
     return '<div class="narr-card">'
       + boardSvg(data.narrLive[i].st, { flip: data.narrLive[i].flip, decor: true })
-      + '<span class="narr-card-cap" data-clarity-mask="true">' + esc(cfg.user) + ' vs ' + esc(g.opp) + '</span></div>';
+      + '<span class="narr-card-cap">' + esc(cfg.user) + ' vs ' + esc(g.opp) + '</span></div>';
   }).join('');
   return '<div class="narr-strip"><div class="narr-track">' + cards + cards + '</div></div>';
 }
@@ -8217,9 +7976,6 @@ function narrLine(id, html) {
   }
   row.innerHTML = html;
 }
-
-
-
 
 boot();
 
