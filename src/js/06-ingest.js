@@ -52,32 +52,36 @@ function blunderLedger(g, meIsWhite, gRec) {
   var min = mistakeMinFor(gRec);
   var inc = g.clock ? g.clock.increment : 0;
   var out = [], prev = { eval: 20 };
+  var entry = function (i, a, prev, wb, wa) {
+    if (!a.best || a.best === uciOfSan(g.moves, i)) return null;
+    var pre = stateAtPly(g.moves, i);
+    if (!pre) return null;
+    var sign = meIsWhite ? 1 : -1;
+    var vari = a.variation ? a.variation.split(' ').slice(0, 8) : [];
+    var lu = sanLineToUci(pre, vari);
+    return {
+      p: i, wb: wb, wa: wa,
+      c: (g.clocks && g.clocks[i] != null) ? Math.round(g.clocks[i] / 100) : null,
+      tt: thinkTime(g.clocks, i, inc),
+      bu: a.best, lu: packUci(lu.length ? lu : [a.best]),
+      /* until a deeper look, the game's own continuation stands in for
+         the refutation when the opponent's next moves were not errors */
+      ru: packUci(refutationOf(g, pre, i)),
+      mb: prev.mate != null ? prev.mate * sign : null,
+      ma: a.mate != null ? a.mate * sign : null,
+      eb: evalCp(prev) * sign,
+      j: 'l'
+    };
+  };
   for (var i = 0; i < g.analysis.length && i < toks.length; i++) {
     var a = g.analysis[i];
     if ((i % 2 === 0) === meIsWhite) {
       var pc = evalCp(prev), cp = evalCp(a);
       var wb = winPct(meIsWhite ? pc : -pc);
       var wa = winPct(meIsWhite ? cp : -cp);
-      if (wb - wa >= min && a.best && a.best !== uciOfSan(g.moves, i)) {
-        var pre = stateAtPly(g.moves, i);
-        if (pre) {
-          var sign = meIsWhite ? 1 : -1;
-          var vari = a.variation ? a.variation.split(' ').slice(0, 8) : [];
-          var lu = sanLineToUci(pre, vari);
-          out.push({
-            p: i, wb: wb, wa: wa,
-            c: (g.clocks && g.clocks[i] != null) ? Math.round(g.clocks[i] / 100) : null,
-            tt: thinkTime(g.clocks, i, inc),
-            bu: a.best, lu: packUci(lu.length ? lu : [a.best]),
-            /* until a deeper look, the game's own continuation stands in for
-               the refutation when the opponent's next moves were not errors */
-            ru: packUci(gameContinuation(g, pre, i)),
-            mb: prev.mate != null ? prev.mate * sign : null,
-            ma: a.mate != null ? a.mate * sign : null,
-            eb: pc * sign,
-            j: 'l'
-          });
-        }
+      if (wb - wa >= min) {
+        var e = entry(i, a, prev, wb, wa);
+        if (e) out.push(e);
       }
     }
     prev = a;
@@ -95,6 +99,15 @@ function analysisSeries(g) {
    clock) count in the rates but are trained only when they decided the
    game */
 function keepMistakes(list, gRec, moves, wp) {
+  /* one idea, one card: when the opponent left a mistake unpunished and I
+     repeated it on my next move (same refutation, or same missed move),
+     only the first stays */
+  list = list.slice().sort(function (x, y) { return x.p - y.p; }).filter(function (b, i, all) {
+    var prev = all[i - 1];
+    if (!prev || prev.p !== b.p - 2) return true;
+    var r0 = unpackUci(prev.ru)[0], r1 = unpackUci(b.ru)[0];
+    return !((r0 && r0 === r1) || prev.bu === b.bu);
+  });
   var probe = { res: gRec.res, color: gRec.color, wp: wp, bl: list };
   markDecisive(probe);
   list.forEach(function (b) { if (b.c != null && b.c < 5 && !b.d) b.sc = 1; });
@@ -107,6 +120,21 @@ function keepMistakes(list, gRec, moves, wp) {
   return kept.length ? kept : null;
 }
 /* the next few real moves after mine, as long as the opponent played well */
+/* what the game move allowed: when the opponent's reply was itself judged
+   an error, lichess's own best line for that reply is the refutation (it
+   starts from the position after the game move); otherwise the game's own
+   continuation, until the opponent errs */
+function refutationOf(g, pre, i) {
+  var next = g.analysis[i + 1];
+  if (next && next.judgment && next.variation) {
+    var post = cloneState(pre), toks = g.moves.split(' ');
+    if (sanApply(post, toks[i])) {
+      var line = sanLineToUci(post, next.variation.split(' ').slice(0, 8));
+      if (line.length) return line;
+    }
+  }
+  return gameContinuation(g, pre, i);
+}
 function gameContinuation(g, pre, i) {
   var toks = g.moves.split(' '), st = cloneState(pre), out = [];
   for (var k = i; k < Math.min(toks.length, i + 7); k++) {
@@ -116,7 +144,7 @@ function gameContinuation(g, pre, i) {
     }
     var m = sanApply(cloneState(st), toks[k]);
     if (!m) break;
-    var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to; })[0];
+    var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0];
     if (!mv) break;
     if (k > i) out.push(moveUci(mv));
     applyMove(st, mv);
@@ -128,7 +156,7 @@ function uciOfSan(moves, i) {
   if (!st) return null;
   var probe = cloneState(st), m = sanApply(probe, moves.split(' ')[i]);
   if (!m) return null;
-  var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to; })[0];
+  var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0];
   return mv ? moveUci(mv) : null;
 }
 function sanLineToUci(st0, sans) {
@@ -150,7 +178,7 @@ function sanLineToUci(st0, sans) {
 /* name the mistake from what the lines show; cheap (a few ms), so it runs
    at ingest, at scan and again after every deeper look */
 /* raise when the classifier changes: stored mistakes are re-labelled on load */
-var CLASSIFY_V = 2;
+var CLASSIFY_V = 3;
 function classifyEntry(b, moves) {
   var pre = stateAtPly(moves, b.p);
   if (!pre) return;
@@ -233,23 +261,16 @@ function scanGame(g) {
         var min = mistakeMinFor(g), inc = 0;
         var tcb = String(g.tc || '').split('+');
         if (tcb[1]) inc = +tcb[1] || 0;
-        var bl = [];
-        for (var i = 1; i < toks.length; i++) {
-          if (!evals[i] || !evals[i - 1]) continue;
-          if ((i % 2 === 0) !== meWhite) continue;
-          var sign = meWhite ? 1 : -1;
-          var wb = winPct(sign * evals[i - 1].cp);
-          var wa = winPct(sign * evals[i].cp);
-          if (wb - wa < min) continue;
+        var bl = [], sign = meWhite ? 1 : -1;
+        var entry = function (i, wb, wa) {
           var pre = stateAtPly(full.moves, i);
-          if (!pre) continue;
+          if (!pre) return null;
           var bestUci = evals[i - 1].bestUci;   /* best from the position before */
           var bm = bestUci ? uciToMove(pre, bestUci) : null;
-          if (!bm) continue;
-          if (bestUci === uciOfSan(full.moves, i)) continue;
+          if (!bm || bestUci === uciOfSan(full.moves, i)) return null;
           var pv0 = evals[i - 1].pv || [];
           var lu = [bestUci].concat(pv0[0] === bestUci ? pv0.slice(1, 8) : []);
-          bl.push({
+          return {
             p: i, wb: wb, wa: wa,
             c: (full.clocks && full.clocks[i] != null) ? Math.round(full.clocks[i] / 100) : null,
             tt: thinkTime(full.clocks, i, inc),
@@ -259,7 +280,16 @@ function scanGame(g) {
             ma: evals[i].mate != null ? evals[i].mate * sign : null,
             eb: evals[i - 1].cp * sign,
             j: 's'
-          });
+          };
+        };
+        for (var i = 1; i < toks.length; i++) {
+          if (!evals[i] || !evals[i - 1]) continue;
+          if ((i % 2 === 0) !== meWhite) continue;
+          var wb = winPct(sign * evals[i - 1].cp);
+          var wa = winPct(sign * evals[i].cp);
+          if (wb - wa < min) continue;
+          var e = entry(i, wb, wa);
+          if (e) bl.push(e);
         }
         var cps = [];
         for (var k = 0; k < toks.length && k < LAST; k++) cps.push(evals[k] ? evals[k].cp : null);
@@ -268,6 +298,7 @@ function scanGame(g) {
         g.mv = g.bl ? full.moves : null;   /* movetext stays only where cards live */
         delete g.ck;                        /* the clocks did their job */
         g.scanned = 1;
+        g.eng = SF.build || 'sf17';         /* which engine judged this game */
         scanState.dirty = (scanState.dirty || 0) + 1;
         /* accuracy metrics: unevaluated plies carry the last value forward */
         var lastCp = 20;

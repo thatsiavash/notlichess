@@ -19,6 +19,9 @@ function topUpPool() {
   }
 }
 function poolSize() {
+  /* a fixed pool size, for testing several tabs on one machine */
+  var fixed = +store.get('nl:poolSize', 0);
+  if (fixed >= 1) return Math.min(8, fixed);
   var hc = navigator.hardwareConcurrency || 2;
   /* phones: two analysts at most, for the battery and the heat */
   var touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
@@ -52,24 +55,10 @@ function engineLoad() {
     return SF.loading;
   }
   SF.state = 'loading';
-  /* Stockfish 17.1 with its neural network, served from this site (sf/);
-     the older CDN builds are the fallback for browsers that cannot run it */
-  var base = 'https://cdn.jsdelivr.net/npm/stockfish@16.0.0/src/';
+  /* Stockfish 17.1 with its neural network, served from this site (sf/).
+     There is no fallback: every game is judged by the same engine, and a
+     browser that cannot run it says so */
   SF.loading = bootWorker({ url: 'sf/stockfish.js' }).then(function (w) { SF.code = { url: 'sf/stockfish.js' }; SF.build = 'sf17'; return w; })
-    .catch(function () {
-      return fetch(base + 'stockfish-nnue-16-single.js')
-        .then(function (r) { if (!r.ok) throw new Error('glue ' + r.status); return r.text(); })
-        .then(function (code) {
-          code = code.split('"stockfish-nnue-16-single.wasm"')
-            .join(JSON.stringify(base + 'stockfish-nnue-16-single.wasm'));
-          return bootWorker(code).then(function (w) { SF.code = code; SF.build = 'sf16'; return w; });
-        });
-    })
-    .catch(function () {
-      return fetch('https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js')
-        .then(function (r) { if (!r.ok) throw new Error('no engine'); return r.text(); })
-        .then(function (code) { return bootWorker(code).then(function (w) { SF.code = code; SF.build = 'sf10'; return w; }); });
-    })
     .then(function (w) {
       SF.workers.push({ w: w });
       SF.state = 'ready';
@@ -88,7 +77,9 @@ function bootWorker(code) {
       w = code && code.url ? new Worker(code.url)
         : new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
     } catch (e0) { reject(e0); return; }
-    var t = setTimeout(function () { reject(new Error('engine boot timeout')); w.terminate(); }, 45000);
+    /* two minutes: the first visit downloads about 7 MB before the engine
+       can answer, and a slow connection must not look like a failure */
+    var t = setTimeout(function () { reject(new Error('engine boot timeout')); w.terminate(); }, 120000);
     w.onmessage = function (e) {
       if (String(e.data) === 'uciok') { clearTimeout(t); resolve(w); }
     };

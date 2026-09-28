@@ -6,13 +6,23 @@
    searched far deeper than a browser can, so its verdict is never
    overruled: its cards only gain the refutation line. */
 
-var DEEP_NODES = 250000, EXT_NODES = 120000;
+var DEEP_NODES = 250000, EXT_NODES = 120000, CONFIRM_NODES = 1000000;
 var enrichState = { running: false, done: 0, failed: {} };
 /* in-flight deeper looks by position: the model's wrappers are rebuilt on
    every change, so the promise cannot live on them */
 var enrichPending = {}, enrichCtx = {};
 
 function postState(g, p) { return stateAtPly(g.mv, p + 1); }
+/* few pieces, or queens only: where a 250k search is least sure */
+function thinBoard(st) {
+  var n = 0, other = 0;
+  st.b.forEach(function (p) {
+    if (!p || p === 'K' || p === 'k' || p === 'P' || p === 'p') return;
+    n++;
+    if (p !== 'Q' && p !== 'q') other++;
+  });
+  return n <= 6 || other === 0;
+}
 /* a line that ends before the position settles is searched again from its
    last position; 8 plies at most */
 function extendLine(st0, pv, nodes, ctx, tag) {
@@ -52,14 +62,25 @@ function deepEnrich(it, prio) {
       });
     });
   } else {
-    var r1;
+    var r1, bar = Math.max(10, mistakeMinFor(g) - 3);
     p = engineEval(stateFen(pre), { nodes: DEEP_NODES }, ctx.prio, { multipv: 2, tag: key })
       .then(function (r) { r1 = r; return engineEval(stateFen(post), { nodes: DEEP_NODES }, ctx.prio, { tag: key }); })
       .then(function (r2) {
+        /* a close call on a thin board is searched again, four times deeper */
+        var drop = winPct(sign * r1.cp) - winPct(sign * r2.cp);
+        if (stale(myGen) || !thinBoard(pre) || drop < bar || drop >= bar + 10) return r2;
+        return engineEval(stateFen(pre), { nodes: CONFIRM_NODES }, ctx.prio, { multipv: 2, tag: key }).then(function (r) {
+          r1 = r;
+          return engineEval(stateFen(post), { nodes: CONFIRM_NODES }, ctx.prio, { tag: key });
+        });
+      })
+      .then(function (r2) {
         if (stale(myGen) || (b.v || 0) >= 2) return;
         var wb2 = winPct(sign * r1.cp), wa2 = winPct(sign * r2.cp);
-        /* a mistake the deeper look does not confirm never becomes a card */
-        if (wb2 - wa2 < Math.max(10, mistakeMinFor(g) - 5)) { b.x = 'deep'; modelDirty(); return; }
+        /* a mistake the deeper look does not confirm never becomes a card,
+           nor does a slip in a game that was already lost and not decided by it */
+        if (wb2 - wa2 < bar) { b.x = 'deep'; modelDirty(); return; }
+        if (!b.d && wb2 < 15) { b.x = 'lost'; modelDirty(); return; }
         if (!r1.bestUci || r1.bestUci === uciOfSan(g.mv, b.p)) { b.x = 'same'; modelDirty(); return; }
         b.wb = wb2; b.wa = wa2;
         b.bu = r1.bestUci;

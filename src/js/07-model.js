@@ -19,12 +19,16 @@ function modelDirty() { modelRev++; }
 function modelToken() {
   return data.games.length + '|' + (data.games[0] ? data.games[0].id : '') + '|' + modelRev + '|' + String(cfg.user);
 }
+/* the formats being trained: a change in Settings takes effect at once,
+   while other formats' games stay stored for switching back */
+function inScope(g) { return trackedPerfs().indexOf(g.perf) !== -1; }
+function scopedGames() { return data.games.filter(inScope); }
 function model() {
   var tok = modelToken();
   if (modelCache.token === tok) return modelCache.m;
   var items = [], byKey = {}, dirtyGames = false;
   data.games.forEach(function (g) {
-    if (!g.bl || !g.mv) return;
+    if (!g.bl || !g.mv || !inScope(g)) return;
     migrateGame(g);
     markDecisive(g);
     g.bl.forEach(function (b) {
@@ -81,7 +85,7 @@ function migrateGame(g) {
     if (!pre) { b.x = 'moves'; return; }
     var first = b.j === 'scan' ? roughToMove(pre, b.bs) : (function () {
       var probe = cloneState(pre), m = sanApply(probe, b.bs || '');
-      return m ? legalMoves(pre).filter(function (x) { return x.from === m.from && x.to === m.to; })[0] : null;
+      return m ? legalMoves(pre).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0] : null;
     })();
     if (!first) { b.x = 'moves'; return; }
     b.bu = moveUci(first);
@@ -90,7 +94,7 @@ function migrateGame(g) {
     for (var i = 0; i < toks.length && lu.length < 8; i++) {
       var mv = i === 0 ? first : (b.j === 'scan' ? roughToMove(st, toks[i]) : (function (tk) {
         var probe = cloneState(st), m = sanApply(probe, tk);
-        return m ? legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to; })[0] : null;
+        return m ? legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0] : null;
       })(toks[i]));
       if (!mv) break;
       lu.push(moveUci(mv));
@@ -110,7 +114,7 @@ function gameContinuationPlain(moves, pre, p) {
   for (var k = p; k < Math.min(toks.length, p + 7); k++) {
     var probe = cloneState(st), m = sanApply(probe, toks[k]);
     if (!m) break;
-    var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to; })[0];
+    var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0];
     if (!mv) break;
     if (k > p) out.push(moveUci(mv));
     applyMove(st, mv);
@@ -158,18 +162,20 @@ function maxAfter(g, ply) {
 }
 function markDecisive(g) {
   if (!g.bl) return;
-  g.bl.forEach(function (b) { b.d = 0; });
+  g.bl.forEach(function (b) { b.d = 0; delete b.dw; });
   if (g.res === 'win') return;
   var mine = g.bl.filter(function (b) { return !b.x; }).sort(function (a, b) { return a.p - b.p; });
   var pick = null, w = 0;
   if (g.wp && g.wp.length > 20) {
-    for (var i = 0; i < mine.length && !pick; i++) {
-      var b = mine[i];
-      if (g.res === 'loss' && b.wb >= 40 && b.wa < 40 && maxAfter(g, b.p) < 40) { pick = b; w = 1; }
-    }
+    /* in a loss: the biggest drop from a playable position after which the
+       player never got back to even */
+    if (g.res === 'loss') mine.forEach(function (b) {
+      if (b.wb >= 40 && maxAfter(g, b.p) < 50 && (!pick || b.wb - b.wa > pick.wb - pick.wa)) { pick = b; w = 1; }
+    });
+    if (pick) pick.dw = pick.wa < 30 ? 'lost' : 'turn';
     if (!pick) for (var j = 0; j < mine.length && !pick; j++) {
       var c = mine[j];
-      if (c.wb >= 70 && c.wa < 60 && maxAfter(g, c.p) < 70) { pick = c; w = g.res === 'loss' ? 1 : 0.5; }
+      if (c.wb >= 70 && c.wa < 60 && maxAfter(g, c.p) < 70) { pick = c; w = g.res === 'loss' ? 1 : 0.5; pick.dw = 'slip'; }
     }
   } else {
     for (var k = mine.length - 1; k >= 0 && !pick; k--) {
