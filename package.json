@@ -1,0 +1,16 @@
+{
+  "name": "notlichess",
+  "private": true,
+  "description": "notlichess.org: a free mistakes trainer for lichess and chess.com players",
+  "license": "MIT",
+  "scripts": {
+    "build": "python3 build.py",
+    "test": "node test/run.js",
+    "lint": "node test/lint.js",
+    "explain": "node test/explain.js > test/explanations.txt"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0"
+  }
+}

@@ -1,25 +1,56 @@
 # notlichess.org
 
-Not lichess — a free chess trainer built on your own lichess games.
+A free mistakes trainer built on your own lichess or chess.com games.
 
-It reads your games, finds the exact positions where you lose points, and
-retrains them — spaced out, until they stay fixed. It mines the opening book
-you actually play, teaches upgrades move by move, and drills your lines
-against the replies people at your rating actually make (computed from the
-[Lichess open database](https://database.lichess.org/), 6.7M games, CC0).
+It reads your rated games, runs Stockfish in your browser to find the moves
+that cost you, names each mistake (a hanging piece, a fork you walked into, a
+mate you missed) and trains you on those exact positions, spaced out, until
+they stop happening. After each position you see why: what your move allowed,
+the better move played out, and what really happened in your game. Insights
+rank your mistakes by the games they decided.
 
-One static HTML file. No server, no account, no ads, no tracking. Everything
-runs in your browser; every action lands on lichess.org signed in as you.
+One static HTML file plus the engine. No server, no account, no ads. Your
+games and progress stay in your browser. The site uses Microsoft Clarity for
+anonymous usage analytics.
 
 ## Run it
 
-Open `index.html`. That's the whole deployment.
+Serve this folder with any static file server (for example
+`python3 -m http.server`) and open it. The engine runs in a Web Worker, which
+browsers do not allow from a `file://` page.
+
+## Layout
+
+- `index.html`: the whole app (HTML, CSS and one script), built from `src/`
+- `src/`: the source. `page.html` is the page, `app.css` the styles, and `js/` the script in parts, joined in the order in `js/ORDER`
+- `build.py`: joins `src/` into `index.html` (and refuses any em dash)
+- `test/`: checks for the chess core, with sample data (see `test/README.md`)
+- `sf/`: Stockfish 17.1 lite, compiled to WebAssembly (see `sf/README.md`)
+- `tools/`: scripts that built the peer baselines (and the retired opening book) from the Lichess open database
+
+## Making a change
+
+Edit `src/`, then:
+
+```
+python3 build.py
+npm install        # once, for the linter
+npm test
+npm run lint
+```
+
+Commit `src/` and the rebuilt `index.html` together. If you touched the mistake explanations, run
+`npm run explain` and review `git diff test/explanations.txt` before committing.
+
+The earlier version, with the opening trainer, puzzles and Play tab, is kept
+in git: tag `v1-full-platform` and branch `archive/full-platform`.
 
 ## Credits
 
-- Chess pieces: “cburnett” by Colin M.L. Burnett, CC-BY-SA 3.0, via lichess-org/lila
-- Analysis: [Stockfish](https://stockfishchess.org/) (GPL), loaded at runtime, runs in your browser
-- Peer + opening data: the Lichess open database (CC0) — aggregators in `tools/`
-- Built on the [lichess.org API](https://lichess.org/api). Not affiliated with lichess.
+- Chess pieces: "cburnett" by Colin M.L. Burnett, CC-BY-SA 3.0, via lichess-org/lila
+- Analysis: [Stockfish](https://stockfishchess.org/) 17.1 (GPL v3), via [stockfish.js](https://github.com/nmrugg/stockfish.js), in `sf/` with its license
+- Mistake patterns: adapted from the tagger in [lichess-org/lichess-puzzler](https://github.com/ornicar/lichess-puzzler)
+- Peer data: the Lichess open database (CC0), aggregators in `tools/`
+- Built on the [lichess.org API](https://lichess.org/api) and the [chess.com published-data API](https://www.chess.com/news/view/published-data-api). Not affiliated with lichess or chess.com.
 
 MIT licensed.

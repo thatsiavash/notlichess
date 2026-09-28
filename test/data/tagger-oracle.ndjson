@@ -1,0 +1,246 @@
+{"i": 0, "allowed": ["equality", "defensiveMove", "veryLong"], "missed": ["advantage", "oneMove"]}
+{"i": 1, "allowed": ["equality", "quietMove", "veryLong"], "missed": ["advantage", "veryLong"]}
+{"i": 2, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 3, "allowed": ["advantage", "quietMove", "defensiveMove", "clearance", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 4, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "veryLong"]}
+{"i": 5, "allowed": ["advantage", "defensiveMove", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 6, "allowed": ["equality", "long"], "missed": ["advantage", "quietMove", "hangingPiece", "veryLong"]}
+{"i": 7, "allowed": ["equality", "discoveredAttack", "long"], "missed": ["advantage", "quietMove", "long"]}
+{"i": 8, "allowed": ["equality", "long"], "missed": ["advantage", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 9, "allowed": ["equality", "oneMove"], "missed": ["advantage", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 10, "allowed": ["advantage", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 11, "allowed": ["advantage", "capturingDefender", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 12, "allowed": ["crushing", "pin", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 13, "allowed": ["equality", "oneMove"], "missed": ["equality", "quietMove", "fork", "veryLong"]}
+{"i": 14, "allowed": ["advantage", "quietMove", "clearance", "castling", "veryLong"], "missed": ["equality", "quietMove", "long"]}
+{"i": 15, "allowed": ["advantage", "defensiveMove", "fork", "veryLong"], "missed": ["equality", "long"]}
+{"i": 16, "allowed": ["advantage", "long"], "missed": ["advantage", "quietMove", "veryLong"]}
+{"i": 17, "allowed": ["equality", "oneMove"], "missed": ["mateIn1", "mate", "hangingPiece", "oneMove"]}
+{"i": 18, "allowed": ["advantage", "quietMove", "defensiveMove", "fork", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 19, "allowed": ["equality", "quietMove", "defensiveMove", "long"], "missed": ["advantage", "quietMove", "trappedPiece", "veryLong"]}
+{"i": 20, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "defensiveMove", "veryLong"]}
+{"i": 21, "allowed": ["advantage", "defensiveMove", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 22, "allowed": ["advantage", "quietMove", "castling", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 23, "allowed": ["advantage", "deflection", "hangingPiece", "veryLong"], "missed": ["advantage", "quietMove", "fork", "veryLong"]}
+{"i": 24, "allowed": ["advantage", "quietMove", "fork", "hangingPiece", "exposedKing", "veryLong"], "missed": ["equality", "defensiveMove", "fork", "pin", "veryLong"]}
+{"i": 25, "allowed": ["equality", "oneMove"], "missed": ["advantage", "defensiveMove", "pin", "veryLong"]}
+{"i": 26, "allowed": ["equality", "quietMove", "veryLong"], "missed": ["advantage", "defensiveMove", "fork", "veryLong"]}
+{"i": 27, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "clearance", "veryLong"]}
+{"i": 28, "allowed": ["advantage", "deflection", "advancedPawn", "quietMove", "promotion", "veryLong"], "missed": ["equality", "defensiveMove", "oneMove"]}
+{"i": 29, "allowed": ["equality", "long"], "missed": ["equality", "defensiveMove", "veryLong"]}
+{"i": 30, "allowed": ["advantage", "defensiveMove", "veryLong"], "missed": ["equality", "advancedPawn", "defensiveMove", "veryLong"]}
+{"i": 31, "allowed": ["crushing", "veryLong"], "missed": ["equality", "quietMove", "sacrifice", "veryLong"]}
+{"i": 32, "allowed": ["crushing", "veryLong"], "missed": ["mateIn3", "mate", "exposedKing", "pin", "long"]}
+{"i": 33, "allowed": ["equality", "quietMove", "long"], "missed": ["advantage", "fork", "veryLong"]}
+{"i": 34, "allowed": ["advantage", "veryLong"], "missed": ["advantage", "quietMove", "fork", "veryLong"]}
+{"i": 35, "allowed": ["crushing", "hangingPiece", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "pin", "veryLong"]}
+{"i": 36, "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 37, "allowed": ["crushing", "defensiveMove", "fork", "veryLong"], "missed": ["equality", "exposedKing", "clearance", "veryLong"]}
+{"i": 38, "allowed": ["advantage", "defensiveMove", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 39, "allowed": ["advantage", "collinearMove", "veryLong"], "missed": ["equality", "quietMove", "long"]}
+{"i": 40, "allowed": ["advantage", "quietMove", "defensiveMove", "fork", "veryLong"], "missed": ["equality", "quietMove", "long"]}
+{"i": 41, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 42, "allowed": ["equality", "long"], "missed": ["advantage", "sacrifice", "veryLong"]}
+{"i": 43, "allowed": ["advantage", "defensiveMove", "pin", "queensideAttack", "veryLong"], "missed": ["equality", "defensiveMove", "oneMove"]}
+{"i": 44, "allowed": ["equality", "discoveredAttack", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 45, "allowed": ["advantage", "defensiveMove", "fork", "veryLong"], "missed": ["equality", "defensiveMove", "castling", "veryLong"]}
+{"i": 46, "allowed": ["equality", "defensiveMove", "long"], "missed": ["advantage", "defensiveMove", "veryLong"]}
+{"i": 47, "allowed": ["equality", "oneMove"], "missed": ["advantage", "veryLong"]}
+{"i": 48, "allowed": ["equality", "veryLong"], "missed": ["advantage", "defensiveMove", "veryLong"]}
+{"i": 49, "allowed": ["mateIn1", "mate", "hookMate", "oneMove"], "missed": ["equality", "defensiveMove", "veryLong"]}
+{"i": 50, "allowed": ["mateIn1", "mate", "oneMove"], "missed": ["advantage", "defensiveMove", "long"]}
+{"i": 51, "allowed": ["advantage", "quietMove", "pin", "veryLong"], "missed": ["equality", "veryLong"]}
+{"i": 52, "allowed": ["advantage", "deflection", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 53, "allowed": ["advantage", "sacrifice", "fork", "veryLong"], "missed": ["equality", "castling", "veryLong"]}
+{"i": 54, "allowed": ["equality", "defensiveMove", "rookEndgame", "oneMove"], "missed": ["advantage", "quietMove", "exposedKing", "rookEndgame", "veryLong"]}
+{"i": 55, "allowed": ["equality", "quietMove", "rookEndgame", "long"], "missed": ["advantage", "quietMove", "defensiveMove", "rookEndgame", "veryLong"]}
+{"i": 56, "allowed": ["advantage", "defensiveMove", "fork", "discoveredAttack", "exposedKing", "pin", "veryLong"], "missed": ["equality", "defensiveMove", "oneMove"]}
+{"i": 57, "allowed": ["advantage", "fork", "hangingPiece", "exposedKing", "veryLong"], "missed": ["equality", "veryLong"]}
+{"i": 58, "allowed": ["equality", "quietMove", "long"], "missed": ["advantage", "fork", "veryLong"]}
+{"i": 59, "allowed": ["advantage", "exposedKing", "veryLong"], "missed": ["equality", "quietMove", "hangingPiece", "veryLong"]}
+{"i": 60, "allowed": ["advantage", "defensiveMove", "hangingPiece", "veryLong"], "missed": ["equality", "quietMove", "clearance", "veryLong"]}
+{"i": 61, "allowed": ["equality", "long"], "missed": ["advantage", "fork", "pin", "veryLong"]}
+{"i": 62, "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 63, "allowed": ["advantage", "quietMove", "hangingPiece", "veryLong"], "missed": ["equality", "long"]}
+{"i": 64, "allowed": ["advantage", "quietMove", "defensiveMove", "attackingF2F7", "castling", "veryLong"], "missed": ["equality", "quietMove", "long"]}
+{"i": 65, "allowed": ["advantage", "quietMove", "defensiveMove", "veryLong"], "missed": ["equality", "long"]}
+{"i": 66, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 67, "allowed": ["advantage", "long"], "missed": ["equality", "oneMove"]}
+{"i": 68, "allowed": ["advantage", "veryLong"], "missed": ["advantage", "fork", "veryLong"]}
+{"i": 69, "allowed": ["advantage", "defensiveMove", "knightEndgame", "veryLong"], "missed": ["equality", "defensiveMove", "knightEndgame", "oneMove"]}
+{"i": 70, "allowed": ["crushing", "quietMove", "hangingPiece", "veryLong"], "missed": ["equality", "quietMove", "clearance", "veryLong"]}
+{"i": 71, "allowed": ["advantage", "hangingPiece", "veryLong"], "missed": ["equality", "defensiveMove", "oneMove"]}
+{"i": 72, "allowed": ["equality", "defensiveMove", "oneMove"], "missed": ["advantage", "quietMove", "hangingPiece", "clearance", "castling", "veryLong"]}
+{"i": 73, "allowed": ["equality", "oneMove"], "missed": ["advantage", "quietMove", "veryLong"]}
+{"i": 74, "allowed": ["equality", "oneMove"], "missed": ["advantage", "advancedPawn", "defensiveMove", "veryLong"]}
+{"i": 75, "allowed": ["equality", "advancedPawn", "defensiveMove", "veryLong"], "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 76, "allowed": ["crushing", "advancedPawn", "quietMove", "defensiveMove", "promotion", "bishopEndgame", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "bishopEndgame", "veryLong"]}
+{"i": 77, "allowed": ["equality", "defensiveMove", "veryLong"], "missed": ["advantage", "oneMove"]}
+{"i": 78, "allowed": ["equality", "quietMove", "veryLong"], "missed": ["advantage", "veryLong"]}
+{"i": 79, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 80, "allowed": ["advantage", "quietMove", "defensiveMove", "clearance", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 81, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "veryLong"]}
+{"i": 82, "allowed": ["advantage", "defensiveMove", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 83, "allowed": ["equality", "long"], "missed": ["advantage", "quietMove", "hangingPiece", "veryLong"]}
+{"i": 84, "allowed": ["equality", "discoveredAttack", "long"], "missed": ["advantage", "quietMove", "long"]}
+{"i": 85, "allowed": ["equality", "long"], "missed": ["advantage", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 86, "allowed": ["equality", "oneMove"], "missed": ["advantage", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 87, "allowed": ["advantage", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 88, "allowed": ["advantage", "capturingDefender", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 89, "allowed": ["crushing", "pin", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 90, "allowed": ["equality", "oneMove"], "missed": ["equality", "quietMove", "fork", "veryLong"]}
+{"i": 91, "allowed": ["advantage", "quietMove", "clearance", "castling", "veryLong"], "missed": ["equality", "quietMove", "long"]}
+{"i": 92, "allowed": ["advantage", "defensiveMove", "fork", "veryLong"], "missed": ["equality", "long"]}
+{"i": 93, "allowed": ["advantage", "long"], "missed": ["advantage", "quietMove", "veryLong"]}
+{"i": 94, "allowed": ["equality", "oneMove"], "missed": ["mateIn1", "mate", "hangingPiece", "oneMove"]}
+{"i": 95, "allowed": ["advantage", "quietMove", "defensiveMove", "fork", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 96, "allowed": ["equality", "quietMove", "defensiveMove", "long"], "missed": ["advantage", "quietMove", "trappedPiece", "veryLong"]}
+{"i": 97, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "defensiveMove", "veryLong"]}
+{"i": 98, "allowed": ["advantage", "defensiveMove", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 99, "allowed": ["advantage", "quietMove", "castling", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 100, "allowed": ["advantage", "deflection", "hangingPiece", "veryLong"], "missed": ["advantage", "quietMove", "fork", "veryLong"]}
+{"i": 101, "allowed": ["advantage", "quietMove", "fork", "hangingPiece", "exposedKing", "veryLong"], "missed": ["equality", "defensiveMove", "fork", "pin", "veryLong"]}
+{"i": 102, "allowed": ["equality", "oneMove"], "missed": ["advantage", "defensiveMove", "pin", "veryLong"]}
+{"i": 103, "allowed": ["equality", "quietMove", "veryLong"], "missed": ["advantage", "defensiveMove", "fork", "veryLong"]}
+{"i": 104, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "clearance", "veryLong"]}
+{"i": 105, "allowed": ["advantage", "quietMove", "defensiveMove", "veryLong"], "missed": ["equality", "quietMove", "castling", "veryLong"]}
+{"i": 106, "allowed": ["advantage", "hangingPiece", "discoveredAttack", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 107, "allowed": ["advantage", "hangingPiece", "exposedKing", "attackingF2F7", "veryLong"], "missed": ["advantage", "pin", "long"]}
+{"i": 108, "allowed": ["equality", "long"], "missed": ["advantage", "discoveredAttack", "castling", "veryLong"]}
+{"i": 109, "allowed": ["equality", "defensiveMove", "oneMove"], "missed": ["equality", "veryLong"]}
+{"i": 110, "allowed": ["equality", "defensiveMove", "oneMove"], "missed": ["equality", "long"]}
+{"i": 111, "allowed": ["crushing", "quietMove", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 112, "allowed": ["equality", "oneMove"], "missed": ["advantage", "oneMove"]}
+{"i": 113, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "defensiveMove", "veryLong"]}
+{"i": 114, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "defensiveMove", "veryLong"]}
+{"i": 115, "allowed": ["crushing", "deflection", "pin", "veryLong"], "missed": ["equality", "veryLong"]}
+{"i": 116, "allowed": ["advantage", "veryLong"], "missed": ["crushing", "veryLong"]}
+{"i": 117, "allowed": ["advantage", "quietMove", "defensiveMove", "clearance", "veryLong"], "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 118, "allowed": ["crushing", "defensiveMove", "exposedKing", "veryLong"], "missed": ["equality", "attraction", "advancedPawn", "quietMove", "promotion", "veryLong"]}
+{"i": 119, "allowed": ["equality", "long"], "missed": ["mateIn2", "mate", "pin", "short"]}
+{"i": 120, "allowed": ["equality", "quietMove", "defensiveMove", "veryLong"], "missed": ["equality", "discoveredAttack", "veryLong"]}
+{"i": 121, "allowed": ["equality", "quietMove", "long"], "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 122, "allowed": ["mateIn1", "mate", "oneMove"], "missed": ["crushing", "defensiveMove", "exposedKing", "pin", "veryLong"]}
+{"i": 123, "allowed": ["advantage", "advancedPawn", "quietMove", "pin", "attackingF2F7", "veryLong"], "missed": ["equality", "long"]}
+{"i": 124, "allowed": ["advantage", "oneMove"], "missed": ["advantage", "quietMove", "veryLong"]}
+{"i": 125, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 126, "allowed": ["advantage", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 127, "allowed": ["advantage", "defensiveMove", "veryLong"], "missed": ["equality", "defensiveMove", "long"]}
+{"i": 128, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["advantage", "hangingPiece", "veryLong"]}
+{"i": 129, "allowed": ["equality", "quietMove", "intermezzo", "veryLong"], "missed": ["crushing", "quietMove", "defensiveMove", "hangingPiece", "veryLong"]}
+{"i": 130, "allowed": ["equality", "quietMove", "long"], "missed": ["crushing", "hangingPiece", "veryLong"]}
+{"i": 131, "allowed": ["advantage", "advancedPawn", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 132, "allowed": ["equality", "long"], "missed": ["equality", "veryLong"]}
+{"i": 133, "allowed": ["equality", "pin", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 134, "allowed": ["advantage", "defensiveMove", "sacrifice", "fork", "exposedKing", "veryLong"], "missed": ["equality", "long"]}
+{"i": 135, "allowed": ["advantage", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 136, "allowed": ["advantage", "exposedKing", "pin", "attackingF2F7", "clearance", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "long"]}
+{"i": 137, "allowed": ["equality", "long"], "missed": ["mateIn3", "mate", "long"]}
+{"i": 138, "allowed": ["equality", "long"], "missed": ["mateIn2", "mate", "short"]}
+{"i": 139, "allowed": ["advantage", "fork", "veryLong"], "missed": ["equality", "long"]}
+{"i": 140, "allowed": ["advantage", "deflection", "advancedPawn", "promotion", "veryLong"], "missed": ["equality", "defensiveMove", "oneMove"]}
+{"i": 141, "allowed": ["equality", "long"], "missed": ["equality", "defensiveMove", "veryLong"]}
+{"i": 142, "allowed": ["advantage", "oneMove"], "missed": ["equality", "defensiveMove", "veryLong"]}
+{"i": 143, "allowed": ["crushing", "deflection", "advancedPawn", "exposedKing", "pin", "promotion", "veryLong"], "missed": ["equality", "defensiveMove", "sacrifice", "veryLong"]}
+{"i": 144, "allowed": ["crushing", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 145, "allowed": ["crushing", "veryLong"], "missed": ["mateIn3", "mate", "exposedKing", "pin", "long"]}
+{"i": 146, "allowed": ["equality", "defensiveMove", "oneMove"], "missed": ["advantage", "fork", "veryLong"]}
+{"i": 147, "allowed": ["advantage", "defensiveMove", "veryLong"], "missed": ["advantage", "quietMove", "fork", "veryLong"]}
+{"i": 148, "allowed": ["crushing", "quietMove", "defensiveMove", "hangingPiece", "clearance", "veryLong"], "missed": ["equality", "quietMove", "pin", "veryLong"]}
+{"i": 149, "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 150, "allowed": ["crushing", "fork", "veryLong"], "missed": ["equality", "quietMove", "exposedKing", "veryLong"]}
+{"i": 151, "allowed": ["advantage", "long"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 152, "allowed": ["advantage", "veryLong"], "missed": ["equality", "castling", "long"]}
+{"i": 153, "allowed": ["advantage", "veryLong"], "missed": ["equality", "quietMove", "long"]}
+{"i": 154, "allowed": ["advantage", "quietMove", "fork", "veryLong"], "missed": ["equality", "defensiveMove", "oneMove"]}
+{"i": 155, "allowed": ["advantage", "defensiveMove", "castling", "veryLong"], "missed": ["equality", "quietMove", "castling", "veryLong"]}
+{"i": 156, "allowed": ["equality", "veryLong"], "missed": ["advantage", "veryLong"]}
+{"i": 157, "allowed": ["advantage", "defensiveMove", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 158, "allowed": ["equality", "discoveredAttack", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 159, "allowed": ["equality", "quietMove", "skewer", "veryLong"], "missed": ["advantage", "veryLong"]}
+{"i": 160, "allowed": ["equality", "long"], "missed": ["advantage", "defensiveMove", "veryLong"]}
+{"i": 161, "allowed": ["equality", "quietMove", "veryLong"], "missed": ["advantage", "veryLong"]}
+{"i": 162, "allowed": ["mateIn1", "mate", "hookMate", "oneMove"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 163, "allowed": ["mateIn1", "mate", "oneMove"], "missed": ["equality", "defensiveMove", "sacrifice", "exposedKing", "veryLong"]}
+{"i": 164, "allowed": ["advantage", "pin", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 165, "allowed": ["advantage", "rookEndgame", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "rookEndgame", "veryLong"]}
+{"i": 166, "allowed": ["advantage", "oneMove"], "missed": ["equality", "oneMove"]}
+{"i": 167, "allowed": ["advantage", "sacrifice", "fork", "veryLong"], "missed": ["equality", "castling", "veryLong"]}
+{"i": 168, "allowed": ["equality", "rookEndgame", "veryLong"], "missed": ["advantage", "quietMove", "defensiveMove", "clearance", "rookEndgame", "veryLong"]}
+{"i": 169, "allowed": ["equality", "defensiveMove", "rookEndgame", "oneMove"], "missed": ["advantage", "defensiveMove", "rookEndgame", "oneMove"]}
+{"i": 170, "allowed": ["equality", "quietMove", "rookEndgame", "veryLong"], "missed": ["advantage", "rookEndgame", "oneMove"]}
+{"i": 171, "allowed": ["advantage", "defensiveMove", "fork", "discoveredAttack", "exposedKing", "pin", "veryLong"], "missed": ["equality", "defensiveMove", "oneMove"]}
+{"i": 172, "allowed": ["advantage", "fork", "hangingPiece", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 173, "allowed": ["equality", "quietMove", "collinearMove", "veryLong"], "missed": ["advantage", "quietMove", "defensiveMove", "fork", "veryLong"]}
+{"i": 174, "allowed": ["advantage", "quietMove", "defensiveMove", "sacrifice", "discoveredAttack", "pin", "veryLong"], "missed": ["equality", "hangingPiece", "long"]}
+{"i": 175, "allowed": ["advantage", "hangingPiece", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 176, "allowed": ["equality", "oneMove"], "missed": ["advantage", "fork", "pin", "veryLong"]}
+{"i": 177, "allowed": ["advantage", "veryLong"], "missed": ["equality", "quietMove", "pin", "veryLong"]}
+{"i": 178, "allowed": ["equality", "long"], "missed": ["advantage", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 179, "allowed": ["equality", "hangingPiece", "long"], "missed": ["advantage", "quietMove", "defensiveMove", "trappedPiece", "veryLong"]}
+{"i": 180, "allowed": ["equality", "quietMove", "defensiveMove", "sacrifice", "veryLong"], "missed": ["crushing", "quietMove", "veryLong"]}
+{"i": 181, "allowed": ["equality", "long"], "missed": ["crushing", "quietMove", "veryLong"]}
+{"i": 182, "allowed": ["equality", "defensiveMove", "long"], "missed": ["advantage", "defensiveMove", "fork", "pin", "veryLong"]}
+{"i": 183, "allowed": ["equality", "quietMove", "veryLong"], "missed": ["advantage", "discoveredAttack", "veryLong"]}
+{"i": 184, "allowed": ["advantage", "quietMove", "hangingPiece", "veryLong"], "missed": ["advantage", "quietMove", "castling", "veryLong"]}
+{"i": 185, "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 186, "allowed": ["equality", "quietMove", "veryLong"], "missed": ["advantage", "defensiveMove", "veryLong"]}
+{"i": 187, "allowed": ["equality", "exposedKing", "veryLong"], "missed": ["equality", "defensiveMove", "oneMove"]}
+{"i": 188, "allowed": ["crushing", "defensiveMove", "hangingPiece", "skewer", "veryLong"], "missed": ["equality", "defensiveMove", "veryLong"]}
+{"i": 189, "allowed": ["equality", "hangingPiece", "long"], "missed": ["advantage", "veryLong"]}
+{"i": 190, "allowed": ["mateIn3", "mate", "hangingPiece", "kingsideAttack", "long"], "missed": ["advantage", "veryLong"]}
+{"i": 191, "allowed": ["equality", "oneMove"], "missed": ["advantage", "oneMove"]}
+{"i": 192, "allowed": ["equality", "quietMove", "veryLong"], "missed": ["mateIn3", "mate", "fork", "long"]}
+{"i": 193, "allowed": ["advantage", "quietMove", "hangingPiece", "clearance", "castling", "veryLong"], "missed": ["advantage", "quietMove", "sacrifice", "veryLong"]}
+{"i": 194, "allowed": ["equality", "hangingPiece", "oneMove"], "missed": ["advantage", "advancedPawn", "defensiveMove", "kingsideAttack", "veryLong"]}
+{"i": 195, "allowed": ["equality", "oneMove"], "missed": ["advantage", "deflection", "defensiveMove", "veryLong"]}
+{"i": 196, "allowed": ["mateIn2", "mate", "short"], "missed": ["equality", "defensiveMove", "long"]}
+{"i": 197, "allowed": ["crushing", "fork", "discoveredAttack", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 198, "allowed": ["advantage", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 199, "allowed": ["mateIn1", "mate", "kingsideAttack", "oneMove"], "missed": ["equality", "quietMove", "long"]}
+{"i": 200, "allowed": ["advantage", "fork", "discoveredAttack", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 201, "allowed": ["equality", "oneMove"], "missed": ["advantage", "veryLong"]}
+{"i": 202, "allowed": ["advantage", "quietMove", "veryLong"], "missed": ["equality", "defensiveMove", "oneMove"]}
+{"i": 203, "allowed": ["equality", "quietMove", "veryLong"], "missed": ["advantage", "veryLong"]}
+{"i": 204, "allowed": ["equality", "quietMove", "defensiveMove", "long"], "missed": ["advantage", "defensiveMove", "veryLong"]}
+{"i": 205, "allowed": ["advantage", "veryLong"], "missed": ["advantage", "veryLong"]}
+{"i": 206, "allowed": ["advantage", "advancedPawn", "quietMove", "defensiveMove", "bishopEndgame", "veryLong"], "missed": ["equality", "defensiveMove", "skewer", "bishopEndgame", "veryLong"]}
+{"i": 207, "allowed": ["advantage", "bishopEndgame", "oneMove"], "missed": ["equality", "quietMove", "bishopEndgame", "veryLong"]}
+{"i": 208, "allowed": ["advantage", "bishopEndgame", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "bishopEndgame", "veryLong"]}
+{"i": 209, "allowed": ["advantage", "quietMove", "hangingPiece", "veryLong"], "missed": ["equality", "veryLong"]}
+{"i": 210, "allowed": ["equality", "quietMove", "defensiveMove", "veryLong"], "missedErr": "list index out of range"}
+{"i": 211, "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 212, "allowed": ["advantage", "hangingPiece", "veryLong"], "missed": ["equality", "deflection", "quietMove", "veryLong"]}
+{"i": 213, "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 214, "allowed": ["advantage", "quietMove", "hangingPiece", "veryLong"], "missed": ["equality", "oneMove"]}
+{"i": 215, "allowed": ["advantage", "quietMove", "defensiveMove", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 216, "allowed": ["advantage", "quietMove", "defensiveMove", "veryLong"], "missed": ["equality", "quietMove", "long"]}
+{"i": 217, "allowed": ["advantage", "oneMove"], "missed": ["equality", "sacrifice", "veryLong"]}
+{"i": 218, "allowed": ["advantage", "veryLong"], "missed": ["advantage", "fork", "veryLong"]}
+{"i": 219, "allowed": ["advantage", "defensiveMove", "knightEndgame", "veryLong"], "missed": ["equality", "defensiveMove", "knightEndgame", "oneMove"]}
+{"i": 220, "allowed": ["crushing", "quietMove", "hangingPiece", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 221, "allowed": ["crushing", "quietMove", "hangingPiece", "veryLong"], "missed": ["equality", "defensiveMove", "oneMove"]}
+{"i": 222, "allowed": ["equality", "defensiveMove", "oneMove"], "missed": ["advantage", "hangingPiece", "castling", "veryLong"]}
+{"i": 223, "allowed": ["equality", "long"], "missed": ["advantage", "quietMove", "veryLong"]}
+{"i": 224, "allowed": ["equality", "intermezzo", "veryLong"], "missed": ["advantage", "quietMove", "hangingPiece", "veryLong"]}
+{"i": 225, "allowed": ["equality", "oneMove"], "missed": ["advantage", "advancedPawn", "promotion", "veryLong"]}
+{"i": 226, "allowed": ["equality", "advancedPawn", "quietMove", "defensiveMove", "veryLong"], "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 227, "allowed": ["crushing", "advancedPawn", "quietMove", "promotion", "bishopEndgame", "veryLong"], "missed": ["equality", "defensiveMove", "bishopEndgame", "oneMove"]}
+{"i": 228, "allowed": ["equality", "quietMove", "collinearMove", "veryLong"], "missed": ["equality", "long"]}
+{"i": 229, "allowed": ["equality", "quietMove", "veryLong"], "missed": ["advantage", "defensiveMove", "veryLong"]}
+{"i": 230, "allowed": ["advantage", "fork", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 231, "allowed": ["equality", "doubleCheck", "defensiveMove", "veryLong"], "missed": ["advantage", "skewer", "veryLong"]}
+{"i": 232, "allowed": ["crushing", "quietMove", "exposedKing", "veryLong"], "missed": ["equality", "veryLong"]}
+{"i": 233, "allowed": ["equality", "oneMove"], "missed": ["crushing", "sacrifice", "pin", "veryLong"]}
+{"i": 234, "allowed": ["crushing", "quietMove", "hangingPiece", "veryLong"], "missed": ["equality", "quietMove", "veryLong"]}
+{"i": 235, "allowed": ["advantage", "hangingPiece", "oneMove"], "missed": ["equality", "oneMove"]}
+{"i": 236, "allowed": ["advantage", "quietMove", "hangingPiece", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "clearance", "veryLong"]}
+{"i": 237, "allowed": ["equality", "quietMove", "long"], "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 238, "missed": ["mateIn1", "mate", "oneMove"]}
+{"i": 239, "allowed": ["advantage", "defensiveMove", "fork", "veryLong"], "missed": ["equality", "quietMove", "defensiveMove", "veryLong"]}
+{"i": 240, "allowed": ["crushing", "advancedPawn", "sacrifice", "discoveredAttack", "exposedKing", "promotion", "veryLong"], "missed": ["equality", "defensiveMove", "long"]}
+{"i": 241, "allowed": ["advantage", "veryLong"], "missed": ["equality", "defensiveMove", "oneMove"]}
+{"i": 242, "allowed": ["crushing", "exposedKing", "veryLong"], "missed": ["advantage", "defensiveMove", "fork", "veryLong"]}
+{"i": 243, "allowed": ["advantage", "quietMove", "defensiveMove", "veryLong"], "missed": ["equality", "long"]}
+{"i": 244, "allowed": ["equality", "long"], "missed": ["crushing", "quietMove", "veryLong"]}
+{"i": 245, "allowed": ["equality", "defensiveMove", "oneMove"], "missed": ["advantage", "defensiveMove", "hangingPiece", "long"]}
