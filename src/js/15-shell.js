@@ -1,36 +1,43 @@
 /* ── Landing, identity, boot ────────────────────────────────────────────── */
 
+/* the example on the landing: a real club-level slip (5...Nxd5 in the Two
+   Knights walks into Nxf7, forking queen and rook) */
+var LANDING_FEN = 'r1bqkb1r/ppp2ppp/2n2n2/3Pp1N1/2B5/8/PPPP1PPP/RNBQK2R b KQkq - 0 5';
 function renderFirstVisit(prefill) {
   var cc = isCC();
-  el('main').innerHTML = '<div class="first">'
-    + '<div class="kicker" style="margin-bottom:14px">A free trainer for lichess and chess.com players</div>'
+  var ex = stateFromFen(LANDING_FEN);
+  el('main').innerHTML = '<div class="first landing">'
+    + '<div class="landing-copy">'
+    + '<div class="kicker">For lichess and chess.com players</div>'
     + '<h1>Stop making the same mistakes.</h1>'
-    + '<p class="lede">notlichess finds the moves that cost you games, in your own games, and trains you on them until you stop making them. '
-    + 'You see why each move failed, what you should have played, and which kinds of mistakes lose you the most games.</p>'
-    + '<div class="src-pick">'
-      + '<button class="src-btn' + (!cc ? ' src-on' : '') + '" data-act="srcPick" data-k="lichess">I play on lichess<small>lichess.org</small></button>'
-      + '<button class="src-btn' + (cc ? ' src-on' : '') + '" data-act="srcPick" data-k="chesscom">I play on chess.com<small>chess.com</small></button>'
+    + '<p class="lede">Stockfish finds the moves that cost you games, and you practise those exact positions until you stop making them.</p>'
+    + '<div class="src-pick" role="group" aria-label="Where you play">'
+      + '<button class="src-btn' + (!cc ? ' src-on' : '') + '" data-act="srcPick" data-k="lichess" aria-pressed="' + !cc + '">lichess</button>'
+      + '<button class="src-btn' + (cc ? ' src-on' : '') + '" data-act="srcPick" data-k="chesscom" aria-pressed="' + cc + '">chess.com</button>'
     + '</div>'
     + '<div class="first-form">'
-      + '<input class="input" id="firstUser" placeholder="Your ' + (cc ? 'chess.com' : 'lichess') + ' username" autocomplete="off" '
-      + 'autocapitalize="off" spellcheck="false" value="' + esc(prefill || '') + '">'
+      + '<input class="input" id="firstUser" data-clarity-mask="true" placeholder="Your ' + (cc ? 'chess.com' : 'lichess') + ' username" autocomplete="off" '
+      + 'autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-label="Your ' + (cc ? 'chess.com' : 'lichess') + ' username" value="' + esc(prefill || '') + '">'
       + '<button class="btn-big" data-act="setUser">Find my mistakes</button>'
     + '</div>'
+    + '<p class="first-foot">Free and unlimited. No account. Your games stay in this browser.</p>'
+    + '</div>'
+    + (ex ? '<div class="landing-ex" aria-hidden="true"><div class="kicker">Example</div>'
+      + boardSvg(ex, { flip: true, bad: [45, 35], mark: [28, 35], decor: true })
+      + '<p class="ex-task">Find a better move.</p><p class="ex-sub">You played Nxd5. It walked into a fork.</p></div>' : '')
     + '<div class="value">'
       + valueItem('Your own mistakes', 'Stockfish reads your games and pulls out the exact positions where they went wrong.')
-      + valueItem('The why, not just the what', 'See what your move allowed, the better move, and what really happened next.')
+      + valueItem('The why, not just the what', 'What your move allowed, the better move, and what really happened next.')
       + valueItem('What costs you games', 'Hanging pieces, missed forks, slipped wins: ranked by the games they lost you.')
-      + valueItem('Free, no account', 'Open source. Your games and progress stay in this browser, on this device.')
     + '</div>'
-    + '<p class="first-foot">Rated live games, bullet to classical. Stockfish runs on your own computer, and your games and progress are stored in this browser. The site uses Microsoft Clarity to see how it is used.</p>'
+    + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with player names hidden, to show how the site is used.</p>'
     + '</div>';
   var input = el('firstUser');
   if (input) {
     input.focus();
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') setUser(input.value); });
-    /* the engine downloads while the name is typed */
-    input.addEventListener('focus', function () { engineLoad().catch(function () {}); }, { once: true });
-    engineLoad().catch(function () {});
+    /* the engine downloads while the name is typed, not for every visitor */
+    input.addEventListener('input', function () { engineLoad().catch(function () {}); }, { once: true });
   }
 }
 function valueItem(title, body) {
@@ -41,16 +48,42 @@ function renderNoAccount() {
   /* a name that does not exist is not remembered: the next visit starts fresh */
   if (store.get('nl:user', '') === cfg.user) store.del('nl:user');
   el('main').innerHTML = '<div class="first"><div class="kicker">not found</div>'
-    + '<h1>' + site + ' has no account called ' + esc(cfg.user) + '.</h1>'
+    + '<h1 data-clarity-mask="true">' + site + ' has no account called ' + esc(cfg.user) + '.</h1>'
     + '<p class="lede">Check the spelling, or switch site.</p>'
     + '<div class="src-pick">'
       + '<button class="src-btn' + (!isCC() ? ' src-on' : '') + '" data-act="srcPick" data-k="lichess">lichess</button>'
       + '<button class="src-btn' + (isCC() ? ' src-on' : '') + '" data-act="srcPick" data-k="chesscom">chess.com</button></div>'
-    + '<div class="first-form"><input class="input" id="firstUser" value="' + esc(cfg.user) + '" autocomplete="off" spellcheck="false">'
-    + '<button class="btn-big" data-act="setUser">Try again</button></div></div>';
+    + '<div class="first-form"><input class="input" id="firstUser" data-clarity-mask="true" value="' + esc(cfg.user) + '" autocomplete="off" spellcheck="false">'
+    + '<button class="btn-big" data-act="setUser">Try again</button></div><div id="other-site"></div></div>';
   var input = el('firstUser');
   if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') setUser(input.value); });
+  /* the name may simply be on the other site: look, and offer it in one tap */
+  var name = cfg.user, other = isCC() ? 'lichess' : 'chesscom';
+  (isCC() ? getJSON('/api/user/' + encodeURIComponent(name), { quiet: true }) : ccJSON('/player/' + encodeURIComponent(name), { quiet: true }))
+    .then(function (p) {
+      var box = el('other-site');
+      if (!box || !p || cfg.user !== name) return;
+      box.innerHTML = '<div class="hero state other-site"><h2 data-clarity-mask="true">Found ' + esc(p.username || name) + ' on ' + (other === 'chesscom' ? 'chess.com' : 'lichess') + '.</h2>'
+        + '<div class="acts"><a class="btn-big" data-act="useOtherSite" data-k="' + other + '">Use that</a></div></div>';
+    }, function () {});
 }
+/* coarse return measures for the founder: which visit this is, never who
+   (no names, ratings or mistake rates), at most one per day */
+function returnEvents() {
+  try {
+    var k = 'nl:firstSeen:' + playerId(), first = store.get(k, 0), now = Date.now();
+    if (urlUser && linkStore.get('nl:linkUser')) track('open_link');
+    var utm = linkStore.get('nl:utm');
+    if (utm && window.clarity) window.clarity('set', 'utm_source', utm.slice(0, 40));
+    if (!first) { store.set(k, now); track('first_visit'); return; }
+    var sent = 'nl:retDay:' + playerId();
+    if (store.get(sent, '') === dayStamp()) return;
+    store.set(sent, dayStamp());
+    var days = (now - first) / DAY;
+    track(days < 2 ? 'return_d1' : (days < 8 ? 'return_d2_7' : (days < 29 ? 'return_w2_4' : 'return_m2')));
+  } catch (e) {}
+}
+function forgetLink() { try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:linkSrc'); } catch (e) {} }
 function setUser(name) {
   name = String(name || '').trim();
   if (!name) return;
@@ -60,6 +93,7 @@ function setUser(name) {
   }
   cfg.user = name;
   saveCfg('user');
+  forgetLink();
   ui.view = 'train';
   store.set('nl:view', 'train');
   try { history.replaceState(null, '', location.pathname + '#train'); } catch (e) {}
@@ -67,13 +101,17 @@ function setUser(name) {
   boot();
 }
 /* the formats to learn from, picked from the profile: the ones played
-   most, bullet only when it is what the player mostly plays */
+   most, bullet only when it is what the player mostly plays. Where the site
+   says when a format was last played (chess.com), a format untouched for 90
+   days gives way to the ones played now */
 function autoPerfs(u) {
   var counts = [];
   ['rapid', 'blitz', 'bullet', 'classical'].forEach(function (p) {
     var pf = u && u.perfs && u.perfs[p];
-    if (pf && pf.games) counts.push([p, pf.games]);
+    if (pf && pf.games) counts.push([p, pf.games, pf.last || null]);
   });
+  var recent = counts.filter(function (c) { return c[2] && Date.now() - c[2] < 90 * DAY; });
+  if (recent.length) counts = recent;
   if (!counts.length) return ['rapid', 'blitz'];
   var total = counts.reduce(function (a, c) { return a + c[1]; }, 0);
   counts.sort(function (a, b) { return b[1] - a[1]; });
@@ -85,7 +123,7 @@ function autoPerfs(u) {
 }
 
 var NARR_WISDOM = [
-  'This takes about a minute, once. After today the page opens instantly.',
+  'The first read takes a minute or two. Your first positions are ready before that.',
   'Stockfish checks every move you made, right here in your browser.',
   'Most players replay their wins. The rating lives in the losses.',
   'A mistake you retry from the exact position is worth ten you read about.',
@@ -121,9 +159,9 @@ function renderNarration() {
   el('main').innerHTML = '<div class="first" style="max-width:none">'
     + '<div style="max-width:720px;margin:0 auto">'
     + '<div class="kicker" style="margin-bottom:18px">finding your mistakes</div>'
-    + '<h1>Reading ' + esc(cfg.user) + "'s games.</h1>"
-    + '<div id="identity">' + identityHtml() + '</div>'
-    + '<div id="narr" class="narr" aria-live="polite"></div>'
+    + '<h1 data-clarity-mask="true">Reading ' + esc(cfg.user) + "'s games.</h1>"
+    + '<div id="identity" data-clarity-mask="true">' + identityHtml() + '</div>'
+    + '<div id="narr" class="narr" aria-live="polite" data-clarity-mask="true"></div>'
     + '</div>'
     + '<div id="narr-stage">' + narrBoards() + '</div>'
     + '<div style="max-width:720px;margin:0 auto"><p id="narr-wisdom" class="narr-wisdom"></p></div></div>';
@@ -153,15 +191,20 @@ function greetingLine(lastSeen) {
   fresh.forEach(function (g) {
     (g.bl || []).forEach(function (b) { if (!b.x) { ms++; if (b.d && !lost) lost = g; } });
   });
-  var line = 'Since your last visit: ' + fresh.length + ' game' + (fresh.length === 1 ? '' : 's') + ' (' + w + ' won, ' + l + ' lost)';
-  if (ms) line += ' · ' + ms + ' new mistake' + (ms === 1 ? '' : 's') + (lost ? ', including the one that ' + decisiveWords(lost) + ' vs ' + esc(lost.opp) : '');
-  else line += ' · Stockfish is reading them now';
-  return line + '.';
+  var line = 'Since your last visit: ' + fresh.length + ' game' + (fresh.length === 1 ? '' : 's') + ' (' + w + ' won, ' + l + ' lost).';
+  /* the game that lost is the way back in */
+  if (lost) {
+    var dec = (lost.bl || []).filter(function (b) { return b.d && !b.x; })[0];
+    line += ' You ' + (lost.res === 'draw' ? 'drew with ' : 'lost to ') + esc(lost.opp) + '. The move that ' + decisiveWords(lost, dec) + ' is ready. '
+      + '<a data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'game', id: lost.id, label: 'Game vs ' + lost.opp })) + '">Go through it ›</a>';
+  } else if (ms) line += ' ' + ms + ' new mistake' + (ms === 1 ? '' : 's') + ' to learn from.';
+  else line += ' Stockfish is reading them now.';
+  return line;
 }
 /* the previous visit is read once per page load: a refresh or an hourly
    check for new games must not move it */
 function computeGreeting() {
-  var key = 'nl:lastSeen:' + String(cfg.user).toLowerCase();
+  var key = 'nl:lastSeen:' + playerId();
   if (data.prevSeenFor !== cfg.user) {
     data.prevSeen = store.get(key, 0);
     data.prevSeenFor = cfg.user;
@@ -170,40 +213,18 @@ function computeGreeting() {
   data.greeting = greetingLine(data.prevSeen);
 }
 
-/* old keys from the retired features, and the one-time "what changed" */
-function migrateStorage() {
-  if (store.get('nl:migrated', 0) >= 2) return;
-  var hadV1 = false;
-  try {
-    var dead = [];
-    for (var i = 0; i < localStorage.length; i++) {
-      var k = localStorage.key(i);
-      if (!k) continue;
-      /* regenerable caches and old screen flags go; progress in the retired
-         trainers (puzzles, opening lines) stays, in case they come back */
-      if (k === 'nl:cache:tours' || /^nl:cache:prep:/.test(k)
-          || k === 'nl:setSize' || k === 'nl:obDone' || k === 'nl:tcs_edit') dead.push(k);
-      if (/^nl:srs:/.test(k)) hadV1 = true;
-    }
-    dead.forEach(function (k2) { localStorage.removeItem(k2); });
-  } catch (e) {}
-  if (hadV1) store.set('nl:whatsNew', 1);
-  store.set('nl:migrated', 2);
-}
-
 function boot() {
   gen++;
   var myGen = gen;
   applyLinkTarget();
-  migrateStorage();
   if (typeof navigator.onLine === 'boolean' && !navigator.onLine) notice('You are offline. Showing what was saved last time.');
   if (!cfg.user) { renderHeader(); renderFirstVisit(); renderFoot(); return; }
-  /* a link that names a player opens that player, and keeps them after a reload */
-  if (urlUser && /^[a-zA-Z0-9_-]{2,30}$/.test(urlUser) && store.get('nl:user', '') !== cfg.user) {
-    saveCfg('user');
-    saveCfg('src');
-  }
-  document.title = 'notlichess.org · ' + cfg.user;
+  /* a link that names a player opens that player; it is remembered only
+     when this browser has no player of its own yet */
+  /* a link's player lives in this tab only (sessionStorage), and the page
+     title never names anyone */
+  document.title = 'notlichess.org';
+  returnEvents();
   engineLoad().catch(function () {});           /* in parallel with everything else */
   ui.session = null;
   var cached = loadCachedGames();
@@ -220,7 +241,6 @@ function boot() {
   else {
     renderShell();
     renderAll();
-    if (store.get('nl:whatsNew', 0)) { store.del('nl:whatsNew'); openSheet('whatsnew'); }
   }
   var previewEarly = loadNarrPreview();
   loadUser()
@@ -303,19 +323,19 @@ function adoptFresh(old, fresh) {
 
 /* ── progress between devices, as a file ────────────────────────────────── */
 function exportProgress() {
-  var u = String(cfg.user).toLowerCase(), out = { v: 1, user: cfg.user, src: cfg.src, at: Date.now(), keys: {} };
+  var u = playerId(), out = { v: 1, user: cfg.user, src: cfg.src, at: Date.now(), keys: {} };
   try {
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
       if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:bestStreak:' + u || k === 'nl:focus2:' + u)
+      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:focus2:' + u)
         out.keys[k] = JSON.parse(localStorage.getItem(k));
     }
   } catch (e) {}
   var blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'notlichess-progress-' + u + '.json';
+  a.download = 'notlichess-progress-' + u.replace(':', '-') + '.json';
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
@@ -330,7 +350,7 @@ function importProgress() {
     f.text().then(function (txt) {
       var d = JSON.parse(txt);
       if (!d || !d.keys) throw new Error('bad file');
-      if (String(d.user).toLowerCase() !== String(cfg.user).toLowerCase()) {
+      if (String(d.user).toLowerCase() !== String(cfg.user).toLowerCase() || (d.src || 'lichess') !== cfg.src) {
         notice('That file belongs to ' + d.user + '. Log in as them to load it.');
         return;
       }
@@ -386,17 +406,19 @@ document.addEventListener('click', function (e) {
       break;
     }
     case 'setUser': setUser(el('firstUser') ? el('firstUser').value : ''); break;
+    case 'useOtherSite': { var nm = cfg.user; cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm); break; }
     case 'logout': {
       if (k === 'confirm' && !ui.logoutArmed) {
         ui.logoutArmed = true;
-        t.textContent = 'tap again to switch';
-        setTimeout(function () { ui.logoutArmed = false; renderHeader(); }, 3000);
+        t.textContent = 'Tap again to switch';
+        setTimeout(function () { ui.logoutArmed = false; renderSettings(); }, 4000);
         break;
       }
       ui.logoutArmed = false;
       flushSave();
       gen++;
       document.title = 'notlichess.org';
+      forgetLink();
       cfg.user = ''; store.del('nl:user');
       cfg.perfs = null; store.del('nl:perfs');
       ui.settingsOpen = false; ui.session = null; data.narrate = false; data.user = null;
@@ -405,13 +427,8 @@ document.addEventListener('click', function (e) {
       break;
     }
     case 'settings':
-      ui.settingsOpen = !ui.settingsOpen; ui.wipeArmed = false; ui.resetArmed = false;
-      if (data.narrate && ui.settingsOpen) { data.narrate = false; renderShell(); renderAll(); }
-      renderSettings();
-      if (ui.settingsOpen) {
-        var sb = el('settings'), bar0 = el('bar');
-        if (sb) window.scrollTo({ top: sb.getBoundingClientRect().top + window.scrollY - (bar0 ? bar0.offsetHeight : 0) - 8, behavior: 'smooth' });
-      }
+      ui.wipeArmed = false; ui.resetArmed = false; ui.logoutArmed = false;
+      if (ui.sheet === 'settings') closeSheet(); else openSheet('settings');
       break;
     case 'startToday': startToday(); break;
     case 'resume': resumeSession(); break;
@@ -423,6 +440,7 @@ document.addEventListener('click', function (e) {
     case 'sheet': openSheet(k); break;
     case 'closeSheet': if (e.target === t) closeSheet(); break;
     case 'hint': giveHint(); break;
+    case 'checkShow': if (a && a.phase === 'check') { a.attempts++; checkStep(null, null); } break;
     case 'reveal': reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
@@ -431,7 +449,8 @@ document.addEventListener('click', function (e) {
     case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); } break;
     case 'dispute': disputeCard(k); break;
     case 'marksSeen': store.set('nl:marksSeen', true); renderCard(); break;
-    case 'lineTab': if (a && a.lines) { stopAuto(a); a.explore = null; a.view = { line: k, idx: 0 }; renderCard(); } break;
+    /* a teaching line plays from the start: its arrow first, then the moves */
+    case 'lineTab': if (a && a.lines && a.lines[k]) { a.explore = null; autoplayLine(k, null, 0, a.lines[k].states.length); } break;
     case 'lineTo': if (a && a.lines) { stopAuto(a); a.explore = null; a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
     case 'lineBack': stepView(-1); break;
     case 'lineFwd': stepView(1); break;
@@ -454,13 +473,13 @@ document.addEventListener('click', function (e) {
     case 'importProgress': importProgress(); break;
     case 'engineRetry': SF.state = 'idle'; SF.crashes = []; engineLoad().then(function () { autoScan(); }, function () {}); renderAll(); break;
     case 'resetProgress': {
-      if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); break; }
-      var u = String(cfg.user).toLowerCase();
+      if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); setTimeout(function () { ui.resetArmed = false; renderSettings(); }, 4000); break; }
+      var u = playerId();
       try {
         var del = [];
         for (var i = 0; i < localStorage.length; i++) {
           var kk = localStorage.key(i);
-          if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === 'nl:bestStreak:' + u || kk === 'nl:focus2:' + u || kk === sessKey())) del.push(kk);
+          if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === 'nl:focus2:' + u || kk === sessKey())) del.push(kk);
         }
         del.forEach(function (x) { localStorage.removeItem(x); });
         /* the mistakes' records go; the retired trainer's lines stay */
@@ -473,10 +492,14 @@ document.addEventListener('click', function (e) {
       break;
     }
     case 'wipe': {
-      if (!ui.wipeArmed) { ui.wipeArmed = true; renderSettings(); break; }
+      if (!ui.wipeArmed) { ui.wipeArmed = true; renderSettings(); setTimeout(function () { ui.wipeArmed = false; renderSettings(); }, 4000); break; }
       try {
         var all = [];
         for (var j = 0; j < localStorage.length; j++) { var kj = localStorage.key(j); if (kj && kj.indexOf('nl:') === 0) all.push(kj); }
+        /* nothing in memory may write itself back on the way out */
+        data.wiped = true;
+        cfg.user = '';
+        data.games = [];
         all.forEach(function (x) { localStorage.removeItem(x); });
       } catch (e3) {}
       location.href = location.pathname;
@@ -509,7 +532,6 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Escape') {
     if (ui.sheet) { closeSheet(); return; }
-    if (ui.settingsOpen) { ui.settingsOpen = false; renderSettings(); return; }
   }
   var a = ui.session && ui.session.active;
   if (!a || ui.sheet) return;
@@ -518,7 +540,8 @@ document.addEventListener('keydown', function (e) {
     else if (e.key === 'ArrowRight') { e.preventDefault(); stepView(1); }
     else if (e.key === 'Enter' || e.key === ' ') { if (!(e.target && e.target.closest && e.target.closest('[data-act]'))) { e.preventDefault(); nextCard(); } }
   } else if (a.phase === 'guess') {
-    if (e.key === 'h' || e.key === 'H') giveHint();
+    /* never a letter: letters start moves in the typed-move field */
+    if (e.key === '?') { e.preventDefault(); giveHint(); }
   }
 });
 function reducedMotion() { return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }
@@ -528,7 +551,7 @@ function typedMove(txt) {
   if (!a || a.phase !== 'guess') return;
   var t = String(txt || '').trim().replace(/0/g, 'O');
   var m = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(t) ? uciToMove(a.st, t.toLowerCase()) : null;
-  if (!m && t) { var probe = cloneState(a.st), sm = sanApply(probe, t); if (sm) m = legalMoves(a.st).filter(function (x) { return x.from === sm.from && x.to === sm.to && (!x.promo || x.promo === sm.promo); })[0] || null; }
+  if (!m && t) { var probe = cloneState(a.st), sm = sanApply(probe, t); if (sm) m = legalMoves(a.st).filter(function (x) { return x.from === sm.from && x.to === sm.to && (!x.promo || x.promo === (sm.promo || 'Q')); })[0] || null; }
   if (!m) { notice('That move is not legal here. Try a move like Nf3, exd5, O-O or g1f3.'); return; }
   gradeMove(m);
 }
@@ -578,7 +601,7 @@ function moveGhost(x, y) {
 }
 function boardState(a) {
   if (a.phase === 'done' && a.explore) return { st: a.explore.st, live: true, explore: true };
-  if (a.phase === 'guess') return { st: a.st, live: true };
+  if (a.phase === 'guess' || a.phase === 'check') return { st: a.st, live: true };
   return { st: a.st, live: false };
 }
 document.addEventListener('pointerdown', function (e) {
@@ -655,6 +678,8 @@ function checkForGames() {
 }
 var perfFetchTimer = null;
 function perfsChanged() {
+  /* a late fetch for the old formats must not land over the new ones */
+  gen++;
   modelDirty();
   clearTimeout(perfFetchTimer);
   /* a new format's history is fetched without discarding anything */
@@ -680,7 +705,7 @@ window.__nlTest = {
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
              hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
-             sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b };
+             sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, check1: a.check1 ? a.check1.uci : null };
   },
   play: function (uci) {
     var a = ui.session && ui.session.active;
@@ -688,7 +713,7 @@ window.__nlTest = {
     var st = a.phase === 'done' && a.explore ? a.explore.st : a.st;
     var m = uciToMove(st, uci);
     if (!m) return 'illegal';
-    if (a.phase === 'guess') { gradeMove(m); return 'graded'; }
+    if (a.phase === 'guess' || a.phase === 'check') { gradeMove(m); return 'graded'; }
     return 'not guessing';
   },
   stats: function () {

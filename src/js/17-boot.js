@@ -23,8 +23,8 @@ function narrBoards() {
   });
   var cards = gs.map(function (g, i) {
     return '<div class="narr-card">'
-      + boardSvg(data.narrLive[i].st, { flip: data.narrLive[i].flip })
-      + '<span class="narr-card-cap">' + esc(cfg.user) + ' vs ' + esc(g.opp) + '</span></div>';
+      + boardSvg(data.narrLive[i].st, { flip: data.narrLive[i].flip, decor: true })
+      + '<span class="narr-card-cap" data-clarity-mask="true">' + esc(cfg.user) + ' vs ' + esc(g.opp) + '</span></div>';
   }).join('');
   return '<div class="narr-strip"><div class="narr-track">' + cards + cards + '</div></div>';
 }

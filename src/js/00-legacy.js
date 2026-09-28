@@ -47,11 +47,13 @@ var RETAIN_PER_FORMAT = 100; /* newest unanalysed games per format that keep
                                 their movetext for the fetch-free scan batch */   /* every tracked format keeps at least this
                                many recent games, a 1000-game window of
                                mostly blitz must not starve the rapid coach */
-var LIMIT_CHOICES = [100, 250, 500];
 
+/* a ?u= link was moved into this tab's sessionStorage by the head script,
+   before any third party saw the address */
 var params = new URLSearchParams(location.search);
-var urlUser = (params.get('u') || params.get('user') || '').trim();
-var urlSrc = (params.get('src') || '').trim();
+var linkStore = { get: function (k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } } };
+var urlUser = (linkStore.get('nl:linkUser') || params.get('u') || params.get('user') || '').trim();
+var urlSrc = (linkStore.get('nl:linkSrc') || params.get('src') || '').trim();
 
 /* Defaults per format lean no-increment: the most-played pools, and a
    clean three-tile Play stage for a fresh account. Increments stay one tap
@@ -182,7 +184,7 @@ function request(path, opts) {
            at most one every five minutes */
         if (!opts.quiet && Date.now() - lastLimitNotice > 300000) {
           lastLimitNotice = Date.now();
-          notice('Lichess asked us to slow down. Picking the work back up in a minute.');
+          notice((/chess\.com/.test(String(res.url || '')) ? 'chess.com' : 'lichess') + ' asked us to slow down. Picking the work back up in a minute.');
         }
         var err = new Error('rate-limited'); err.code = 429; throw err;
       }
@@ -703,6 +705,8 @@ function saveGames(games) {
       if (key && key.indexOf('nl:games:') === 0 && key !== mine) drop.push(key);
     }
     drop.forEach(function (x) { localStorage.removeItem(x); });
+    if (drop.length) notice('This browser ran out of room, so the saved games of the other player' + (drop.length > 1 ? 's' : '')
+      + ' here were cleared. Their practice history is kept, and their games come back on their next visit.');
   } catch (e) {}
   if (write(live, true)) return out(live);
   var keep = live.slice();
@@ -986,7 +990,7 @@ function sanApply(st, san) {
   st.half = (pc === 'P' || capture || ep >= 0) ? 0 : st.half + 1;
   if (!me) st.full++;
   st.w = !me;
-  return { from: from, to: to };
+  return { from: from, to: to, promo: promo ? promo.toUpperCase() : null };
 }
 
 function checkedKingSq(st) {

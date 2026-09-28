@@ -39,7 +39,7 @@ function narrAnimate() {
         b.st = chessStart(); b.ply = 0;
         b.phase = 'live';
         b.nextAt = now + 350 + Math.random() * 250;
-        var freshHtml = boardSvg(b.st, { flip: b.flip });
+        var freshHtml = boardSvg(b.st, { flip: b.flip, decor: true });
         pair.forEach(function (c) {
           if (!c) return;
           var old = c.querySelector('svg');
@@ -61,7 +61,7 @@ function narrAnimate() {
         return;
       }
       b.ply++;
-      var html = boardSvg(b.st, { flip: b.flip, anim: [mv.from, mv.to] });
+      var html = boardSvg(b.st, { flip: b.flip, anim: [mv.from, mv.to], decor: true });
       pair.forEach(function (c) {
         if (!c) return;
         var old = c.querySelector('svg');
@@ -92,6 +92,23 @@ setInterval(function () {
   var c = loadCachedGames();
   if (Date.now() - (c.fetchedAt || c.at || 0) > 3600 * 1000) loadGames().then(function () { setTimeout(autoScan, 800); });
 }, 10 * 60 * 1000);
+/* coming back to the tab after a game: a finished recap closes, and new
+   games are fetched straight away (never in the middle of a position, and
+   at most every two minutes) */
+var hiddenAt = 0;
+function onReturn() {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (!cfg.user || data.narrate || data.sections.games === 'loading') return;
+  /* a recap left behind for a game (a minute or more away) closes to Today */
+  var away = hiddenAt && Date.now() - hiddenAt > 60 * 1000;
+  hiddenAt = 0;
+  if (ui.session && ui.session.finished && away) endSession();
+  if (ui.session) return;
+  var c = loadCachedGames();
+  if (Date.now() - (c.fetchedAt || c.at || 0) > 2 * 60 * 1000) loadGames().then(function () { computeGreeting(); renderTrain(); setTimeout(autoScan, 800); });
+}
+document.addEventListener('visibilitychange', onReturn);
+window.addEventListener('focus', onReturn);
 window.addEventListener('online', function () { notice('Back online.'); if (cfg.user && !data.narrate) checkForGames(); });
 window.addEventListener('offline', function () { notice('You are offline. Your practice keeps working.'); });
 

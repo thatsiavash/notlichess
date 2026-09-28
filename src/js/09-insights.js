@@ -22,7 +22,7 @@ function gameMistakeList(g) {
 /* the moves a rate is taken over: the scored ones when the series exists */
 function scoredMoves(g) { var sp = scoredPlies(g); return sp.plies.length || ownMoves(g); }
 function coveredGames() {
-  return data.games.filter(function (g) { return covered(g) && (g.plies || 0) >= 6; });
+  return scopedGames().filter(function (g) { return covered(g) && (g.plies || 0) >= 6; });
 }
 /* a small seeded generator, so the same data always gives the same answer */
 function seededRand(seed) {
@@ -127,57 +127,8 @@ function insightReport() {
       spec: { type: 'colour', colour: pair[2], label: 'Your mistakes as ' + pair[2] }
     });
   });
-  /* phases: rate per 100 moves spent in each phase (fixed move ranges) */
-  var phaseMoves = { open: 0, mid: 0, end: 0 }, phaseMist = { open: 0, mid: 0, end: 0 };
-  var phaseOfPly = function (p) { var mv = Math.floor(p / 2) + 1; return mv <= 12 ? 'open' : (mv <= 35 ? 'mid' : 'end'); };
-  gs.forEach(function (g) {
-    var sp = scoredPlies(g);
-    if (sp.plies.length) {
-      sp.plies.forEach(function (p) { phaseMoves[phaseOfPly(p)]++; });
-      sp.mistakes.forEach(function (p) { phaseMist[phaseOfPly(p)]++; });
-      return;
-    }
-    var myPlies = ownMoves(g);
-    phaseMoves.open += Math.min(myPlies, 12);
-    phaseMoves.mid += Math.max(0, Math.min(myPlies, 35) - 12);
-    phaseMoves.end += Math.max(0, myPlies - 35);
-    gameMistakes(g).forEach(function (b) { phaseMist[phaseOfPly(b.p)]++; });
-  });
-  out.phases = ['open', 'mid', 'end'].map(function (ph) {
-    return { ph: ph, moves: phaseMoves[ph], mistakes: phaseMist[ph],
-             rate: phaseMoves[ph] >= 150 ? phaseMist[ph] * 100 / phaseMoves[ph] : null };
-  });
-  var rated = out.phases.filter(function (p) { return p.rate != null; });
-  if (rated.length >= 2) {
-    var worst = rated.slice().sort(function (a, b) { return b.rate - a.rate; })[0];
-    var others = rated.filter(function (p) { return p !== worst; });
-    var oRate = others.reduce(function (a, p) { return a + p.mistakes; }, 0) * 100
-      / Math.max(1, others.reduce(function (a, p) { return a + p.moves; }, 0));
-    if (worst.rate >= oRate * 1.4 && worst.mistakes >= 12) out.slices.push({
-      key: 'phase:' + worst.ph, kind: 'phase', label: PHASE_NAME[worst.ph],
-      text: 'In the ' + PHASE_NAME[worst.ph].toLowerCase() + ' you make ' + everyMoves(worst.rate)
-        + '; in the rest of the game, ' + everyMoves(oRate) + '.',
-      spec: { type: 'phase', phase: worst.ph, label: 'Your ' + PHASE_NAME[worst.ph].toLowerCase() + ' mistakes' }
-    });
-  }
-  /* time trouble: how much of the damage happens with the clock low */
-  var tt = 0, ttDec = 0, withClock = 0, dec = 0;
-  gs.forEach(function (g) {
-    gameMistakes(g).forEach(function (b) {
-      if (b.c == null) return;
-      var it = { g: g, b: b };
-      withClock++;
-      if (b.d) dec += b.d;
-      if (timeTrouble(it)) { tt++; if (b.d) ttDec += b.d; }
-    });
-  });
-  out.timeTrouble = { mistakes: tt, of: withClock, decisive: ttDec, decisiveOf: dec };
-  if (withClock >= 30 && tt >= 8 && tt / withClock >= 0.2) out.slices.push({
-    key: 'clock:low', kind: 'clock', label: 'Low on time',
-    text: Math.round(tt * 100 / withClock) + '% of your mistakes happen with less than a tenth of your clock left'
-      + (ttDec >= 2 ? ', and they lost you ' + fmtGames(ttDec) + '.' : '.'),
-    spec: { type: 'clock', mode: 'low', label: 'Mistakes when low on time' }
-  });
+  /* no phase slice (the middlegame is the worst phase for nearly every
+     player, so it restates everyone) and no clock slice (no baseline) */
   /* openings: early mistakes (first 15 moves) per family, shrunk toward
      your own average so a small family cannot shout */
   var early = function (g) {
@@ -195,43 +146,34 @@ function insightReport() {
     var k = g.color + '|' + f;
     (fams[k] = fams[k] || { fam: f, colour: g.color, games: [] }).games.push(g);
   });
-  var base = rateOf(gs, early, earlyMoves), prior = 150;
+  /* each opening against the player's other games with the same colour */
+  var prior = 150, baseBy = {
+    white: rateOf(W, early, earlyMoves), black: rateOf(B, early, earlyMoves)
+  };
   var famRows = Object.keys(fams).map(function (k) {
-    var F = fams[k];
+    var F = fams[k], base = baseBy[F.colour];
     if (F.games.length < 15) return null;
-    var rest = gs.filter(function (g) { return F.games.indexOf(g) === -1; });
+    var rest = gs.filter(function (g) { return g.color === F.colour && F.games.indexOf(g) === -1; });
     var r = rateOf(F.games, early, earlyMoves);
     var shrunk = (r.m + base.rate / 100 * prior) * 100 / (r.n + prior);
     var c = compareRates(F.games, rest, early, 101 + F.games.length, earlyMoves);
-    return c ? { F: F, r: r, shrunk: shrunk, c: c } : null;
+    return c ? { F: F, r: r, shrunk: shrunk, c: c, base: base } : null;
   }).filter(Boolean);
   /* Benjamini-Hochberg-style guard: with many families, demand more */
   var need = famRows.length > 6 ? 1.6 : 1.4;
-  famRows.filter(function (x) { return x.c.clear && x.shrunk >= base.rate * need; })
+  famRows.filter(function (x) { return x.c.clear && x.shrunk >= x.base.rate * need; })
     .sort(function (a, b) { return b.shrunk - a.shrunk; }).slice(0, 2).forEach(function (x) {
       out.slices.push({
         key: 'opening:' + x.F.colour + '|' + x.F.fam, kind: 'opening', label: x.F.fam + ' as ' + x.F.colour,
         text: 'In the ' + x.F.fam + ' as ' + x.F.colour + ' you make ' + everyMoves(x.r.rate)
-          + ' in the first 15 moves; across your other openings, ' + everyMoves(x.c.b.rate) + '.',
+          + ' in the first 15 moves; in your other openings as ' + x.F.colour + ', ' + everyMoves(x.c.b.rate) + '.',
         spec: { type: 'opening', family: x.F.fam, colour: x.F.colour, label: 'Early mistakes in the ' + x.F.fam }
       });
     });
-  /* progress: mistakes per 100 moves by month */
-  var months = {};
-  gs.forEach(function (g) {
-    var d = new Date(g.ts), k = d.getFullYear() * 12 + d.getMonth();
-    var row = months[k] || (months[k] = { k: k, m: 0, n: 0, games: 0 });
-    row.m += gameMistakeList(g).length; row.n += scoredMoves(g); row.games++;
-  });
-  out.months = Object.keys(months).map(function (k) { return months[k]; })
-    .filter(function (r) { return r.games >= 10; })
-    .sort(function (a, b) { return a.k - b.k; }).slice(-6)
-    .map(function (r) { r.rate = r.m * 100 / r.n; return r; });
   m.report = out;
   m.reportSrs = srsRevision;
   return out;
 }
-var PHASE_NAME = { open: 'Opening', mid: 'Middlegame', end: 'Endgame' };
 /* draws count half; shown as whole games, which is how people count */
 function fmtGames(x) {
   var n = Math.max(1, Math.round(x));

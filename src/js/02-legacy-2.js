@@ -19,28 +19,6 @@ function bandEquivRating(perf, rating) {
   if (rating == null) return null;
   return isCC() ? rating + (CC_OFFSET[perf] != null ? CC_OFFSET[perf] : 200) : rating;
 }
-function peerCell(perf, rating) {
-  if (!PEER.cells || rating == null) return null;
-  var r = bandEquivRating(perf, rating);
-  var b = Math.max(800, Math.min(2400, Math.floor(r / 100) * 100));
-  return PEER.cells[perf + '|' + b] || null;
-}
-
-/* ── 8c. Skill profile ───────────────────────────────────────────────────
-   Every skill is a pair: your number and the number for players at your
-   rating in the same format. `scale` is how far from the peer value counts as
-   a full step of strong or weak, which keeps a 3-point accuracy gap from
-   reading like a 30-point one.                                              */
-
-
-function meanOf(list, pick) {
-  var sum = 0, n = 0;
-  for (var i = 0; i < list.length; i++) {
-    var v = pick(list[i]);
-    if (v != null) { sum += v; n++; }
-  }
-  return n ? { v: sum / n, n: n } : null;
-}
 
 
 
@@ -206,12 +184,18 @@ var HL_MOVE = 'rgba(155,199,0,.41)', HL_SEL = 'rgba(20,85,30,.5)';
 var PIECE_ID = { K:'wK',Q:'wQ',R:'wR',B:'wB',N:'wN',P:'wP',
                  k:'bK',q:'bQ',r:'bR',b:'bB',n:'bN',p:'bP' };
 
+var boardSeq = 0;
 function boardSvg(st, opts) {
   opts = opts || {};
   var flip = !!opts.flip;
   var SZ = 45, W = SZ * 8;
-  var out = '<svg class="board" viewBox="0 0 ' + W + ' ' + W + '" role="img" aria-label="chess position">'
-    + '<defs><radialGradient id="checkglow"><stop offset="0%" stop-color="rgba(230,60,50,.85)"/>'
+  /* every board has its own ids: with shared ids, an arrow loses its head
+     when the first copy of a marker sits in a hidden view */
+  var uid = 'b' + (++boardSeq);
+  /* the card's board names what is on it; small boards are decoration */
+  var out = '<svg class="board" viewBox="0 0 ' + W + ' ' + W + '"'
+    + (opts.decor ? ' aria-hidden="true"' : ' role="img" aria-label="' + (opts.label || 'chess position').replace(/"/g, '') + '"') + '>'
+    + '<defs><radialGradient id="checkglow' + uid + '"><stop offset="0%" stop-color="rgba(230,60,50,.85)"/>'
     + '<stop offset="70%" stop-color="rgba(230,60,50,.35)"/>'
     + '<stop offset="100%" stop-color="rgba(230,60,50,0)"/></radialGradient></defs>';
   for (var r = 0; r < 8; r++) {
@@ -230,7 +214,7 @@ function boardSvg(st, opts) {
           + '" fill="' + HL_SEL + '" style="pointer-events:none"/>';
       if (opts.check === sq) {
         out += '<circle cx="' + (x + SZ / 2) + '" cy="' + (y + SZ / 2) + '" r="' + (SZ * 0.52)
-          + '" fill="url(#checkglow)" style="pointer-events:none"/>';
+          + '" fill="url(#checkglow' + uid + ')" style="pointer-events:none"/>';
       }
       var p = st.b[sq];
       if (p) {
@@ -266,38 +250,30 @@ function boardSvg(st, opts) {
           + (1 + (sq >> 3)) + '</text>';
     }
   }
+  /* an arrow from square to square, with a thin dark halo so it reads on
+     light and dark squares alike; a one-square arrow gets a smaller head */
+  var arrow = function (from, to, color, key, cls) {
+    var fc = flip ? 7 - from % 8 : from % 8, fr = flip ? (from >> 3) : 7 - (from >> 3);
+    var tc = flip ? 7 - to % 8 : to % 8, tr = flip ? (to >> 3) : 7 - (to >> 3);
+    var x1 = fc * SZ + SZ / 2, y1 = fr * SZ + SZ / 2, x2 = tc * SZ + SZ / 2, y2 = tr * SZ + SZ / 2;
+    var dx = x2 - x1, dy = y2 - y1, len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var head = len < SZ * 1.6 ? 3.4 : 4.2;
+    var tx = x2 - dx / len * (SZ * 0.34), ty = y2 - dy / len * (SZ * 0.34);
+    var id = 'ah' + key + uid;
+    return '<defs><marker id="' + id + '" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="' + head + '" markerHeight="' + head + '" orient="auto">'
+      + '<path d="M0 0 L10 5 L0 10 z" fill="' + color + '" stroke="rgba(0,0,0,.28)" stroke-width=".6"/></marker></defs>'
+      + '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + tx + '" y2="' + ty
+      + '" stroke="rgba(0,0,0,.28)" stroke-width="8.4" stroke-linecap="round" style="pointer-events:none"/>'
+      + '<line' + (cls ? ' class="' + cls + '"' : '') + ' x1="' + x1 + '" y1="' + y1 + '" x2="' + tx + '" y2="' + ty
+      + '" stroke="' + color + '" stroke-width="6" stroke-linecap="round"'
+      + ' marker-end="url(#' + id + ')" style="pointer-events:none"/>';
+  };
   /* the advice: a gold arrow tracing the move the text is talking about */
-  if (opts.ghost) {
-    var gf = opts.ghost[0], gt = opts.ghost[1];
-    var gfc = flip ? 7 - gf % 8 : gf % 8, gfr = flip ? (gf >> 3) : 7 - (gf >> 3);
-    var gtc = flip ? 7 - gt % 8 : gt % 8, gtr = flip ? (gt >> 3) : 7 - (gt >> 3);
-    var gx1 = gfc * SZ + SZ / 2, gy1 = gfr * SZ + SZ / 2;
-    var gx2 = gtc * SZ + SZ / 2, gy2 = gtr * SZ + SZ / 2;
-    var gdx = gx2 - gx1, gdy = gy2 - gy1;
-    var glen = Math.sqrt(gdx * gdx + gdy * gdy) || 1;
-    var gtx = gx2 - gdx / glen * (SZ * 0.34), gty = gy2 - gdy / glen * (SZ * 0.34);
-    out += '<defs><marker id="ahgold" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto">'
-      + '<path d="M0 0 L10 5 L0 10 z" fill="rgba(182,130,53,.85)"/></marker></defs>'
-      + '<line x1="' + gx1 + '" y1="' + gy1 + '" x2="' + gtx + '" y2="' + gty
-      + '" stroke="rgba(182,130,53,.85)" stroke-width="6" stroke-linecap="round"'
-      + ' marker-end="url(#ahgold)" style="pointer-events:none"/>';
-  }
+  if (opts.ghost) out += arrow(opts.ghost[0], opts.ghost[1], 'rgba(182,130,53,.85)', 'gold', '');
+  /* the better move, green; never on the board together with the red one */
+  if (opts.good) out += arrow(opts.good[0], opts.good[1], 'rgba(61,139,58,.92)', 'good', 'good-arrow');
   /* the mistake itself: a red arrow tracing the move that was played */
-  if (opts.bad) {
-    var bf = opts.bad[0], bt = opts.bad[1];
-    var bfc = flip ? 7 - bf % 8 : bf % 8, bfr = flip ? (bf >> 3) : 7 - (bf >> 3);
-    var btc = flip ? 7 - bt % 8 : bt % 8, btr = flip ? (bt >> 3) : 7 - (bt >> 3);
-    var bx1 = bfc * SZ + SZ / 2, by1 = bfr * SZ + SZ / 2;
-    var bx2 = btc * SZ + SZ / 2, by2 = btr * SZ + SZ / 2;
-    var bdx = bx2 - bx1, bdy = by2 - by1;
-    var blen = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
-    var btx = bx2 - bdx / blen * (SZ * 0.34), bty = by2 - bdy / blen * (SZ * 0.34);
-    out += '<defs><marker id="ahbad" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto">'
-      + '<path d="M0 0 L10 5 L0 10 z" fill="rgba(190,72,60,.8)"/></marker></defs>'
-      + '<line class="bad-arrow" x1="' + bx1 + '" y1="' + by1 + '" x2="' + btx + '" y2="' + bty
-      + '" stroke="rgba(190,72,60,.8)" stroke-width="6" stroke-linecap="round"'
-      + ' marker-end="url(#ahbad)" style="pointer-events:none"/>';
-  }
+  if (opts.bad) out += arrow(opts.bad[0], opts.bad[1], 'rgba(201,80,60,.9)', 'bad', 'bad-arrow');
   /* the hint ring paints AFTER pieces and the mistake arrow, SVG stacks
      by order, and a hint buried under a red arrow is no hint at all */
   if (opts.hint != null) {
@@ -317,7 +293,7 @@ function boardSvg(st, opts) {
       var c = flip ? 7 - sq % 8 : sq % 8, rw = flip ? (sq >> 3) : 7 - (sq >> 3);
       return [c * SZ + SZ / 2, rw * SZ + SZ / 2];
     };
-    out += '<defs><marker id="ah" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto">'
+    out += '<defs><marker id="ah' + uid + '" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto">'
       + '<path d="M0 0 L10 5 L0 10 z" fill="rgba(21,120,27,.8)"/></marker></defs>';
     opts.shapes.forEach(function (sh) {
       if (sh.at != null) {
@@ -331,7 +307,7 @@ function boardSvg(st, opts) {
         var tx = t0[0] - dx / len * (SZ * 0.34), ty = t0[1] - dy / len * (SZ * 0.34);
         out += '<line x1="' + f0[0] + '" y1="' + f0[1] + '" x2="' + tx + '" y2="' + ty
           + '" stroke="rgba(21,120,27,.8)" stroke-width="7" stroke-linecap="round"'
-          + ' marker-end="url(#ah)" style="pointer-events:none"/>';
+          + ' marker-end="url(#ah' + uid + ')" style="pointer-events:none"/>';
       }
     });
   }
@@ -466,18 +442,27 @@ function uciToMove(st, uci) {
 /* ── 12. Notices ─────────────────────────────────────────────────────── */
 
 var noticeTimer = null;
-function notice(msg) {
+function notice(msg, action) {
   var box = el('overlay');
   var n = document.createElement('div');
   n.className = 'notice';
   n.setAttribute('role', 'status');
   n.setAttribute('aria-live', 'polite');
   n.textContent = msg;
+  /* one action at most, such as Resume or Undo */
+  if (action) {
+    var b = document.createElement('a');
+    b.setAttribute('data-act', action.act);
+    b.className = 'notice-act';
+    b.textContent = action.label;
+    n.appendChild(document.createTextNode(' '));
+    n.appendChild(b);
+  }
   var old = box.querySelector('.notice');
   if (old) old.remove();
   box.appendChild(n);
   clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(function () { n.remove(); }, 5000);
+  noticeTimer = setTimeout(function () { n.remove(); }, action ? 8000 : 5000);
 }
 
 /* ── 13. Command palette ─────────────────────────────────────────────── */
@@ -543,6 +528,7 @@ var scanState = { running: false, current: null, done: 0 };
 function scanCoverage() {
   var covered = 0, total = 0;
   data.games.forEach(function (g) {
+    if (!inScope(g)) return;
     if (g.analysed || g.scanned || g.bl) { covered++; total++; }
     else if (scannableAny(g)) total++;
   });
@@ -903,7 +889,8 @@ function loadUser() {
             perfs[pair[1]] = {
               rating: v.last.rating,
               games: (rec.win || 0) + (rec.loss || 0) + (rec.draw || 0),
-              prog: 0
+              prog: 0,
+              last: v.last.date ? v.last.date * 1000 : null      /* the last game in this format */
             };
             if (v.best) peaks[pair[1]] = { rating: v.best.rating };
           });
