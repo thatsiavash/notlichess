@@ -151,6 +151,13 @@ const OPEN = `function openCard(it, guess) {
     eq(JSON.stringify(A.ev('trackedPerfs()')), JSON.stringify(['bullet']), 'link trains its own format');
   });
 
+  await test('a link to this browser\'s own player is a plain visit; a site without a name changes nothing', () => {
+    const A = boot({ session: { 'nl:linkUser': 'Tester', 'nl:linkSrc': 'chesscom' } });
+    eq(A.ev('linkVisit'), false, 'own link');
+    const B = boot({ session: { 'nl:linkSrc': 'lichess' } });
+    eq(B.ev('cfg.src'), 'chesscom', 'site kept'); eq(B.ev('cfg.user'), 'tester', 'player kept');
+  });
+
   await test('saved formats belong to one player', () => {
     const st = Object.assign(base(), { 'nl:perfs': JSON.stringify(['bullet']), 'nl:perfsFor': JSON.stringify('other') });
     const A = makeApp({ now: T0, storage: st });

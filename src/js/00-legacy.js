@@ -53,10 +53,13 @@ var RETAIN_PER_FORMAT = 100; /* newest unanalysed games per format that keep
 var params = new URLSearchParams(location.search);
 var linkStore = { get: function (k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } } };
 var urlUser = (linkStore.get('nl:linkUser') || params.get('u') || params.get('user') || '').trim();
-var urlSrc = (linkStore.get('nl:linkSrc') || params.get('src') || '').trim();
-/* the link is read once: a reload opens the saved player (or the landing),
-   and while it is open nothing about the linked player is saved */
-var linkVisit = !!urlUser, linkTracked = false;
+/* a site without a name changes nothing: it would open the saved player on the wrong site */
+var urlSrc = urlUser ? (linkStore.get('nl:linkSrc') || params.get('src') || '').trim() : '';
+/* the link is read once: a reload opens the saved player (or the landing).
+   While it is open the linked player never replaces this browser's own, and
+   a link to this browser's own player is just a visit */
+var linkVisit = !!urlUser && !(urlUser.toLowerCase() === String(store.get('nl:user', '')).toLowerCase()
+  && (urlSrc || store.get('nl:src', 'lichess')) === store.get('nl:src', 'lichess')), linkTracked = false;
 try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:linkSrc'); } catch (e) {}
 
 /* Defaults per format lean no-increment: the most-played pools, and a

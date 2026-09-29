@@ -21,6 +21,8 @@
         t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
         y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
     })(window, document, "clarity", "script", "y95daq5rao");
+    /* the address loses its query before this runs: the campaign is passed as a tag */
+    try { var nlUtm = sessionStorage.getItem('nl:utm'); if (nlUtm) window.clarity('set', 'utm_source', nlUtm.slice(0, 40)); } catch (e) {}
 </script>
 <meta name="description" content="Stop making the same chess mistakes. notlichess finds the moves that cost you games in your lichess or chess.com games, shows you why, and trains you on them until they stop. Free, no account.">
 <meta name="color-scheme" content="dark">

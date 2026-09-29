@@ -21,6 +21,8 @@
         t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
         y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
     })(window, document, "clarity", "script", "y95daq5rao");
+    /* the address loses its query before this runs: the campaign is passed as a tag */
+    try { var nlUtm = sessionStorage.getItem('nl:utm'); if (nlUtm) window.clarity('set', 'utm_source', nlUtm.slice(0, 40)); } catch (e) {}
 </script>
 <meta name="description" content="Stop making the same chess mistakes. notlichess finds the moves that cost you games in your lichess or chess.com games, shows you why, and trains you on them until they stop. Free, no account.">
 <meta name="color-scheme" content="dark">
@@ -827,10 +829,13 @@ var RETAIN_PER_FORMAT = 100; /* newest unanalysed games per format that keep
 var params = new URLSearchParams(location.search);
 var linkStore = { get: function (k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } } };
 var urlUser = (linkStore.get('nl:linkUser') || params.get('u') || params.get('user') || '').trim();
-var urlSrc = (linkStore.get('nl:linkSrc') || params.get('src') || '').trim();
-/* the link is read once: a reload opens the saved player (or the landing),
-   and while it is open nothing about the linked player is saved */
-var linkVisit = !!urlUser, linkTracked = false;
+/* a site without a name changes nothing: it would open the saved player on the wrong site */
+var urlSrc = urlUser ? (linkStore.get('nl:linkSrc') || params.get('src') || '').trim() : '';
+/* the link is read once: a reload opens the saved player (or the landing).
+   While it is open the linked player never replaces this browser's own, and
+   a link to this browser's own player is just a visit */
+var linkVisit = !!urlUser && !(urlUser.toLowerCase() === String(store.get('nl:user', '')).toLowerCase()
+  && (urlSrc || store.get('nl:src', 'lichess')) === store.get('nl:src', 'lichess')), linkTracked = false;
 try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:linkSrc'); } catch (e) {}
 
 /* Defaults per format lean no-increment: the most-played pools, and a
@@ -7269,7 +7274,8 @@ function findUser(name) {
       return;
     }
     if (!found.length) {
-      box.innerHTML = '<p class="which-none">Could not reach chess.com or lichess. Check your connection and try again.</p>';
+      var down = res.filter(function (f) { return f && f.err; }).length === 2 ? 'chess.com or lichess' : (res[0] && res[0].err ? 'chess.com' : 'lichess');
+      box.innerHTML = '<p class="which-none">Could not reach ' + down + '. Check your connection and try again.</p>';
       return;
     }
     /* both, or one while the other did not answer: ask */
@@ -7312,7 +7318,7 @@ function renderNoAccount() {
 function returnEvents() {
   try {
     var k = 'nl:firstSeen:' + playerId(), first = store.get(k, 0), now = Date.now();
-    if (linkVisit && !linkTracked) { linkTracked = true; track('open_link'); }
+    if (linkVisit) { if (!linkTracked) { linkTracked = true; track('open_link'); } return; }
     var utm = linkStore.get('nl:utm');
     if (utm && window.clarity) window.clarity('set', 'utm_source', utm.slice(0, 40));
     var sent = 'nl:retDay:' + playerId();
@@ -7328,6 +7334,8 @@ function returnEvents() {
   } catch (e) {}
 }
 function forgetLink() { linkVisit = false; }
+/* the saved formats are this player's (older saves carry no owner: theirs) */
+function perfsMine() { var pf = store.get('nl:perfsFor', ''); return !!store.get('nl:perfs', null) && (!pf || pf === playerId()); }
 function setUser(name) {
   name = String(name || '').trim();
   if (!name) return;
@@ -7457,8 +7465,7 @@ function boot() {
   var myGen = gen;
   /* the saved formats belong to one player: another player starts from
      their own profile */
-  var pf = store.get('nl:perfsFor', '');
-  if (!linkVisit && cfg.user && pf && pf !== playerId()) { cfg.perfs = null; cfg.tcs = DEFAULT_TC.slice(); store.del('nl:perfs'); store.del('nl:tcs'); store.del('nl:perfsFor'); }
+  if (!linkVisit && cfg.user && !perfsMine()) { cfg.perfs = null; cfg.tcs = DEFAULT_TC.slice(); }
   applyLinkTarget();
   if (typeof navigator.onLine === 'boolean' && !navigator.onLine) notice('You are offline. Showing what was saved last time.');
   if (!cfg.user) { renderHeader(); renderFirstVisit(); renderFoot(); return; }
@@ -7492,7 +7499,7 @@ function boot() {
       returnEvents();
       /* first login: the formats come from the profile, no questions asked;
          a linked player always gets their own, in memory only */
-      if ((linkVisit || !store.get('nl:perfs', null)) && data.user) {
+      if ((linkVisit || !perfsMine()) && data.user) {
         setPerfs(autoPerfs(data.user));
         if (el('identity')) el('identity').innerHTML = identityHtml();
       }

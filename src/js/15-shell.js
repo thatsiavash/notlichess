@@ -90,7 +90,8 @@ function findUser(name) {
       return;
     }
     if (!found.length) {
-      box.innerHTML = '<p class="which-none">Could not reach chess.com or lichess. Check your connection and try again.</p>';
+      var down = res.filter(function (f) { return f && f.err; }).length === 2 ? 'chess.com or lichess' : (res[0] && res[0].err ? 'chess.com' : 'lichess');
+      box.innerHTML = '<p class="which-none">Could not reach ' + down + '. Check your connection and try again.</p>';
       return;
     }
     /* both, or one while the other did not answer: ask */
@@ -133,7 +134,7 @@ function renderNoAccount() {
 function returnEvents() {
   try {
     var k = 'nl:firstSeen:' + playerId(), first = store.get(k, 0), now = Date.now();
-    if (linkVisit && !linkTracked) { linkTracked = true; track('open_link'); }
+    if (linkVisit) { if (!linkTracked) { linkTracked = true; track('open_link'); } return; }
     var utm = linkStore.get('nl:utm');
     if (utm && window.clarity) window.clarity('set', 'utm_source', utm.slice(0, 40));
     var sent = 'nl:retDay:' + playerId();
@@ -149,6 +150,8 @@ function returnEvents() {
   } catch (e) {}
 }
 function forgetLink() { linkVisit = false; }
+/* the saved formats are this player's (older saves carry no owner: theirs) */
+function perfsMine() { var pf = store.get('nl:perfsFor', ''); return !!store.get('nl:perfs', null) && (!pf || pf === playerId()); }
 function setUser(name) {
   name = String(name || '').trim();
   if (!name) return;
@@ -278,8 +281,7 @@ function boot() {
   var myGen = gen;
   /* the saved formats belong to one player: another player starts from
      their own profile */
-  var pf = store.get('nl:perfsFor', '');
-  if (!linkVisit && cfg.user && pf && pf !== playerId()) { cfg.perfs = null; cfg.tcs = DEFAULT_TC.slice(); store.del('nl:perfs'); store.del('nl:tcs'); store.del('nl:perfsFor'); }
+  if (!linkVisit && cfg.user && !perfsMine()) { cfg.perfs = null; cfg.tcs = DEFAULT_TC.slice(); }
   applyLinkTarget();
   if (typeof navigator.onLine === 'boolean' && !navigator.onLine) notice('You are offline. Showing what was saved last time.');
   if (!cfg.user) { renderHeader(); renderFirstVisit(); renderFoot(); return; }
@@ -313,7 +315,7 @@ function boot() {
       returnEvents();
       /* first login: the formats come from the profile, no questions asked;
          a linked player always gets their own, in memory only */
-      if ((linkVisit || !store.get('nl:perfs', null)) && data.user) {
+      if ((linkVisit || !perfsMine()) && data.user) {
         setPerfs(autoPerfs(data.user));
         if (el('identity')) el('identity').innerHTML = identityHtml();
       }
