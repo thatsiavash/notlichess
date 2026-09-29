@@ -342,6 +342,7 @@ function escalate(line) {
 }
 /* ask the engine about a move, from the same position, at the same depth
    the best move was measured at */
+var checkSeq = 0;
 function checkMove(m, u, inLine) {
   var ss = ui.session, a = ss.active, it = a.it, b = it.b;
   if (SF.state === 'failed') { miss(m, u, null); return; }
@@ -352,12 +353,14 @@ function checkMove(m, u, inLine) {
   a.animMove = a.tapAnim; a.tapAnim = null;
   renderCard();
   var cardKey = a.key, fen = stateFen(a.st), sign = myPov(it) ? 1 : -1;
-  var tok = a.checkTok = (a.checkTok || 0) + 1;
+  /* one counter for every card: a check started before a pause can never
+     answer a move played after the resume */
+  var tok = a.checkTok = ++checkSeq;
   var live = function (a2) { return a2 && a2.key === cardKey && a2.phase === 'checking' && a2.checkTok === tok; };
   var timer = setTimeout(function () {
     var a2 = ui.session && ui.session.active;
     if (live(a2)) {
-      a2.checkTok++;
+      a2.checkTok = ++checkSeq;
       a2.phase = 'guess';
       a2.ghostMove = null;
       a2.verdict = { cls: 'verdict-mid', html: 'Stockfish cannot check this move right now. Try again, or show the answer.' };
@@ -509,7 +512,7 @@ function reveal() {
   a.revealed = true;
   a.st = cloneState(a.pre);
   /* found a close move and then asked for the best one: a hint, not a miss */
-  if (a.foundGood && !a.misses) (ui.session.notes = ui.session.notes || {})[a.key] = 'close';
+  if (a.foundGood && !a.misses && !ss_relearn(a)) (ui.session.notes = ui.session.notes || {})[a.key] = 'close';
   finishCard(a.foundGood && !a.misses ? 'hint' : 'fail');
 }
 /* a second tap on Next lands where Show the answer now sits: taps in the

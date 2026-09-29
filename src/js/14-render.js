@@ -581,6 +581,8 @@ function dotsHtml(ss) {
     var cls = i === ss.idx && !ss.finished ? 'on' : (r ? 'done' : '');
     out += '<span class="dot ' + cls + '"></span>';
   });
+  /* one more try still to come: its place is shown already */
+  (ss.relearn || []).forEach(function () { out += '<span class="dot"></span>'; });
   return '<div class="dots" aria-hidden="true">' + out + '</div>';
 }
 function menuHtml(a) {

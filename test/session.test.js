@@ -205,6 +205,18 @@ const OPEN = `function openCard(it, guess) {
     eq(r.lapses, 1, 'graded a fail');
   });
 
+  await test('tries from a closed paused session count only toward 3', () => {
+    const run = (tries) => {
+      const A = boot();
+      return JSON.parse(A.ev(`(function () {
+        var its = allMistakes().filter(trainable);
+        store.set(sessKey(), { date: dayStamp(), mode: 'today', label: 'x', keys: [its[0].key, its[1].key], idx: 1, results: {}, relearn: [], relearnOf: {}, progress: {}, attempted: ${tries} });
+        startSession('drill', [its[2].key], 'd'); ui.session.active = null; finishSession();
+        return JSON.stringify({ counted: (dayLoad().sessions || 0) > 0 }); })()`));
+    };
+    eq(run(3).counted, true, '3 carried'); eq(run(1).counted, false, '1 carried, none here');
+  });
+
   await test('a skipped new position counts against the day\'s new positions', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { var it = allMistakes().filter(trainable)[1]; var f0 = dayLoad().fresh || 0; srsRecord(it, 'skip', {}); return JSON.stringify({ d: (dayLoad().fresh || 0) - f0 }); })()`));

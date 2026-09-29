@@ -505,12 +505,12 @@ document.addEventListener('click', function (e) {
     case 'importProgress': importProgress(); break;
     case 'engineRetry': SF.state = 'idle'; SF.crashes = []; engineLoad().then(function () { autoScan(); }, function () {}); renderAll(); break;
     case 'resetProgress': {
-      if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); clearTimeout(ui.armTimer); ui.armTimer = setTimeout(function () { ui.resetArmed = false; renderSettings(); }, 4000); break; }
+      if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); clearTimeout(ui.resetTimer); ui.resetTimer = setTimeout(function () { ui.resetArmed = false; renderSettings(); }, 4000); break; }
       var u = playerId();
       try {
         var del = [];
         var keys = Object.keys(mem);
-        for (var i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+        try { for (var i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i)); } catch (e4) {}
         keys.forEach(function (kk) { if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === sessKey()) && del.indexOf(kk) === -1) del.push(kk); });
         del.forEach(function (x) { store.del(x); });
         store.del('nl:srs:' + u);
@@ -521,7 +521,7 @@ document.addEventListener('click', function (e) {
       break;
     }
     case 'wipe': {
-      if (!ui.wipeArmed) { ui.wipeArmed = true; renderSettings(); clearTimeout(ui.armTimer); ui.armTimer = setTimeout(function () { ui.wipeArmed = false; renderSettings(); }, 4000); break; }
+      if (!ui.wipeArmed) { ui.wipeArmed = true; renderSettings(); clearTimeout(ui.wipeTimer); ui.wipeTimer = setTimeout(function () { ui.wipeArmed = false; renderSettings(); }, 4000); break; }
       try {
         var all = [];
         for (var j = 0; j < localStorage.length; j++) { var kj = localStorage.key(j); if (kj && kj.indexOf('nl:') === 0) all.push(kj); }
