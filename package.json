@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "build": "python3 build.py",
-    "test": "node test/run.js && node test/srs.test.js && node test/insights.test.js && node test/session.test.js && node test/audit.js --assert",
+    "test": "node test/run.js && node test/srs.test.js && node test/insights.test.js && node test/session.test.js && node test/explore.test.js && node test/audit.js --assert",
     "lint": "node test/lint.js",
     "explain": "node test/explain.js",
     "check": "python3 build.py && git diff --exit-code index.html && npm test && npm run lint"
