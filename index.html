@@ -4882,27 +4882,46 @@ function slotWire(slot) {
   slot.wired = true;
   slot.pending = [];
   slot.infos = {};
+  slot.byDepth = {};
   slot.mpv = 1;
   slot.w.onerror = function () { slotKill(slot, 'engine crashed'); };
   slot.w.onmessage = function (e) {
     var m = String(e.data);
     if (m.indexOf('info ') === 0 && m.indexOf(' score ') > 0 && m.indexOf('bound') === -1
         && (m.indexOf(' pv ') > 0 || m.indexOf('score mate 0') > 0)) {
-      var k = m.match(/ multipv (\d+)/);
+      var k = m.match(/ multipv (\d+)/), dm = m.match(/ depth (\d+)/), d = dm ? +dm[1] : 0;
       slot.infos[k ? +k[1] : 1] = m;
+      (slot.byDepth[d] = slot.byDepth[d] || {})[k ? +k[1] : 1] = m;
     }
     if (m.indexOf('bestmove') === 0) {
       var job = slot.pending.shift();
       slot.guardAt = Date.now();
-      var infos = slot.infos;
-      slot.infos = {};
+      var infos = slot.infos, byDepth = slot.byDepth;
+      slot.infos = {}; slot.byDepth = {};
       if (!job) return;
       var flip = job.fen.split(' ')[1] !== 'w';
-      var lines = Object.keys(infos).sort(function (a, b) { return a - b; }).map(function (k2) {
-        var r = parseInfo(infos[k2]);
+      /* several lines: a search stopped mid-depth leaves some lines from the
+         last depth and some from the one before, which can repeat a move.
+         The lines are taken from the deepest depth that reported them all,
+         after the newest best line, and a first move is never listed twice */
+      var want = Object.keys(infos).length, full = null;
+      Object.keys(byDepth).map(Number).sort(function (a, b) { return b - a; }).some(function (d2) {
+        if (Object.keys(byDepth[d2]).length >= want) { full = byDepth[d2]; return true; }
+        return false;
+      });
+      var blk = full || infos, raw = infos[1] ? [infos[1]] : [];
+      Object.keys(blk).sort(function (a, b) { return a - b; }).forEach(function (k2) { raw.push(blk[k2]); });
+      var seen = {};
+      var lines = raw.map(function (txt) {
+        var r = parseInfo(txt);
         if (flip) { r.cp = -r.cp; if (r.mate != null) r.mate = -r.mate; }
         if (r.mate === 0) r.mate = null;   /* already mated: the +-1500 says who */
         return r;
+      }).filter(function (r) {
+        var f = r.pv[0] || '';
+        if (seen[f]) return false;
+        seen[f] = 1;
+        return true;
       });
       var top = lines[0] || { cp: 0, mate: null, pv: [] };
       var best = m.split(' ')[1];
