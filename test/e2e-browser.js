@@ -93,6 +93,7 @@
     c = await until(() => { const x = T.card(); return (x.phase === 'guess' || x.phase === 'check') && x.idx === at + 1 ? x : null; }, 30000);
     ok('Next opens the second card', !!c);
     if (c && c.phase === 'check') {
+      await sleep(500);   /* taps in a card's first half second are ignored (double-tap guard) */
       click('[data-act=checkShow]');
       const d2 = await until(() => { const x = T.card(); return x.phase === 'done' ? x : null; }, 8000);
       ok('Show me on the check counts as missed and answers the card', !!d2 && d2.result === 'fail', d2 && d2.result);

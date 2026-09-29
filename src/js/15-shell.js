@@ -80,7 +80,10 @@ function findUser(name) {
     if (btn) { btn.textContent = 'Find my mistakes'; btn.classList.remove('btn-off'); }
     if (!box) return;
     var found = res.filter(function (f) { return f && !f.err; }), silent = res.some(function (f) { return f && f.err; });
-    /* one site has it and the other surely does not: go */
+    /* one site has it and the other surely does not, or only one of the
+       two accounts has rated games: go */
+    var played = found.filter(function (f) { return f.best; });
+    if (found.length === 2 && played.length === 1 && !silent) found = played;
     if (found.length === 1 && !silent) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
     if (!found.length && !silent) {
       box.innerHTML = '<p class="which-none">Neither chess.com nor lichess has an account called ' + esc(name) + '. Check the spelling.</p>';
@@ -94,7 +97,7 @@ function findUser(name) {
     var offer = found.concat(silent && found.length === 1 ? [{ site: found[0].site === 'chesscom' ? 'lichess' : 'chesscom', best: null }] : []);
     box.innerHTML = '<p class="which-q">Which one is you?</p><div class="which-row">' + offer.map(function (f) {
       return '<button class="btn-line" data-act="pickSite" data-k="' + f.site + '" data-n="' + esc(name) + '">' + (f.site === 'chesscom' ? 'chess.com' : 'lichess')
-        + (f.best && f.best.r ? ' · ' + f.best.p + ' ' + f.best.r : '') + '</button>';
+        + (f.best && f.best.r ? ' · ' + f.best.p + ' ' + f.best.r : (!f.best && !silent ? ' · no rated games' : '')) + '</button>';
     }).join('') + '</div>';
   });
 }
