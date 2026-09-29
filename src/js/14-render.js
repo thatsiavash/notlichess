@@ -501,8 +501,11 @@ function renderCard() {
   }
   var newCard = !a.shown;
   a.shown = true;
-  el('ctop').innerHTML = sessionBarHtml(ss, a) + cardTaskHtml(a);
-  makeFocusable(el('ctop'));
+  /* a focused control in the top bar keeps focus across the repaint */
+  var ct = el('ctop'), tIdx = [].indexOf.call(ct.querySelectorAll('[data-act], a[href]'), document.activeElement);
+  ct.innerHTML = sessionBarHtml(ss, a) + cardTaskHtml(a);
+  makeFocusable(ct);
+  if (tIdx !== -1 && !newCard) { var tb = ct.querySelectorAll('[data-act], a[href]')[tIdx]; if (tb) tb.focus({ preventScroll: true }); }
   renderCardBoard(a);
   /* keyboard focus stays on the same control across a repaint, and the
      verdict is read out to screen readers */

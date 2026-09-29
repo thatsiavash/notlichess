@@ -6666,17 +6666,30 @@ var XP_MISSED = ['missedMaterial', 'missedTactic', 'mateMissed'];
 function sideCp(line, w) { return w ? line.cp : -line.cp; }
 /* the material a line wins or gives up for the mover, in words, once it
    settles: "wins the rook", "gives up the exchange" */
+function xpSameKind(p1, p2) { return p1 === p2 || ((p1 === 'N' || p1 === 'B') && (p2 === 'N' || p2 === 'B')); }
 function xpMaterialWords(c, tier) {
   var g = c.gameLine;
   if (!g) return '';
   var up = Math.min(g.nodes.length - 1, c.gSettle != null ? c.gSettle : g.nodes.length - 1);
   /* a line that promotes is not counted in pieces */
   for (var pk = 0; pk <= up; pk++) if (g.nodes[pk] && g.nodes[pk].move && g.nodes[pk].move.promo) return '';
+  /* the line stops with material still in motion: say nothing about it */
+  if (up === g.nodes.length - 1 && enPrise(g.nodes[up].after)) return '';
   var mine = [], theirs = [];
   for (var i = 0; i <= up; i++) {
     var n = g.nodes[i];
     if (!n || !n.captured) continue;
     (n.pov ? theirs : mine).push(pType(n.captured));
+    /* taken by a piece of the same kind that the mover takes back on that
+       square a few moves later, with only quiet moves between: a trade */
+    if (n.pov && xpSameKind(n.piece, pType(n.captured))) {
+      for (var k = i + 1; k < g.nodes.length && k <= i + 4; k++) {
+        var m2 = g.nodes[k];
+        if (!m2 || !m2.move || m2.move.from === n.move.to) break;
+        if (m2.move.to === n.move.to) { if (k > up && !m2.pov && m2.captured) mine.push(pType(m2.captured)); break; }
+        if (m2.captured) break;
+      }
+    }
   }
   var cancel = function (cross) {
     for (var x = mine.length - 1; x >= 0; x--) {
@@ -6738,7 +6751,7 @@ function xpBigLoss(c) {
   var g = c.gameLine, lost = xpLostPieces(c), big = null;
   if (!g || !lost) return null;
   lost.forEach(function (l) { if (!big || MOTIF_VAL[l.p] > MOTIF_VAL[big.p]) big = l; });
-  if (!big || MOTIF_VAL[big.p] < 5 || c.matGame > -3) return null;
+  if (!big || MOTIF_VAL[big.p] < 5 || c.matGame > -3 || -c.matGame < MOTIF_VAL[big.p] - 1) return null;
   var sans = [];
   for (var k = 1; k <= big.at; k++) sans.push(sanOf(g.nodes[k].before, g.nodes[k].move));
   return { word: PIECE_WORD[big.p], line: sans.join(' ') };
@@ -6782,6 +6795,9 @@ function xpVerdict(a, ex, at) {
   if (X === best.pv[0]) {
     cat = 'best';
     var mw = xpMaterialWords(c, tier), mateIn = mateOf(best, s);
+    /* the count the rows show: the child's own search, plus this move */
+    var cm = cr && cr.lines[0] ? mateOf(cr.lines[0], s) : null;
+    if (cm != null && mateIn != null && (cm > 0) === (mateIn > 0)) mateIn = cm > 0 ? cm + 1 : cm;
     text = fitLine([C.mv.san + ' is Stockfish\'s pick.' + (mateIn > 0 ? ' It mates in ' + mateIn + '.' : mateIn < 0 ? ' It allows mate in ' + (-mateIn) + '.' : (mw ? ' It ' + mw + '.' : '')),
       C.mv.san + ' is Stockfish\'s pick.']);
   } else {
@@ -6852,7 +6868,9 @@ function sayAt(a, ex, at) {
       if (ex.nodes[i].mv && !ex.nodes[i].mv.pick) break;
     }
   }
-  var v = xpVerdict(a, ex, at);
+  var v = xpVerdict(a, ex, at), sh = xpShown(ex, n), lv = ex.res[n.key];
+  if (v && v.cat === 'little' && sh && sh[0] && lv && lv.lines[0] && sh[0].pv[0] !== lv.lines[0].pv[0])
+    return v.text.replace(/ Best reply: [^,]+, the gold arrow\./, '');
   return v ? v.text : n.mv.san + '. Stockfish is thinking…';
 }
 
@@ -6889,7 +6907,7 @@ function xpRowWords(a, n, line, best, tier) {
     if (['threat', 'hung', 'badTrade', 'material'].indexOf(c.t) !== -1 && r1 && r1.captured && c.matGame <= -1) {
       /* only when that piece stays lost once the line settles */
       var L = xpLostPieces(c) || [], p1 = pType(r1.captured);
-      if (L.some(function (l) { return l.p === p1 || ((l.p === 'N' || l.p === 'B') && (p1 === 'N' || p1 === 'B')); })) return 'loses the ' + PIECE_WORD[p1] + ' to ' + rSan;
+      if (L.some(function (l) { return l.p === p1; })) return 'loses the ' + PIECE_WORD[p1] + ' to ' + rSan;
     }
     if (XP_MISSED.indexOf(c.t) !== -1) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return 'misses ' + bs; }
   }
@@ -7436,8 +7454,11 @@ function renderCard() {
   }
   var newCard = !a.shown;
   a.shown = true;
-  el('ctop').innerHTML = sessionBarHtml(ss, a) + cardTaskHtml(a);
-  makeFocusable(el('ctop'));
+  /* a focused control in the top bar keeps focus across the repaint */
+  var ct = el('ctop'), tIdx = [].indexOf.call(ct.querySelectorAll('[data-act], a[href]'), document.activeElement);
+  ct.innerHTML = sessionBarHtml(ss, a) + cardTaskHtml(a);
+  makeFocusable(ct);
+  if (tIdx !== -1 && !newCard) { var tb = ct.querySelectorAll('[data-act], a[href]')[tIdx]; if (tb) tb.focus({ preventScroll: true }); }
   renderCardBoard(a);
   /* keyboard focus stays on the same control across a repaint, and the
      verdict is read out to screen readers */

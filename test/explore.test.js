@@ -256,6 +256,26 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
     eq(got[0], 'd2d4', 'the best move leads');
   });
 
+  await test('a queen given for two pieces is not called a lost queen; a mate count matches the rows', () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    const verdict = (fen, x, bestLine, childLine, byYou) => JSON.parse(A.ev(`(function () {
+      var a = ui.session.active, st = stateFromFen('${fen}');
+      a.explore = { root: { line: 'best', idx: -1 }, nodes: [xpNode(st, null, null)], at: 0, sel: -1, res: {}, hot: 0, k: 3, say: {}, flash: null };
+      var ex = a.explore, P = ex.nodes[0], m = uciToMove(st, '${x}'), c = cloneState(st); applyMove(c, m);
+      ex.nodes.push(xpNode(c, [m.from, m.to], { san: sanOf(st, m), uci: '${x}', byYou: ${byYou}, pick: false, ply: xpPly(st) }));
+      ex.at = 1;
+      ex.res[P.key] = { step: 2, lines: [${JSON.stringify(bestLine)}] };
+      ex.res[ex.nodes[1].key] = { step: 2, lines: [${JSON.stringify(childLine)}] };
+      return JSON.stringify(xpVerdict(a, ex, 1));
+    })()`));
+    const b6 = verdict('r1b1k2r/ppq1bpp1/2pp1n1p/4n3/3NPP2/PBN4P/1PPB2P1/R2QK2R b KQkq f3 0 12', 'b7b6',
+      { cp: 60, mate: null, pv: ['e5g6'] }, { cp: 372, mate: null, pv: 'f4e5 d6e5 d4c6 c7c6 b3a4 c6a4 c3a4 f6e4 e1g1 e4d2'.split(' ') }, false);
+    ok(!/loses the queen/.test(b6.text), b6.text);
+    /* a pick whose line mates: the count follows the child's own search plus the move itself */
+    const mate = verdict('6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1', 'a1a8', { cp: 1500, mate: 3, pv: ['a1a8'] }, { cp: 1500, mate: 1, pv: ['g8h8', 'a8a7'] }, true);
+    ok(/It mates in 2\./.test(mate.text) || /^Ra8/.test(mate.text), mate.text);
+  });
+
   await test("the opponent's voice keeps the learner as 'you' in 'is better'", () => {
     eq(C.themVoice('Nb5 lets your winning position slip: after Na6 Black is better.', 'White', 'Black'),
       "Nb5 lets White's winning position slip: after Na6 you are better.", 'voice');
