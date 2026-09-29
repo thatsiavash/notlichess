@@ -1,6 +1,3 @@
-# Parked here until the thatsiavash GitHub token has the workflow scope.
-# To enable CI: gh auth refresh -h github.com -s workflow (as thatsiavash), then
-# git mv ci/check.yml .github/workflows/check.yml, commit and push.
 name: check
 on: [push, pull_request]
 jobs:
