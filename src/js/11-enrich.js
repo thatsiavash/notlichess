@@ -26,6 +26,9 @@ function thinBoard(st) {
 /* a line that ends before the position settles is searched again from its
    last position; 8 plies at most */
 function extendLine(st0, pv, nodes, ctx, tag) {
+  /* a line that ends in mate is kept to the mate, up to 20 plies */
+  var full = playUci(st0, pv.slice(0, 20)), fe = full.states[full.states.length - 1];
+  if (full.uci.length > 8 && fe && !legalMoves(fe).length && checkedKingSq(fe) != null) return Promise.resolve(full.uci);
   var played = playUci(st0, pv.slice(0, 8));
   var endSt = played.states.length ? played.states[played.states.length - 1] : st0;
   if (played.uci.length >= 6 || !legalMoves(endSt).length) return Promise.resolve(played.uci);

@@ -4972,6 +4972,9 @@ function thinBoard(st) {
 /* a line that ends before the position settles is searched again from its
    last position; 8 plies at most */
 function extendLine(st0, pv, nodes, ctx, tag) {
+  /* a line that ends in mate is kept to the mate, up to 20 plies */
+  var full = playUci(st0, pv.slice(0, 20)), fe = full.states[full.states.length - 1];
+  if (full.uci.length > 8 && fe && !legalMoves(fe).length && checkedKingSq(fe) != null) return Promise.resolve(full.uci);
   var played = playUci(st0, pv.slice(0, 8));
   var endSt = played.states.length ? played.states[played.states.length - 1] : st0;
   if (played.uci.length >= 6 || !legalMoves(endSt).length) return Promise.resolve(played.uci);
@@ -5473,8 +5476,8 @@ function cardLines(a) {
   /* the evaluation after the game move, from the deeper look or the scan */
   var ea = b.ea != null ? b.ea : (b.ma != null ? (b.ma > 0 ? 1500 : -1500) : cpFromWin(b.wa));
   var out = {
-    best: mk(best.slice(0, a.cls && a.cls.mateFor ? 12 : Math.max(2, (a.settleBest || 6) + 2)), p, b.eb),
-    refute: mk([a.playedUci].concat(unpackUci(b.ru)).slice(0, a.cls && a.cls.mateAgainst ? 13
+    best: mk(best.slice(0, a.cls && a.cls.mateFor ? 20 : Math.max(2, (a.settleBest || 6) + 2)), p, b.eb),
+    refute: mk([a.playedUci].concat(unpackUci(b.ru)).slice(0, a.cls && a.cls.mateAgainst ? 21
       : Math.max(3, Math.max(a.settleGame || 6, a.cls && a.cls.lossAt || 0) + 3)), p, ea)
   };
   /* what really happened: the game's own moves, evaluated by the scan */

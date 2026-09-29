@@ -32,8 +32,8 @@ function cardLines(a) {
   /* the evaluation after the game move, from the deeper look or the scan */
   var ea = b.ea != null ? b.ea : (b.ma != null ? (b.ma > 0 ? 1500 : -1500) : cpFromWin(b.wa));
   var out = {
-    best: mk(best.slice(0, a.cls && a.cls.mateFor ? 12 : Math.max(2, (a.settleBest || 6) + 2)), p, b.eb),
-    refute: mk([a.playedUci].concat(unpackUci(b.ru)).slice(0, a.cls && a.cls.mateAgainst ? 13
+    best: mk(best.slice(0, a.cls && a.cls.mateFor ? 20 : Math.max(2, (a.settleBest || 6) + 2)), p, b.eb),
+    refute: mk([a.playedUci].concat(unpackUci(b.ru)).slice(0, a.cls && a.cls.mateAgainst ? 21
       : Math.max(3, Math.max(a.settleGame || 6, a.cls && a.cls.lossAt || 0) + 3)), p, ea)
   };
   /* what really happened: the game's own moves, evaluated by the scan */
