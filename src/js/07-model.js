@@ -67,7 +67,8 @@ function relabelLater() {
     data.games.forEach(function (g) {
       if (!g.bl || !g.mv || n >= 120) return;
       g.bl.forEach(function (b) {
-        if (n < 120 && !b.x && b.bu && (b.cv || 1) < CLASSIFY_V) { classifyEntry(b, g.mv); n++; }
+        /* one that cannot be read again keeps its name and is not retried */
+        if (n < 120 && !b.x && b.bu && (b.cv || 1) < CLASSIFY_V) { classifyEntry(b, g.mv); if ((b.cv || 1) < CLASSIFY_V) b.cv = CLASSIFY_V; n++; }
       });
     });
     if (n) { modelDirty(); scheduleSave(); relabelTimer = setTimeout(step, 40); }

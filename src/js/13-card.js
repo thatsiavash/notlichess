@@ -220,8 +220,10 @@ function gradeMove(m) {
   a.strongerOffer = false;
   a.attempts++;
   store.set('nl:marksSeen', true);
-  a.animMove = a.tapped ? [m.from, m.to] : null;
-  a.tapAnim = a.animMove;
+  /* the slide is kept until the move is actually drawn: a replayed game
+     move or a refused one is never animated */
+  a.tapAnim = a.tapped ? [m.from, m.to] : null;
+  a.animMove = null;
   a.tapped = false;
   if (a.phase === 'check') { checkStep(m, u); return; }
   /* inside a forcing line: later steps must follow it (or mate) */
@@ -280,7 +282,7 @@ function stepLine(m, u) {
   var san = sanOf(a.st, m);
   applyMove(a.st, m);
   a.lastMove = [m.from, m.to];
-  a.animMove = a.tapAnim || null;
+  a.animMove = a.tapAnim || null; a.tapAnim = null;
   a.solIdx++;
   snd('good');
   if (a.solIdx >= a.sol.length) { solved(null, null, null, true); return; }
@@ -346,6 +348,8 @@ function checkMove(m, u, inLine) {
   a.phase = 'checking';
   a.ghostMove = [m.from, m.to];
   a.checking = sanOf(a.st, m);
+  /* the checking frame draws the move: it slides there, once */
+  a.animMove = a.tapAnim; a.tapAnim = null;
   renderCard();
   var cardKey = a.key, fen = stateFen(a.st), sign = myPov(it) ? 1 : -1;
   var tok = a.checkTok = (a.checkTok || 0) + 1;
@@ -446,7 +450,8 @@ function miss(m, u, info) {
     /* a wrong try is told in words at every level: the numbers belong to
        the close and the found states */
     why = concrete ? c.sentences.short.replace(/ \(\d+% to \d+%\)/g, '')
-      : san + ' does not lose anything, but there is something stronger here.';
+      : (info.win >= winPct(it.b.eb) - 10 ? san + ' does not lose anything, but there is something stronger here.'
+        : 'After ' + san + ' ' + standingWords(info.win) + '. There is something stronger here.');
   }
   why = why || san + ' does not work.';
   a.lastTry = san;
@@ -489,7 +494,7 @@ function playPunish(ucis, missNo) {
 }
 function solved(m, u, alt, lineDone) {
   var ss = ui.session, a = ss.active;
-  if (m) { applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = a.tapAnim || null; }
+  if (m) { applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = a.tapAnim || null; a.tapAnim = null; }
   a.alt = alt && u !== a.bestUci ? alt : null;
   var result = a.misses ? 'retry' : ((a.hints || a.foundGood) ? 'hint' : 'first');
   finishCard(result);
@@ -724,7 +729,8 @@ function exploreClick(sq) {
     if (!a2 || a2.key !== cardKey || !a2.explore || stateFen(a2.explore.st) !== fen) return;
     a2.explore.ev = r.cp * (myPov(a2.it) ? 1 : -1);
     a2.explore.reply = r.bestUci;
-    renderCard();
+    /* a cached answer arrives at once: let the slide finish first */
+    setTimeout(renderCard, 260);
   }, function () {});
 }
 function startExplore() {

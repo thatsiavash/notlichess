@@ -402,7 +402,7 @@ function nextScanTarget() {
       var pf = perfs[(fStart + fs) % perfs.length];
       for (i = 0; i < data.games.length; i++) {
         g = data.games[i];
-        if (g.perf === pf && g.mv && scannable(g) && free(g) && (pass === 1 || g.res === 'loss')) {
+        if (g.perf === pf && g.mv && scannable(g) && free(g) && (pass === 1 || g.res !== 'win')) {
           scanState.frr = (fStart + fs + 1) % perfs.length;
           return g;
         }

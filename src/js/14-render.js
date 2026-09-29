@@ -450,7 +450,7 @@ function renderCard() {
     /* a line played or stepped forward slides its move; the solving move
        slides once, on the first answered frame */
     var lv = a.lastView, L1 = a.lines[a.view.line];
-    if (a.animMove) opts.anim = a.animMove;
+    if (sameMove(a.animMove, view.last)) opts.anim = a.animMove;
     else if (lv && lv.line === a.view.line && a.view.idx === lv.idx + 1 && a.view.idx >= 0 && L1 && L1.moves[a.view.idx])
       opts.anim = [L1.moves[a.view.idx].from, L1.moves[a.view.idx].to];
     a.lastView = { line: a.view.line, idx: a.view.idx };
@@ -474,7 +474,7 @@ function renderCard() {
     opts.shapes = a.shapes;
     if (a.phase === 'guess' && a.solIdx === 0 && !a.explore) opts.bad = [a.played.from, a.played.to];
     if (a.hints >= 2 && a.phase === 'guess') opts.hint = (a.sol && a.solIdx > 0 ? uciToMove(a.st, a.sol[a.solIdx]) || a.best : a.best).from;
-    if (a.animMove) opts.anim = a.animMove;
+    if (sameMove(a.animMove, view.last)) opts.anim = a.animMove;
   }
   opts.mark = view.last;
   opts.label = (view.st.w ? 'White' : 'Black') + ' to move. You played ' + sanOf(a.pre, a.played) + ' in the game.';
@@ -549,6 +549,8 @@ function cardTaskHtml(a) {
   }
   return '<div class="card-task' + cls + '"' + act + ' aria-hidden="true">' + txt + '</div>';
 }
+/* a slide only for the move the board shows as its last one */
+function sameMove(x, y) { return !!(x && y && x[0] === y[0] && x[1] === y[1]); }
 function releaseAnims(root) {
   var ps = root.querySelectorAll('.anim-piece');
   if (!ps.length) return;
@@ -601,8 +603,11 @@ function ctxHtml(a, answered) {
   if (b.c != null) bits.push(clockWords(b.c) + ' left');
   /* a game drill keeps its game one tap away */
   var ss0 = ui.session;
-  if (ss0 && ss0.spec && ss0.spec.type === 'game') { bits.splice(1, 2); bits.push('<a href="' + gameHref(g.id, g.color, b.p) + '">Open the game ↗</a>'); }
+  var drill = ss0 && ss0.spec && ss0.spec.type === 'game';
+  if (drill) bits.splice(1, 2);
   var h = '<p class="ctx">' + bits.join(' · ') + '</p>';
+  /* its own line, so a narrow screen never clips it */
+  if (drill) h += '<p class="ctx ctx-link"><a href="' + gameHref(g.id, g.color, b.p) + '">Open the game ↗</a></p>';
   if (answered) return h;
   var tags = [];
   if (b.d) tags.push('This move ' + decisiveWords(g, b));

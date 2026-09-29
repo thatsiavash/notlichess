@@ -45,18 +45,24 @@ function renderFirstVisit(prefill) {
 }
 /* the name on both sites at once: one found, go; both, ask which; neither,
    say so. A site that does not answer counts as not found there */
+var findSeq = 0;
 function findUser(name) {
   name = String(name || '').trim();
   if (!name) return;
   if (!/^[a-zA-Z0-9_-]{2,30}$/.test(name)) { notice('That is not a chess.com or lichess username: letters, numbers, underscore and hyphen only.'); return; }
+  /* only the latest lookup acts: an earlier one answering late is ignored */
+  var seq = ++findSeq;
   var btn = el('findBtn'), box = el('whichSite');
   if (btn) { btn.textContent = 'Looking…'; btn.classList.add('btn-off'); }
+  if (box) box.innerHTML = '';
+  /* only a real 404 means "no account there"; anything else is "no answer" */
+  var failed = function (e) { return e && e.code === 404 ? null : { err: true }; };
   var li = getJSON('/api/user/' + encodeURIComponent(name), { quiet: true }).then(function (u) {
     if (!u || u.disabled || u.closed) return null;
     var best = null;
     ['rapid', 'blitz', 'bullet', 'classical'].forEach(function (p) { var pf = u.perfs && u.perfs[p]; if (pf && pf.games && (!best || pf.games > best.games)) best = { p: p, games: pf.games, r: pf.rating }; });
     return { site: 'lichess', name: u.username || name, best: best };
-  }, function () { return null; });
+  }, failed);
   var cc = ccJSON('/player/' + encodeURIComponent(name), { quiet: true }).then(function (p) {
     if (!p) return null;
     return ccJSON('/player/' + encodeURIComponent(name) + '/stats', { quiet: true }).then(function (st) {
@@ -67,17 +73,27 @@ function findUser(name) {
       });
       return { site: 'chesscom', name: p.username || name, best: best };
     }, function () { return { site: 'chesscom', name: p.username || name, best: null }; });
-  }, function () { return null; });
+  }, failed);
   Promise.all([cc, li]).then(function (res) {
+    if (seq !== findSeq) return;
+    box = el('whichSite'); btn = el('findBtn');
     if (btn) { btn.textContent = 'Find my mistakes'; btn.classList.remove('btn-off'); }
-    var found = res.filter(Boolean);
-    if (found.length === 1) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
-    if (!found.length) {
-      if (box) box.innerHTML = '<p class="which-none">Neither chess.com nor lichess has an account called ' + esc(name) + '. Check the spelling.</p>';
+    if (!box) return;
+    var found = res.filter(function (f) { return f && !f.err; }), silent = res.some(function (f) { return f && f.err; });
+    /* one site has it and the other surely does not: go */
+    if (found.length === 1 && !silent) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
+    if (!found.length && !silent) {
+      box.innerHTML = '<p class="which-none">Neither chess.com nor lichess has an account called ' + esc(name) + '. Check the spelling.</p>';
       return;
     }
-    if (box) box.innerHTML = '<p class="which-q">Which one is you?</p><div class="which-row">' + found.map(function (f) {
-      return '<button class="btn-line" data-act="pickSite" data-k="' + f.site + '">' + (f.site === 'chesscom' ? 'chess.com' : 'lichess')
+    if (!found.length) {
+      box.innerHTML = '<p class="which-none">Could not reach chess.com or lichess. Check your connection and try again.</p>';
+      return;
+    }
+    /* both, or one while the other did not answer: ask */
+    var offer = found.concat(silent && found.length === 1 ? [{ site: found[0].site === 'chesscom' ? 'lichess' : 'chesscom', best: null }] : []);
+    box.innerHTML = '<p class="which-q">Which one is you?</p><div class="which-row">' + offer.map(function (f) {
+      return '<button class="btn-line" data-act="pickSite" data-k="' + f.site + '" data-n="' + esc(name) + '">' + (f.site === 'chesscom' ? 'chess.com' : 'lichess')
         + (f.best && f.best.r ? ' · ' + f.best.p + ' ' + f.best.r : '') + '</button>';
     }).join('') + '</div>';
   });
@@ -416,7 +432,7 @@ document.addEventListener('click', function (e) {
     }
     case 'setUser': setUser(el('firstUser') ? el('firstUser').value : ''); break;
     case 'findUser': findUser(el('firstUser') ? el('firstUser').value : ''); break;
-    case 'pickSite': { var nm2 = el('firstUser') ? el('firstUser').value : ''; cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm2); break; }
+    case 'pickSite': { var nm2 = t.getAttribute('data-n') || (el('firstUser') ? el('firstUser').value : ''); cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm2); break; }
     case 'useOtherSite': { var nm = cfg.user; cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm); break; }
     case 'logout': {
       if (k === 'confirm' && !ui.logoutArmed) {
