@@ -87,6 +87,32 @@
     ok('tapping the red line plays your game move', T.card().view.line === 'refute');
     ok('the red arrow shows alone at the start of its line', !!$('#bwrap .bad-arrow') && !$('#bwrap .good-arrow'));
 
+    /* ── exploring: the invite, three rows, one arrow, a sentence, the way back ─ */
+    const inv = $('#cpanel [data-act=explore]');
+    ok('the answered card invites you to test a move', !!inv && /^(Why .+\? Try another (white|black) move and Stockfish answers\.|Move any piece to test an idea\. Stockfish answers\.)$/.test(inv.textContent.trim()), inv && inv.textContent);
+    ok('the answered board is still static before exploring', $('#bwrap').classList.contains('static'));
+    if (inv) inv.click();
+    const xr = await until(() => { const x = T.explore(); return x && x.lines && x.lines.length ? x : null; }, 10000);
+    ok('exploring shows Stockfish\'s best moves', !!xr && document.querySelectorAll('#xp .xp-row:not(.skel)').length >= 2);
+    ok('exploring makes the board live', !$('#bwrap').classList.contains('static'));
+    ok('rows say your winning chances or words, never a pawn number', !/[+-]\d+\.\d/.test(text('#xp')) && (T.ev('ui.session.active.tier') === 1 || /You \d{1,2}%|mate in \d/.test(text('#xp .xp-rows'))), text('#xp .xp-rows'));
+    ok('one arrow at a time while exploring', document.querySelectorAll('#bwrap .ghost-arrow, #bwrap .good-arrow, #bwrap .bad-arrow').length <= 1);
+    if (xr) {
+      const legal = T.ev(`(function () { var ex = ui.session.active.explore; return legalMoves(ex.st).map(moveUci); })()`);
+      const tryU = legal.filter((u) => xr.lines.map((l) => l.pv[0]).indexOf(u) === -1)[0] || legal[0];
+      T.play(tryU);
+      const said = await until(() => { const x = T.explore(); return x && x.at === 1 && !/thinking/.test(x.say) ? x.say : null; }, 15000);
+      ok('a tried move gets one sentence', !!said && said.length <= 80 && !/\u2014/.test(said), said);
+      await sleep(3000);
+      ok('the sentence does not change once written', T.explore() && T.explore().say === said, T.explore() && T.explore().say);
+      click('[data-act=lineBack]');
+      await sleep(200);
+      ok('‹ steps back inside the exploration', T.explore() && T.explore().at === 0);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(200);
+      ok('Esc returns to the lesson', !T.explore() && !!$('.tline.tl-good'));
+    }
+
     /* ── the next card: the game move again, then misses and escalation ─ */
     const at = T.card().idx;
     click('[data-act=next]');
@@ -108,15 +134,28 @@
       await until(() => T.card().phase === 'guess', 8000);
       const others = legalOther(c);
       ok('there are other legal moves to try', others.length >= 2, String(others.length));
-      T.play(others[0]);
-      await until(() => T.card().misses === 2 || T.card().phase === 'done', 15000);
+      /* a try that is nearly as good counts as close, not as a miss: try another */
+      const tried = [];
+      for (let oi = 0; oi < Math.min(4, others.length); oi++) {
+        await until(() => T.card().phase === 'guess', 8000);
+        if (T.card().misses >= 2) break;
+        tried.push(others[oi]);
+        T.play(others[oi]);
+        await until(() => T.card().misses === 2 || T.card().phase === 'done' || (T.card().phase === 'guess' && !!$('.verdict')), 15000);
+        if (T.card().misses === 2 || T.card().phase === 'done') break;
+      }
+      await until(() => T.card().misses === 2 || T.card().phase === 'done', 6000);
       const c2 = T.card();
       if (c2.phase !== 'done') {
         ok('the second miss brings a hint', c2.hints >= 1 && !!$('.hint-note'), 'hints ' + c2.hints);
-        await until(() => T.card().phase === 'guess', 8000);
-        const more = legalOther(c).filter((u) => u !== others[0]);
-        T.play(more[0]);
-        const c3 = await until(() => { const x = T.card(); return x.phase === 'done' ? x : null; }, 20000);
+        const more = legalOther(c).filter((u) => tried.indexOf(u) === -1);
+        let c3 = null;
+        for (let mi = 0; mi < Math.min(4, more.length) && !c3; mi++) {
+          await until(() => T.card().phase === 'guess' || T.card().phase === 'done', 8000);
+          if (T.card().phase === 'done') { c3 = T.card(); break; }
+          T.play(more[mi]);
+          c3 = await until(() => { const x = T.card(); return x.phase === 'done' ? x : null; }, 12000);
+        }
         ok('the third miss shows the answer', !!c3 && c3.result === 'fail', c3 && c3.result);
         ok('a revealed card says what the answer is', /answer is/i.test(text('#cpanel')));
       } else ok('a close alternative was accepted as solved', c2.result !== 'fail');

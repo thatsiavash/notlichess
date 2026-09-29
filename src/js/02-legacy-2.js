@@ -195,7 +195,7 @@ function boardSvg(st, opts) {
       + ' marker-end="url(#' + id + ')" style="pointer-events:none"/>';
   };
   /* the advice: a gold arrow tracing the move the text is talking about */
-  if (opts.ghost) out += arrow(opts.ghost[0], opts.ghost[1], 'rgba(182,130,53,.85)', 'gold', '');
+  if (opts.ghost) out += arrow(opts.ghost[0], opts.ghost[1], 'rgba(182,130,53,.85)', 'gold', 'ghost-arrow');
   /* the better move, green; never on the board together with the red one */
   if (opts.good) out += arrow(opts.good[0], opts.good[1], 'rgba(61,139,58,.92)', 'good', 'good-arrow');
   /* the mistake itself: a red arrow tracing the move that was played */
