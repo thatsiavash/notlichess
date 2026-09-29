@@ -291,7 +291,7 @@ function stepLine(m, u) {
   a.phase = 'reply';
   /* my moves sit at even offsets of the line: the next one is number n */
   a.hintAfter = false;
-  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (Math.floor(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.', panel: '✓ ' + esc(san) + '.' };
+  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (Math.ceil(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.', panel: '✓ ' + esc(san) + '.' };
   renderCard();
   var cardKey = a.key;
   setTimeout(function () {
@@ -454,7 +454,7 @@ function miss(m, u, info) {
        the close and the found states */
     why = concrete ? c.sentences.short.replace(/ \(\d+% to \d+%\)/g, '')
       : (info.win >= winPct(it.b.eb) - 10 ? san + ' does not lose anything, but there is something stronger here.'
-        : 'After ' + san + ' ' + standingWords(info.win) + '. There is something stronger here.');
+        : 'After ' + san + ', ' + standingWords(info.win).replace(/^about level$/, 'it is about level') + '. There is something stronger here.');
   }
   why = why || san + ' does not work.';
   a.lastTry = san;

@@ -629,7 +629,7 @@
   your move: Rxc3 takes a pawn, but Nxc3 takes your rook.
   best move: Bc4 stops Nxc3.
 #210 missedMaterial
-  your move: Qb5+ misses Black's undefended pawn on d5.
+  your move: Qb5+ misses exd6, which takes the pawn en passant.
   best move: exd6 wins the pawn.
 #211 mateMissed
   your move: Qe7# lets a forced mate slip away.

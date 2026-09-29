@@ -120,7 +120,7 @@ function renderAnalysisStatus() {
     var hero = el('hero-n'), want = hero ? +hero.getAttribute('data-n') : 0;
     if (bucket !== lastReadyShown) { lastReadyShown = bucket; renderTrain(); }
     else if (hero && want < 5 && n.ready > want && todayPlan().keys.length > want) renderTrain();
-    else if (Date.now() - lastSigCheck > 3000 && (lastSigCheck = Date.now()) && todaySig() !== lastTodaySig) renderTrain();
+    else if (n.ready >= 3 && Date.now() - lastSigCheck > 3000 && (lastSigCheck = Date.now()) && todaySig() !== lastTodaySig) renderTrain();
     else {
       if (el('finds')) el('finds').innerHTML = recentFindsHtml();
       var lg = el('latest');

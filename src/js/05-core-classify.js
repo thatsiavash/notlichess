@@ -434,12 +434,12 @@ function explainMistake(c, pre, wb, wa) {
       var f = c.allowed.fork, fm = g.nodes[f.ply];
       var targets = f.targets.map(function (s) { return PIECE_WORD[pType(fm.after.b[s])]; }).slice(0, 2);
       var forkSan = sanOf(fm.before, fm.move);
-      var tw = targets.length === 2 && targets[0] === targets[1] ? 'both ' + targets[0] + 's' : targets.join(' and ');
+      var tw = targets.length === 2 && targets[0] === targets[1] ? 'both your ' + targets[0] + 's' : 'your ' + targets.join(' and ');
       /* a fork that also takes a big piece says so */
-      var grab = fm.captured && MOTIF_VAL[pType(fm.captured)] >= 5 ? ', which takes your ' + PIECE_WORD[pType(fm.captured)] + ' and forks your ' + tw : null;
+      var grab = fm.captured && MOTIF_VAL[pType(fm.captured)] >= 5 ? ', which takes your ' + PIECE_WORD[pType(fm.captured)] + ' and forks ' + tw : null;
       gameS = f.ply <= 1
-        ? played + ' allows ' + forkSan + (grab || ', forking your ' + tw) + '.'
-        : played + ' allows ' + lineSans(g, f.ply - 1).join(' ') + ', and then ' + forkSan + (grab ? grab.replace(', which', '') : ' forks your ' + tw) + '.';
+        ? played + ' allows ' + forkSan + (grab || ', forking ' + tw) + '.'
+        : played + ' allows ' + lineSans(g, f.ply - 1).join(' ') + ', and then ' + forkSan + (grab ? grab.replace(', which', '') : ' forks ' + tw) + '.';
       break;
     }
     case 'pinAllowed': {
@@ -490,8 +490,13 @@ function explainMistake(c, pre, wb, wa) {
     case 'missedMaterial': {
       var bm = bl && bl.nodes[1], hp2 = c.missed.hangingPiece;
       var what = bm && bm.captured ? { piece: pType(bm.captured), sq: bm.move.ep >= 0 ? bm.move.ep : bm.move.to } : (hp2 ? { piece: hp2.piece, sq: hp2.sq } : null);
-      gameS = what ? played + ' misses ' + them + '\'s undefended ' + PIECE_WORD[what.piece] + ' on ' + sqWord(what.sq) + '.'
-        : played + ' misses a chance to win material.';
+      /* "undefended" only when it is: en passant, or a defended piece won
+         anyway, is told as the capture */
+      var epCap = bm && bm.captured && bm.move.ep >= 0;
+      var loose = what && !epCap && (!bm || !bm.captured || isHangingAt(bm.before.b, bm.move.to));
+      gameS = !what ? played + ' misses a chance to win material.'
+        : loose ? played + ' misses ' + them + '\'s undefended ' + PIECE_WORD[what.piece] + ' on ' + sqWord(what.sq) + '.'
+        : played + ' misses ' + bestSan + ', which takes the ' + PIECE_WORD[what.piece] + (epCap ? ' en passant' : '') + '.';
       break;
     }
     case 'missedTactic':
@@ -530,7 +535,10 @@ function explainMistake(c, pre, wb, wa) {
     var pw = PIECE_WORD[c.missed.pin.piece];
     bestS = won === 'the ' + pw ? bestSan + ' pins and wins the ' + pw + '.' : bestSan + ' pins the ' + pw + ' and wins ' + won + '.';
   }
-  else if (c.sameCapture && bestPiece) bestS = 'Take with the ' + PIECE_WORD[bestPiece] + ' instead: ' + bestSan + '.';
+  else if (c.sameCapture && bestPiece) {
+    var gp = n0 && pType(n0.before.b[n0.move.from]);
+    bestS = 'Take with the ' + (gp === bestPiece ? 'other ' : '') + PIECE_WORD[bestPiece] + (gp === bestPiece ? '' : ' instead') + ': ' + bestSan + '.';
+  }
   else if (c.matBest >= 1 && !bl.unsettled) {
     /* a first capture bigger than the net gain (a queen taken, then traded
        back) is named, so the sentence matches what the board shows */
