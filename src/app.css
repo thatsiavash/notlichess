@@ -760,5 +760,5 @@ a.lg-row{color:inherit}
   .xp-rows{margin:0}
   .xp-row{padding:0 var(--gutter)}
   .xp-back-ph{display:flex;align-items:center;min-height:44px;font-size:14px;color:var(--text-2);padding:0 var(--gutter);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
-  .card-task.xp{border-left:2px solid var(--accent);padding-left:10px;margin-left:-12px}
+  .card-task.xp-task{border-left:2px solid var(--accent);padding-left:10px;margin-left:-12px}
 }

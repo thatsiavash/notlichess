@@ -5,6 +5,16 @@
    toward the day. A session survives a reload. */
 
 function sessionSize() { return store.get('nl:sessionSize', 10); }
+/* how deeply games are read: 'std' (the default) or 'thorough' */
+function scanDepth() { return store.get('nl:scanDepth', 'std') === 'thorough' ? 'thorough' : 'std'; }
+/* the scan's search per move: Thorough reads deeper once the first three
+   positions are ready, so the first visit stays quick */
+function scanNodes() {
+  if (scanDepth() !== 'thorough') return TRIAGE_NODES;
+  var ready = 0;
+  try { ready = allMistakes().filter(trainable).length; } catch (e) { ready = 0; }
+  return ready >= 3 ? 50000 : TRIAGE_NODES;
+}
 function sessKey() { return 'nl:sess:' + playerId(); }
 function saveSession() {
   var ss = ui.session;

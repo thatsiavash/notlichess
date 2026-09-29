@@ -541,7 +541,7 @@ function altNames(a) {
 function cardTaskHtml(a) {
   var side = a.it.g.color === 'white' ? 'White' : 'Black', txt, cls = '', act = '';
   var strip = function (h) { return String(h).replace(/<span class="dim">[\s\S]*?<\/span>/g, '').replace(/<[^>]+>/g, ''); };
-  if (a.phase === 'done' && a.explore) return '<div class="card-task xp" aria-hidden="true">' + esc(sayAt(a, a.explore, a.explore.at)) + '</div>';
+  if (a.phase === 'done' && a.explore) return '<div class="card-task xp-task" aria-hidden="true">' + esc(sayAt(a, a.explore, a.explore.at)) + '</div>';
   if (a.phase === 'checking') txt = 'Checking ' + esc(a.checking || 'your move') + '…';
   else if (a.phase === 'done') {
     var best = esc(a.lines.best.san[0] || ''), why = esc(a.cls.sentences.best || '');
@@ -791,6 +791,11 @@ function xpHtml(a) {
     + '<a class="xp-back-ph" data-act="exploreOff">Back to the lesson</a></div>';
   return h;
 }
+/* the engine in words, for Settings */
+function engineLine() {
+  var name = { 'sf17.1': 'Stockfish 17.1' }[SF.build] || 'Stockfish';
+  return name + ' runs in this tab, on your device.';
+}
 /* rows that fit: never a half row above the phone bar or below the board */
 function fitRows() {
   var a = ui.session && ui.session.active, ex = a && a.explore, rowsEl = document.querySelector('#xp .xp-rows');
@@ -1032,6 +1037,11 @@ function settingsHtml() {
       + '<p>' + DAY_RULE + '</p></div>'
     + '<div class="set-block"><span class="kicker">Board</span>'
       + sw('sound', 'Sounds', cfg.sound) + '</div>'
+    + '<div class="set-block"><span class="kicker">Analysis</span><p>Reading your games</p><div class="chips">'
+      + [['std', 'Standard'], ['thorough', 'Thorough']].map(function (o) { return chip('scanDepth', o[0], o[1], scanDepth() === o[0]); }).join('')
+      + '</div><p>Thorough reads new games more deeply and finds a few more mistakes. It takes about twice as long, so leave this tab open while it reads.</p>'
+      + (scanDepth() === 'thorough' ? (function () { var rc = recheckCount(); return rc.n ? '<p class="dim">' + (rc.done >= rc.n ? 'All ' + rc.n + ' saved positions rechecked.' : 'Rechecking your saved positions: ' + rc.done + ' of ' + rc.n + '.') + '</p>' : ''; })() : '')
+      + '<p class="dim">' + engineLine() + '</p></div>'
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
       + '<p class="dim">' + gamesLine() + '</p>'

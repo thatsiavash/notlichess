@@ -807,7 +807,7 @@ a.lg-row{color:inherit}
   .xp-rows{margin:0}
   .xp-row{padding:0 var(--gutter)}
   .xp-back-ph{display:flex;align-items:center;min-height:44px;font-size:14px;color:var(--text-2);padding:0 var(--gutter);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
-  .card-task.xp{border-left:2px solid var(--accent);padding-left:10px;margin-left:-12px}
+  .card-task.xp-task{border-left:2px solid var(--accent);padding-left:10px;margin-left:-12px}
 }
 </style>
 </head>
@@ -4090,12 +4090,12 @@ function scanGame(g) {
         if (!sanApply(st, tok)) { walkOk = false; fens[i] = null; return; }
         fens[i] = i >= LAST ? null : stateFen(st);
       });
-      var CUTOFF = 64, failed = 0;
+      var CUTOFF = 64, failed = 0, scanN = scanNodes();
       function dispatch(from, to) {
         var jobs = [];
         fens.forEach(function (fen, i) {
           if (!fen || i < from || i >= to) return;
-          jobs.push(engineEval(fen, { nodes: TRIAGE_NODES }).then(function (r) {
+          jobs.push(engineEval(fen, { nodes: scanN }).then(function (r) {
             if (stale(myGen)) return;
             evals[i] = r;
           }).catch(function () { evals[i] = null; failed++; }));
@@ -4163,6 +4163,7 @@ function scanGame(g) {
         delete g.ck;                        /* the clocks did their job */
         g.scanned = 1;
         g.eng = SF.build || 'sf17.1';       /* which engine judged this game */
+        if (scanN !== TRIAGE_NODES) g.scanN = scanN; else delete g.scanN;
         scanState.dirty = (scanState.dirty || 0) + 1;
         modelDirty();
       });
@@ -5152,9 +5153,14 @@ function extendLine(st0, pv, nodes, ctx, tag) {
     return played.uci.concat((r.pv || []).slice(0, 8 - played.uci.length));
   }, function () { return played.uci; });
 }
-function deepEnrich(it, prio) {
+function deepEnrich(it, prio, bg) {
   var g = it.g, b = it.b, myGen = gen;
-  if ((b.v || 0) >= 2) return Promise.resolve(it);
+  /* Thorough: the background look searches four times deeper, and saved
+     positions checked at the standard depth are checked again */
+  var deep = !!bg && !prio && scanDepth() === 'thorough';
+  var recheck = deep && (b.v || 0) >= 2 && b.dv !== 1 && b.j !== 'l' && !b.x;
+  if ((b.v || 0) >= 2 && !recheck) return Promise.resolve(it);
+  var DN = deep ? CONFIRM_NODES : DEEP_NODES;
   if (enrichPending[it.key]) {
     /* started in the background, and now the player is waiting on it */
     if (prio && enrichCtx[it.key] && !enrichCtx[it.key].prio) { enrichCtx[it.key].prio = true; promoteTag(it.key); }
@@ -5187,20 +5193,21 @@ function deepEnrich(it, prio) {
     });
   } else {
     var r1, bar = Math.max(10, mistakeMinFor(g) - 3);
-    p = engineEval(stateFen(pre), { nodes: DEEP_NODES }, ctx.prio, { multipv: 2, tag: key })
-      .then(function (r) { r1 = r; return engineEval(stateFen(post), { nodes: DEEP_NODES }, ctx.prio, { tag: key }); })
+    p = engineEval(stateFen(pre), { nodes: DN }, ctx.prio, { multipv: 2, tag: key })
+      .then(function (r) { r1 = r; return engineEval(stateFen(post), { nodes: DN }, ctx.prio, { tag: key }); })
       .then(function (r2) {
         /* a close call on a thin board is searched again, four times deeper,
            but only in the background: a player never waits on it */
         var drop = winPct(sign * r1.cp) - winPct(sign * r2.cp);
-        if (stale(myGen) || ctx.prio || !thinBoard(pre) || drop < bar || drop >= bar + 10) return r2;
+        if (stale(myGen) || ctx.prio || deep || !thinBoard(pre) || drop < bar || drop >= bar + 10) return r2;
         return engineEval(stateFen(pre), { nodes: CONFIRM_NODES }, ctx.prio, { multipv: 2, tag: key }).then(function (r) {
           r1 = r;
           return engineEval(stateFen(post), { nodes: CONFIRM_NODES }, ctx.prio, { tag: key });
         });
       })
       .then(function (r2) {
-        if (stale(myGen) || (b.v || 0) >= 2) return;
+        if (stale(myGen) || ((b.v || 0) >= 2 && !recheck)) return;
+        if (deep) b.dv = 1;
         var wb2 = winPct(sign * r1.cp), wa2 = winPct(sign * r2.cp);
         /* a mistake the deeper look does not confirm never becomes a card,
            nor does a slip in a game that was already lost and not decided by it */
@@ -5249,7 +5256,27 @@ function enrichTargets() {
       if ((it.b.v || 0) < 2 && out.indexOf(it) === -1 && !enrichState.failed[it.key]) out.push(it);
     });
   }
+  /* Thorough, with nothing new to look at: saved positions checked at the
+     standard depth are checked again, never one in today's session */
+  if (!out.length && scanDepth() === 'thorough') {
+    var inSession = {}, ss = ui.session || savedSession();
+    if (ss && ss.keys) ss.keys.forEach(function (k) { inSession[k] = 1; });
+    allMistakes().forEach(function (it) {
+      if (out.length < 1 && trainable(it) && (it.b.v || 0) >= 2 && it.b.dv !== 1 && it.b.j !== 'l' && !it.b.x
+          && !inSession[it.key] && !enrichState.failed[it.key]) out.push(it);
+    });
+  }
   return out;
+}
+/* the recheck, counted for Settings */
+function recheckCount() {
+  var n = 0, done = 0;
+  allMistakes().forEach(function (it) {
+    if (!trainable(it) || it.b.j === 'l') return;
+    n++;
+    if (it.b.dv === 1) done++;
+  });
+  return { n: n, done: done };
 }
 function autoEnrich() {
   if (!cfg.user || enrichState.running || SF.state === 'failed') return;
@@ -5259,7 +5286,7 @@ function autoEnrich() {
   var next = enrichTargets()[0];
   if (!next) return;
   enrichState.running = true;
-  deepEnrich(next, false).then(function () {
+  deepEnrich(next, false, true).then(function () {
     enrichState.running = false;
     enrichState.done++;
     scheduleSave();
@@ -5274,6 +5301,16 @@ function autoEnrich() {
    toward the day. A session survives a reload. */
 
 function sessionSize() { return store.get('nl:sessionSize', 10); }
+/* how deeply games are read: 'std' (the default) or 'thorough' */
+function scanDepth() { return store.get('nl:scanDepth', 'std') === 'thorough' ? 'thorough' : 'std'; }
+/* the scan's search per move: Thorough reads deeper once the first three
+   positions are ready, so the first visit stays quick */
+function scanNodes() {
+  if (scanDepth() !== 'thorough') return TRIAGE_NODES;
+  var ready = 0;
+  try { ready = allMistakes().filter(trainable).length; } catch (e) { ready = 0; }
+  return ready >= 3 ? 50000 : TRIAGE_NODES;
+}
 function sessKey() { return 'nl:sess:' + playerId(); }
 function saveSession() {
   var ss = ui.session;
@@ -7292,7 +7329,7 @@ function altNames(a) {
 function cardTaskHtml(a) {
   var side = a.it.g.color === 'white' ? 'White' : 'Black', txt, cls = '', act = '';
   var strip = function (h) { return String(h).replace(/<span class="dim">[\s\S]*?<\/span>/g, '').replace(/<[^>]+>/g, ''); };
-  if (a.phase === 'done' && a.explore) return '<div class="card-task xp" aria-hidden="true">' + esc(sayAt(a, a.explore, a.explore.at)) + '</div>';
+  if (a.phase === 'done' && a.explore) return '<div class="card-task xp-task" aria-hidden="true">' + esc(sayAt(a, a.explore, a.explore.at)) + '</div>';
   if (a.phase === 'checking') txt = 'Checking ' + esc(a.checking || 'your move') + '…';
   else if (a.phase === 'done') {
     var best = esc(a.lines.best.san[0] || ''), why = esc(a.cls.sentences.best || '');
@@ -7542,6 +7579,11 @@ function xpHtml(a) {
     + '<a class="xp-back-ph" data-act="exploreOff">Back to the lesson</a></div>';
   return h;
 }
+/* the engine in words, for Settings */
+function engineLine() {
+  var name = { 'sf17.1': 'Stockfish 17.1' }[SF.build] || 'Stockfish';
+  return name + ' runs in this tab, on your device.';
+}
 /* rows that fit: never a half row above the phone bar or below the board */
 function fitRows() {
   var a = ui.session && ui.session.active, ex = a && a.explore, rowsEl = document.querySelector('#xp .xp-rows');
@@ -7783,6 +7825,11 @@ function settingsHtml() {
       + '<p>' + DAY_RULE + '</p></div>'
     + '<div class="set-block"><span class="kicker">Board</span>'
       + sw('sound', 'Sounds', cfg.sound) + '</div>'
+    + '<div class="set-block"><span class="kicker">Analysis</span><p>Reading your games</p><div class="chips">'
+      + [['std', 'Standard'], ['thorough', 'Thorough']].map(function (o) { return chip('scanDepth', o[0], o[1], scanDepth() === o[0]); }).join('')
+      + '</div><p>Thorough reads new games more deeply and finds a few more mistakes. It takes about twice as long, so leave this tab open while it reads.</p>'
+      + (scanDepth() === 'thorough' ? (function () { var rc = recheckCount(); return rc.n ? '<p class="dim">' + (rc.done >= rc.n ? 'All ' + rc.n + ' saved positions rechecked.' : 'Rechecking your saved positions: ' + rc.done + ' of ' + rc.n + '.') + '</p>' : ''; })() : '')
+      + '<p class="dim">' + engineLine() + '</p></div>'
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
       + '<p class="dim">' + gamesLine() + '</p>'
@@ -8314,6 +8361,7 @@ document.addEventListener('click', function (e) {
     }
     case 'limit': setLimit(parseInt(k, 10)); break;
     case 'size': store.set('nl:sessionSize', parseInt(k, 10)); renderSettings(); renderTrain(); break;
+    case 'scanDepth': store.set('nl:scanDepth', k === 'thorough' ? 'thorough' : 'std'); track('scan_' + (k === 'thorough' ? 'thorough_on' : 'standard')); renderSettings(); autoScan(); setTimeout(autoEnrich, 500); break;
     case 'weekGoal': setWeekGoal(parseInt(k, 10)); renderSettings(); renderTrain(); break;
     case 'reload': checkForGames(); break;
     case 'exportProgress': exportProgress(); break;

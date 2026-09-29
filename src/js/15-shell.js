@@ -505,6 +505,7 @@ document.addEventListener('click', function (e) {
     }
     case 'limit': setLimit(parseInt(k, 10)); break;
     case 'size': store.set('nl:sessionSize', parseInt(k, 10)); renderSettings(); renderTrain(); break;
+    case 'scanDepth': store.set('nl:scanDepth', k === 'thorough' ? 'thorough' : 'std'); track('scan_' + (k === 'thorough' ? 'thorough_on' : 'standard')); renderSettings(); autoScan(); setTimeout(autoEnrich, 500); break;
     case 'weekGoal': setWeekGoal(parseInt(k, 10)); renderSettings(); renderTrain(); break;
     case 'reload': checkForGames(); break;
     case 'exportProgress': exportProgress(); break;

@@ -217,12 +217,12 @@ function scanGame(g) {
         if (!sanApply(st, tok)) { walkOk = false; fens[i] = null; return; }
         fens[i] = i >= LAST ? null : stateFen(st);
       });
-      var CUTOFF = 64, failed = 0;
+      var CUTOFF = 64, failed = 0, scanN = scanNodes();
       function dispatch(from, to) {
         var jobs = [];
         fens.forEach(function (fen, i) {
           if (!fen || i < from || i >= to) return;
-          jobs.push(engineEval(fen, { nodes: TRIAGE_NODES }).then(function (r) {
+          jobs.push(engineEval(fen, { nodes: scanN }).then(function (r) {
             if (stale(myGen)) return;
             evals[i] = r;
           }).catch(function () { evals[i] = null; failed++; }));
@@ -290,6 +290,7 @@ function scanGame(g) {
         delete g.ck;                        /* the clocks did their job */
         g.scanned = 1;
         g.eng = SF.build || 'sf17.1';       /* which engine judged this game */
+        if (scanN !== TRIAGE_NODES) g.scanN = scanN; else delete g.scanN;
         scanState.dirty = (scanState.dirty || 0) + 1;
         modelDirty();
       });

@@ -36,9 +36,14 @@ function extendLine(st0, pv, nodes, ctx, tag) {
     return played.uci.concat((r.pv || []).slice(0, 8 - played.uci.length));
   }, function () { return played.uci; });
 }
-function deepEnrich(it, prio) {
+function deepEnrich(it, prio, bg) {
   var g = it.g, b = it.b, myGen = gen;
-  if ((b.v || 0) >= 2) return Promise.resolve(it);
+  /* Thorough: the background look searches four times deeper, and saved
+     positions checked at the standard depth are checked again */
+  var deep = !!bg && !prio && scanDepth() === 'thorough';
+  var recheck = deep && (b.v || 0) >= 2 && b.dv !== 1 && b.j !== 'l' && !b.x;
+  if ((b.v || 0) >= 2 && !recheck) return Promise.resolve(it);
+  var DN = deep ? CONFIRM_NODES : DEEP_NODES;
   if (enrichPending[it.key]) {
     /* started in the background, and now the player is waiting on it */
     if (prio && enrichCtx[it.key] && !enrichCtx[it.key].prio) { enrichCtx[it.key].prio = true; promoteTag(it.key); }
@@ -71,20 +76,21 @@ function deepEnrich(it, prio) {
     });
   } else {
     var r1, bar = Math.max(10, mistakeMinFor(g) - 3);
-    p = engineEval(stateFen(pre), { nodes: DEEP_NODES }, ctx.prio, { multipv: 2, tag: key })
-      .then(function (r) { r1 = r; return engineEval(stateFen(post), { nodes: DEEP_NODES }, ctx.prio, { tag: key }); })
+    p = engineEval(stateFen(pre), { nodes: DN }, ctx.prio, { multipv: 2, tag: key })
+      .then(function (r) { r1 = r; return engineEval(stateFen(post), { nodes: DN }, ctx.prio, { tag: key }); })
       .then(function (r2) {
         /* a close call on a thin board is searched again, four times deeper,
            but only in the background: a player never waits on it */
         var drop = winPct(sign * r1.cp) - winPct(sign * r2.cp);
-        if (stale(myGen) || ctx.prio || !thinBoard(pre) || drop < bar || drop >= bar + 10) return r2;
+        if (stale(myGen) || ctx.prio || deep || !thinBoard(pre) || drop < bar || drop >= bar + 10) return r2;
         return engineEval(stateFen(pre), { nodes: CONFIRM_NODES }, ctx.prio, { multipv: 2, tag: key }).then(function (r) {
           r1 = r;
           return engineEval(stateFen(post), { nodes: CONFIRM_NODES }, ctx.prio, { tag: key });
         });
       })
       .then(function (r2) {
-        if (stale(myGen) || (b.v || 0) >= 2) return;
+        if (stale(myGen) || ((b.v || 0) >= 2 && !recheck)) return;
+        if (deep) b.dv = 1;
         var wb2 = winPct(sign * r1.cp), wa2 = winPct(sign * r2.cp);
         /* a mistake the deeper look does not confirm never becomes a card,
            nor does a slip in a game that was already lost and not decided by it */
@@ -133,7 +139,27 @@ function enrichTargets() {
       if ((it.b.v || 0) < 2 && out.indexOf(it) === -1 && !enrichState.failed[it.key]) out.push(it);
     });
   }
+  /* Thorough, with nothing new to look at: saved positions checked at the
+     standard depth are checked again, never one in today's session */
+  if (!out.length && scanDepth() === 'thorough') {
+    var inSession = {}, ss = ui.session || savedSession();
+    if (ss && ss.keys) ss.keys.forEach(function (k) { inSession[k] = 1; });
+    allMistakes().forEach(function (it) {
+      if (out.length < 1 && trainable(it) && (it.b.v || 0) >= 2 && it.b.dv !== 1 && it.b.j !== 'l' && !it.b.x
+          && !inSession[it.key] && !enrichState.failed[it.key]) out.push(it);
+    });
+  }
   return out;
+}
+/* the recheck, counted for Settings */
+function recheckCount() {
+  var n = 0, done = 0;
+  allMistakes().forEach(function (it) {
+    if (!trainable(it) || it.b.j === 'l') return;
+    n++;
+    if (it.b.dv === 1) done++;
+  });
+  return { n: n, done: done };
 }
 function autoEnrich() {
   if (!cfg.user || enrichState.running || SF.state === 'failed') return;
@@ -143,7 +169,7 @@ function autoEnrich() {
   var next = enrichTargets()[0];
   if (!next) return;
   enrichState.running = true;
-  deepEnrich(next, false).then(function () {
+  deepEnrich(next, false, true).then(function () {
     enrichState.running = false;
     enrichState.done++;
     scheduleSave();
