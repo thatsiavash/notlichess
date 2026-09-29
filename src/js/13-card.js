@@ -192,7 +192,7 @@ function sessionClick(sq) {
            frame on screen (a swipe over the board still scrolls the page) */
         var vs = lineView(a).st, pc = vs.b[sq];
         if (pc && isW(pc) === vs.w) startExplore({ sq: sq, via: 'tap' });
-        else if (pc) notice('It is ' + sideName(vs.w) + '\'s move here. Tap a ' + sideName(vs.w).toLowerCase() + ' piece to test an idea.');
+        else if (pc) notice('It is ' + sideName(vs.w) + '\'s move here. Move a ' + sideName(vs.w).toLowerCase() + ' piece.');
       }
     }
     return;

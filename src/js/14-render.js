@@ -502,12 +502,15 @@ function renderCard() {
   var newCard = !a.shown;
   a.shown = true;
   el('ctop').innerHTML = sessionBarHtml(ss, a) + cardTaskHtml(a);
+  makeFocusable(el('ctop'));
   renderCardBoard(a);
   /* keyboard focus stays on the same control across a repaint, and the
      verdict is read out to screen readers */
   var foc = document.activeElement, fp = el('cpanel');
   var focKey = foc && fp && fp.contains(foc) ? (foc.id || ((foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || ''))) : null;
-  fp.innerHTML = panelHtml(a, ss);
+  var ph = panelHtml(a, ss);
+  ui.repainting = true;
+  try { fp.innerHTML = ph; } finally { ui.repainting = false; }
   var cardEl = box.querySelector('.card');
   if (cardEl) cardEl.classList.toggle('xp-card', !!(a.phase === 'done' && a.explore));
   if (a.phase === 'done' && a.explore) fitRows();
@@ -521,6 +524,7 @@ function renderCard() {
   else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
   else if (focKey) {
     var back = focKey.indexOf('|') < 0 ? el(focKey) : fp.querySelector('[data-act="' + focKey.split('|')[0] + '"]' + (focKey.split('|')[1] ? '[data-k="' + focKey.split('|')[1] + '"]' : ''));
+    if (!back && /^xpRow\|/.test(focKey)) { var rws = fp.querySelectorAll('#xp [data-act="xpRow"]'); back = rws[rws.length - 1] || null; }
     var xe = a.phase === 'done' && a.explore;
     if (xe && xe.wantRow != null && (!back || back.id === 'xp' || back.classList.contains('xp-mv'))) {
       var wr = fp.querySelector('#xp [data-act="xpRow"][data-k="' + xe.wantRow + '"]');

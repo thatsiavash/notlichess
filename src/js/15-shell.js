@@ -746,6 +746,7 @@ document.addEventListener('focusin', function (e) {
   if (r) xpHover(parseInt(r.getAttribute('data-k'), 10), true);
 });
 document.addEventListener('focusout', function (e) {
+  if (ui.repainting) return;
   var r = e.target.closest && e.target.closest('#xp .xp-row[data-act="xpRow"]');
   if (r && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('#xp .xp-row[data-act="xpRow"]'))) xpHover(null, true);
 });

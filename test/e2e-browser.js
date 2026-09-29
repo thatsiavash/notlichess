@@ -89,7 +89,7 @@
 
     /* ── exploring: the invite, three rows, one arrow, a sentence, the way back ─ */
     const inv = $('#cpanel [data-act=explore]');
-    ok('the answered card invites you to test a move', !!inv && /^(Why .+\? Try another (white|black) move and Stockfish answers\.|Move any piece to test an idea\. Stockfish answers\.)$/.test(inv.textContent.trim()), inv && inv.textContent);
+    ok('the answered card invites you to test a move', !!inv && /^(Why .+\? Try another (white|black) move and Stockfish answers\.|Move a piece to test an idea\. Stockfish answers\.)$/.test(inv.textContent.trim()), inv && inv.textContent);
     ok('the answered board is still static before exploring', $('#bwrap').classList.contains('static'));
     if (inv) inv.click();
     const xr = await until(() => { const x = T.explore(); return x && x.lines && x.lines.length ? x : null; }, 10000);

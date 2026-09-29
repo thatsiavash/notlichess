@@ -222,14 +222,18 @@ function slotWire(slot) {
     var m = String(e.data);
     /* a search that keeps talking is alive, however long it runs */
     if (m.indexOf('info ') === 0) slot.guardAt = Date.now();
+    /* every scored line marks the depth reached, a bound one included, so a
+       reprint from a shallower depth is always recognised */
+    var bd = m.indexOf('info ') === 0 && m.indexOf(' score ') > 0 && m.match(/ depth (\d+)/);
+    var reprint = !!(bd && +bd[1] < (slot.maxD || 0));
+    if (bd) slot.maxD = Math.max(slot.maxD || 0, +bd[1]);
     if (m.indexOf('info ') === 0 && m.indexOf(' score ') > 0 && m.indexOf('bound') === -1
         && (m.indexOf(' pv ') > 0 || m.indexOf('score mate 0') > 0)) {
       var k = m.match(/ multipv (\d+)/), dm = m.match(/ depth (\d+)/), d = dm ? +dm[1] : 0, kk = k ? +k[1] : 1;
       slot.infos[kk] = m;
       /* a search cut mid-depth reprints unsearched lines at the depth before:
          those reprints never overwrite that depth's real lines */
-      if (d >= (slot.maxD || 0)) (slot.byDepth[d] = slot.byDepth[d] || {})[kk] = m;
-      slot.maxD = Math.max(slot.maxD || 0, d);
+      if (!reprint) (slot.byDepth[d] = slot.byDepth[d] || {})[kk] = m;
       /* a listener hears each finished set of lines, as the search deepens */
       var cur = slot.pending[0];
       if (cur && cur.onInfo && kk >= Math.min(cur.mpv, Object.keys(slot.infos).length)) {

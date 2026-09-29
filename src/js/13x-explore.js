@@ -38,7 +38,8 @@ function startExplore(o) {
   if (o.view) a.view = { line: o.view.line, idx: o.view.idx };
   var v = lineView(a);
   a.xpRes = a.xpRes || {};
-  var ask = o.via === 'invite' && a.lines.best.uci[1] ? { uci: a.lines.best.uci[1], san: a.lines.best.san[1] } : null;
+  var ask = o.via === 'invite' && o.view && a.lines.best.uci[1] && posKey(v.st) === posKey(a.lines.best.states[0])
+    ? { uci: a.lines.best.uci[1], san: a.lines.best.san[1] } : null;
   a.explore = { root: { line: a.view.line, idx: a.view.idx }, nodes: [xpNode(v.st, v.last, null)],
                 at: 0, sel: o.sq != null ? o.sq : -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null,
                 ask: ask, wantRow: o.via === 'invite' ? 0 : null };
@@ -103,8 +104,8 @@ function exploreStep(d) {
   if (!ex) return;
   if (d < 0) { if (ex.at === 0) exploreExit('back'); else exploreGo(ex.at - 1); return; }
   if (ex.at < ex.nodes.length - 1) { exploreGo(ex.at + 1); return; }
-  /* at the end, › plays Stockfish's pick */
-  var n = xpCur(ex), r = ex.res[n.key];
+  /* at the end, › plays Stockfish's pick, the one the arrow shows */
+  var n = xpCur(ex), r = { lines: xpShown(ex, n) || [] };
   if (!r || !r.lines[0] || xpSpoil(n) || !legalMoves(n.st).length) return;
   var m = uciToMove(n.st, r.lines[0].pv[0]);
   if (m) explorePlay(m, false);
@@ -235,6 +236,8 @@ function xpMaterialWords(c, tier) {
   var g = c.gameLine;
   if (!g) return '';
   var up = Math.min(g.nodes.length - 1, c.gSettle != null ? c.gSettle : g.nodes.length - 1);
+  /* a line that promotes is not counted in pieces */
+  for (var pk = 0; pk <= up; pk++) if (g.nodes[pk] && g.nodes[pk].move && g.nodes[pk].move.promo) return '';
   var mine = [], theirs = [];
   for (var i = 0; i <= up; i++) {
     var n = g.nodes[i];
@@ -274,22 +277,32 @@ function xpMaterialWords(c, tier) {
 /* the biggest piece the move loses once the line settles, and the moves
    that take it: exploring often meets a quiet first capture before the real
    loss ("Qxd5+ Kh8 Rxa4"), and the sentence must name the real loss */
-function xpBigLoss(c) {
+/* the mover's pieces lost once the line settles: a piece taken straight back
+   (the move before or after) by one of the same kind is a trade, not a
+   loss; a line that promotes is not counted in pieces at all */
+function xpLostPieces(c) {
   var g = c.gameLine;
   if (!g) return null;
-  var up = Math.min(g.nodes.length - 1, c.gSettle != null ? c.gSettle : g.nodes.length - 1), big = null;
-  /* a piece taken back for a piece of the same kind is a trade, not a loss */
+  var up = Math.min(g.nodes.length - 1, c.gSettle != null ? c.gSettle : g.nodes.length - 1);
   var mine = [], lost = [];
   for (var i = 0; i <= up; i++) {
     var n0 = g.nodes[i];
-    if (!n0 || !n0.captured) continue;
-    if (n0.pov) lost.push({ p: pType(n0.captured), at: i }); else mine.push(pType(n0.captured));
+    if (!n0) continue;
+    if (n0.move && n0.move.promo) return null;
+    if (!n0.captured) continue;
+    (n0.pov ? lost : mine).push({ p: pType(n0.captured), at: i });
   }
-  mine.forEach(function (p) {
+  var same = function (a1, b1) { return a1 === b1 || ((a1 === 'N' || a1 === 'B') && (b1 === 'N' || b1 === 'B')); };
+  mine.forEach(function (m) {
     var j = -1;
-    lost.forEach(function (l, k) { if (j === -1 && (l.p === p || ((l.p === 'N' || l.p === 'B') && (p === 'N' || p === 'B')))) j = k; });
+    lost.forEach(function (l, k) { if (j === -1 && Math.abs(l.at - m.at) === 1 && same(l.p, m.p)) j = k; });
     if (j !== -1) lost.splice(j, 1);
   });
+  return lost;
+}
+function xpBigLoss(c) {
+  var g = c.gameLine, lost = xpLostPieces(c), big = null;
+  if (!g || !lost) return null;
   lost.forEach(function (l) { if (!big || MOTIF_VAL[l.p] > MOTIF_VAL[big.p]) big = l; });
   if (!big || MOTIF_VAL[big.p] < 5 || c.matGame > -3) return null;
   var sans = [];
@@ -324,7 +337,8 @@ function xpVerdict(a, ex, at) {
      search; when both exist the worse of the two, so a move one search
      finds bad is never called "about as good" */
   var own = cr && cr.lines[0] ? sideCp(cr.lines[0], s) : null;
-  var cpX = row ? (own != null ? Math.min(sideCp(row, s), own) : sideCp(row, s)) : (own != null ? own : (checkedKingSq(C.st) != null ? 1500 : 0));
+  var cpX = row ? sideCp(row, s) : (own != null ? own : (checkedKingSq(C.st) != null ? 1500 : 0));
+  if (row && own != null && cpX - own >= 100) cpX = own;
   var wBest = winPct(cpBest), wX = winPct(cpX), drop = wBest - wX, gap = cpBest - cpX;
   var R = cr && cr.lines[0] ? cr.lines[0].pv : [];
   var mateOf = function (l, w) { return l && l.mate != null ? (w ? l.mate : -l.mate) : null; };
@@ -334,16 +348,19 @@ function xpVerdict(a, ex, at) {
   if (X === best.pv[0]) {
     cat = 'best';
     var mw = xpMaterialWords(c, tier), mateIn = mateOf(best, s);
-    text = C.mv.san + ' is Stockfish\'s pick.' + (mateIn > 0 ? ' It mates in ' + mateIn + '.' : (mw ? ' It ' + mw + '.' : ''));
+    text = fitLine([C.mv.san + ' is Stockfish\'s pick.' + (mateIn > 0 ? ' It mates in ' + mateIn + '.' : mateIn < 0 ? ' It allows mate in ' + (-mateIn) + '.' : (mw ? ' It ' + mw + '.' : '')),
+      C.mv.san + ' is Stockfish\'s pick.']);
   } else {
     var decided = Math.abs(cpBest) >= 1000 && Math.abs(cpX) >= 1000 && (cpBest > 0) === (cpX > 0);
-    var concrete = XP_TACTIC.indexOf(c.t) !== -1 && (c.mateAgainst || c.t === 'mateMissed' || gap >= 100 || (decided && c.lossG >= 3));
+    var mateBoth = best.mate != null && ((row && row.mate != null) || !!(cr && cr.lines[0] && cr.lines[0].mate != null)) && (cpBest > 0) === (cpX > 0);
+    var concrete = XP_TACTIC.indexOf(c.t) !== -1 && (c.t === 'mateMissed' || gap >= 100
+      || (!mateBoth && ((c.mateAgainst && !c.alreadyLost) || (decided && c.lossG >= 3))));
     /* near 0% or 100% the winning-chance scale is flat: a real difference in
        material is still a difference, unless the game is decided either way */
     if (concrete || drop > STRONGER_TOL || (gap >= 100 && !decided)) {
       cat = concrete ? 'concrete' : 'worse';
       var reason = String(c.sentences.short || c.sentences.game).replace(/ \(\d+% to \d+%\)/g, '');
-      var big = XP_MISSED.indexOf(c.t) === -1 ? xpBigLoss(c) : null;
+      var big = XP_MISSED.indexOf(c.t) === -1 && c.t !== 'mateAllowed' ? xpBigLoss(c) : null;
       if (big && reason.indexOf(big.word) === -1) reason = C.mv.san + ' loses the ' + big.word + ': ' + big.line + '.';
       var cmp;
       if (XP_MISSED.indexOf(c.t) !== -1 && c.sentences.best) {
@@ -385,8 +402,8 @@ function sayAt(a, ex, at) {
   if (n.down) return 'Stockfish is not answering right now. Try again, or go back to the lesson.';
   var P = at > 0 ? ex.nodes[at - 1] : null;
   if (at === 0 || (P && xpSpoil(P))) {
-    var r = ex.res[n.key], who = n.st.w === myPov(a.it) ? 'Your move.' : sideName(n.st.w) + ' to move.';
-    if (!r || !r.lines[0]) return who + ' Stockfish is thinking…';
+    var r = { lines: xpShown(ex, n) || [] }, who = n.st.w === myPov(a.it) ? 'Your move.' : sideName(n.st.w) + ' to move.';
+    if (!r.lines[0]) return who + ' Stockfish is thinking…';
     var pick = sanOf(n.st, uciToMove(n.st, r.lines[0].pv[0]));
     if (at === 0 && ex.ask && r.lines[0].pv[0] !== ex.ask.uci)
       return fitLine([who + ' Stockfish\'s pick is ' + pick + ', not ' + ex.ask.san + ', the gold arrow. › plays it.',
@@ -435,7 +452,11 @@ function xpRowWords(a, n, line, best, tier) {
     if (c.t === 'pinAllowed') return 'walks into a pin';
     if (c.t === 'discoveredAllowed') return 'allows a hidden attack';
     if (c.t === 'mateAllowed') return 'allows mate in ' + (c.mateAgainst || 2);
-    if (['threat', 'hung', 'badTrade', 'material'].indexOf(c.t) !== -1 && r1 && r1.captured) return 'loses the ' + PIECE_WORD[pType(r1.captured)] + ' to ' + rSan;
+    if (['threat', 'hung', 'badTrade', 'material'].indexOf(c.t) !== -1 && r1 && r1.captured && c.matGame <= -1) {
+      /* only when that piece stays lost once the line settles */
+      var L = xpLostPieces(c) || [], p1 = pType(r1.captured);
+      if (L.some(function (l) { return l.p === p1 || ((l.p === 'N' || l.p === 'B') && (p1 === 'N' || p1 === 'B')); })) return 'loses the ' + PIECE_WORD[p1] + ' to ' + rSan;
+    }
     if (XP_MISSED.indexOf(c.t) !== -1) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return 'misses ' + bs; }
   }
   return standingWords(winPct(myPov(a.it) ? line.cp : -line.cp));

@@ -331,9 +331,9 @@
 #110 missedMaterial
   your move: Rc8 misses White's undefended pawn on c4.
   best move: Bxc4 wins the pawn.
-#111 drift
-  your move: Ke8 lets White take over: Rfe7+ is strong (64% to 11%).
-  best move: Bxf7 takes the rook before it can give check.
+#111 missedTactic
+  your move: Ke8 misses Bxf7.
+  best move: Bxf7 wins the rook.
 #112 threat
   your move: h5 ignores White's threat: Qxb6 takes your pawn.
   best move: b5 moves the pawn out of danger.
@@ -370,9 +370,9 @@
 #123 drift
   your move: c4 makes a difficult position worse: exf2+ is strong (34% to 13%).
   best move: Bf3 is the most stubborn defence.
-#124 slipped
-  your move: Ne8 lets your winning position slip: after Rxd7+ White is better (83% to 37%).
-  best move: Kc7 keeps your advantage.
+#124 material
+  your move: Ne8 loses the knight after Rxd7+.
+  best move: Kc7 keeps your knight safe.
 #125 mateMissed
   your move: Qh3+ lets a forced mate slip away.
   best move: Qf2# forces mate in 1.
@@ -573,7 +573,7 @@
   best move: Bb7 wins a queen for a bishop and a pawn.
 #191 slipped
   your move: Rc8 lets your winning position slip: after a5 it is roughly level (71% to 49%).
-  best move: Nxd4 keeps your advantage.
+  best move: Nxd4 wins the pawn.
 #192 mateMissed
   your move: Qc6 lets a forced mate slip away.
   best move: Nf3+ forces mate in 3.

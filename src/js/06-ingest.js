@@ -169,7 +169,7 @@ function sanLineToUci(st0, sans) {
 /* name the mistake from what the lines show; cheap (a few ms), so it runs
    at ingest, at scan and again after every deeper look */
 /* raise when the classifier changes: stored mistakes are re-labelled on load */
-var CLASSIFY_V = 4;        /* bump whenever test/explanations.txt changes (CI checks) */
+var CLASSIFY_V = 5;        /* bump whenever test/explanations.txt changes (CI checks) */
 function classifyEntry(b, moves) {
   var pre = stateAtPly(moves, b.p);
   if (!pre) return;

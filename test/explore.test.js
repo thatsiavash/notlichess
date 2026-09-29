@@ -72,7 +72,7 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
     const A = boot(); A.ev(STUB); A.ev(ANSWERED);
     const inv = A.ev('JSON.stringify(ui.session.active.invite)');
     const o = JSON.parse(inv);
-    ok(/^Why \S+\? Try another (white|black) move and Stockfish answers\.$/.test(o.text) || o.text === 'Move any piece to test an idea. Stockfish answers.', o.text);
+    ok(/^Why \S+\? Try another (white|black) move and Stockfish answers\.$/.test(o.text) || o.text === 'Move a piece to test an idea. Stockfish answers.', o.text);
     ok(o.text.length <= 80, 'length');
     A.flush(6);
     eq(A.ev('JSON.stringify(ui.session.active.invite)'), inv, 'unchanged after the autoplay');
@@ -233,6 +233,27 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
       return JSON.stringify(out.lines.map(function (l) { return l.pv[0]; }));
     })()`));
     eq(JSON.stringify(got), JSON.stringify(['e2e4', 'd2d4', 'g1f3']), 'three distinct lines from depth 14');
+  });
+
+  await test('engine: a bound line at the next depth still marks shallower reprints', () => {
+    const A = boot();
+    const got = JSON.parse(A.ev(`(function () {
+      var slot = { w: { postMessage: function () {} } }, out = null;
+      slotWire(slot);
+      clearInterval(slot.guardTimer);
+      slot.pending.push({ fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', mpv: 3, resolve: function (r) { out = r; }, reject: function () {} });
+      var say = function (t) { slot.w.onmessage({ data: t }); };
+      say('info depth 15 multipv 1 score cp 30 nodes 1 pv e2e4 e7e5');
+      say('info depth 15 multipv 2 score cp 25 nodes 1 pv d2d4 d7d5');
+      say('info depth 15 multipv 3 score cp 20 nodes 1 pv g1f3 g8f6');
+      say('info depth 16 multipv 1 score cp 40 lowerbound nodes 1 pv d2d4 d7d5');
+      say('info depth 15 multipv 2 score cp 30 nodes 1 pv e2e4 e7e5');
+      say('info depth 15 multipv 3 score cp 20 nodes 1 pv g1f3 g8f6');
+      say('bestmove d2d4');
+      return JSON.stringify(out.lines.map(function (l) { return l.pv[0]; }));
+    })()`));
+    eq(got.length, 3, 'three lines: ' + JSON.stringify(got));
+    eq(got[0], 'd2d4', 'the best move leads');
   });
 
   await test("the opponent's voice keeps the learner as 'you' in 'is better'", () => {

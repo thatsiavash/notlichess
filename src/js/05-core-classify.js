@@ -87,7 +87,12 @@ function enPrise(st) {
 /* the engine's line can stop on a capture before the recapture: a defended
    piece taken on the last move is not counted as won */
 function endCapture(n, i) {
-  if (i === n.length - 1 && i >= 1 && n[i].captured && !isHangingAt(n[i].before.b, n[i].move.to)) return i - 1;
+  if (i === n.length - 1 && i >= 1 && n[i].captured && !isHangingAt(n[i].before.b, n[i].move.to)) {
+    /* not counted only when taking back gains something: the capturer is
+       loose, hit by a cheaper piece, or attacked more often than defended */
+    var b = n[i].after.b, sq = n[i].move.to, w = colorW(b[sq]);
+    if (isHangingAt(b, sq) || takenByLower(b, sq) || attackersOf(b, sq, !w).length > attackersOf(b, sq, w).length) return i - 1;
+  }
   return i;
 }
 function materialWord(n) {
@@ -108,7 +113,7 @@ function materialWord(n) {
    the game move's own capture too. */
 function captureWord(line, upto, from) {
   var gained = [], lost = [], start = from == null ? 1 : from;
-  for (var k = Math.max(1, start); k <= upto && k < line.nodes.length; k++) if (line.nodes[k].move && line.nodes[k].move.promo) return null;
+  for (var k = start; k <= upto && k < line.nodes.length; k++) if (line.nodes[k].move && line.nodes[k].move.promo) return null;
   for (var i = start; i <= upto && i < line.nodes.length; i++) {
     var n = line.nodes[i];
     if (!n.captured) continue;
