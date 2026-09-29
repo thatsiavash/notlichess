@@ -445,15 +445,15 @@ document.addEventListener('click', function (e) {
       break;
     case 'startToday': startToday(); break;
     case 'resume': resumeSession(); break;
-    case 'dropSession': store.del(sessKey()); renderTrain(); break;
+    case 'dropSession': settleSaved(savedSession()); store.del(sessKey()); renderViews(); renderTrain(); break;
     case 'keepGoing': keepGoing(); break;
     case 'endSession': endSession(); break;
     case 'drill': { var sp = parseSpec(t); if (sp) startDrill(sp); break; }
     case 'sheet': openSheet(k); break;
     case 'closeSheet': if (e.target === t) closeSheet(); break;
-    case 'hint': giveHint(); break;
-    case 'checkShow': if (a && a.phase === 'check') { a.attempts++; checkStep(null, null); } break;
-    case 'reveal': reveal(); break;
+    case 'hint': if (!tooSoon(a)) giveHint(); break;
+    case 'checkShow': if (a && a.phase === 'check' && !tooSoon(a)) checkStep(null, null); break;
+    case 'reveal': if (!tooSoon(a)) reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
     case 'dismissStronger': if (a) { a.strongerOffer = false; a.verdict = null; renderCard(); } break;
@@ -478,21 +478,20 @@ document.addEventListener('click', function (e) {
     }
     case 'limit': setLimit(parseInt(k, 10)); break;
     case 'size': store.set('nl:sessionSize', parseInt(k, 10)); renderSettings(); renderTrain(); break;
-    case 'weekGoal': store.set('nl:weekGoal', parseInt(k, 10)); renderSettings(); renderTrain(); break;
+    case 'weekGoal': setWeekGoal(parseInt(k, 10)); renderSettings(); renderTrain(); break;
     case 'reload': checkForGames(); break;
     case 'exportProgress': exportProgress(); break;
     case 'importProgress': importProgress(); break;
     case 'engineRetry': SF.state = 'idle'; SF.crashes = []; engineLoad().then(function () { autoScan(); }, function () {}); renderAll(); break;
     case 'resetProgress': {
-      if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); setTimeout(function () { ui.resetArmed = false; renderSettings(); }, 4000); break; }
+      if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); clearTimeout(ui.armTimer); ui.armTimer = setTimeout(function () { ui.resetArmed = false; renderSettings(); }, 4000); break; }
       var u = playerId();
       try {
         var del = [];
-        for (var i = 0; i < localStorage.length; i++) {
-          var kk = localStorage.key(i);
-          if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === sessKey())) del.push(kk);
-        }
-        del.forEach(function (x) { localStorage.removeItem(x); });
+        var keys = Object.keys(mem);
+        for (var i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+        keys.forEach(function (kk) { if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === sessKey()) && del.indexOf(kk) === -1) del.push(kk); });
+        del.forEach(function (x) { store.del(x); });
         store.del('nl:srs:' + u);
       } catch (e2) {}
       srsMem = null; srsRevision++; ui.session = null; ui.resetArmed = false; modelDirty();
@@ -501,7 +500,7 @@ document.addEventListener('click', function (e) {
       break;
     }
     case 'wipe': {
-      if (!ui.wipeArmed) { ui.wipeArmed = true; renderSettings(); setTimeout(function () { ui.wipeArmed = false; renderSettings(); }, 4000); break; }
+      if (!ui.wipeArmed) { ui.wipeArmed = true; renderSettings(); clearTimeout(ui.armTimer); ui.armTimer = setTimeout(function () { ui.wipeArmed = false; renderSettings(); }, 4000); break; }
       try {
         var all = [];
         for (var j = 0; j < localStorage.length; j++) { var kj = localStorage.key(j); if (kj && kj.indexOf('nl:') === 0) all.push(kj); }
@@ -514,7 +513,7 @@ document.addEventListener('click', function (e) {
       location.href = location.pathname;
       break;
     }
-    case 'coffee': notice('Thank you! A tip jar is coming soon.'); break;
+    case 'coffee': notice('Thank you. A tip jar is coming soon.'); break;
   }
 });
 document.addEventListener('change', function (e) {

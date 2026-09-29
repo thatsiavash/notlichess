@@ -11,7 +11,19 @@ function saveSession() {
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
-                         progress: ss.progress || {}, attempted: ss.attempted || 0, checks: ss.checks || 0, checksFound: ss.checksFound || 0 });
+                         progress: ss.progress || {}, attempted: ss.attempted || 0, checks: ss.checks || 0, checksFound: ss.checksFound || 0, notes: ss.notes || {} });
+}
+/* a paused session that is dropped or replaced: a card left after a miss
+   is graded a fail, and its tries still count toward the day */
+function settleSaved(s) {
+  if (!s) return 0;
+  var m = model();
+  Object.keys(s.progress || {}).forEach(function (k) {
+    var p = s.progress[k], it = m.byKey[k];
+    if (!it || !p || s.results[k] || (s.relearnOf && s.relearnOf[k])) return;
+    if (p.m) srsRecord(it, 'fail', { attempted: p.a > 0, gameMove: !!p.g });
+  });
+  return s.attempted || 0;
 }
 function savedSession() {
   var s = store.get(sessKey(), null);
@@ -153,7 +165,12 @@ function todayPlan() {
 }
 function startSession(mode, keys, label, spec) {
   if (!keys.length) return false;
-  ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null };
+  var prev = savedSession(), carried = 0;
+  if (prev) {
+    carried = settleSaved(prev);
+    if (sessionDoneCount(prev) > 0) notice('Your paused session is closed. Its answers are kept and its tries count toward today.');
+  }
+  ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, attempted: carried };
   data.freshOnboard = false;
   saveSession();
   setView('train', false);
@@ -190,7 +207,7 @@ function resumeSession() {
   if (!s) return false;
   ui.session = { mode: s.mode, label: s.label, keys: s.keys, idx: s.idx, results: s.results || {},
                  relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {},
-                 attempted: s.attempted || 0, checks: s.checks || 0, checksFound: s.checksFound || 0 };
+                 attempted: s.attempted || 0, checks: s.checks || 0, checksFound: s.checksFound || 0, notes: s.notes || {} };
   setView('train', false);
   pushSessionState();
   /* a card answered before the reload is not asked again */
@@ -262,7 +279,7 @@ function finishSession() {
   if (tried >= 1 && tried >= Math.min(3, n)) day.sessions = (day.sessions || 0) + 1;
   else day.short = 1;
   daySave(day);
-  if (weekDays() >= weekGoal() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
+  if (weekDays() >= goalThisWeek() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
     store.set('nl:goalSent:' + playerId(), weeksAtGoal());
     track('week_goal_met');
   }
@@ -285,9 +302,9 @@ function endSession(fromPop) {
   if (!ss) return;
   var open = ss.active, done = sessionDoneCount(ss), total = sessionTotal(ss);
   /* a move still being checked counts as a try that did not land */
-  if (open && open.phase === 'checking') { open.checkTok = (open.checkTok || 0) + 1; open.misses = Math.max(open.misses || 0, 1); open.attempts = Math.max(open.attempts || 0, 1); }
-  if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints)) keepProgress(open);
-  var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints)));
+  if (open && open.phase === 'checking') { open.checkTok = (open.checkTok || 0) + 1; open.phase = 'guess'; open.attempts = Math.max(open.attempts || 0, 1); }
+  if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints || open.attempts)) keepProgress(open);
+  var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints || open.attempts)));
   if (keep) saveSession(); else store.del(sessKey());
   ui.session = null;
   if (!fromPop && history.state && history.state.nlSession) { try { history.replaceState(null, '', location.pathname + '#train'); } catch (e) {} }

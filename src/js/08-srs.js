@@ -127,7 +127,7 @@ function dayBump(result, fresh, attempted) {
   if (result !== 'skip' && attempted) day.attempted = (day.attempted || 0) + 1;
   if (result === 'first' || result === 'hint' || result === 'retry') day.solved = (day.solved || 0) + 1;
   if (result === 'first') day.first = (day.first || 0) + 1;
-  if (fresh && result !== 'skip') day.fresh = (day.fresh || 0) + 1;
+  if (fresh) day.fresh = (day.fresh || 0) + 1;
   daySave(day);
 }
 /* one rule, said the same way in Settings: a day counts when you finish a
@@ -138,11 +138,28 @@ var DAY_RULE = 'A day counts when you finish a session in which you tried at lea
 function dayCounts(rec) { return !!(rec && (rec.sessions || 0) >= 1); }
 function dayRecOf(d) { return store.get(dayKeyFor(d), null); }
 function weekGoal() { return store.get('nl:weekGoal', 4); }
+function mondayOf(d) { var m = new Date(d); m.setHours(0, 0, 0, 0); m.setDate(m.getDate() - (m.getDay() + 6) % 7); return m.getTime(); }
+/* a new goal applies from next Monday: past weeks keep the goal they had */
+function setWeekGoal(n) {
+  var next = mondayOf(new Date()) + 7 * DAY + 3 * 3600 * 1000;
+  var h = (store.get('nl:goalHist', null) || [{ from: 0, goal: weekGoal() }]).filter(function (e) { return e.from < mondayOf(next); });
+  h.push({ from: mondayOf(next), goal: n });
+  store.set('nl:goalHist', h);
+  store.set('nl:weekGoal', n);
+}
+function weekGoalAt(ms) {
+  var h = store.get('nl:goalHist', null);
+  if (!h || !h.length) return weekGoal();
+  var g = h[0].goal;
+  h.forEach(function (e) { if (e.from <= ms) g = e.goal; });
+  return g;
+}
+function goalThisWeek() { return weekGoalAt(Date.now()); }
 /* consistency counted in weeks: the run of Monday-to-Sunday weeks that met
    the goal, this week included once it is met; a week still under way never
    breaks the run */
 function weeksAtGoal() {
-  var goal = weekGoal(), n = 0, d = new Date();
+  var n = 0, d = new Date();
   d.setHours(12, 0, 0, 0);
   var dow = (d.getDay() + 6) % 7, monday = new Date(d);
   monday.setDate(d.getDate() - dow);
@@ -151,11 +168,11 @@ function weeksAtGoal() {
     for (var i = 0; i < days; i++) { var x = new Date(mon); x.setDate(mon.getDate() + i); if (dayCounts(dayRecOf(x))) c++; }
     return c;
   };
-  if (count(monday, dow + 1) >= goal) n++;
+  if (count(monday, dow + 1) >= weekGoalAt(monday.getTime())) n++;
   for (var w = 1; w < 105; w++) {
     var m = new Date(monday);
     m.setDate(monday.getDate() - 7 * w);
-    if (count(m, 7) >= goal) n++; else break;
+    if (count(m, 7) >= weekGoalAt(m.getTime())) n++; else break;
   }
   return n;
 }

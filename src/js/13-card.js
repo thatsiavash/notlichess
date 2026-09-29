@@ -156,6 +156,7 @@ function loadCard() {
     var a = cardFor(it);
     if (!a) { it.b.x = 'moves'; ss.keys.splice(ss.idx, 1); saveSession(); loadCard(); return; }
     ss.active = a;
+    a.shownAt = Date.now();
     renderCard();
     setTimeout(scrollTrainerTop, 60);
     prefetchCards(ss);
@@ -248,6 +249,7 @@ function checkStep(m, u) {
   ss.checks = (ss.checks || 0) + 1;
   if (found) ss.checksFound = (ss.checksFound || 0) + 1;
   if (found) {
+    c1.played = san;
     a.checkVerdict = '✓ ' + esc(san) + '. That is what your move allowed.';
     snd('good');
   } else {
@@ -278,7 +280,7 @@ function stepLine(m, u) {
   a.phase = 'reply';
   /* my moves sit at even offsets of the line: the next one is number n */
   a.hintAfter = false;
-  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (a.solIdx / 2 + 1.5 | 0) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.' };
+  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (a.solIdx / 2 + 1.5 | 0) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.', panel: '✓ ' + esc(san) + '.' };
   renderCard();
   var cardKey = a.key;
   setTimeout(function () {
@@ -490,8 +492,12 @@ function reveal() {
   a.revealed = true;
   a.st = cloneState(a.pre);
   /* found a close move and then asked for the best one: a hint, not a miss */
+  if (a.foundGood && !a.misses) (ui.session.notes = ui.session.notes || {})[a.key] = 'close';
   finishCard(a.foundGood && !a.misses ? 'hint' : 'fail');
 }
+/* a second tap on Next lands where Show the answer now sits: taps in the
+   first half second of a card are the old card's */
+function tooSoon(a) { return !!a && Date.now() - (a.shownAt || 0) < 450; }
 function giveHint() {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'guess' || a.hints >= 2 || (a.tier === 3 && !a.misses)) return;
@@ -640,6 +646,7 @@ function settleLeft(a) {
   if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
   if (ss.progress) delete ss.progress[a.key];
   ss.results[a.key + (again ? '#r' : '')] = result;
+  if (!again) (ss.notes = ss.notes || {})[a.key] = 'left';
   a.phase = 'done';
 }
 function skipCard() {

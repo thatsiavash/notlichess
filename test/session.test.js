@@ -175,6 +175,45 @@ const OPEN = `function openCard(it, guess) {
     eq(r[0], 3, 'done'); eq(r[1], 3, 'total');
   });
 
+  await test('a new weekly goal applies from next week; past weeks keep theirs', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var mon = mondayOf(new Date());
+      /* two full past weeks at 4 days each */
+      [1, 2].forEach(function (w) { for (var i = 0; i < 4; i++) { var d = new Date(mon - w * 7 * DAY + (i * 2) * DAY + 12 * 3600e3); store.set('nl:day:' + playerId() + ':' + dayStamp(d), { sessions: 1 }); } });
+      var before = weeksAtGoal();
+      setWeekGoal(5);
+      return JSON.stringify({ before: before, after: weeksAtGoal(), now: goalThisWeek(), chosen: weekGoal() }); })()`));
+    eq(r.before, 2, 'weeks before'); eq(r.after, 2, 'weeks after the change'); eq(r.now, 4, 'this week'); eq(r.chosen, 5, 'chosen');
+  });
+
+  await test('Start over on a paused card after a miss grades it a fail', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var it = allMistakes().filter(trainable)[0], a = openCard(it, true);
+      a.misses = 1; a.attempts = 1; keepProgress(a); ui.session = null;
+      settleSaved(savedSession()); store.del(sessKey());
+      var rec = srsLoad()[it.key];
+      return JSON.stringify({ lapses: rec && rec.lapses }); })()`));
+    eq(r.lapses, 1, 'graded a fail');
+  });
+
+  await test('a skipped new position counts against the day\'s new positions', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { var it = allMistakes().filter(trainable)[1]; var f0 = dayLoad().fresh || 0; srsRecord(it, 'skip', {}); return JSON.stringify({ d: (dayLoad().fresh || 0) - f0 }); })()`));
+    eq(r.d, 1, 'fresh count');
+  });
+
+  await test('a card left after a hint is captioned Skipped and not counted solved', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var it = allMistakes().filter(trainable)[0], a = openCard(it, true);
+      a.hints = 1; settleLeft(a); ui.session.finished = true;
+      var h = doneHtml(ui.session);
+      return JSON.stringify({ skipped: h.indexOf('Skipped') !== -1, solved: /1 of 1 solved/.test(h) }); })()`));
+    ok(r.skipped, 'caption'); ok(!r.solved, 'not solved');
+  });
+
   await test('the page title never names the player', () => {
     const A = boot();
     ok(A.ev('document.title').indexOf('tester') === -1, A.ev('document.title'));

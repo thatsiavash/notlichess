@@ -98,7 +98,9 @@ function analysisNumbers() {
   return { covered: c.covered, total: c.total, ready: ready,
            working: SF.state !== 'failed' && (scanState.running || scanState.pending || enrichState.running) };
 }
-var lastReadyShown = -1;
+var lastReadyShown = -1, lastTodaySig = '', lastSigCheck = 0;
+/* what Today says depends on the plan and the focus: both move while reading */
+function todaySig(fh) { return todayPlan().keys.join(',') + '|' + (fh == null ? focusHtml() : fh); }
 function renderAnalysisStatus() {
   var n = analysisNumbers();
   /* while Stockfish reads, a thin line on the header's bottom edge */
@@ -118,6 +120,7 @@ function renderAnalysisStatus() {
     var hero = el('hero-n'), want = hero ? +hero.getAttribute('data-n') : 0;
     if (bucket !== lastReadyShown) { lastReadyShown = bucket; renderTrain(); }
     else if (hero && want < 5 && n.ready > want && todayPlan().keys.length > want) renderTrain();
+    else if (Date.now() - lastSigCheck > 3000 && (lastSigCheck = Date.now()) && todaySig() !== lastTodaySig) renderTrain();
     else {
       if (el('finds')) el('finds').innerHTML = recentFindsHtml();
       var lg = el('latest');
@@ -162,9 +165,11 @@ function renderTrain() {
   var day = dayLoad();
   /* the day has a finish line: the chosen session done means done for today */
   var doneToday = (day.sessions || 0) > 0 || (!saved && !todayPlan().keys.length);
+  var fh = focusHtml();
+  lastTodaySig = todaySig(fh);
   box.innerHTML = '<div class="today today-grid"><div class="today-main">' + since
     + (saved ? resumeHtml(saved) : (doneToday ? doneTodayHtml() : heroHtml()))
-    + focusHtml()
+    + fh
     + '<p class="status" id="astat">' + analysisLine(n) + '</p>'
     + '</div>' + latestGamesHtml() + '</div>';
 }
@@ -211,7 +216,7 @@ function agoWords(ts) {
 function sinceHtml() { return data.greeting ? '<p class="since">' + data.greeting + '</p>' : ''; }
 /* the weekly goal as its own shape: one segment per day of the goal */
 function weekHtml() {
-  var goal = weekGoal(), done = Math.min(weekDays(), goal), today = dayCounts(dayRecOf(new Date())), segs = '';
+  var goal = goalThisWeek(), done = Math.min(weekDays(), goal), today = dayCounts(dayRecOf(new Date())), segs = '';
   for (var i = 0; i < goal; i++) segs += '<span class="wseg' + (i < done ? ' on' : (i === done && !today ? ' wseg-now' : '')) + '"></span>';
   var weeks = weeksAtGoal();
   return '<div class="week"><div class="wsegs" aria-hidden="true">' + segs + '</div>'
@@ -219,7 +224,7 @@ function weekHtml() {
 }
 function heroHtml() {
   var plan = todayPlan();
-  var mins = Math.max(3, Math.round(plan.keys.length * 0.8));
+  var mins = Math.max(1, Math.round(plan.keys.length * 0.8));
   var why;
   var first0 = model().byKey[plan.keys[0]];
   if (plan.firstTime) why = first0 && first0.b.d
@@ -235,15 +240,17 @@ function heroHtml() {
   }
   /* a session finished today without enough tries: say what counts */
   var dl = dayLoad();
-  if (dl.short && !dl.sessions) why += ' Try 3 positions to count today.';
+  var need = Math.min(3, plan.keys.length);
+  if (dl.short && !dl.sessions) why += need > 1 ? ' Try ' + need + ' positions to count today.' : ' Try it to count today.';
   return '<div class="hero">'
-    + '<h2 id="hero-n" data-n="' + plan.keys.length + '">' + plur(plan.keys.length, 'position') + ', about ' + mins + ' minutes</h2>'
+    + '<h2 id="hero-n" data-n="' + plan.keys.length + '">' + plur(plan.keys.length, 'position') + ', about ' + plur(mins, 'minute') + '</h2>'
     + '<p class="why">' + why + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="startToday">Start</a></div></div>';
 }
 function resumeHtml(s) {
   return '<div class="hero">'
-    + '<h2>Pick up where you left off.</h2><p class="why">' + Math.min(sessionDoneCount(s), sessionTotal(s)) + ' of ' + sessionTotal(s) + ' done. The rest are waiting where you stopped.</p>' + weekHtml()
+    + '<h2>Pick up where you left off.</h2><p class="why">' + Math.min(sessionDoneCount(s), sessionTotal(s)) + ' of ' + sessionTotal(s) + ' done.'
+    + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.') + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">Start over</a></div></div>';
 }
 /* the next time something is due back, and how much */
@@ -325,7 +332,7 @@ function focusHtml() {
     .map(function (s) { return patternInfo(s.key).plural.toLowerCase(); });
   var cost = agg.cost >= 1 ? 'Decided ' + fmtGames(agg.cost) + ' of yours' : plur(agg.count, 'position') + ' in your games';
   return '<div class="focus"><a class="focus-more" data-act="sheet" data-k="family:' + fam.key + '">Details ›</a>'
-    + '<div class="kicker">Your biggest leak</div>'
+    + '<div class="kicker">Your focus</div>'
     + '<div class="focus-name">' + esc(fam.name) + '</div>'
     + '<p class="sec">' + cost + (top.length ? ', mostly ' + esc(top.join(' and ')) : '') + '.</p>'
     + '<div class="plan">' + esc(fam.habit) + '</div></div>';
@@ -369,20 +376,19 @@ function doneHtml(ss) {
   var uniq = [];
   ss.keys.forEach(function (k) { if (uniq.indexOf(k) === -1) uniq.push(k); });
   var recap = uniq.map(function (k) {
-    var it = model().byKey[k], r = ss.results[k];
+    var it = model().byKey[k], r = ss.results[k], note = (ss.notes || {})[k];
     if (!it || !r || r === 'skip') return '';
-    answered++;
-    if (r !== 'fail') solved++;
+    if (note !== 'left') { answered++; if (r !== 'fail') solved++; }
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
     /* the result in words, never in colour alone */
-    var word = r === 'first' ? '✓ first try' : r === 'retry' ? '✓ on the retry' : r === 'fail' ? 'Shown' : '✓ with help';
+    var word = note === 'left' ? 'Skipped' : note === 'close' ? '◐ close' : r === 'first' ? '✓ first try' : r === 'retry' ? '✓ on the retry' : r === 'fail' ? 'Shown' : '✓ with help';
     var pm = uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
     return '<div class="recap-item" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: k, label: 'One position' })) + '">'
       + boardSvg(pre, { flip: it.g.color === 'black', bad: pm ? [pm.from, pm.to] : null, decor: true }) + '<span>' + esc(patternInfo(patternOf(it.b)).name) + '</span>'
       + '<span class="res' + (r === 'fail' ? ' shown' : '') + '">' + word + '</span></div>';
   }).join('');
-  var habit = recapHabit(ss);
+  var habit = ss.checks ? FAMILIES[0].habit : recapHabit(ss);
   var more = morePracticeKeys().length;
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
@@ -593,7 +599,7 @@ function ctxHtml(a, answered) {
   if (b.c != null) bits.push(clockWords(b.c) + ' left');
   /* a game drill keeps its game one tap away */
   var ss0 = ui.session;
-  if (ss0 && ss0.spec && ss0.spec.type === 'game') bits.push('<a href="' + gameHref(g.id, g.color, b.p) + '">Open the game ↗</a>');
+  if (ss0 && ss0.spec && ss0.spec.type === 'game') { bits.splice(1, 2); bits.push('<a href="' + gameHref(g.id, g.color, b.p) + '">Open the game ↗</a>'); }
   var h = '<p class="ctx">' + bits.join(' · ') + '</p>';
   if (answered) return h;
   var tags = [];
@@ -640,7 +646,7 @@ function panelHtml(a, ss) {
     /* the feedback slot: one message at a time, in a space kept for it */
     var fb = '';
     if (a.phase === 'checking') fb = '<div class="checking"><span class="meter"><i></i></span>Checking ' + esc(a.checking || 'your move') + '…</div>';
-    else if (a.verdict) fb = '<p class="verdict ' + a.verdict.cls + '">' + a.verdict.html + '</p>';
+    else if (a.verdict) fb = '<p class="verdict ' + a.verdict.cls + '">' + (a.verdict.panel || a.verdict.html) + '</p>';
     else if (!store.get('nl:marksSeen', false) && ss.idx === 0 && a.firstSight && !a.attempts)
       fb = '<p class="first-line">Drag a piece, or tap it and tap a square. The bar on the left fills in once you answer.</p>';
     else if (a.tier === 1 && a.solIdx === 0 && !a.hints) fb = '<p class="first-line">Look at every check and capture first, for both sides.</p>';
@@ -670,7 +676,7 @@ function panelHtml(a, ss) {
   if (a.check1 && a.check1.done) {
     /* the blunder check: the question was their reply; the fix is the worked example */
     disc = a.check1.found ? '<span class="disc" aria-hidden="true">✓</span>' : '';
-    head = a.check1.found ? esc(a.check1.san) + '. You saw it.' : 'They had ' + esc(a.check1.san) + '.';
+    head = a.check1.found ? esc(a.check1.played || a.check1.san) + '. You saw it.' : 'They had ' + esc(a.check1.san) + '.';
     sub = 'The better move was ' + esc(best) + '. You will find it yourself next time.';
   } else if (a.result === 'fail' || a.revealed) {
     disc = '';
@@ -776,7 +782,8 @@ function renderInsights() {
   }
   var partial = n.covered < n.total;
   /* the window is named once, here */
-  var cg = coveredGames().map(function (g) { return g.ts; });
+  /* the window's span, not the part read so far */
+  var cg = (partial ? scopedGames() : coveredGames()).map(function (g) { return g.ts; });
   var mY = function (t) { return new Date(t).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }); };
   var span = cg.length ? ', ' + mY(Math.min.apply(null, cg)) + ' to ' + mY(Math.max.apply(null, cg)) : '';
   var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + n.total + ' games so far' : plur(r.games, 'game')) + span + '</div>';
@@ -866,7 +873,7 @@ function sheetHtml(kind) {
         + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
       + '<div class="habit-block"><div class="kicker">The habit that fixes it</div><div class="plan">' + esc(fam.habit) + '</div></div>'
       + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'family', fam: k, label: fam.name })) + '">Drill ' + plur(nDrill, 'position') + '</a>' : '')
-      + (focus && focus.fam === k ? '<span class="pill">Your biggest leak</span>' : '') + '</div>'
+      + (focus && focus.fam === k ? '<span class="pill">Focus</span>' : '') + '</div>'
       + (rows ? '<div class="pat-list">' + rows + '</div>' : '')
       + examplesHtml({ type: 'family', fam: k });
   }
@@ -935,7 +942,8 @@ function settingsHtml() {
       + [[5, 'Short · 5'], [10, 'Normal · 10'], [20, 'Long · 20']].map(function (o) { return chip('size', o[0], o[1], sessionSize() === o[0]); }).join('')
       + '</div><p>Weekly goal, in days:</p><div class="chips">'
       + [3, 4, 5, 7].map(function (n) { return chip('weekGoal', n, n, weekGoal() === n); }).join('')
-      + '</div><p>' + DAY_RULE + '</p></div>'
+      + '</div>' + (goalThisWeek() !== weekGoal() ? '<p>The new goal starts on Monday. This week stays at ' + goalThisWeek() + '.</p>' : '')
+      + '<p>' + DAY_RULE + '</p></div>'
     + '<div class="set-block"><span class="kicker">Board</span>'
       + sw('sound', 'Sounds', cfg.sound) + '</div>'
     + '<div class="set-block"><span class="kicker">Your data</span>'
@@ -958,7 +966,7 @@ function renderFoot() {
   if (!f) return;
   f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</span>'
     + '<span class="foot-links"><a data-act="coffee">Support the developer</a>'
-    + '<a href="https://lichess.org/patron">Donate to lichess</a>'
+    + (isCC() ? '' : '<a href="https://lichess.org/patron">Donate to lichess</a>')
     + '<a href="https://github.com/thatsiavash/notlichess">Source</a></span>';
 }
 

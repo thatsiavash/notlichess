@@ -322,7 +322,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .promo-opt:hover{border-color:var(--gold)}
 .promo-opt svg{width:100%;height:100%}
 .panel{min-width:0;display:flex;flex-direction:column}
-.ctx{font-size:13px;color:var(--secondary);margin:0 0 6px;line-height:1.45}
+.ctx{font-size:13px;color:var(--secondary);margin:0 0 6px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctx b{color:var(--primary);font-weight:400}
 .ctx .tag{color:var(--gold-quiet)}
 .task{font-family:var(--font-display);font-size:27px;line-height:1.15;color:var(--display);margin:4px 0 6px}
@@ -4411,7 +4411,7 @@ function dayBump(result, fresh, attempted) {
   if (result !== 'skip' && attempted) day.attempted = (day.attempted || 0) + 1;
   if (result === 'first' || result === 'hint' || result === 'retry') day.solved = (day.solved || 0) + 1;
   if (result === 'first') day.first = (day.first || 0) + 1;
-  if (fresh && result !== 'skip') day.fresh = (day.fresh || 0) + 1;
+  if (fresh) day.fresh = (day.fresh || 0) + 1;
   daySave(day);
 }
 /* one rule, said the same way in Settings: a day counts when you finish a
@@ -4422,11 +4422,28 @@ var DAY_RULE = 'A day counts when you finish a session in which you tried at lea
 function dayCounts(rec) { return !!(rec && (rec.sessions || 0) >= 1); }
 function dayRecOf(d) { return store.get(dayKeyFor(d), null); }
 function weekGoal() { return store.get('nl:weekGoal', 4); }
+function mondayOf(d) { var m = new Date(d); m.setHours(0, 0, 0, 0); m.setDate(m.getDate() - (m.getDay() + 6) % 7); return m.getTime(); }
+/* a new goal applies from next Monday: past weeks keep the goal they had */
+function setWeekGoal(n) {
+  var next = mondayOf(new Date()) + 7 * DAY + 3 * 3600 * 1000;
+  var h = (store.get('nl:goalHist', null) || [{ from: 0, goal: weekGoal() }]).filter(function (e) { return e.from < mondayOf(next); });
+  h.push({ from: mondayOf(next), goal: n });
+  store.set('nl:goalHist', h);
+  store.set('nl:weekGoal', n);
+}
+function weekGoalAt(ms) {
+  var h = store.get('nl:goalHist', null);
+  if (!h || !h.length) return weekGoal();
+  var g = h[0].goal;
+  h.forEach(function (e) { if (e.from <= ms) g = e.goal; });
+  return g;
+}
+function goalThisWeek() { return weekGoalAt(Date.now()); }
 /* consistency counted in weeks: the run of Monday-to-Sunday weeks that met
    the goal, this week included once it is met; a week still under way never
    breaks the run */
 function weeksAtGoal() {
-  var goal = weekGoal(), n = 0, d = new Date();
+  var n = 0, d = new Date();
   d.setHours(12, 0, 0, 0);
   var dow = (d.getDay() + 6) % 7, monday = new Date(d);
   monday.setDate(d.getDate() - dow);
@@ -4435,11 +4452,11 @@ function weeksAtGoal() {
     for (var i = 0; i < days; i++) { var x = new Date(mon); x.setDate(mon.getDate() + i); if (dayCounts(dayRecOf(x))) c++; }
     return c;
   };
-  if (count(monday, dow + 1) >= goal) n++;
+  if (count(monday, dow + 1) >= weekGoalAt(monday.getTime())) n++;
   for (var w = 1; w < 105; w++) {
     var m = new Date(monday);
     m.setDate(monday.getDate() - 7 * w);
-    if (count(m, 7) >= goal) n++; else break;
+    if (count(m, 7) >= weekGoalAt(m.getTime())) n++; else break;
   }
   return n;
 }
@@ -5074,7 +5091,19 @@ function saveSession() {
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
-                         progress: ss.progress || {}, attempted: ss.attempted || 0, checks: ss.checks || 0, checksFound: ss.checksFound || 0 });
+                         progress: ss.progress || {}, attempted: ss.attempted || 0, checks: ss.checks || 0, checksFound: ss.checksFound || 0, notes: ss.notes || {} });
+}
+/* a paused session that is dropped or replaced: a card left after a miss
+   is graded a fail, and its tries still count toward the day */
+function settleSaved(s) {
+  if (!s) return 0;
+  var m = model();
+  Object.keys(s.progress || {}).forEach(function (k) {
+    var p = s.progress[k], it = m.byKey[k];
+    if (!it || !p || s.results[k] || (s.relearnOf && s.relearnOf[k])) return;
+    if (p.m) srsRecord(it, 'fail', { attempted: p.a > 0, gameMove: !!p.g });
+  });
+  return s.attempted || 0;
 }
 function savedSession() {
   var s = store.get(sessKey(), null);
@@ -5216,7 +5245,12 @@ function todayPlan() {
 }
 function startSession(mode, keys, label, spec) {
   if (!keys.length) return false;
-  ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null };
+  var prev = savedSession(), carried = 0;
+  if (prev) {
+    carried = settleSaved(prev);
+    if (sessionDoneCount(prev) > 0) notice('Your paused session is closed. Its answers are kept and its tries count toward today.');
+  }
+  ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, attempted: carried };
   data.freshOnboard = false;
   saveSession();
   setView('train', false);
@@ -5253,7 +5287,7 @@ function resumeSession() {
   if (!s) return false;
   ui.session = { mode: s.mode, label: s.label, keys: s.keys, idx: s.idx, results: s.results || {},
                  relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {},
-                 attempted: s.attempted || 0, checks: s.checks || 0, checksFound: s.checksFound || 0 };
+                 attempted: s.attempted || 0, checks: s.checks || 0, checksFound: s.checksFound || 0, notes: s.notes || {} };
   setView('train', false);
   pushSessionState();
   /* a card answered before the reload is not asked again */
@@ -5325,7 +5359,7 @@ function finishSession() {
   if (tried >= 1 && tried >= Math.min(3, n)) day.sessions = (day.sessions || 0) + 1;
   else day.short = 1;
   daySave(day);
-  if (weekDays() >= weekGoal() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
+  if (weekDays() >= goalThisWeek() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
     store.set('nl:goalSent:' + playerId(), weeksAtGoal());
     track('week_goal_met');
   }
@@ -5348,9 +5382,9 @@ function endSession(fromPop) {
   if (!ss) return;
   var open = ss.active, done = sessionDoneCount(ss), total = sessionTotal(ss);
   /* a move still being checked counts as a try that did not land */
-  if (open && open.phase === 'checking') { open.checkTok = (open.checkTok || 0) + 1; open.misses = Math.max(open.misses || 0, 1); open.attempts = Math.max(open.attempts || 0, 1); }
-  if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints)) keepProgress(open);
-  var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints)));
+  if (open && open.phase === 'checking') { open.checkTok = (open.checkTok || 0) + 1; open.phase = 'guess'; open.attempts = Math.max(open.attempts || 0, 1); }
+  if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints || open.attempts)) keepProgress(open);
+  var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints || open.attempts)));
   if (keep) saveSession(); else store.del(sessKey());
   ui.session = null;
   if (!fromPop && history.state && history.state.nlSession) { try { history.replaceState(null, '', location.pathname + '#train'); } catch (e) {} }
@@ -5547,6 +5581,7 @@ function loadCard() {
     var a = cardFor(it);
     if (!a) { it.b.x = 'moves'; ss.keys.splice(ss.idx, 1); saveSession(); loadCard(); return; }
     ss.active = a;
+    a.shownAt = Date.now();
     renderCard();
     setTimeout(scrollTrainerTop, 60);
     prefetchCards(ss);
@@ -5639,6 +5674,7 @@ function checkStep(m, u) {
   ss.checks = (ss.checks || 0) + 1;
   if (found) ss.checksFound = (ss.checksFound || 0) + 1;
   if (found) {
+    c1.played = san;
     a.checkVerdict = '✓ ' + esc(san) + '. That is what your move allowed.';
     snd('good');
   } else {
@@ -5669,7 +5705,7 @@ function stepLine(m, u) {
   a.phase = 'reply';
   /* my moves sit at even offsets of the line: the next one is number n */
   a.hintAfter = false;
-  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (a.solIdx / 2 + 1.5 | 0) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.' };
+  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (a.solIdx / 2 + 1.5 | 0) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.', panel: '✓ ' + esc(san) + '.' };
   renderCard();
   var cardKey = a.key;
   setTimeout(function () {
@@ -5881,8 +5917,12 @@ function reveal() {
   a.revealed = true;
   a.st = cloneState(a.pre);
   /* found a close move and then asked for the best one: a hint, not a miss */
+  if (a.foundGood && !a.misses) (ui.session.notes = ui.session.notes || {})[a.key] = 'close';
   finishCard(a.foundGood && !a.misses ? 'hint' : 'fail');
 }
+/* a second tap on Next lands where Show the answer now sits: taps in the
+   first half second of a card are the old card's */
+function tooSoon(a) { return !!a && Date.now() - (a.shownAt || 0) < 450; }
 function giveHint() {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'guess' || a.hints >= 2 || (a.tier === 3 && !a.misses)) return;
@@ -6031,6 +6071,7 @@ function settleLeft(a) {
   if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
   if (ss.progress) delete ss.progress[a.key];
   ss.results[a.key + (again ? '#r' : '')] = result;
+  if (!again) (ss.notes = ss.notes || {})[a.key] = 'left';
   a.phase = 'done';
 }
 function skipCard() {
@@ -6207,7 +6248,9 @@ function analysisNumbers() {
   return { covered: c.covered, total: c.total, ready: ready,
            working: SF.state !== 'failed' && (scanState.running || scanState.pending || enrichState.running) };
 }
-var lastReadyShown = -1;
+var lastReadyShown = -1, lastTodaySig = '', lastSigCheck = 0;
+/* what Today says depends on the plan and the focus: both move while reading */
+function todaySig(fh) { return todayPlan().keys.join(',') + '|' + (fh == null ? focusHtml() : fh); }
 function renderAnalysisStatus() {
   var n = analysisNumbers();
   /* while Stockfish reads, a thin line on the header's bottom edge */
@@ -6227,6 +6270,7 @@ function renderAnalysisStatus() {
     var hero = el('hero-n'), want = hero ? +hero.getAttribute('data-n') : 0;
     if (bucket !== lastReadyShown) { lastReadyShown = bucket; renderTrain(); }
     else if (hero && want < 5 && n.ready > want && todayPlan().keys.length > want) renderTrain();
+    else if (Date.now() - lastSigCheck > 3000 && (lastSigCheck = Date.now()) && todaySig() !== lastTodaySig) renderTrain();
     else {
       if (el('finds')) el('finds').innerHTML = recentFindsHtml();
       var lg = el('latest');
@@ -6271,9 +6315,11 @@ function renderTrain() {
   var day = dayLoad();
   /* the day has a finish line: the chosen session done means done for today */
   var doneToday = (day.sessions || 0) > 0 || (!saved && !todayPlan().keys.length);
+  var fh = focusHtml();
+  lastTodaySig = todaySig(fh);
   box.innerHTML = '<div class="today today-grid"><div class="today-main">' + since
     + (saved ? resumeHtml(saved) : (doneToday ? doneTodayHtml() : heroHtml()))
-    + focusHtml()
+    + fh
     + '<p class="status" id="astat">' + analysisLine(n) + '</p>'
     + '</div>' + latestGamesHtml() + '</div>';
 }
@@ -6320,7 +6366,7 @@ function agoWords(ts) {
 function sinceHtml() { return data.greeting ? '<p class="since">' + data.greeting + '</p>' : ''; }
 /* the weekly goal as its own shape: one segment per day of the goal */
 function weekHtml() {
-  var goal = weekGoal(), done = Math.min(weekDays(), goal), today = dayCounts(dayRecOf(new Date())), segs = '';
+  var goal = goalThisWeek(), done = Math.min(weekDays(), goal), today = dayCounts(dayRecOf(new Date())), segs = '';
   for (var i = 0; i < goal; i++) segs += '<span class="wseg' + (i < done ? ' on' : (i === done && !today ? ' wseg-now' : '')) + '"></span>';
   var weeks = weeksAtGoal();
   return '<div class="week"><div class="wsegs" aria-hidden="true">' + segs + '</div>'
@@ -6328,7 +6374,7 @@ function weekHtml() {
 }
 function heroHtml() {
   var plan = todayPlan();
-  var mins = Math.max(3, Math.round(plan.keys.length * 0.8));
+  var mins = Math.max(1, Math.round(plan.keys.length * 0.8));
   var why;
   var first0 = model().byKey[plan.keys[0]];
   if (plan.firstTime) why = first0 && first0.b.d
@@ -6344,15 +6390,17 @@ function heroHtml() {
   }
   /* a session finished today without enough tries: say what counts */
   var dl = dayLoad();
-  if (dl.short && !dl.sessions) why += ' Try 3 positions to count today.';
+  var need = Math.min(3, plan.keys.length);
+  if (dl.short && !dl.sessions) why += need > 1 ? ' Try ' + need + ' positions to count today.' : ' Try it to count today.';
   return '<div class="hero">'
-    + '<h2 id="hero-n" data-n="' + plan.keys.length + '">' + plur(plan.keys.length, 'position') + ', about ' + mins + ' minutes</h2>'
+    + '<h2 id="hero-n" data-n="' + plan.keys.length + '">' + plur(plan.keys.length, 'position') + ', about ' + plur(mins, 'minute') + '</h2>'
     + '<p class="why">' + why + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="startToday">Start</a></div></div>';
 }
 function resumeHtml(s) {
   return '<div class="hero">'
-    + '<h2>Pick up where you left off.</h2><p class="why">' + Math.min(sessionDoneCount(s), sessionTotal(s)) + ' of ' + sessionTotal(s) + ' done. The rest are waiting where you stopped.</p>' + weekHtml()
+    + '<h2>Pick up where you left off.</h2><p class="why">' + Math.min(sessionDoneCount(s), sessionTotal(s)) + ' of ' + sessionTotal(s) + ' done.'
+    + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.') + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">Start over</a></div></div>';
 }
 /* the next time something is due back, and how much */
@@ -6434,7 +6482,7 @@ function focusHtml() {
     .map(function (s) { return patternInfo(s.key).plural.toLowerCase(); });
   var cost = agg.cost >= 1 ? 'Decided ' + fmtGames(agg.cost) + ' of yours' : plur(agg.count, 'position') + ' in your games';
   return '<div class="focus"><a class="focus-more" data-act="sheet" data-k="family:' + fam.key + '">Details ›</a>'
-    + '<div class="kicker">Your biggest leak</div>'
+    + '<div class="kicker">Your focus</div>'
     + '<div class="focus-name">' + esc(fam.name) + '</div>'
     + '<p class="sec">' + cost + (top.length ? ', mostly ' + esc(top.join(' and ')) : '') + '.</p>'
     + '<div class="plan">' + esc(fam.habit) + '</div></div>';
@@ -6478,20 +6526,19 @@ function doneHtml(ss) {
   var uniq = [];
   ss.keys.forEach(function (k) { if (uniq.indexOf(k) === -1) uniq.push(k); });
   var recap = uniq.map(function (k) {
-    var it = model().byKey[k], r = ss.results[k];
+    var it = model().byKey[k], r = ss.results[k], note = (ss.notes || {})[k];
     if (!it || !r || r === 'skip') return '';
-    answered++;
-    if (r !== 'fail') solved++;
+    if (note !== 'left') { answered++; if (r !== 'fail') solved++; }
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
     /* the result in words, never in colour alone */
-    var word = r === 'first' ? '✓ first try' : r === 'retry' ? '✓ on the retry' : r === 'fail' ? 'Shown' : '✓ with help';
+    var word = note === 'left' ? 'Skipped' : note === 'close' ? '◐ close' : r === 'first' ? '✓ first try' : r === 'retry' ? '✓ on the retry' : r === 'fail' ? 'Shown' : '✓ with help';
     var pm = uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
     return '<div class="recap-item" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: k, label: 'One position' })) + '">'
       + boardSvg(pre, { flip: it.g.color === 'black', bad: pm ? [pm.from, pm.to] : null, decor: true }) + '<span>' + esc(patternInfo(patternOf(it.b)).name) + '</span>'
       + '<span class="res' + (r === 'fail' ? ' shown' : '') + '">' + word + '</span></div>';
   }).join('');
-  var habit = recapHabit(ss);
+  var habit = ss.checks ? FAMILIES[0].habit : recapHabit(ss);
   var more = morePracticeKeys().length;
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
@@ -6702,7 +6749,7 @@ function ctxHtml(a, answered) {
   if (b.c != null) bits.push(clockWords(b.c) + ' left');
   /* a game drill keeps its game one tap away */
   var ss0 = ui.session;
-  if (ss0 && ss0.spec && ss0.spec.type === 'game') bits.push('<a href="' + gameHref(g.id, g.color, b.p) + '">Open the game ↗</a>');
+  if (ss0 && ss0.spec && ss0.spec.type === 'game') { bits.splice(1, 2); bits.push('<a href="' + gameHref(g.id, g.color, b.p) + '">Open the game ↗</a>'); }
   var h = '<p class="ctx">' + bits.join(' · ') + '</p>';
   if (answered) return h;
   var tags = [];
@@ -6749,7 +6796,7 @@ function panelHtml(a, ss) {
     /* the feedback slot: one message at a time, in a space kept for it */
     var fb = '';
     if (a.phase === 'checking') fb = '<div class="checking"><span class="meter"><i></i></span>Checking ' + esc(a.checking || 'your move') + '…</div>';
-    else if (a.verdict) fb = '<p class="verdict ' + a.verdict.cls + '">' + a.verdict.html + '</p>';
+    else if (a.verdict) fb = '<p class="verdict ' + a.verdict.cls + '">' + (a.verdict.panel || a.verdict.html) + '</p>';
     else if (!store.get('nl:marksSeen', false) && ss.idx === 0 && a.firstSight && !a.attempts)
       fb = '<p class="first-line">Drag a piece, or tap it and tap a square. The bar on the left fills in once you answer.</p>';
     else if (a.tier === 1 && a.solIdx === 0 && !a.hints) fb = '<p class="first-line">Look at every check and capture first, for both sides.</p>';
@@ -6779,7 +6826,7 @@ function panelHtml(a, ss) {
   if (a.check1 && a.check1.done) {
     /* the blunder check: the question was their reply; the fix is the worked example */
     disc = a.check1.found ? '<span class="disc" aria-hidden="true">✓</span>' : '';
-    head = a.check1.found ? esc(a.check1.san) + '. You saw it.' : 'They had ' + esc(a.check1.san) + '.';
+    head = a.check1.found ? esc(a.check1.played || a.check1.san) + '. You saw it.' : 'They had ' + esc(a.check1.san) + '.';
     sub = 'The better move was ' + esc(best) + '. You will find it yourself next time.';
   } else if (a.result === 'fail' || a.revealed) {
     disc = '';
@@ -6885,7 +6932,8 @@ function renderInsights() {
   }
   var partial = n.covered < n.total;
   /* the window is named once, here */
-  var cg = coveredGames().map(function (g) { return g.ts; });
+  /* the window's span, not the part read so far */
+  var cg = (partial ? scopedGames() : coveredGames()).map(function (g) { return g.ts; });
   var mY = function (t) { return new Date(t).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }); };
   var span = cg.length ? ', ' + mY(Math.min.apply(null, cg)) + ' to ' + mY(Math.max.apply(null, cg)) : '';
   var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + n.total + ' games so far' : plur(r.games, 'game')) + span + '</div>';
@@ -6975,7 +7023,7 @@ function sheetHtml(kind) {
         + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
       + '<div class="habit-block"><div class="kicker">The habit that fixes it</div><div class="plan">' + esc(fam.habit) + '</div></div>'
       + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'family', fam: k, label: fam.name })) + '">Drill ' + plur(nDrill, 'position') + '</a>' : '')
-      + (focus && focus.fam === k ? '<span class="pill">Your biggest leak</span>' : '') + '</div>'
+      + (focus && focus.fam === k ? '<span class="pill">Focus</span>' : '') + '</div>'
       + (rows ? '<div class="pat-list">' + rows + '</div>' : '')
       + examplesHtml({ type: 'family', fam: k });
   }
@@ -7044,7 +7092,8 @@ function settingsHtml() {
       + [[5, 'Short · 5'], [10, 'Normal · 10'], [20, 'Long · 20']].map(function (o) { return chip('size', o[0], o[1], sessionSize() === o[0]); }).join('')
       + '</div><p>Weekly goal, in days:</p><div class="chips">'
       + [3, 4, 5, 7].map(function (n) { return chip('weekGoal', n, n, weekGoal() === n); }).join('')
-      + '</div><p>' + DAY_RULE + '</p></div>'
+      + '</div>' + (goalThisWeek() !== weekGoal() ? '<p>The new goal starts on Monday. This week stays at ' + goalThisWeek() + '.</p>' : '')
+      + '<p>' + DAY_RULE + '</p></div>'
     + '<div class="set-block"><span class="kicker">Board</span>'
       + sw('sound', 'Sounds', cfg.sound) + '</div>'
     + '<div class="set-block"><span class="kicker">Your data</span>'
@@ -7067,7 +7116,7 @@ function renderFoot() {
   if (!f) return;
   f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</span>'
     + '<span class="foot-links"><a data-act="coffee">Support the developer</a>'
-    + '<a href="https://lichess.org/patron">Donate to lichess</a>'
+    + (isCC() ? '' : '<a href="https://lichess.org/patron">Donate to lichess</a>')
     + '<a href="https://github.com/thatsiavash/notlichess">Source</a></span>';
 }
 
@@ -7518,15 +7567,15 @@ document.addEventListener('click', function (e) {
       break;
     case 'startToday': startToday(); break;
     case 'resume': resumeSession(); break;
-    case 'dropSession': store.del(sessKey()); renderTrain(); break;
+    case 'dropSession': settleSaved(savedSession()); store.del(sessKey()); renderViews(); renderTrain(); break;
     case 'keepGoing': keepGoing(); break;
     case 'endSession': endSession(); break;
     case 'drill': { var sp = parseSpec(t); if (sp) startDrill(sp); break; }
     case 'sheet': openSheet(k); break;
     case 'closeSheet': if (e.target === t) closeSheet(); break;
-    case 'hint': giveHint(); break;
-    case 'checkShow': if (a && a.phase === 'check') { a.attempts++; checkStep(null, null); } break;
-    case 'reveal': reveal(); break;
+    case 'hint': if (!tooSoon(a)) giveHint(); break;
+    case 'checkShow': if (a && a.phase === 'check' && !tooSoon(a)) checkStep(null, null); break;
+    case 'reveal': if (!tooSoon(a)) reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
     case 'dismissStronger': if (a) { a.strongerOffer = false; a.verdict = null; renderCard(); } break;
@@ -7551,21 +7600,20 @@ document.addEventListener('click', function (e) {
     }
     case 'limit': setLimit(parseInt(k, 10)); break;
     case 'size': store.set('nl:sessionSize', parseInt(k, 10)); renderSettings(); renderTrain(); break;
-    case 'weekGoal': store.set('nl:weekGoal', parseInt(k, 10)); renderSettings(); renderTrain(); break;
+    case 'weekGoal': setWeekGoal(parseInt(k, 10)); renderSettings(); renderTrain(); break;
     case 'reload': checkForGames(); break;
     case 'exportProgress': exportProgress(); break;
     case 'importProgress': importProgress(); break;
     case 'engineRetry': SF.state = 'idle'; SF.crashes = []; engineLoad().then(function () { autoScan(); }, function () {}); renderAll(); break;
     case 'resetProgress': {
-      if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); setTimeout(function () { ui.resetArmed = false; renderSettings(); }, 4000); break; }
+      if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); clearTimeout(ui.armTimer); ui.armTimer = setTimeout(function () { ui.resetArmed = false; renderSettings(); }, 4000); break; }
       var u = playerId();
       try {
         var del = [];
-        for (var i = 0; i < localStorage.length; i++) {
-          var kk = localStorage.key(i);
-          if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === sessKey())) del.push(kk);
-        }
-        del.forEach(function (x) { localStorage.removeItem(x); });
+        var keys = Object.keys(mem);
+        for (var i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+        keys.forEach(function (kk) { if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === sessKey()) && del.indexOf(kk) === -1) del.push(kk); });
+        del.forEach(function (x) { store.del(x); });
         store.del('nl:srs:' + u);
       } catch (e2) {}
       srsMem = null; srsRevision++; ui.session = null; ui.resetArmed = false; modelDirty();
@@ -7574,7 +7622,7 @@ document.addEventListener('click', function (e) {
       break;
     }
     case 'wipe': {
-      if (!ui.wipeArmed) { ui.wipeArmed = true; renderSettings(); setTimeout(function () { ui.wipeArmed = false; renderSettings(); }, 4000); break; }
+      if (!ui.wipeArmed) { ui.wipeArmed = true; renderSettings(); clearTimeout(ui.armTimer); ui.armTimer = setTimeout(function () { ui.wipeArmed = false; renderSettings(); }, 4000); break; }
       try {
         var all = [];
         for (var j = 0; j < localStorage.length; j++) { var kj = localStorage.key(j); if (kj && kj.indexOf('nl:') === 0) all.push(kj); }
@@ -7587,7 +7635,7 @@ document.addEventListener('click', function (e) {
       location.href = location.pathname;
       break;
     }
-    case 'coffee': notice('Thank you! A tip jar is coming soon.'); break;
+    case 'coffee': notice('Thank you. A tip jar is coming soon.'); break;
   }
 });
 document.addEventListener('change', function (e) {
