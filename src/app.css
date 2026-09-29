@@ -701,3 +701,10 @@ a.lg-row{color:inherit}
 .handoff{font-size:14px;color:var(--text-2);margin:0 0 12px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .evalbar.pending{background:var(--line)}
 .evalbar.pending .evalbar-fill{opacity:0}
+.proof{margin:24px 0 0;padding:16px 20px;border-left:2px solid var(--line-strong);background:var(--surface-1);border-radius:0 var(--r1) var(--r1) 0}
+.proof figcaption{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px}
+.proof blockquote{margin:0;font-size:16px;line-height:1.5;color:var(--text-1)}
+.which-q{font-size:15px;color:var(--text-1);margin:12px 0 8px}
+.which-row{display:flex;flex-wrap:wrap;gap:12px}
+.which-row .btn-line{min-height:44px}
+.which-none{font-size:14px;color:var(--text-2);margin:12px 0 0}

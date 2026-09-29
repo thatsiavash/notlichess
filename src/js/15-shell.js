@@ -4,44 +4,83 @@
    Knights walks into Nxf7, forking queen and rook) */
 var LANDING_FEN = 'r1bqkb1r/ppp2ppp/2n2n2/3Pp1N1/2B5/8/PPPP1PPP/RNBQK2R b KQkq - 0 5';
 function renderFirstVisit(prefill) {
-  var cc = isCC();
   var ex = stateFromFen(LANDING_FEN);
   el('main').innerHTML = '<div class="first landing">'
     + '<div class="landing-copy">'
-    + '<div class="kicker">For lichess and chess.com players</div>'
+    + '<div class="kicker">For chess.com and lichess players</div>'
     + '<h1>Stop making the same mistakes.</h1>'
-    + '<p class="lede">Stockfish finds the moves that cost you games, and you practise those exact positions until you stop making them.</p>'
-    + '<div class="src-pick" role="group" aria-label="Where you play">'
-      + '<button class="src-btn' + (!cc ? ' src-on' : '') + '" data-act="srcPick" data-k="lichess" aria-pressed="' + !cc + '">lichess</button>'
-      + '<button class="src-btn' + (cc ? ' src-on' : '') + '" data-act="srcPick" data-k="chesscom" aria-pressed="' + cc + '">chess.com</button>'
-    + '</div>'
+    + '<p class="lede">Type your username. In a few seconds you see which mistakes decided your losses. Then you practise those exact positions, a few minutes a day, until you stop making them.</p>'
     /* an iPhone home-screen app keeps its storage apart from Safari */
     + (navigator.standalone === true ? '<p class="handoff">Used notlichess in Safari? Export your progress there in Settings, then import it here. '
       + '<a class="btn-line" data-act="importProgress">Import progress</a></p>' : '')
+    /* one box: the name is looked up on both sites */
     + '<div class="first-form">'
-      + '<input class="input" id="firstUser" placeholder="Your ' + (cc ? 'chess.com' : 'lichess') + ' username" autocomplete="off" '
-      + 'autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-label="Your ' + (cc ? 'chess.com' : 'lichess') + ' username" value="' + esc(prefill || '') + '">'
-      + '<button class="btn-big" data-act="setUser">Find my mistakes</button>'
+      + '<input class="input" id="firstUser" placeholder="Your chess.com or lichess username" autocomplete="off" '
+      + 'autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-label="Your chess.com or lichess username" value="' + esc(prefill || '') + '">'
+      + '<button class="btn-big" data-act="findUser" id="findBtn">Find my mistakes</button>'
     + '</div>'
+    + '<div id="whichSite" aria-live="polite"></div>'
     + '<p class="first-foot">Free, with no account. Your games stay in this browser.</p>'
+    + '<figure class="proof"><figcaption>What a 1350 rapid player saw</figcaption>'
+      + '<blockquote>169 of your 237 losses came down to one big mistake. The biggest leak is giving away material. It decided 107 games.</blockquote></figure>'
     + '</div>'
     + (ex ? '<div class="landing-ex" aria-hidden="true"><div class="kicker">Example</div>'
       + boardSvg(ex, { flip: true, bad: [45, 35], mark: [28, 35], decor: true })
       + '<p class="ex-task">Find a better move.</p><p class="ex-sub">You played Nxd5. It walked into a fork.</p></div>' : '')
     + '<div class="value">'
-      + valueItem('Your own mistakes', 'Stockfish reads your games and pulls out the exact positions where they went wrong.')
-      + valueItem('The why, not just the what', 'What your move allowed, the better move, and what really happened next.')
-      + valueItem('What costs you games', 'Hanging pieces, missed forks, slipped wins: ranked by the games they lost you.')
+      + valueItem('Every game, not one at a time', 'Your last year of rated games in the format you play most. Your first position is ready in seconds.')
+      + valueItem('Ranked by what it cost you', 'Hanging pieces, forks, missed mates: sorted by how many games each one decided.')
+      + valueItem('A few minutes a day', 'Five of your own positions. Each comes back just before you would forget it.')
+      + valueItem('Free, no account', 'Nothing to buy. Open source.')
     + '</div>'
     + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
     + '</div>';
   var input = el('firstUser');
   if (input) {
     input.focus();
-    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') setUser(input.value); });
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') findUser(input.value); });
     /* the engine downloads while the name is typed, not for every visitor */
     input.addEventListener('input', function () { engineLoad().catch(function () {}); }, { once: true });
   }
+}
+/* the name on both sites at once: one found, go; both, ask which; neither,
+   say so. A site that does not answer counts as not found there */
+function findUser(name) {
+  name = String(name || '').trim();
+  if (!name) return;
+  if (!/^[a-zA-Z0-9_-]{2,30}$/.test(name)) { notice('That is not a chess.com or lichess username: letters, numbers, underscore and hyphen only.'); return; }
+  var btn = el('findBtn'), box = el('whichSite');
+  if (btn) { btn.textContent = 'Looking…'; btn.classList.add('btn-off'); }
+  var li = getJSON('/api/user/' + encodeURIComponent(name), { quiet: true }).then(function (u) {
+    if (!u || u.disabled || u.closed) return null;
+    var best = null;
+    ['rapid', 'blitz', 'bullet', 'classical'].forEach(function (p) { var pf = u.perfs && u.perfs[p]; if (pf && pf.games && (!best || pf.games > best.games)) best = { p: p, games: pf.games, r: pf.rating }; });
+    return { site: 'lichess', name: u.username || name, best: best };
+  }, function () { return null; });
+  var cc = ccJSON('/player/' + encodeURIComponent(name), { quiet: true }).then(function (p) {
+    if (!p) return null;
+    return ccJSON('/player/' + encodeURIComponent(name) + '/stats', { quiet: true }).then(function (st) {
+      var best = null;
+      [['chess_rapid', 'rapid'], ['chess_blitz', 'blitz'], ['chess_bullet', 'bullet']].forEach(function (k) {
+        var v = st && st[k[0]], n = v && v.record ? (v.record.win || 0) + (v.record.loss || 0) + (v.record.draw || 0) : 0;
+        if (n && (!best || n > best.games)) best = { p: k[1], games: n, r: v.last && v.last.rating };
+      });
+      return { site: 'chesscom', name: p.username || name, best: best };
+    }, function () { return { site: 'chesscom', name: p.username || name, best: null }; });
+  }, function () { return null; });
+  Promise.all([cc, li]).then(function (res) {
+    if (btn) { btn.textContent = 'Find my mistakes'; btn.classList.remove('btn-off'); }
+    var found = res.filter(Boolean);
+    if (found.length === 1) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
+    if (!found.length) {
+      if (box) box.innerHTML = '<p class="which-none">Neither chess.com nor lichess has an account called ' + esc(name) + '. Check the spelling.</p>';
+      return;
+    }
+    if (box) box.innerHTML = '<p class="which-q">Which one is you?</p><div class="which-row">' + found.map(function (f) {
+      return '<button class="btn-line" data-act="pickSite" data-k="' + f.site + '">' + (f.site === 'chesscom' ? 'chess.com' : 'lichess')
+        + (f.best && f.best.r ? ' · ' + f.best.p + ' ' + f.best.r : '') + '</button>';
+    }).join('') + '</div>';
+  });
 }
 function valueItem(title, body) {
   return '<div class="value-item"><b>' + esc(title) + '</b><span>' + esc(body) + '</span></div>';
@@ -371,6 +410,8 @@ document.addEventListener('click', function (e) {
       break;
     }
     case 'setUser': setUser(el('firstUser') ? el('firstUser').value : ''); break;
+    case 'findUser': findUser(el('firstUser') ? el('firstUser').value : ''); break;
+    case 'pickSite': { var nm2 = el('firstUser') ? el('firstUser').value : ''; cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm2); break; }
     case 'useOtherSite': { var nm = cfg.user; cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm); break; }
     case 'logout': {
       if (k === 'confirm' && !ui.logoutArmed) {
