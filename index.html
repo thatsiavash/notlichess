@@ -4815,7 +4815,8 @@ function engineEval(fen, movetime, priority, opts) {
   opts = opts || {};
   return new Promise(function (resolve, reject) {
     var job = { fen: fen, movetime: movetime || 80, resolve: resolve, reject: reject,
-                mpv: opts.multipv || 1, moves: opts.searchmoves || null, prio: !!priority, tag: opts.tag || null };
+                mpv: opts.multipv || 1, moves: opts.searchmoves || null, prio: !!priority, tag: opts.tag || null,
+                onInfo: opts.onInfo || null };
     /* a player is waiting on priority jobs; the scan can wait */
     if (priority) {
       var at = 0;
@@ -4836,6 +4837,21 @@ function promoteTag(tag) {
   mine.forEach(function (j) { j.prio = true; });
   SF.queue.splice.apply(SF.queue, [at, 0].concat(mine));
   enginePump();
+}
+/* a question nobody is waiting for any more: a queued one is dropped, a
+   running one is told to stop, and answers with what it has so far (stop is
+   the one command Stockfish reads safely mid-search) */
+function engineStop(tag) {
+  if (!tag) return;
+  SF.queue = SF.queue.filter(function (j) {
+    if (j.tag !== tag) return true;
+    j.reject({ stopped: true });
+    return false;
+  });
+  SF.workers.forEach(function (slot) {
+    var j = slot.pending && slot.pending[0];
+    if (j && j.tag === tag && !j.stopping) { j.stopping = true; slot.w.postMessage('stop'); }
+  });
 }
 /* the same question asked twice (the eval bar revisiting a position) is
    answered once */
@@ -4860,6 +4876,34 @@ function parseInfo(line) {
   var pv = line.match(/ pv (.+)$/);
   if (pv) out.pv = pv[1].split(' ').slice(0, 12);
   return out;
+}
+/* several lines: a search stopped mid-depth leaves some lines from the last
+   depth and some from the one before, which can repeat a move. The lines are
+   taken from the deepest depth that reported them all, after the newest best
+   line, and a first move is never listed twice. Scores from White's side */
+function linesOf(infos, byDepth, fen) {
+  var flip = fen.split(' ')[1] !== 'w';
+  var want = Object.keys(infos).length, full = null, depth = 0;
+  Object.keys(byDepth).map(Number).sort(function (a, b) { return b - a; }).some(function (d2) {
+    if (Object.keys(byDepth[d2]).length >= want) { full = byDepth[d2]; depth = d2; return true; }
+    return false;
+  });
+  var blk = full || infos, raw = infos[1] ? [infos[1]] : [];
+  Object.keys(blk).sort(function (a, b) { return a - b; }).forEach(function (k2) { raw.push(blk[k2]); });
+  var seen = {};
+  var lines = raw.map(function (txt) {
+    var r = parseInfo(txt);
+    if (flip) { r.cp = -r.cp; if (r.mate != null) r.mate = -r.mate; }
+    if (r.mate === 0) r.mate = null;   /* already mated: the +-1500 says who */
+    return r;
+  }).filter(function (r) {
+    var f = r.pv[0] || '';
+    if (seen[f]) return false;
+    seen[f] = 1;
+    return true;
+  });
+  var d1 = infos[1] && infos[1].match(/ depth (\d+)/);
+  return { lines: lines, depth: d1 ? +d1[1] : depth };
 }
 /* One search per worker at a time. Stockfish 17 in WebAssembly reads new
    commands while it searches, and a position sent mid-search corrupts it
@@ -4887,11 +4931,19 @@ function slotWire(slot) {
   slot.w.onerror = function () { slotKill(slot, 'engine crashed'); };
   slot.w.onmessage = function (e) {
     var m = String(e.data);
+    /* a search that keeps talking is alive, however long it runs */
+    if (m.indexOf('info ') === 0) slot.guardAt = Date.now();
     if (m.indexOf('info ') === 0 && m.indexOf(' score ') > 0 && m.indexOf('bound') === -1
         && (m.indexOf(' pv ') > 0 || m.indexOf('score mate 0') > 0)) {
-      var k = m.match(/ multipv (\d+)/), dm = m.match(/ depth (\d+)/), d = dm ? +dm[1] : 0;
-      slot.infos[k ? +k[1] : 1] = m;
-      (slot.byDepth[d] = slot.byDepth[d] || {})[k ? +k[1] : 1] = m;
+      var k = m.match(/ multipv (\d+)/), dm = m.match(/ depth (\d+)/), d = dm ? +dm[1] : 0, kk = k ? +k[1] : 1;
+      slot.infos[kk] = m;
+      (slot.byDepth[d] = slot.byDepth[d] || {})[kk] = m;
+      /* a listener hears each finished set of lines, as the search deepens */
+      var cur = slot.pending[0];
+      if (cur && cur.onInfo && kk >= Math.min(cur.mpv, Object.keys(slot.infos).length)) {
+        var part = linesOf(slot.infos, slot.byDepth, cur.fen);
+        try { cur.onInfo({ lines: part.lines, depth: part.depth }); } catch (e3) {}
+      }
     }
     if (m.indexOf('bestmove') === 0) {
       var job = slot.pending.shift();
@@ -4899,37 +4951,14 @@ function slotWire(slot) {
       var infos = slot.infos, byDepth = slot.byDepth;
       slot.infos = {}; slot.byDepth = {};
       if (!job) return;
-      var flip = job.fen.split(' ')[1] !== 'w';
-      /* several lines: a search stopped mid-depth leaves some lines from the
-         last depth and some from the one before, which can repeat a move.
-         The lines are taken from the deepest depth that reported them all,
-         after the newest best line, and a first move is never listed twice */
-      var want = Object.keys(infos).length, full = null;
-      Object.keys(byDepth).map(Number).sort(function (a, b) { return b - a; }).some(function (d2) {
-        if (Object.keys(byDepth[d2]).length >= want) { full = byDepth[d2]; return true; }
-        return false;
-      });
-      var blk = full || infos, raw = infos[1] ? [infos[1]] : [];
-      Object.keys(blk).sort(function (a, b) { return a - b; }).forEach(function (k2) { raw.push(blk[k2]); });
-      var seen = {};
-      var lines = raw.map(function (txt) {
-        var r = parseInfo(txt);
-        if (flip) { r.cp = -r.cp; if (r.mate != null) r.mate = -r.mate; }
-        if (r.mate === 0) r.mate = null;   /* already mated: the +-1500 says who */
-        return r;
-      }).filter(function (r) {
-        var f = r.pv[0] || '';
-        if (seen[f]) return false;
-        seen[f] = 1;
-        return true;
-      });
+      var got = linesOf(infos, byDepth, job.fen), lines = got.lines;
       var top = lines[0] || { cp: 0, mate: null, pv: [] };
       var best = m.split(' ')[1];
       /* a search stopped mid-way can name a new best move whose line was
          never printed: the line must start with the move it explains */
       if (best && best !== '(none)' && top.pv.length && top.pv[0] !== best) top.pv = [best];
       job.resolve({ cp: top.cp, mate: top.mate, bestUci: best && best !== '(none)' ? best : null,
-                    pv: top.pv, lines: lines });
+                    pv: top.pv, lines: lines, depth: got.depth, stopped: !!job.stopping });
       enginePump();
     }
   };
@@ -4946,6 +4975,9 @@ function slotWire(slot) {
     if (now - slot.guardAt > 20000) slotKill(slot, 'engine timeout');
   }, 5000);
 }
+/* the kept analyst's limit for background work: a few milliseconds, whatever
+   depth the reading setting asks of the scan */
+var RESERVE_NODES = 18000;
 function enginePump() {
   if (!SF.queue.length) return;
   if (!SF.workers.length) {
@@ -4961,7 +4993,7 @@ function enginePump() {
     slotWire(slot);
     /* the kept analyst still takes a short scan job: 18k nodes is a few
        milliseconds, never long enough to delay a checked move */
-    if (reserve && wi === 0 && !SF.queue[0].prio && !(SF.queue[0].movetime && SF.queue[0].movetime.nodes <= TRIAGE_NODES)) continue;
+    if (reserve && wi === 0 && !SF.queue[0].prio && !(SF.queue[0].movetime && SF.queue[0].movetime.nodes <= RESERVE_NODES)) continue;
     if (!slot.pending.length && SF.queue.length) {
       var job = SF.queue.shift();
       slot.pending.push(job);
