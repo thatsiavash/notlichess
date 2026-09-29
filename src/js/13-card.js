@@ -591,6 +591,8 @@ function autoplayLine(key, then, from, count) {
   stopAuto(a);
   var tok = a.autoTok;
   a.view = { line: key, idx: i - 1 };
+  /* reduced motion: nothing plays by itself; the arrows step the line */
+  if (reducedMotion()) { renderCard(); if (then) then(); return; }
   var step = function () {
     var a2 = ui.session && ui.session.active;
     if (!a2 || a2.key !== cardKey || a2.autoTok !== tok || a2.phase !== 'done') return;

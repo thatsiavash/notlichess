@@ -58,8 +58,11 @@ function newCardScore(it, since) {
 function buildCandidates(n, spec) {
   var srs = srsLoad(), focus = currentFocus(), since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
   var filter = spec ? specFilter(spec) : null;
+  /* Today deals positions with one idea: a quiet card where a second move is
+     as good as the best stays for drills */
+  var twoAnswers = function (it) { return !spec && it.b.g2 != null && it.b.g2 <= SOLVE_TOL && familyOf(patternOf(it.b)).key === 'quiet'; };
   var list = allMistakes().filter(function (it) {
-    return trainable(it) && !srs[it.key] && (!filter || filter(it));
+    return trainable(it) && !srs[it.key] && (!filter || filter(it)) && !twoAnswers(it);
   });
   list.sort(function (x, y) { return newCardScore(y, since) - newCardScore(x, since); });
   if (spec || !focus) return list.slice(0, n);

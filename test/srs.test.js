@@ -214,6 +214,22 @@ test('new positions are counted per day', () => {
   eq(s.dayLoad().fresh, 3, 'fresh');
 });
 
+test('two open tabs never erase each other\'s practice', () => {
+  const s = sandbox(T0);
+  s.srsRecord(card('a'), 'first', { ms: 8000 });           /* this tab */
+  const other = s.store.get(s.srsKey(), {});                /* the other tab writes behind our back */
+  other.b = { box: 1, streak: 1, due: T0 + 3 * DAY, last: T0 + 1000, lapses: 0 };
+  other.a = Object.assign({}, other.a, { last: T0 + 2000, box: 0, lapses: 1 });
+  s.store.set(s.srsKey(), other);
+  s.advance(0.01);
+  s.srsRecord(card('c'), 'first', { ms: 45000 });           /* this tab saves again */
+  const disk = s.store.get(s.srsKey(), {});
+  ok3(!!disk.b, 'the other tab\'s new position survives');
+  eq(disk.a.lapses, 1, 'the newer record of a shared position wins');
+  ok3(!!disk.c, 'this tab\'s position is saved');
+});
+function ok3(c, what) { if (!c) throw new Error(what); }
+
 /* ── weeks at the goal ─────────────────────────────────────────────────── */
 function dayOn(s, daysAgo) {
   const d = new s.Date(s.clock.now); d.setDate(d.getDate() - daysAgo);

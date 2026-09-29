@@ -546,7 +546,7 @@ document.addEventListener('keydown', function (e) {
     if (e.key === '?') { e.preventDefault(); giveHint(); }
   }
 });
-function reducedMotion() { return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }
+function reducedMotion() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
 /* a move typed as SAN (Nf3, exd5, O-O, e8=Q) or as squares (g1f3) */
 function typedMove(txt) {
   var a = ui.session && ui.session.active;

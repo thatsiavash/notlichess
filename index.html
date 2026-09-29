@@ -28,10 +28,16 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#161512">
 <meta name="referrer" content="no-referrer">
+<link rel="canonical" href="https://notlichess.org/">
 <meta property="og:title" content="notlichess.org: stop making the same chess mistakes">
 <meta property="og:description" content="Finds the moves that cost you games in your own lichess or chess.com games, shows you why, and trains you on them until they stop. Free, no account, no ads.">
 <meta property="og:type" content="website">
-<meta name="twitter:card" content="summary">
+<meta property="og:url" content="https://notlichess.org/">
+<meta property="og:image" content="https://notlichess.org/icons/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="A chess position from a real game, with the move that lost marked by a red arrow, next to the words: Stop making the same mistakes.">
+<meta name="twitter:card" content="summary_large_image">
 <base id="basetag" target="_blank">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -3587,7 +3593,7 @@ function classifyMistake(pre, played, best, after, wb, wa, ply) {
     mateAgainst: mateAgainst, mateFor: mateFor, gameLine: gameLine, bestLine: bestLine,
     gSettle: gSettle, bSettle: bSettle, lossG: lossG, lossAt: lossAt, stalemate: stalemate,
     perpetualAgainst: perpetualAgainst, loosened: loosened, kingMoved: kingMoved, sameCapture: !!sameCapture,
-    lowerTake: lowerTake
+    lowerTake: lowerTake, ply: ply || 0, alreadyLost: !!alreadyLost
   };
   res.sentences = explainMistake(res, pre, wb, wa);
   res.sentences.short = shortSentence(res.sentences.game);
@@ -3642,6 +3648,32 @@ function stopsWhat(c, pre) {
   }
   return '';
 }
+/* what the better move plainly does, when the board proves it: takes the
+   piece that was about to strike, trades, castles or develops. Nothing
+   here claims more than the move itself shows */
+function whatItDoes(c, pre, ply) {
+  var bl = c.bestLine, g = c.gameLine, b1 = bl && bl.nodes[1], r1 = g && g.nodes[1];
+  if (!b1 || !b1.move) return '';
+  var san = sanOf(b1.before, b1.move), mover = b1.before.b[b1.move.from], mt = pType(mover);
+  var took = b1.captured ? pType(b1.captured) : null;
+  if (took && r1 && r1.move && r1.move.from === b1.move.to && c.matBest >= 0)
+    return san + ' takes the ' + PIECE_WORD[took] + (r1.captured ? ' before it can take your ' + PIECE_WORD[pType(r1.captured)] : (checkersOf(r1.after).length ? ' before it can give check' : '')) + '.';
+  var b2 = bl.nodes[2];
+  if (took && took === mt && b2 && b2.captured && b2.move.to === b1.move.to && c.matBest === 0)
+    return san + (mt === 'Q' ? ' trades queens.' : ' trades ' + PIECE_WORD[mt] + 's.');
+  if (b1.move.castle || (mt === 'K' && Math.abs(b1.move.to - b1.move.from) === 2)) return san + ' castles your king first.';
+  var home = pre.w ? 0 : 7;
+  if ((ply || 0) < 24 && (mt === 'N' || mt === 'B') && (b1.move.from >> 3) === home && !took) return san + ' develops the ' + PIECE_WORD[mt] + '.';
+  if (mt === 'P' && !took && passedPawn(b1.after.b, b1.move.to, pre.w)) return san + ' pushes your passed pawn.';
+  return '';
+}
+/* no enemy pawn ahead on its own file or the two next to it */
+function passedPawn(b, sq, white) {
+  var f = sq % 8, r = sq >> 3, enemy = white ? 'p' : 'P';
+  for (var rr = white ? r + 1 : r - 1; white ? rr < 8 : rr >= 0; rr += white ? 1 : -1)
+    for (var ff = Math.max(0, f - 1); ff <= Math.min(7, f + 1); ff++) if (b[rr * 8 + ff] === enemy) return false;
+  return true;
+}
 /* Two sentences: what the game move did, and what the best move does. */
 /* the same sentence for a small screen: the move and what it costs, without
    the path of moves or the percentages the board has just shown */
@@ -3663,7 +3695,7 @@ function explainMistake(c, pre, wb, wa) {
   var at = c.lossAt != null ? c.lossAt : c.gSettle;
   var lost = captureWord(g || { nodes: [] }, at, 0) || materialWord(c.lossG != null ? -c.lossG : c.matGame);
   var won = bl ? (captureWord(bl, c.bSettle) || materialWord(c.matBest)) : '';
-  var gameS, bestS;
+  var gameS, bestS, does;
   switch (c.t) {
     case 'mateAllowed':
       gameS = played + ' allows mate in ' + c.mateAgainst + (reply ? ', starting with ' + reply : '') + '.';
@@ -3779,7 +3811,13 @@ function explainMistake(c, pre, wb, wa) {
   else if (c.matBest >= 1) bestS = bestSan + ' wins ' + won + '.';
   else if (checksAll(bl, 1) && wb >= 35 && wb <= 65) bestS = bestSan + ' forces a draw with checks.';
   else if (stop) bestS = stop;
-  else if (c.matGame <= -1 && c.matBest >= c.matGame + 1 && c.matBest >= 0) bestS = bestSan + ' keeps everything safe.';
+  else if ((does = whatItDoes(c, pre, c.ply))) bestS = does;
+  else if (c.mateAgainst && !c.mateFor && !c.alreadyLost && bl) bestS = bestSan + ' avoids the mate.';
+  else if (c.matGame <= -1 && c.matBest >= c.matGame + 1 && c.matBest >= 0) {
+    /* name what it keeps when the loss was one piece */
+    var one = /^the (pawn|knight|bishop|rook|queen)$/.exec(lost || '');
+    bestS = bestSan + (one ? ' keeps your ' + one[1] + ' safe.' : ' keeps everything safe.');
+  }
   else bestS = bestSan + (wb >= 60 ? ' keeps your advantage.' : wb >= 40 ? ' keeps the game balanced.' : ' is the most stubborn defence.');
   return { game: gameS, best: bestS };
 }
@@ -4407,7 +4445,14 @@ function srsLoad() {
   return parts.map;
 }
 function srsSave(map) {
-  var kept = srsMem && srsMem.key === srsKey() ? srsMem.kept : splitSrs(store.get(srsKey(), {})).kept;
+  /* another tab may have saved since this one read: per position, the
+     record practised last wins, so two open tabs never erase each other */
+  var disk = splitSrs(store.get(srsKey(), {}));
+  Object.keys(disk.map).forEach(function (k) {
+    var d = disk.map[k], m = map[k];
+    if (!m || (d.last || 0) > (m.last || 0)) map[k] = d;
+  });
+  var kept = srsMem && srsMem.key === srsKey() ? srsMem.kept : disk.kept;
   srsMem = { key: srsKey(), map: map, kept: kept };
   var out = {};
   Object.keys(kept).forEach(function (k) { out[k] = kept[k]; });
@@ -5068,8 +5113,13 @@ function deepEnrich(it, prio) {
         if (stale(myGen)) return;
         b.ru = packUci(ru);
         classifyEntry(b, g.mv);
-        b.v = 2;
-        modelDirty();
+        /* a quiet card: is there more than one good answer? (the same
+           question the scan asks on its own cards) */
+        if (familyOf(patternOf(b)).key !== 'quiet') { b.v = 2; modelDirty(); return; }
+        return engineEval(stateFen(pre), { nodes: DEEP_NODES }, ctx.prio, { multipv: 2, tag: key }).then(function (r) {
+          var sec = r.lines && r.lines[1];
+          if (sec && sec.pv && sec.pv[0]) b.g2 = Math.round(winPct(sign * r.cp) - winPct(sign * sec.cp));
+        }, function () {}).then(function () { b.v = 2; modelDirty(); });
       });
     });
   } else {
@@ -5104,6 +5154,8 @@ function deepEnrich(it, prio) {
         if (second && second.pv && second.pv[0]) {
           /* only move: every alternative is 15 or more points worse */
           b.om = winPct(b.eb) - winPct(second.cp * sign) >= 15 ? 1 : 0;
+          /* the gap to the second-best move, in win-chance points */
+          b.g2 = Math.round(winPct(b.eb) - winPct(second.cp * sign));
         }
         return Promise.all([
           extendLine(pre, r1.pv || [], EXT_NODES, ctx, key),
@@ -5212,8 +5264,11 @@ function newCardScore(it, since) {
 function buildCandidates(n, spec) {
   var srs = srsLoad(), focus = currentFocus(), since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
   var filter = spec ? specFilter(spec) : null;
+  /* Today deals positions with one idea: a quiet card where a second move is
+     as good as the best stays for drills */
+  var twoAnswers = function (it) { return !spec && it.b.g2 != null && it.b.g2 <= SOLVE_TOL && familyOf(patternOf(it.b)).key === 'quiet'; };
   var list = allMistakes().filter(function (it) {
-    return trainable(it) && !srs[it.key] && (!filter || filter(it));
+    return trainable(it) && !srs[it.key] && (!filter || filter(it)) && !twoAnswers(it);
   });
   list.sort(function (x, y) { return newCardScore(y, since) - newCardScore(x, since); });
   if (spec || !focus) return list.slice(0, n);
@@ -6054,6 +6109,8 @@ function autoplayLine(key, then, from, count) {
   stopAuto(a);
   var tok = a.autoTok;
   a.view = { line: key, idx: i - 1 };
+  /* reduced motion: nothing plays by itself; the arrows step the line */
+  if (reducedMotion()) { renderCard(); if (then) then(); return; }
   var step = function () {
     var a2 = ui.session && ui.session.active;
     if (!a2 || a2.key !== cardKey || a2.autoTok !== tok || a2.phase !== 'done') return;
@@ -7641,7 +7698,7 @@ document.addEventListener('keydown', function (e) {
     if (e.key === '?') { e.preventDefault(); giveHint(); }
   }
 });
-function reducedMotion() { return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }
+function reducedMotion() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
 /* a move typed as SAN (Nf3, exd5, O-O, e8=Q) or as squares (g1f3) */
 function typedMove(txt) {
   var a = ui.session && ui.session.active;

@@ -57,8 +57,13 @@ function deepEnrich(it, prio) {
         if (stale(myGen)) return;
         b.ru = packUci(ru);
         classifyEntry(b, g.mv);
-        b.v = 2;
-        modelDirty();
+        /* a quiet card: is there more than one good answer? (the same
+           question the scan asks on its own cards) */
+        if (familyOf(patternOf(b)).key !== 'quiet') { b.v = 2; modelDirty(); return; }
+        return engineEval(stateFen(pre), { nodes: DEEP_NODES }, ctx.prio, { multipv: 2, tag: key }).then(function (r) {
+          var sec = r.lines && r.lines[1];
+          if (sec && sec.pv && sec.pv[0]) b.g2 = Math.round(winPct(sign * r.cp) - winPct(sign * sec.cp));
+        }, function () {}).then(function () { b.v = 2; modelDirty(); });
       });
     });
   } else {
@@ -93,6 +98,8 @@ function deepEnrich(it, prio) {
         if (second && second.pv && second.pv[0]) {
           /* only move: every alternative is 15 or more points worse */
           b.om = winPct(b.eb) - winPct(second.cp * sign) >= 15 ? 1 : 0;
+          /* the gap to the second-best move, in win-chance points */
+          b.g2 = Math.round(winPct(b.eb) - winPct(second.cp * sign));
         }
         return Promise.all([
           extendLine(pre, r1.pv || [], EXT_NODES, ctx, key),

@@ -297,7 +297,7 @@ function classifyMistake(pre, played, best, after, wb, wa, ply) {
     mateAgainst: mateAgainst, mateFor: mateFor, gameLine: gameLine, bestLine: bestLine,
     gSettle: gSettle, bSettle: bSettle, lossG: lossG, lossAt: lossAt, stalemate: stalemate,
     perpetualAgainst: perpetualAgainst, loosened: loosened, kingMoved: kingMoved, sameCapture: !!sameCapture,
-    lowerTake: lowerTake
+    lowerTake: lowerTake, ply: ply || 0, alreadyLost: !!alreadyLost
   };
   res.sentences = explainMistake(res, pre, wb, wa);
   res.sentences.short = shortSentence(res.sentences.game);
@@ -352,6 +352,32 @@ function stopsWhat(c, pre) {
   }
   return '';
 }
+/* what the better move plainly does, when the board proves it: takes the
+   piece that was about to strike, trades, castles or develops. Nothing
+   here claims more than the move itself shows */
+function whatItDoes(c, pre, ply) {
+  var bl = c.bestLine, g = c.gameLine, b1 = bl && bl.nodes[1], r1 = g && g.nodes[1];
+  if (!b1 || !b1.move) return '';
+  var san = sanOf(b1.before, b1.move), mover = b1.before.b[b1.move.from], mt = pType(mover);
+  var took = b1.captured ? pType(b1.captured) : null;
+  if (took && r1 && r1.move && r1.move.from === b1.move.to && c.matBest >= 0)
+    return san + ' takes the ' + PIECE_WORD[took] + (r1.captured ? ' before it can take your ' + PIECE_WORD[pType(r1.captured)] : (checkersOf(r1.after).length ? ' before it can give check' : '')) + '.';
+  var b2 = bl.nodes[2];
+  if (took && took === mt && b2 && b2.captured && b2.move.to === b1.move.to && c.matBest === 0)
+    return san + (mt === 'Q' ? ' trades queens.' : ' trades ' + PIECE_WORD[mt] + 's.');
+  if (b1.move.castle || (mt === 'K' && Math.abs(b1.move.to - b1.move.from) === 2)) return san + ' castles your king first.';
+  var home = pre.w ? 0 : 7;
+  if ((ply || 0) < 24 && (mt === 'N' || mt === 'B') && (b1.move.from >> 3) === home && !took) return san + ' develops the ' + PIECE_WORD[mt] + '.';
+  if (mt === 'P' && !took && passedPawn(b1.after.b, b1.move.to, pre.w)) return san + ' pushes your passed pawn.';
+  return '';
+}
+/* no enemy pawn ahead on its own file or the two next to it */
+function passedPawn(b, sq, white) {
+  var f = sq % 8, r = sq >> 3, enemy = white ? 'p' : 'P';
+  for (var rr = white ? r + 1 : r - 1; white ? rr < 8 : rr >= 0; rr += white ? 1 : -1)
+    for (var ff = Math.max(0, f - 1); ff <= Math.min(7, f + 1); ff++) if (b[rr * 8 + ff] === enemy) return false;
+  return true;
+}
 /* Two sentences: what the game move did, and what the best move does. */
 /* the same sentence for a small screen: the move and what it costs, without
    the path of moves or the percentages the board has just shown */
@@ -373,7 +399,7 @@ function explainMistake(c, pre, wb, wa) {
   var at = c.lossAt != null ? c.lossAt : c.gSettle;
   var lost = captureWord(g || { nodes: [] }, at, 0) || materialWord(c.lossG != null ? -c.lossG : c.matGame);
   var won = bl ? (captureWord(bl, c.bSettle) || materialWord(c.matBest)) : '';
-  var gameS, bestS;
+  var gameS, bestS, does;
   switch (c.t) {
     case 'mateAllowed':
       gameS = played + ' allows mate in ' + c.mateAgainst + (reply ? ', starting with ' + reply : '') + '.';
@@ -489,7 +515,13 @@ function explainMistake(c, pre, wb, wa) {
   else if (c.matBest >= 1) bestS = bestSan + ' wins ' + won + '.';
   else if (checksAll(bl, 1) && wb >= 35 && wb <= 65) bestS = bestSan + ' forces a draw with checks.';
   else if (stop) bestS = stop;
-  else if (c.matGame <= -1 && c.matBest >= c.matGame + 1 && c.matBest >= 0) bestS = bestSan + ' keeps everything safe.';
+  else if ((does = whatItDoes(c, pre, c.ply))) bestS = does;
+  else if (c.mateAgainst && !c.mateFor && !c.alreadyLost && bl) bestS = bestSan + ' avoids the mate.';
+  else if (c.matGame <= -1 && c.matBest >= c.matGame + 1 && c.matBest >= 0) {
+    /* name what it keeps when the loss was one piece */
+    var one = /^the (pawn|knight|bishop|rook|queen)$/.exec(lost || '');
+    bestS = bestSan + (one ? ' keeps your ' + one[1] + ' safe.' : ' keeps everything safe.');
+  }
   else bestS = bestSan + (wb >= 60 ? ' keeps your advantage.' : wb >= 40 ? ' keeps the game balanced.' : ' is the most stubborn defence.');
   return { game: gameS, best: bestS };
 }

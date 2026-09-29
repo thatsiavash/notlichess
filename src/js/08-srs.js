@@ -30,7 +30,14 @@ function srsLoad() {
   return parts.map;
 }
 function srsSave(map) {
-  var kept = srsMem && srsMem.key === srsKey() ? srsMem.kept : splitSrs(store.get(srsKey(), {})).kept;
+  /* another tab may have saved since this one read: per position, the
+     record practised last wins, so two open tabs never erase each other */
+  var disk = splitSrs(store.get(srsKey(), {}));
+  Object.keys(disk.map).forEach(function (k) {
+    var d = disk.map[k], m = map[k];
+    if (!m || (d.last || 0) > (m.last || 0)) map[k] = d;
+  });
+  var kept = srsMem && srsMem.key === srsKey() ? srsMem.kept : disk.kept;
   srsMem = { key: srsKey(), map: map, kept: kept };
   var out = {};
   Object.keys(kept).forEach(function (k) { out[k] = kept[k]; });
