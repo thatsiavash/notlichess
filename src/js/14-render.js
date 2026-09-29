@@ -433,9 +433,17 @@ function renderCard() {
     /* the engine's answer to your idea, as a quiet arrow */
     var rep = a.explore.reply && a.explore.san.length ? uciToMove(a.explore.st, a.explore.reply) : null;
     if (rep) opts.ghost = [rep.from, rep.to];
+    if (a.explore.anim) { opts.anim = a.explore.anim; a.explore.anim = null; }
     if (a.explore.sel >= 0) opts.dots = legalMoves(a.explore.st).filter(function (m) { return m.from === a.explore.sel; }).map(function (m) { return m.to; });
   } else if (a.phase === 'done') {
     view = lineView(a);
+    /* a line played or stepped forward slides its move; the solving move
+       slides once, on the first answered frame */
+    var lv = a.lastView, L1 = a.lines[a.view.line];
+    if (a.animMove) opts.anim = a.animMove;
+    else if (lv && lv.line === a.view.line && a.view.idx === lv.idx + 1 && a.view.idx >= 0 && L1 && L1.moves[a.view.idx])
+      opts.anim = [L1.moves[a.view.idx].from, L1.moves[a.view.idx].to];
+    a.lastView = { line: a.view.line, idx: a.view.idx };
     /* one arrow at a time, on the start position only: red for the move you
        played, green for the better one; never both */
     if (a.view && a.view.idx < 0) {

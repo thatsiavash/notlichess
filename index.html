@@ -5564,6 +5564,8 @@ function sessionClick(sq) {
   var legal = legalMoves(a.st).filter(function (m) { return m.from === a.sel && m.to === sq; });
   if (!legal.length) { a.sel = -1; renderCard(); return; }
   if (legal.length > 1 && legal[0].promo) { a.pendingPromo = { moves: legal, to: sq }; renderCard(); return; }
+  /* a tapped move slides into place; a dragged one is already where it was dropped */
+  a.tapped = !pointerState.suppressClick;
   gradeMove(legal[0]);
 }
 function promoChoose(piece) {
@@ -5583,6 +5585,9 @@ function gradeMove(m) {
   a.strongerOffer = false;
   a.attempts++;
   store.set('nl:marksSeen', true);
+  a.animMove = a.tapped ? [m.from, m.to] : null;
+  a.tapAnim = a.animMove;
+  a.tapped = false;
   if (a.phase === 'check') { checkStep(m, u); return; }
   /* inside a forcing line: later steps must follow it (or mate) */
   if (a.sol && a.solIdx > 0) {
@@ -5634,7 +5639,7 @@ function stepLine(m, u) {
   var san = sanOf(a.st, m);
   applyMove(a.st, m);
   a.lastMove = [m.from, m.to];
-  a.animMove = null;
+  a.animMove = a.tapAnim || null;
   a.solIdx++;
   snd('good');
   if (a.solIdx >= a.sol.length) { solved(null, null, null, true); return; }
@@ -5838,7 +5843,7 @@ function playPunish(ucis, missNo) {
 }
 function solved(m, u, alt, lineDone) {
   var ss = ui.session, a = ss.active;
-  if (m) { applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = null; }
+  if (m) { applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = a.tapAnim || null; }
   a.alt = alt && u !== a.bestUci ? alt : null;
   var result = a.misses ? 'retry' : ((a.hints || a.foundGood) ? 'hint' : 'first');
   finishCard(result);
@@ -6053,6 +6058,7 @@ function exploreClick(sq) {
   ex.san.push(sanOf(ex.st, m));
   applyMove(ex.st, m);
   ex.last = [m.from, m.to];
+  ex.anim = pointerState.suppressClick ? null : [m.from, m.to];
   ex.ev = null;
   ex.reply = null;
   snd('move');
@@ -6509,9 +6515,17 @@ function renderCard() {
     /* the engine's answer to your idea, as a quiet arrow */
     var rep = a.explore.reply && a.explore.san.length ? uciToMove(a.explore.st, a.explore.reply) : null;
     if (rep) opts.ghost = [rep.from, rep.to];
+    if (a.explore.anim) { opts.anim = a.explore.anim; a.explore.anim = null; }
     if (a.explore.sel >= 0) opts.dots = legalMoves(a.explore.st).filter(function (m) { return m.from === a.explore.sel; }).map(function (m) { return m.to; });
   } else if (a.phase === 'done') {
     view = lineView(a);
+    /* a line played or stepped forward slides its move; the solving move
+       slides once, on the first answered frame */
+    var lv = a.lastView, L1 = a.lines[a.view.line];
+    if (a.animMove) opts.anim = a.animMove;
+    else if (lv && lv.line === a.view.line && a.view.idx === lv.idx + 1 && a.view.idx >= 0 && L1 && L1.moves[a.view.idx])
+      opts.anim = [L1.moves[a.view.idx].from, L1.moves[a.view.idx].to];
+    a.lastView = { line: a.view.line, idx: a.view.idx };
     /* one arrow at a time, on the start position only: red for the move you
        played, green for the better one; never both */
     if (a.view && a.view.idx < 0) {

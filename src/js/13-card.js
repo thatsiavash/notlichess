@@ -194,6 +194,8 @@ function sessionClick(sq) {
   var legal = legalMoves(a.st).filter(function (m) { return m.from === a.sel && m.to === sq; });
   if (!legal.length) { a.sel = -1; renderCard(); return; }
   if (legal.length > 1 && legal[0].promo) { a.pendingPromo = { moves: legal, to: sq }; renderCard(); return; }
+  /* a tapped move slides into place; a dragged one is already where it was dropped */
+  a.tapped = !pointerState.suppressClick;
   gradeMove(legal[0]);
 }
 function promoChoose(piece) {
@@ -213,6 +215,9 @@ function gradeMove(m) {
   a.strongerOffer = false;
   a.attempts++;
   store.set('nl:marksSeen', true);
+  a.animMove = a.tapped ? [m.from, m.to] : null;
+  a.tapAnim = a.animMove;
+  a.tapped = false;
   if (a.phase === 'check') { checkStep(m, u); return; }
   /* inside a forcing line: later steps must follow it (or mate) */
   if (a.sol && a.solIdx > 0) {
@@ -264,7 +269,7 @@ function stepLine(m, u) {
   var san = sanOf(a.st, m);
   applyMove(a.st, m);
   a.lastMove = [m.from, m.to];
-  a.animMove = null;
+  a.animMove = a.tapAnim || null;
   a.solIdx++;
   snd('good');
   if (a.solIdx >= a.sol.length) { solved(null, null, null, true); return; }
@@ -468,7 +473,7 @@ function playPunish(ucis, missNo) {
 }
 function solved(m, u, alt, lineDone) {
   var ss = ui.session, a = ss.active;
-  if (m) { applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = null; }
+  if (m) { applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = a.tapAnim || null; }
   a.alt = alt && u !== a.bestUci ? alt : null;
   var result = a.misses ? 'retry' : ((a.hints || a.foundGood) ? 'hint' : 'first');
   finishCard(result);
@@ -683,6 +688,7 @@ function exploreClick(sq) {
   ex.san.push(sanOf(ex.st, m));
   applyMove(ex.st, m);
   ex.last = [m.from, m.to];
+  ex.anim = pointerState.suppressClick ? null : [m.from, m.to];
   ex.ev = null;
   ex.reply = null;
   snd('move');
