@@ -1006,74 +1006,7 @@ function splitND(text, onLine) {
 
 /* ── 6. Game cache and normalisation ─────────────────────────────────── */
 
-/* one move's accuracy on Lichess's own curve */
-function moveAcc(wb, wa) {
-  if (wa >= wb) return 100;
-  return Math.max(0, Math.min(100, 103.1668 * Math.exp(-0.04354 * (wb - wa)) - 3.1669));
-}
 
-function evalMetrics(analysis, meIsWhite, moves) {
-  if (!analysis || analysis.length < 10) return null;
-  var sign = meIsWhite ? 1 : -1;
-  var prev = 20, best = -10000, worst = 10000;
-  var lossSum = 0, lossN = 0;
-  var bs = { o: [0, 0], m: [0, 0], e: [0, 0] };
-  var accs = [], phAcc = { o: [], m: [], e: [] }, ta = [];
-  var pieces = {};
-  var toks = moves ? moves.split(' ') : null;
-  var oppJustDropped = false;
-  for (var i = 0; i < analysis.length; i++) {
-    var cp = evalCp(analysis[i]);
-    if ((i % 2 === 0) === meIsWhite) {
-      var d = meIsWhite ? (prev - cp) : (cp - prev);
-      d = Math.max(0, Math.min(1000, d));
-      lossSum += d; lossN++;
-      var k = i < 30 ? 'o' : (i < 60 ? 'm' : 'e');
-      bs[k][0] += d; bs[k][1]++;
-      /* accuracy in win-chance terms, the number Tutor speaks */
-      var wb = winPct(meIsWhite ? prev : -prev);
-      var wa = winPct(meIsWhite ? cp : -cp);
-      var a = moveAcc(wb, wa);
-      accs.push(a);
-      phAcc[k].push(a);
-      if (oppJustDropped) ta.push(a);
-      if (toks && toks[i]) {
-        var t0 = toks[i][0];
-        var pk = t0 === 'O' ? 'K' : ('NBRQK'.indexOf(t0) !== -1 ? t0 : 'P');
-        (pieces[pk] = pieces[pk] || [0, 0]);
-        pieces[pk][0] += wb - wa > 0 ? wb - wa : 0;
-        pieces[pk][1]++;
-      }
-    } else {
-      var owb = winPct(meIsWhite ? -prev : prev);
-      var owa = winPct(meIsWhite ? -cp : cp);
-      oppJustDropped = (owb - owa) >= 10;
-    }
-    var mine = cp * sign;
-    if (mine > best) best = mine;
-    if (mine < worst) worst = mine;
-    prev = cp;
-  }
-  if (lossN < 5) return null;
-  var avg = function (b) { return b[1] >= 3 ? Math.round(b[0] / b[1]) : null; };
-  var mean = function (l) { return l.length ? Math.round(l.reduce(function (x, y) { return x + y; }, 0) / l.length * 10) / 10 : null; };
-  var pcOut = {};
-  Object.keys(pieces).forEach(function (k2) {
-    if (pieces[k2][1] >= 3) pcOut[k2] = [Math.round(pieces[k2][0] / pieces[k2][1] * 100) / 100, pieces[k2][1]];
-  });
-  return {
-    acpl: Math.round(lossSum / lossN),
-    best: best, worst: worst,
-    o: avg(bs.o), m: avg(bs.m), e: avg(bs.e),
-    acc: mean(accs),
-    accO: phAcc.o.length >= 3 ? mean(phAcc.o) : null,
-    accM: phAcc.m.length >= 3 ? mean(phAcc.m) : null,
-    accE: phAcc.e.length >= 3 ? mean(phAcc.e) : null,
-    ta: ta.length >= 2 ? mean(ta) : null,
-    taN: ta.length,
-    pieces: pcOut
-  };
-}
 
 /* ── chess.com adapter ───────────────────────────────────────────────────
    Emits Lichess-SHAPED game objects, so compact() and everything above it
@@ -1223,7 +1156,6 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
         return ccJSON(url, { quiet: idx > 2 }).then(function (mo) {
           var counts = {};
           mergeAll().forEach(function (g5) { counts[g5.perf] = (counts[g5.perf] || 0) + 1; });
-          var total = mergeAll().length;
           var kept = 0;
           (mo.games || []).slice().reverse().forEach(function (raw) {
             /* formats the user does not track must not squat in the
@@ -1247,7 +1179,6 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
             c.u = shaped.ccUrl;
             got.push(c);
             counts[c.perf] = (counts[c.perf] || 0) + 1;
-            total++;
             kept++;
             n++;
             if (onProgress) onProgress(Math.min(n, windowCap()));
@@ -1331,28 +1262,6 @@ function compact(g, meId) {
 
   var result = g.winner ? (g.winner === myColor ? 'win' : 'loss') : 'draw';
 
-  /* Clock left at my last move, as a share of my starting clock. */
-  var clockPct = null;
-  if (g.clocks && g.clocks.length && g.clock && g.clock.initial) {
-    var last = null;
-    for (var i = g.clocks.length - 1; i >= 0; i--) {
-      if ((i % 2 === 0) === meIsWhite) { last = g.clocks[i]; break; }
-    }
-    if (last != null) clockPct = Math.max(0, Math.min(100, (last / (g.clock.initial * 100)) * 100));
-  }
-
-  var em = evalMetrics(g.analysis, meIsWhite, g.moves);
-  /* speed: mean share of clock remaining across my moves from ply 16 on */
-  var spd = null;
-  if (g.clocks && g.clocks.length > 20 && g.clock && g.clock.initial) {
-    var acc2 = 0, n2 = 0;
-    for (var ci = 16; ci < g.clocks.length; ci++) {
-      if ((ci % 2 === 0) !== meIsWhite) continue;
-      acc2 += Math.max(0, Math.min(1, g.clocks[ci] / 100 / g.clock.initial));
-      n2++;
-    }
-    if (n2 >= 5) spd = Math.round(acc2 / n2 * 1000) / 10;
-  }
   var bl = blunderLedger(g, meIsWhite, { myR: me.rating, perf: g.perf || g.speed, res: result, color: myColor });
   return {
     id: g.id,
@@ -1376,13 +1285,6 @@ function compact(g, meId) {
     ckTmp: !(g.analysis && g.analysis.length) && g.clocks
       && (!g.variant || g.variant === 'standard') ? g.clocks : null,
     wp: g.analysis && g.analysis.length ? analysisSeries(g) : null,
-    clockPct: clockPct == null ? null : Math.round(clockPct * 10) / 10,
-    /* Our own eval-derived numbers, comparable with the peer baselines. */
-    ev: em ? [em.acpl, em.best, em.worst, em.o, em.m, em.e] : null,
-    acc2: em ? [em.acc, em.accO, em.accM, em.accE, em.ta, em.taN] : null,
-    pcs: em ? em.pieces : null,
-    spd: spd,
-    secs: g.lastMoveAt && g.createdAt ? Math.round((g.lastMoveAt - g.createdAt) / 1000) : null,
     /* moves are kept only when there are mistakes to replay from them;
        the opening prefix is kept for every game, it feeds the book */
     bl: bl,
@@ -1559,10 +1461,10 @@ function merge(fresh, old) {
     var o = oldBy[g.id];
     if (!o || o === g) return;
     if (!g.analysed && (o.scanned || o.bl)) {
-      ['bl', 'mv', 'scanned', 'wp', 'ev', 'acc2', 'pcs', 'mig'].forEach(function (k) { if (o[k] != null) g[k] = o[k]; });
+      ['bl', 'mv', 'scanned', 'wp', 'eng'].forEach(function (k) { if (o[k] != null) g[k] = o[k]; });
     } else if (g.analysed && o.bl) {
       adoptFresh(o, g);
-      ['bl', 'mv', 'wp', 'mig'].forEach(function (k) { if (o[k] != null) g[k] = o[k]; });
+      ['bl', 'mv', 'wp', 'eng'].forEach(function (k) { if (o[k] != null) g[k] = o[k]; });
     }
   });
   all.sort(function (a, b) { return b.ts - a.ts; });
@@ -1669,6 +1571,14 @@ function pseudoReaches(b, from, to, piece) {
 
 /* Applies one SAN token in place. Returns false only on a token it cannot
    read, which callers treat as "stop replaying this game". */
+/* a SAN token as a legal move of this position, or null; an explicit
+   promotion piece is honoured, otherwise the first (queen) is taken */
+function sanToMove(st, tok) {
+  var m = sanApply(cloneState(st), tok);
+  if (!m) return null;
+  var want = (/=([QRBN])/.exec(String(tok)) || [])[1] || m.promo;
+  return legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !want || x.promo === want); })[0] || null;
+}
 function sanApply(st, san) {
   var tok = san.replace(/[+#?!]+$/, '');
   var me = st.w, b = st.b;
@@ -1920,12 +1830,7 @@ var data = {
   sections: {}   /* per-section load state: 'loading' | 'ok' | 'fail' */
 };
 
-/* ── 8b. Peer baselines ──────────────────────────────────────────────────
-   Computed once from the Lichess open database (CC0 monthly dump), banded by
-   rating and speed, using exactly the method evalMetrics() uses here. This is
-   what lets the page say "players at your rating" instead of "your other
-   formats". Lichess's own peer numbers are private; these are ours, and the
-   page says so.                                                             */
+
 
 
 
@@ -2261,10 +2166,6 @@ function notice(msg, action) {
    games since the newest cached one), so staying current costs almost
    nothing and the user never has to think about refreshing. */
 
-if (window.MutationObserver) {
-  new MutationObserver(function () { makeFocusable(); })
-    .observe(document.body, { childList: true, subtree: true });
-}
 
 /* ── 14c. The engine ─────────────────────────────────────────────────────
    Stockfish 16 NNUE, fetched once from a CDN and booted as a blob worker
@@ -2281,7 +2182,9 @@ if (window.MutationObserver) {
    Results persist in the game cache, so each game is scanned once ever.   */
 
 var SCAN_RECENT = 20;    /* incoming games always jump the queue */
-var scanState = { running: false, current: null, done: 0 };
+/* up to two games are read at once, so the engines never wait on the slow
+   tail of one game; inflight holds their ids */
+var scanState = { running: false, current: null, done: 0, inflight: {}, active: 0 };
 
 /* Coverage, not buffering: the newest SCAN_WINDOW games should each have
    analysis from somewhere, Lichess's servers or the engine here. Training
@@ -2319,26 +2222,29 @@ function scannableAny(g) {
    first, then one game per coach custom set in turn, then the general pool,
    round and round until the whole window is covered. */
 function nextScanTarget() {
-  var i, g;
+  var i, g, free = function (x) { return !scanState.inflight[x.id]; };
   /* anything new at the top of the list first */
   for (i = 0; i < Math.min(SCAN_RECENT, data.games.length); i++) {
-    if (scannable(data.games[i])) return data.games[i];
+    if (scannable(data.games[i]) && free(data.games[i])) return data.games[i];
   }
-  /* then games whose moves are already here, rotating across formats */
+  /* then games whose moves are already here, rotating across formats; losses
+     first, since only a loss or a draw has a move that decided it */
   var perfs = trackedPerfs();
   var fStart = (scanState.frr || 0) % perfs.length;
-  for (var fs = 0; fs < perfs.length; fs++) {
-    var pf = perfs[(fStart + fs) % perfs.length];
-    for (i = 0; i < data.games.length; i++) {
-      g = data.games[i];
-      if (g.perf === pf && g.mv && scannable(g)) {
-        scanState.frr = (fStart + fs + 1) % perfs.length;
-        return g;
+  for (var pass = 0; pass < 2; pass++) {
+    for (var fs = 0; fs < perfs.length; fs++) {
+      var pf = perfs[(fStart + fs) % perfs.length];
+      for (i = 0; i < data.games.length; i++) {
+        g = data.games[i];
+        if (g.perf === pf && g.mv && scannable(g) && free(g) && (pass === 1 || g.res === 'loss')) {
+          scanState.frr = (fStart + fs + 1) % perfs.length;
+          return g;
+        }
       }
     }
   }
-  for (i = 0; i < data.games.length; i++) if (scannable(data.games[i])) return data.games[i];
-  for (i = 0; i < data.games.length; i++) if (scannableAny(data.games[i])) return data.games[i];
+  for (i = 0; i < data.games.length; i++) if (scannable(data.games[i]) && free(data.games[i])) return data.games[i];
+  for (i = 0; i < data.games.length; i++) if (scannableAny(data.games[i]) && free(data.games[i])) return data.games[i];
   return null;
 }
 
@@ -2474,7 +2380,9 @@ function ccRefuel() {
 function autoScan() {
   var tr = function () {};
   if (!cfg.user) { scanState.running = false; scanState.pending = false; return; }
-  if (scanState.running || SF.state === 'failed') { tr('busy/failed'); return; }
+  /* a second game joins only when both analysts can be kept busy */
+  var lanes = SF.workers.length >= 3 ? 2 : 1;
+  if (scanState.active >= lanes || SF.state === 'failed' || scanState.fetching) { tr('busy/failed'); return; }
   /* the scan is the politest customer in the shop: it waits out any backoff
      with room to spare rather than being the thing that causes one */
   if (Date.now() < backoffUntil) {
@@ -2486,10 +2394,12 @@ function autoScan() {
   if (!target) { tr('no-target'); scanState.current = null; scanState.pending = false; renderAnalysisStatus(); return; }
   if (!target.mv && bulkAllowed()) {
     /* refuel first, the same games come back fetchless in a few seconds */
-    scanState.running = true;
+    if (scanState.active) return;
+    scanState.fetching = scanState.running = true;
     renderAnalysisStatus();
     bulkRetain().then(function (fed) {
-      scanState.running = false;
+      scanState.fetching = false;
+      scanState.running = scanState.active > 0;
       setTimeout(autoScan, fed ? 800 : 1500);
     });
     return;
@@ -2497,10 +2407,12 @@ function autoScan() {
   if (isCC() && !target.mv) {
     if (!bulkState.busy && bulkState.fails < 3 && Date.now() - bulkState.at > 60000) {
       tr('ccRefuel');
-      scanState.running = true;
+      if (scanState.active) return;
+      scanState.fetching = scanState.running = true;
       renderAnalysisStatus();
       ccRefuel().then(function (fed) {
-        scanState.running = false;
+        scanState.fetching = false;
+        scanState.running = scanState.active > 0;
         if (fed) bulkState.fails = 0; else bulkState.fails++;
         setTimeout(autoScan, fed ? 300 : 1000);
       });
@@ -2515,13 +2427,20 @@ function autoScan() {
   }
   tr('scan:' + target.id);
   scanState.running = true;
+  scanState.active++;
+  scanState.inflight[target.id] = 1;
   scanState.current = target;
   scanState.lastLocal = !!(target.mv && !target.bl);
   renderAnalysisStatus();
+  /* the second lane starts at once, if there is room and work */
+  if (scanState.active < lanes && scanState.lastLocal) setTimeout(autoScan, 0);
+  var local = scanState.lastLocal;
   scanGame(target)
     .catch(function (e) { if (window.console) console.error('scan fail', e && e.message); scanMiss(target); })
     .then(function () {
-      scanState.running = false;
+      scanState.active--;
+      delete scanState.inflight[target.id];
+      scanState.running = scanState.active > 0;
       /* the fish stays awake through the breather between games, grey means
          genuinely done (or the engine failed), never "between bites" */
       scanState.pending = !!nextScanTarget();
@@ -2535,7 +2454,8 @@ function autoScan() {
         if (ui.view === 'insights' && !ui.session) renderInsights();
         if (!scanState.pending) setTimeout(autoEnrich, 500);
       }
-      setTimeout(autoScan, scanState.lastLocal ? 150 : 20000);
+      /* the next local game follows straight on; a fetched one waits politely */
+      setTimeout(autoScan, local ? 0 : 20000);
     });
 }
 
@@ -3662,8 +3582,9 @@ function whatItDoes(c, pre, ply) {
   if (took && took === mt && b2 && b2.captured && b2.move.to === b1.move.to && c.matBest === 0)
     return san + (mt === 'Q' ? ' trades queens.' : ' trades ' + PIECE_WORD[mt] + 's.');
   if (b1.move.castle || (mt === 'K' && Math.abs(b1.move.to - b1.move.from) === 2)) return san + ' castles your king first.';
-  var home = pre.w ? 0 : 7;
-  if ((ply || 0) < 24 && (mt === 'N' || mt === 'B') && (b1.move.from >> 3) === home && !took) return san + ' develops the ' + PIECE_WORD[mt] + '.';
+  /* develops: a knight or bishop leaving its starting square */
+  var starts = { N: [1, 6], B: [2, 5] }, base = pre.w ? 0 : 56;
+  if ((ply || 0) < 24 && starts[mt] && starts[mt].indexOf(b1.move.from - base) !== -1 && !took) return san + ' develops the ' + PIECE_WORD[mt] + '.';
   if (mt === 'P' && !took && passedPawn(b1.after.b, b1.move.to, pre.w)) return san + ' pushes your passed pawn.';
   return '';
 }
@@ -3965,9 +3886,7 @@ function gameContinuation(g, pre, i) {
       var ja = g.analysis[k];
       if (ja && ja.judgment) break;                 /* they erred: no longer the refutation */
     }
-    var m = sanApply(cloneState(st), toks[k]);
-    if (!m) break;
-    var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0];
+    var mv = sanToMove(st, toks[k]);
     if (!mv) break;
     if (k > i) out.push(moveUci(mv));
     applyMove(st, mv);
@@ -3977,20 +3896,13 @@ function gameContinuation(g, pre, i) {
 function uciOfSan(moves, i) {
   var st = stateAtPly(moves, i);
   if (!st) return null;
-  var probe = cloneState(st), m = sanApply(probe, moves.split(' ')[i]);
-  if (!m) return null;
-  var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0];
+  var mv = sanToMove(st, moves.split(' ')[i]);
   return mv ? moveUci(mv) : null;
 }
 function sanLineToUci(st0, sans) {
   var st = cloneState(st0), out = [];
   for (var i = 0; i < sans.length; i++) {
-    var probe = cloneState(st), m = sanApply(probe, sans[i]);
-    if (!m) break;
-    var promo = /=([QRBN])/.exec(sans[i]);
-    var mv = legalMoves(st).filter(function (x) {
-      return x.from === m.from && x.to === m.to && (!promo || x.promo === promo[1]);
-    })[0];
+    var mv = sanToMove(st, sans[i]);
     if (!mv) break;
     out.push(moveUci(mv));
     applyMove(st, mv);
@@ -4001,7 +3913,7 @@ function sanLineToUci(st0, sans) {
 /* name the mistake from what the lines show; cheap (a few ms), so it runs
    at ingest, at scan and again after every deeper look */
 /* raise when the classifier changes: stored mistakes are re-labelled on load */
-var CLASSIFY_V = 3;
+var CLASSIFY_V = 4;        /* bump whenever test/explanations.txt changes (CI checks) */
 function classifyEntry(b, moves) {
   var pre = stateAtPly(moves, b.p);
   if (!pre) return;
@@ -4123,15 +4035,6 @@ function scanGame(g) {
         g.scanned = 1;
         g.eng = SF.build || 'sf17.1';       /* which engine judged this game */
         scanState.dirty = (scanState.dirty || 0) + 1;
-        /* accuracy metrics: unevaluated plies carry the last value forward */
-        var lastCp = 20;
-        var pseudo = cps.map(function (c) { if (c != null) lastCp = c; return { eval: lastCp }; });
-        var em2 = evalMetrics(pseudo, meWhite, full.moves);
-        if (em2) {
-          g.ev = [em2.acpl, em2.best, em2.worst, em2.o, em2.m, em2.e];
-          g.acc2 = [em2.acc, em2.accO, em2.accM, em2.accE, em2.ta, em2.taN];
-          g.pcs = em2.pieces;
-        }
         modelDirty();
       });
     });
@@ -4143,10 +4046,9 @@ function scanGame(g) {
    show is computed here from the game records, once per data change. */
 
           /* win-chance points; lichess's own blunder line is 15 */
-var LEGACY_PATTERN = { hung: 'hung', tactic: 'missedTactic', slip: 'slipped', collapse: 'drift' };
 
 function mKey(g, b) { return g.id + ':' + b.p; }
-function patternOf(b) { return b.t || LEGACY_PATTERN[b.k] || 'drift'; }
+function patternOf(b) { return b.t || 'drift'; }
 function patternInfo(key) { return PATTERN[key] || PATTERN.drift; }
 function covered(g) { return !!(g.analysed || g.scanned || g.bl); }
 
@@ -4180,13 +4082,12 @@ function scopedGames() { return data.games.filter(inScope); }
 function model() {
   var tok = modelToken();
   if (modelCache.token === tok) return modelCache.m;
-  var items = [], byKey = {}, dirtyGames = false;
+  var items = [], byKey = {};
   data.games.forEach(function (g) {
     if (!g.bl || !g.mv || !inScope(g)) return;
-    migrateGame(g);
     markDecisive(g);
     g.bl.forEach(function (b) {
-      if (!b.x && b.bu && (b.cv || 1) < CLASSIFY_V) { classifyEntry(b, g.mv); dirtyGames = true; }
+      if (!b.x && b.bu && (b.cv || 1) < CLASSIFY_V) relabelLater();
       if (b.x) return;                  /* refuted, disputed, or the game move itself */
       if (b.sc && !b.d) return;         /* a time-scramble premove that decided nothing */
       var it = { g: g, b: b, key: mKey(g, b) };
@@ -4195,8 +4096,25 @@ function model() {
     });
   });
   modelCache = { token: tok, m: { items: items, byKey: byKey } };
-  if (dirtyGames) scheduleSave();
   return modelCache.m;
+}
+/* cards named by an older classifier are renamed in small batches while
+   the page is idle, never in one long pause (a card on screen is always
+   explained afresh anyway) */
+var relabelTimer = null;
+function relabelLater() {
+  if (relabelTimer) return;
+  relabelTimer = setTimeout(function step() {
+    var n = 0;
+    data.games.forEach(function (g) {
+      if (!g.bl || !g.mv || n >= 120) return;
+      g.bl.forEach(function (b) {
+        if (n < 120 && !b.x && b.bu && (b.cv || 1) < CLASSIFY_V) { classifyEntry(b, g.mv); n++; }
+      });
+    });
+    if (n) { modelDirty(); scheduleSave(); relabelTimer = setTimeout(step, 40); }
+    else { relabelTimer = null; if (!ui.session) { renderTrain(); if (ui.view === 'insights') renderInsights(); } }
+  }, 200);
 }
 function allMistakes() { return model().items; }
 /* the stored cache's bookkeeping with the games already in memory: work
@@ -4209,72 +4127,6 @@ function liveCache() {
 }
 function trainable(it) { return !!(it.g.mv && it.b.bu && !it.b.x); }
 
-/* records written before the rebuild: answers in a rough shorthand, no
-   refutation, an old label. Converted once, with no engine time: the
-   shorthand is matched against the legal moves, the game's own
-   continuation stands in for the refutation until the card's deeper look */
-function roughToMove(st, tok) {
-  if (!tok) return null;
-  tok = String(tok).replace(/[+#?!]+$/, '');
-  if (tok === 'O-O' || tok === 'O-O-O') return legalMoves(st).filter(function (m) { return m.castle === tok; })[0] || null;
-  var promo = /=([QRBN])/.exec(tok);
-  var body = tok.replace(/=[QRBN]/, '').replace('x', '');
-  var dest = body.slice(-2), piece = /^[NBRQK]/.test(body) ? body[0] : 'P';
-  if (!/^[a-h][1-8]$/.test(dest)) return null;
-  var to = (dest.charCodeAt(1) - 49) * 8 + (dest.charCodeAt(0) - 97);
-  var fromFile = piece === 'P' && body.length === 3 ? body.charCodeAt(0) - 97 : -1;
-  var hits = legalMoves(st).filter(function (m) {
-    var p = st.b[m.from];
-    return m.to === to && p && p.toUpperCase() === piece && (!promo || m.promo === promo[1])
-      && (fromFile < 0 || m.from % 8 === fromFile) && (!m.promo || !promo || m.promo === promo[1]);
-  });
-  if (hits.length > 1 && !promo) hits = hits.filter(function (m) { return !m.promo || m.promo === 'Q'; });
-  return hits.length === 1 ? hits[0] : null;
-}
-function migrateGame(g) {
-  if (g.mig === 2) return;
-  g.bl.forEach(function (b) {
-    if (b.bu || b.x) return;
-    var pre = stateAtPly(g.mv, b.p);
-    if (!pre) { b.x = 'moves'; return; }
-    var first = b.j === 'scan' ? roughToMove(pre, b.bs) : (function () {
-      var probe = cloneState(pre), m = sanApply(probe, b.bs || '');
-      return m ? legalMoves(pre).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0] : null;
-    })();
-    if (!first) { b.x = 'moves'; return; }
-    b.bu = moveUci(first);
-    var st = cloneState(pre), lu = [];
-    var toks = String(b.bv || '').split(' ').filter(Boolean);
-    for (var i = 0; i < toks.length && lu.length < 8; i++) {
-      var mv = i === 0 ? first : (b.j === 'scan' ? roughToMove(st, toks[i]) : (function (tk) {
-        var probe = cloneState(st), m = sanApply(probe, tk);
-        return m ? legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0] : null;
-      })(toks[i]));
-      if (!mv) break;
-      lu.push(moveUci(mv));
-      applyMove(st, mv);
-    }
-    b.lu = packUci(lu.length ? lu : [b.bu]);
-    b.ru = packUci(gameContinuationPlain(g.mv, pre, b.p));
-    b.j = b.j === 'scan' ? 's' : 'l';
-    delete b.bs; delete b.bv; delete b.k; delete b.loc; delete b.rf;
-    classifyEntry(b, g.mv);
-  });
-  g.mig = 2;
-}
-/* the real moves that followed a ply, as UCI */
-function gameContinuationPlain(moves, pre, p) {
-  var toks = moves.split(' '), st = cloneState(pre), out = [];
-  for (var k = p; k < Math.min(toks.length, p + 7); k++) {
-    var probe = cloneState(st), m = sanApply(probe, toks[k]);
-    if (!m) break;
-    var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0];
-    if (!mv) break;
-    if (k > p) out.push(moveUci(mv));
-    applyMove(st, mv);
-  }
-  return out;
-}
 
 /* ── decisive mistakes ──────────────────────────────────────────────────
    The move that decided a game. With the stored win-chance series (g.wp,
@@ -4430,38 +4282,25 @@ var srsMem = null;
 /* progress is kept per site and player: one handle on two sites is two people */
 function playerId() { return (typeof isCC === 'function' && isCC() ? 'cc:' : '') + String(cfg.user).toLowerCase(); }
 function srsKey() { return 'nl:srs:' + playerId(); }
-/* the retired opening trainer kept its lines in the same map under l|...;
-   they are set aside, untouched, and written back with every save, so the
-   progress survives if that trainer ever returns */
-function splitSrs(raw) {
-  var map = {}, kept = {};
-  Object.keys(raw || {}).forEach(function (k) { (k.indexOf('l|') === 0 ? kept : map)[k] = raw[k]; });
-  return { map: map, kept: kept };
-}
 function srsLoad() {
   if (srsMem && srsMem.key === srsKey()) return srsMem.map;
-  var parts = splitSrs(store.get(srsKey(), {}));
-  srsMem = { key: srsKey(), map: parts.map, kept: parts.kept };
-  return parts.map;
+  srsMem = { key: srsKey(), map: store.get(srsKey(), {}) };
+  return srsMem.map;
 }
 function srsSave(map) {
   /* another tab may have saved since this one read: per position, the
      record practised last wins, so two open tabs never erase each other */
-  var disk = splitSrs(store.get(srsKey(), {}));
-  Object.keys(disk.map).forEach(function (k) {
-    var d = disk.map[k], m = map[k];
+  var disk = store.get(srsKey(), {});
+  Object.keys(disk).forEach(function (k) {
+    var d = disk[k], m = map[k];
     if (!m || (d.last || 0) > (m.last || 0)) map[k] = d;
   });
-  var kept = srsMem && srsMem.key === srsKey() ? srsMem.kept : disk.kept;
-  srsMem = { key: srsKey(), map: map, kept: kept };
-  var out = {};
-  Object.keys(kept).forEach(function (k) { out[k] = kept[k]; });
-  Object.keys(map).forEach(function (k) { out[k] = map[k]; });
-  store.set(srsKey(), out);
+  srsMem = { key: srsKey(), map: map };
+  store.set(srsKey(), map);
   srsRevision++;
 }
 function srsRec(it) { return srsLoad()[it.key] || null; }
-function isLearned(rec) { return !!(rec && (rec.learned || rec.mastered)); }
+function isLearned(rec) { return !!(rec && rec.learned); }
 
 /* result: 'first' (no miss, no hint), 'hint' (a hint, or good-then-best),
    'retry' (solved after a miss), 'fail' (shown the answer), 'skip'.
@@ -4517,7 +4356,6 @@ function srsRecord(it, result, info) {
   if (info.gameMove) { rec.box = 0; rec.due = now + DAY; rec.learned = false; }
   if ((rec.lapses || 0) >= 4) rec.tricky = 1;
   if (info.ms != null) rec.lt = info.ms;
-  delete rec.mastered;
   rec.last = now;
   map[it.key] = rec;
   srsSave(map);
@@ -5029,7 +4867,9 @@ function enginePump() {
   for (var wi = 0; wi < SF.workers.length && SF.queue.length; wi++) {
     var slot = SF.workers[wi];
     slotWire(slot);
-    if (reserve && wi === 0 && !SF.queue[0].prio) continue;
+    /* the kept analyst still takes a short scan job: 18k nodes is a few
+       milliseconds, never long enough to delay a checked move */
+    if (reserve && wi === 0 && !SF.queue[0].prio && !(SF.queue[0].movetime && SF.queue[0].movetime.nodes <= TRIAGE_NODES)) continue;
     if (!slot.pending.length && SF.queue.length) {
       var job = SF.queue.shift();
       slot.pending.push(job);
@@ -5227,7 +5067,13 @@ function savedSession() {
 
 /* how easy a card is to meet: a free capture or a mate in one is gentler
    than a quiet positional move (for the first session and for beginners) */
+var easeMemo = {};
 function cardEase(it) {
+  var mk = it.key + '|' + (it.b.cv || 0) + '|' + (it.b.ru || '');
+  if (easeMemo[mk] == null) easeMemo[mk] = cardEaseOf(it);
+  return easeMemo[mk];
+}
+function cardEaseOf(it) {
   var t = patternOf(it.b), fam = familyOf(t).key;
   var bu = it.b.bu, pre = null, capture = false;
   if (bu) { pre = stateAtPly(it.g.mv, it.b.p); var m = pre && uciToMove(pre, bu); capture = !!(m && (pre.b[m.to] || m.ep >= 0)); }
@@ -5254,6 +5100,9 @@ function teachability(it) {
 function newCardScore(it, since) {
   var s = teachability(it);
   if (it.b.d) s *= 1.7;                                   /* the move that lost the game */
+  /* newer players: ideas one move deep first (a free capture, a cheaper
+     piece taking a dearer one, mate in one) */
+  if (playerTier() === 1 && cardEase(it) >= 3) s *= 1.8;
   if (since && it.g.ts > since) s *= 1.4;                 /* played since the last visit */
   var ageDays = (Date.now() - it.g.ts) / DAY;
   s *= 0.5 + Math.exp(-ageDays / 45);
@@ -5270,7 +5119,10 @@ function buildCandidates(n, spec) {
   var list = allMistakes().filter(function (it) {
     return trainable(it) && !srs[it.key] && (!filter || filter(it)) && !twoAnswers(it);
   });
-  list.sort(function (x, y) { return newCardScore(y, since) - newCardScore(x, since); });
+  /* each score once: the ease check replays the game */
+  var score = {};
+  list.forEach(function (it) { score[it.key] = newCardScore(it, since); });
+  list.sort(function (x, y) { return score[y.key] - score[x.key]; });
   if (spec || !focus) return list.slice(0, n);
   /* the focus family takes turns with the rest, never more than half: a
      mix trains the question "which danger is live now?" */
@@ -5557,9 +5409,7 @@ function cardLines(a) {
   /* what really happened: the game's own moves, evaluated by the scan */
   var toks = g.mv.split(' '), gm = [], st = cloneState(pre);
   for (var k = p; k < Math.min(toks.length, p + 8); k++) {
-    var probe = cloneState(st), m = sanApply(probe, toks[k]);
-    if (!m) break;
-    var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0];
+    var mv = sanToMove(st, toks[k]);
     if (!mv) break;
     gm.push(moveUci(mv));
     applyMove(st, mv);
@@ -5944,9 +5794,10 @@ function miss(m, u, info) {
     var reply = info.pv[0] === u ? info.pv.slice(1) : info.pv;
     var c = classifyMistake(a.st, u, { pv: [] }, { pv: reply, mate: info.mate }, winPct(it.b.eb), info.win, it.b.p);
     var concrete = c.mateAgainst || c.matGame <= -1;
-    why = concrete ? c.sentences.short
-      : san + (a.tier === 1 ? ' does not lose anything, but there is something stronger here.'
-        : ' keeps ' + Math.round(info.win) + '%. There is something stronger here.');
+    /* a wrong try is told in words at every level: the numbers belong to
+       the close and the found states */
+    why = concrete ? c.sentences.short.replace(/ \(\d+% to \d+%\)/g, '')
+      : san + ' does not lose anything, but there is something stronger here.';
   }
   why = why || san + ' does not work.';
   a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ ' + why, '✗ ' + firstClause(why), '✗ ' + san + ' does not work.'])) };
@@ -6801,6 +6652,9 @@ function ctxHtml(a, answered) {
   var g = a.it.g, b = a.it.b;
   var bits = ['vs <b>' + esc(g.opp) + '</b>' + (g.oppR ? ' (' + g.oppR + ')' : ''), gameDateLine(g), perfLabel(g.perf).toLowerCase(), 'move ' + (Math.floor(b.p / 2) + 1)];
   if (b.c != null) bits.push(clockWords(b.c) + ' left');
+  /* a game drill keeps its game one tap away */
+  var ss0 = ui.session;
+  if (ss0 && ss0.spec && ss0.spec.type === 'game') bits.push('<a href="' + gameHref(g.id, g.color, b.p) + '">Open the game ↗</a>');
   var h = '<p class="ctx">' + bits.join(' · ') + '</p>';
   if (answered) return h;
   var tags = [];
@@ -6907,7 +6761,7 @@ function panelHtml(a, ss) {
   var t = patternOf(b), info = patternInfo(t);
   h += '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
     + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>';
-  if (a.showHabit) h += '<p class="habit">' + esc(info.habit) + '</p>';
+  if (a.showHabit) h += '<p class="habit">' + esc(habitFor(a, t, info)) + '</p>';
   var repSan = a.explore && a.explore.reply && a.explore.san.length ? (function () { var m = uciToMove(a.explore.st, a.explore.reply); return m ? sanOf(a.explore.st, m) : ''; })() : '';
   if (a.explore) h += '<p class="explore-line">Your analysis: ' + esc(a.explore.san.join(' ') || 'make a move on the board')
     + (a.explore.ev != null ? ' · ' + (a.tier === 1 ? standingWords(winPct(a.explore.ev)) : Math.round(winPct(a.explore.ev)) + '% winning chances for you') + (repSan ? '. Stockfish would answer ' + esc(repSan) + ' (the gold arrow)' : '') : (a.explore.san.length ? ' · thinking…' : ''))
@@ -6930,6 +6784,20 @@ function opponentLine(a) {
     return 'Your opponent missed it. They played ' + esc(a.lines.game.san[1] || '') + ' and you were back in the game.';
   if (real === r1) return 'Your opponent found ' + esc(a.lines.game.san[1] || '') + ' right away.';
   return '';
+}
+/* the habit fits the move that was played: a king walk is not a pawn
+   shield problem, a finished opening is not a development problem, and an
+   endgame king move does not need "bring your king in" */
+function habitFor(a, t, info) {
+  var c = a.cls, pre = a.pre, mover = pType(pre.b[a.played.from]);
+  if (t === 'kingSafety' && c.kingMoved) return 'Keep your king out of the open while the queens are on the board.';
+  if (t === 'openingSlip') {
+    var home = pre.w ? 0 : 7, left = 0;
+    for (var sq = home * 8; sq < home * 8 + 8; sq++) { var p = pre.b[sq]; if (p && colorW(p) === pre.w && (pType(p) === 'N' || pType(p) === 'B')) left++; }
+    if (left === 0) return PATTERN.drift.habit;
+  }
+  if (t === 'endgame' && mover === 'K') return 'In the endgame, check every pawn race before you move your king.';
+  return info.habit;
 }
 /* winning chances in words, for newer players */
 function standingWords(w) {
@@ -7415,7 +7283,6 @@ function boot() {
       renderAll();
       setTimeout(autoScan, 600);
       setTimeout(autoEnrich, 2500);
-      setTimeout(reingestLichess, 8000);
     })
     .catch(function (err) {
       if (err && err.stop === 'none') renderNoAccount();
@@ -7423,44 +7290,6 @@ function boot() {
     });
 }
 
-/* lichess games analysed before the rebuild lost their evaluations when
-   they were first stored; they come back once, in bulk, so every old
-   mistake gets exact numbers and a full win-chance series */
-var reingestState = { busy: false, done: false };
-function reingestLichess() {
-  if (isCC() || reingestState.busy || reingestState.done || !cfg.user) return;
-  var myGen = gen;
-  var ids = data.games.filter(function (g) { return g.analysed && !g.wp; }).map(function (g) { return g.id; });
-  if (!ids.length) { reingestState.done = true; return; }
-  reingestState.busy = true;
-  var meId = String(cfg.user).toLowerCase(), byId = {};
-  data.games.forEach(function (g) { byId[g.id] = g; });
-  var batches = [];
-  for (var i = 0; i < ids.length; i += 300) batches.push(ids.slice(i, i + 300));
-  var chain = Promise.resolve();
-  batches.forEach(function (batch) {
-    chain = chain.then(function () {
-      if (stale(myGen)) return;
-      return request('/api/games/export/_ids?' + GAME_PARAMS, { method: 'POST', body: batch.join(','), accept: 'application/x-ndjson', quiet: true })
-        .then(function (res) { return res.text(); })
-        .then(function (text) {
-          if (stale(myGen)) return;
-          text.split('\n').forEach(function (line) {
-            if (!line.trim()) return;
-            try {
-              var raw = JSON.parse(line), old = byId[raw.id], fresh = compact(raw, meId);
-              if (!old || !fresh) return;
-              adoptFresh(old, fresh);
-            } catch (e) {}
-          });
-          modelDirty();
-          scheduleSave();
-        });
-    });
-  });
-  chain.then(function () { reingestState.busy = false; reingestState.done = true; flushSave(); renderAll(); },
-             function () { reingestState.busy = false; });
-}
 /* a refetched record replaces the old one's analysis, but the practice
    keys (gameId:ply) and anything the player marked survive */
 function adoptFresh(old, fresh) {
@@ -7471,8 +7300,7 @@ function adoptFresh(old, fresh) {
     if (o && o.x && /^user/.test(o.x)) b.x = o.x;
     if (o && (o.v || 0) >= 2 && o.ru) { b.ru = o.ru; b.ma = o.ma; b.v = o.v; }
   });
-  ['bl', 'mv', 'wp', 'ev', 'acc2', 'pcs', 'opening', 'analysed'].forEach(function (k) { if (fresh[k] != null) old[k] = fresh[k]; });
-  delete old.mig;
+  ['bl', 'mv', 'wp', 'opening', 'analysed'].forEach(function (k) { if (fresh[k] != null) old[k] = fresh[k]; });
 }
 
 /* ── progress between devices, as a file ────────────────────────────────── */
@@ -7637,9 +7465,7 @@ document.addEventListener('click', function (e) {
           if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === sessKey())) del.push(kk);
         }
         del.forEach(function (x) { localStorage.removeItem(x); });
-        /* the mistakes' records go; the retired trainer's lines stay */
-        var keptLines = splitSrs(store.get('nl:srs:' + u, {})).kept;
-        if (Object.keys(keptLines).length) store.set('nl:srs:' + u, keptLines); else store.del('nl:srs:' + u);
+        store.del('nl:srs:' + u);
       } catch (e2) {}
       srsMem = null; srsRevision++; ui.session = null; ui.resetArmed = false; modelDirty();
       notice('Practice history reset. Your games and analysis are kept.');
@@ -7705,7 +7531,7 @@ function typedMove(txt) {
   if (!a || a.phase !== 'guess') return;
   var t = String(txt || '').trim().replace(/0/g, 'O');
   var m = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(t) ? uciToMove(a.st, t.toLowerCase()) : null;
-  if (!m && t) { var probe = cloneState(a.st), sm = sanApply(probe, t); if (sm) m = legalMoves(a.st).filter(function (x) { return x.from === sm.from && x.to === sm.to && (!x.promo || x.promo === (sm.promo || 'Q')); })[0] || null; }
+  if (!m && t) m = sanToMove(a.st, t);
   if (!m) { notice('That move is not legal here. Try a move like Nf3, exd5, O-O or g1f3.'); return; }
   gradeMove(m);
 }

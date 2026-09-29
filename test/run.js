@@ -52,4 +52,10 @@ fx.forEach((r, i) => {
 });
 check('explanations', !empty.length, fx.length + ' mistakes' + (empty.length ? ', missing: ' + empty.slice(0, 5).join(' ') : ''));
 check('short sentences fit a phone', !long.length, long.length ? long.length + ' too long, first ' + long[0] : 'all 84 characters or fewer');
+/* 4. the committed snapshot matches the classifier, and was stamped with its version */
+const X = require('./explain');
+const snap = fs.readFileSync(path.join(__dirname, 'explanations.txt'), 'utf8'), now = X.explanations();
+const stamp = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'classify-stamp.json'), 'utf8'));
+check('explanation snapshot is current', snap === now, snap === now ? 'unchanged' : 'run npm run explain (and bump CLASSIFY_V if it refuses)');
+check('snapshot stamped with the classifier version', stamp.v === X.classifyVersion() && stamp.hash === X.hash(snap), 'stamp v' + stamp.v + ', code v' + X.classifyVersion());
 process.exit(failed ? 1 : 0);

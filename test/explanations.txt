@@ -6,16 +6,16 @@
   best move: Qh7 wins a knight and a pawn.
 #2 material
   your move: Qd6 loses the bishop after Qxd6 Bxd6 Nxg4.
-  best move: Bxe2 keeps everything safe.
+  best move: Bxe2 keeps your bishop safe.
 #3 material
   your move: c3 loses a queen for a knight after Ne5 Bc2 Nxf3+ Nxf3.
   best move: Qe2 keeps everything safe.
 #4 material
   your move: Qb7 loses the bishop after Ra7 c4 Qxd2+ Nbxd2 and more.
-  best move: c4 keeps everything safe.
+  best move: c4 keeps your bishop safe.
 #5 material
   your move: Be3 loses the bishop after Qb4+ Bd2 Rxb7 Bxb4 and more.
-  best move: b4 keeps everything safe.
+  best move: b4 keeps your bishop safe.
 #6 missedMaterial
   your move: Bf6 leaves White's knight on f5 undefended.
   best move: Bxf5 wins the knight.
@@ -54,7 +54,7 @@
   best move: Qxf8# forces mate in 1.
 #18 forkAllowed
   your move: Nb4 allows Qa4+, forking your king and knight.
-  best move: Ne5 keeps everything safe.
+  best move: Ne5 keeps your knight safe.
 #19 slipped
   your move: Nb5 lets your winning position slip: after Na6 Black is better (73% to 42%).
   best move: d3 keeps your advantage.
@@ -111,7 +111,7 @@
   best move: Qxg7# forces mate in 1.
 #37 forkAllowed
   your move: e5 allows Nf5+, forking your queen and king.
-  best move: Rag8 keeps everything safe.
+  best move: Rag8 keeps your queen safe.
 #38 material
   your move: b3 loses a bishop for a pawn after Ne5 Qxb7 Qxb7 Rxb7 and more.
   best move: g3 keeps the game balanced.
@@ -120,7 +120,7 @@
   best move: Nd2 keeps the game balanced.
 #40 forkAllowed
   your move: f4 allows Nf3+, forking your rook and king.
-  best move: Rd1 keeps everything safe.
+  best move: Rd1 keeps your rook safe.
 #41 hung
   your move: f5 leaves your pawn on e6 undefended: Qxe6+ takes it.
   best move: Nf6 defends the pawn on e6.
@@ -129,13 +129,13 @@
   best move: Rxd3 keeps your advantage.
 #43 endgame
   your move: Rd3 lets White take over (52% to 32%).
-  best move: c5 keeps everything safe.
+  best move: c5 pushes your passed pawn.
 #44 drift
   your move: Nxe5 lets White take over: Nxf5 is strong (64% to 34%).
   best move: Nxe3 keeps your advantage.
 #45 forkAllowed
   your move: Kd7 allows Nb6+, forking your king and rook.
-  best move: Be7 keeps everything safe.
+  best move: Be7 keeps your rook safe.
 #46 slipped
   your move: Re2 lets your winning position slip: after Kc7 it is roughly level (69% to 46%).
   best move: Nd6+ wins a rook for a knight and a pawn.
@@ -147,7 +147,7 @@
   best move: Ra6+ wins the pawn.
 #49 mateAllowed
   your move: Kc4 allows mate in 1, starting with Rd4#.
-  best move: Kc2 keeps the game balanced.
+  best move: Kc2 avoids the mate.
 #50 mateAllowed
   your move: Ng7 allows mate in 1, starting with Qxg7#.
   best move: Rf6 stops Qxg7#.
@@ -156,7 +156,7 @@
   best move: Rg8 wins the pawn.
 #52 material
   your move: Bd6 loses the pawn after Bxd5 exd5 Rxf5.
-  best move: Bg6 keeps everything safe.
+  best move: Bg6 keeps your pawn safe.
 #53 forkAllowed
   your move: Bxa3 allows Nxd5 exd5 Bxd5 Bxb2, and then Bc6+ forks your king and rook.
   best move: Bg6 keeps everything safe.
@@ -168,7 +168,7 @@
   best move: Rf2+ keeps your advantage.
 #56 pinAllowed
   your move: c4 walks into a pin, and the pinned bishop is lost.
-  best move: h4 keeps everything safe.
+  best move: h4 keeps your bishop safe.
 #57 threat
   your move: h4 ignores Black's threat: Rxd3+ takes your bishop.
   best move: Kc2 defends the bishop on d3.
@@ -180,7 +180,7 @@
   best move: Take back with the pawn: fxe3.
 #60 hung
   your move: Ne4 leaves your knight on e4 undefended: Bxe4 takes it.
-  best move: Re1 keeps everything safe.
+  best move: Re1 keeps your knight safe.
 #61 missedTactic
   your move: Nxe5 misses Nxd4.
   best move: Nxd4 sets up Qxc3+, which forks the king and rook.
@@ -192,13 +192,13 @@
   best move: Rxc4 stops Rxc6.
 #64 openingSlip
   your move: exd4 lets White take over (40% to 18%).
-  best move: Bd6 keeps the game balanced.
+  best move: Bd6 develops the bishop.
 #65 hung
   your move: b5 leaves your pawn on b5 undefended: Qxb5 takes it.
-  best move: Qd6 keeps everything safe.
+  best move: Qd6 keeps your pawn safe.
 #66 material
   your move: Be4 loses the bishop after Qxe4.
-  best move: f5 keeps everything safe.
+  best move: f5 keeps your bishop safe.
 #67 endgame
   your move: exf6 lets Black take over: Rxa4 is strong (56% to 28%).
   best move: Rxd3 keeps the game balanced.
@@ -207,10 +207,10 @@
   best move: Bxc5 sets up Nxe4, which forks the rook and queen.
 #69 endgame
   your move: Ne4+ lets Black take over after Nxe4 (45% to 13%).
-  best move: a5 keeps the game balanced.
+  best move: a5 pushes your passed pawn.
 #70 hung
   your move: Be5 leaves your bishop on e5 undefended: Rxe5 takes it.
-  best move: a4 keeps everything safe.
+  best move: a4 keeps your bishop safe.
 #71 threat
   your move: Rg1 ignores Black's threat: Rxe5 takes your bishop.
   best move: Bf4 moves the bishop out of danger.
@@ -222,7 +222,7 @@
   best move: Rad8 keeps your advantage.
 #74 slipped
   your move: Ne4 lets your winning position slip: after Be7 it is roughly level (85% to 55%).
-  best move: c6 keeps your advantage.
+  best move: c6 pushes your passed pawn.
 #75 mateMissed
   your move: Rxc6+ lets a forced mate slip away.
   best move: Rf7# forces mate in 1.
@@ -237,16 +237,16 @@
   best move: Qh7 wins a knight and a pawn.
 #79 material
   your move: Qd6 loses the bishop after Qxd6 Bxd6 Nxg4.
-  best move: Bxe2 keeps everything safe.
+  best move: Bxe2 keeps your bishop safe.
 #80 material
   your move: c3 loses a queen for a knight after Ne5 Bc2 Nxf3+ Nxf3.
   best move: Qe2 keeps everything safe.
 #81 material
   your move: Qb7 loses the bishop after Ra7 c4 Qxd2+ Nbxd2 and more.
-  best move: c4 keeps everything safe.
+  best move: c4 keeps your bishop safe.
 #82 material
   your move: Be3 loses the bishop after Qb4+ Bd2 Rxb7 Bxb4 and more.
-  best move: b4 keeps everything safe.
+  best move: b4 keeps your bishop safe.
 #83 missedMaterial
   your move: Bf6 leaves White's knight on f5 undefended.
   best move: Bxf5 wins the knight.
@@ -285,7 +285,7 @@
   best move: Qxf8# forces mate in 1.
 #95 forkAllowed
   your move: Nb4 allows Qa4+, forking your king and knight.
-  best move: Ne5 keeps everything safe.
+  best move: Ne5 keeps your knight safe.
 #96 slipped
   your move: Nb5 lets your winning position slip: after Na6 Black is better (73% to 42%).
   best move: d3 keeps your advantage.
@@ -333,16 +333,16 @@
   best move: Bxc4 wins the pawn.
 #111 drift
   your move: Ke8 lets White take over: Rfe7+ is strong (64% to 11%).
-  best move: Bxf7 keeps your advantage.
+  best move: Bxf7 takes the rook before it can give check.
 #112 threat
   your move: h5 ignores White's threat: Qxb6 takes your pawn.
   best move: b5 moves the pawn out of danger.
 #113 material
   your move: Rd7 loses the rook after Bb5 Qe6 Nxh4 Kf8 and more.
-  best move: Kf8 keeps everything safe.
+  best move: Kf8 keeps your rook safe.
 #114 material
   your move: Rd7 loses the rook after Bb5 Qe6 Nxh4 Kf8 and more.
-  best move: Kf8 keeps everything safe.
+  best move: Kf8 keeps your rook safe.
 #115 pinAllowed
   your move: Ne7 walks into a pin, and the pinned rook is lost.
   best move: Rh1+ forces a draw with checks.
@@ -393,7 +393,7 @@
   best move: Qxc7 wins the queen.
 #131 material
   your move: Ng5 loses the pawn after bxc3 Nxh7 cxb2.
-  best move: Kf2 keeps everything safe.
+  best move: Kf2 keeps your pawn safe.
 #132 hung
   your move: c4 leaves your pawn on b2 undefended: Bxb2 takes it.
   best move: d4 stops Bxb2.
@@ -402,7 +402,7 @@
   best move: Rxa4 defends the pawn on d3.
 #134 forkAllowed
   your move: Rb1 allows a3 Rxb2, and then Nxd3+ forks your king and rook.
-  best move: Rxa4 keeps everything safe.
+  best move: Rxa4 takes the pawn.
 #135 hung
   your move: Kg4 leaves your pawn on e4 undefended: Bxe4 takes it.
   best move: Be2 defends the pawn on e4.
@@ -417,7 +417,7 @@
   best move: Bg6 forces mate in 2.
 #139 forkAllowed
   your move: Ng5 allows Nf5, forking your bishop and queen.
-  best move: Bxe7 keeps everything safe.
+  best move: Bxe7 takes the knight.
 #140 promotion
   your move: Kb7 lets White's pawn run through to promote.
   best move: Kc7 keeps everything safe.
@@ -444,25 +444,25 @@
   best move: Bxg7+ wins the pawn.
 #148 hung
   your move: Nf5 leaves your knight on f5 undefended: Qxf5 takes it.
-  best move: Rf2 keeps everything safe.
+  best move: Rf2 keeps your knight safe.
 #149 mateMissed
   your move: Qxg7# lets a forced mate slip away.
   best move: Qxg7# forces mate in 1.
 #150 forkAllowed
   your move: e5 allows Nf5+, forking your queen and king.
-  best move: Rag8 keeps everything safe.
+  best move: Rag8 keeps your queen safe.
 #151 drift
   your move: b3 lets Black take over (56% to 32%).
   best move: g3 keeps the game balanced.
 #152 material
   your move: Bh6 loses a bishop for a pawn after Qf7 Nb4 Nxb4 axb4 and more.
-  best move: O-O-O keeps everything safe.
+  best move: O-O-O castles your king first.
 #153 drift
   your move: Qd5 lets Black take over: Bxf3 is strong (56% to 27%).
   best move: Nd2 keeps the game balanced.
 #154 forkAllowed
   your move: f4 allows Nf3+, forking your rook and king.
-  best move: Rh1 keeps everything safe.
+  best move: Rh1 keeps your rook safe.
 #155 hung
   your move: f5 leaves your pawn on e6 undefended: Qxe6+ takes it.
   best move: Nf6 defends the pawn on e6.
@@ -486,13 +486,13 @@
   best move: Ra6+ keeps your advantage.
 #162 mateAllowed
   your move: Kc4 allows mate in 1, starting with Rd4#.
-  best move: Kc2 keeps the game balanced.
+  best move: Kc2 avoids the mate.
 #163 mateAllowed
   your move: Ng7 allows mate in 1, starting with Qxg7#.
   best move: Rf6 stops Qxg7#.
 #164 pinAllowed
   your move: Nf5 walks into a pin, and the pinned knight is lost.
-  best move: Rg8 keeps everything safe.
+  best move: Rg8 keeps your knight safe.
 #165 threat
   your move: Kg3 ignores White's threat: Kxf5 takes your pawn.
   best move: Kg4 stops Kxf5.
@@ -513,7 +513,7 @@
   best move: Rf2+ keeps your advantage.
 #171 pinAllowed
   your move: c4 walks into a pin, and the pinned bishop is lost.
-  best move: h4 keeps everything safe.
+  best move: h4 keeps your bishop safe.
 #172 threat
   your move: h4 ignores Black's threat: Rxd3+ takes your bishop.
   best move: Kc2 defends the bishop on d3.
@@ -525,7 +525,7 @@
   best move: Take back with the pawn: fxe3.
 #175 hung
   your move: Ne4 leaves your knight on e4 undefended: Bxe4 takes it.
-  best move: Ng5 keeps everything safe.
+  best move: Ng5 keeps your knight safe.
 #176 missedTactic
   your move: Nxe5 misses Nxd4.
   best move: Nxd4 sets up Qxc3+, which forks the king and rook.
@@ -534,7 +534,7 @@
   best move: Rxb6 wins the pawn.
 #178 material
   your move: c5 loses the pawn after Bxc5.
-  best move: d5 keeps everything safe.
+  best move: d5 keeps your pawn safe.
 #179 threat
   your move: gxh4 ignores Black's threat: Qxe4 takes your rook. You lose the exchange.
   best move: Qg2 wins a bishop for a pawn.
@@ -567,7 +567,7 @@
   best move: Qc8 defends the rook on a8.
 #189 threat
   your move: Rf7 ignores White's threat: Qxb3 takes your knight.
-  best move: Rd8 keeps everything safe.
+  best move: Rd8 keeps your knight safe.
 #190 mateAllowed
   your move: Bh3 allows mate in 3, starting with Qxa8+.
   best move: Bb7 wins a queen for a bishop and a pawn.
@@ -588,10 +588,10 @@
   best move: Rxc2 wins two pawns.
 #196 mateAllowed
   your move: d3 allows mate in 2, starting with c4+.
-  best move: Ka5 keeps the game balanced.
+  best move: Ka5 avoids the mate.
 #197 mateAllowed
   your move: Qh8+ allows mate in 5, starting with d4+.
-  best move: Ka5 keeps everything safe.
+  best move: Ka5 avoids the mate.
 #198 drift
   your move: exd6 lets Black take over (46% to 24%).
   best move: Qe4 keeps the game balanced.
@@ -645,10 +645,10 @@
   best move: Rxc4 stops Rxc6.
 #215 hung
   your move: b5 leaves your pawn on b5 undefended: Qxb5 takes it.
-  best move: Qd6 keeps everything safe.
+  best move: Qd6 keeps your pawn safe.
 #216 material
   your move: Be4 loses the bishop after Qxe4.
-  best move: f5 keeps everything safe.
+  best move: f5 keeps your bishop safe.
 #217 endgame
   your move: exf6 lets Black take over: Rxa4 is strong (58% to 35%).
   best move: Rxd3 keeps the game balanced.
@@ -660,7 +660,7 @@
   best move: Kd2 keeps the game balanced.
 #220 hung
   your move: Be5 leaves your bishop on e5 undefended: Rxe5 takes it.
-  best move: Bd4 keeps everything safe.
+  best move: Bd4 keeps your bishop safe.
 #221 threat
   your move: Rg1 ignores Black's threat: Rxe5 takes your bishop.
   best move: Bf4 moves the bishop out of danger.
@@ -669,13 +669,13 @@
   best move: Bxc6 wins the knight.
 #223 material
   your move: Be2+ loses the bishop after N1xe2.
-  best move: Rad8 keeps everything safe.
+  best move: Rad8 keeps your bishop safe.
 #224 missedMaterial
   your move: Bxg5 leaves Black's rook on d8 undefended.
   best move: Rxd8 wins the rook.
 #225 slipped
   your move: Ne4 lets your winning position slip: after Be7 it is roughly level (87% to 56%).
-  best move: c6 keeps your advantage.
+  best move: c6 pushes your passed pawn.
 #226 mateMissed
   your move: Rxc6+ lets a forced mate slip away.
   best move: Rf7# forces mate in 1.
@@ -684,7 +684,7 @@
   best move: Ba2 keeps the game balanced.
 #228 drift
   your move: b5 lets White take over (54% to 34%).
-  best move: bxa5 keeps the game balanced.
+  best move: bxa5 trades pawns.
 #229 missedMaterial
   your move: Bc4 leaves White's pawn on c3 undefended.
   best move: Rxc3+ wins the pawn.
@@ -702,10 +702,10 @@
   best move: Rf6+ keeps your advantage.
 #234 hung
   your move: Qg5 leaves your queen on g5 undefended: Bxg5 takes it.
-  best move: Be7 keeps everything safe.
+  best move: Be7 develops the bishop.
 #235 hung
   your move: Nc6 leaves your knight on c6 undefended: Nxc6 takes it.
-  best move: Qe3 keeps everything safe.
+  best move: Qe3 keeps your knight safe.
 #236 badTrade
   your move: Bxf2+ takes a pawn, but Kxf2 takes your bishop.
   best move: Rhd8 stops Kxf2.
@@ -717,13 +717,13 @@
   best move: exf4# forces mate in 1.
 #239 forkAllowed
   your move: Re2 allows Rh5+ Ke4, and then Nc5+ forks your king and rook.
-  best move: Kg6 keeps everything safe.
+  best move: Kg6 keeps your rook safe.
 #240 discoveredAllowed
   your move: Kd8 allows a discovered check. You lose two pawns.
   best move: Kd6 keeps everything safe.
 #241 endgame
   your move: b3 lets White take over: Rd1+ is strong (42% to 15%).
-  best move: Ne6 keeps everything safe.
+  best move: Ne6 keeps your pawn safe.
 #242 hung
   your move: Rd8 puts your rook where Bxd8 takes it.
   best move: Kh7 keeps everything safe.

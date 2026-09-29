@@ -366,8 +366,9 @@ function whatItDoes(c, pre, ply) {
   if (took && took === mt && b2 && b2.captured && b2.move.to === b1.move.to && c.matBest === 0)
     return san + (mt === 'Q' ? ' trades queens.' : ' trades ' + PIECE_WORD[mt] + 's.');
   if (b1.move.castle || (mt === 'K' && Math.abs(b1.move.to - b1.move.from) === 2)) return san + ' castles your king first.';
-  var home = pre.w ? 0 : 7;
-  if ((ply || 0) < 24 && (mt === 'N' || mt === 'B') && (b1.move.from >> 3) === home && !took) return san + ' develops the ' + PIECE_WORD[mt] + '.';
+  /* develops: a knight or bishop leaving its starting square */
+  var starts = { N: [1, 6], B: [2, 5] }, base = pre.w ? 0 : 56;
+  if ((ply || 0) < 24 && starts[mt] && starts[mt].indexOf(b1.move.from - base) !== -1 && !took) return san + ' develops the ' + PIECE_WORD[mt] + '.';
   if (mt === 'P' && !took && passedPawn(b1.after.b, b1.move.to, pre.w)) return san + ' pushes your passed pawn.';
   return '';
 }

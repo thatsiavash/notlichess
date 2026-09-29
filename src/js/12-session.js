@@ -21,7 +21,13 @@ function savedSession() {
 
 /* how easy a card is to meet: a free capture or a mate in one is gentler
    than a quiet positional move (for the first session and for beginners) */
+var easeMemo = {};
 function cardEase(it) {
+  var mk = it.key + '|' + (it.b.cv || 0) + '|' + (it.b.ru || '');
+  if (easeMemo[mk] == null) easeMemo[mk] = cardEaseOf(it);
+  return easeMemo[mk];
+}
+function cardEaseOf(it) {
   var t = patternOf(it.b), fam = familyOf(t).key;
   var bu = it.b.bu, pre = null, capture = false;
   if (bu) { pre = stateAtPly(it.g.mv, it.b.p); var m = pre && uciToMove(pre, bu); capture = !!(m && (pre.b[m.to] || m.ep >= 0)); }
@@ -48,6 +54,9 @@ function teachability(it) {
 function newCardScore(it, since) {
   var s = teachability(it);
   if (it.b.d) s *= 1.7;                                   /* the move that lost the game */
+  /* newer players: ideas one move deep first (a free capture, a cheaper
+     piece taking a dearer one, mate in one) */
+  if (playerTier() === 1 && cardEase(it) >= 3) s *= 1.8;
   if (since && it.g.ts > since) s *= 1.4;                 /* played since the last visit */
   var ageDays = (Date.now() - it.g.ts) / DAY;
   s *= 0.5 + Math.exp(-ageDays / 45);
@@ -64,7 +73,10 @@ function buildCandidates(n, spec) {
   var list = allMistakes().filter(function (it) {
     return trainable(it) && !srs[it.key] && (!filter || filter(it)) && !twoAnswers(it);
   });
-  list.sort(function (x, y) { return newCardScore(y, since) - newCardScore(x, since); });
+  /* each score once: the ease check replays the game */
+  var score = {};
+  list.forEach(function (it) { score[it.key] = newCardScore(it, since); });
+  list.sort(function (x, y) { return score[y.key] - score[x.key]; });
   if (spec || !focus) return list.slice(0, n);
   /* the focus family takes turns with the rest, never more than half: a
      mix trains the question "which danger is live now?" */

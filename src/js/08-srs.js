@@ -15,38 +15,25 @@ var srsMem = null;
 /* progress is kept per site and player: one handle on two sites is two people */
 function playerId() { return (typeof isCC === 'function' && isCC() ? 'cc:' : '') + String(cfg.user).toLowerCase(); }
 function srsKey() { return 'nl:srs:' + playerId(); }
-/* the retired opening trainer kept its lines in the same map under l|...;
-   they are set aside, untouched, and written back with every save, so the
-   progress survives if that trainer ever returns */
-function splitSrs(raw) {
-  var map = {}, kept = {};
-  Object.keys(raw || {}).forEach(function (k) { (k.indexOf('l|') === 0 ? kept : map)[k] = raw[k]; });
-  return { map: map, kept: kept };
-}
 function srsLoad() {
   if (srsMem && srsMem.key === srsKey()) return srsMem.map;
-  var parts = splitSrs(store.get(srsKey(), {}));
-  srsMem = { key: srsKey(), map: parts.map, kept: parts.kept };
-  return parts.map;
+  srsMem = { key: srsKey(), map: store.get(srsKey(), {}) };
+  return srsMem.map;
 }
 function srsSave(map) {
   /* another tab may have saved since this one read: per position, the
      record practised last wins, so two open tabs never erase each other */
-  var disk = splitSrs(store.get(srsKey(), {}));
-  Object.keys(disk.map).forEach(function (k) {
-    var d = disk.map[k], m = map[k];
+  var disk = store.get(srsKey(), {});
+  Object.keys(disk).forEach(function (k) {
+    var d = disk[k], m = map[k];
     if (!m || (d.last || 0) > (m.last || 0)) map[k] = d;
   });
-  var kept = srsMem && srsMem.key === srsKey() ? srsMem.kept : disk.kept;
-  srsMem = { key: srsKey(), map: map, kept: kept };
-  var out = {};
-  Object.keys(kept).forEach(function (k) { out[k] = kept[k]; });
-  Object.keys(map).forEach(function (k) { out[k] = map[k]; });
-  store.set(srsKey(), out);
+  srsMem = { key: srsKey(), map: map };
+  store.set(srsKey(), map);
   srsRevision++;
 }
 function srsRec(it) { return srsLoad()[it.key] || null; }
-function isLearned(rec) { return !!(rec && (rec.learned || rec.mastered)); }
+function isLearned(rec) { return !!(rec && rec.learned); }
 
 /* result: 'first' (no miss, no hint), 'hint' (a hint, or good-then-best),
    'retry' (solved after a miss), 'fail' (shown the answer), 'skip'.
@@ -102,7 +89,6 @@ function srsRecord(it, result, info) {
   if (info.gameMove) { rec.box = 0; rec.due = now + DAY; rec.learned = false; }
   if ((rec.lapses || 0) >= 4) rec.tricky = 1;
   if (info.ms != null) rec.lt = info.ms;
-  delete rec.mastered;
   rec.last = now;
   map[it.key] = rec;
   srsSave(map);

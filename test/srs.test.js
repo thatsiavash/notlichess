@@ -174,15 +174,6 @@ test('a miss note breaks the run at once and reports the run it broke', () => {
   eq(s.srsNoteMiss(card()), 1, 'broken run');
   eq(s.srsLoad()[card().key].streak, 0, 'streak');
 });
-test('the retired opening lines stored beside the cards survive every save', () => {
-  const s = sandbox(T0);
-  s.store.set('nl:srs:tester', { 'l|e4-e5': { box: 3 }, 'g9:4': { box: 1 } });
-  s.srsRecord(card(), 'first', { ms: 8000 });
-  const raw = s.store.get('nl:srs:tester', {});
-  eq(!!raw['l|e4-e5'], true, 'line kept');
-  eq(!!raw['g9:4'], true, 'other card kept');
-  eq(Object.keys(s.srsLoad()).indexOf('l|e4-e5'), -1, 'line hidden from the trainer');
-});
 
 /* ── days ───────────────────────────────────────────────────────────────── */
 function practise(s, n, result) { for (let i = 0; i < n; i++) s.srsRecord(card('d' + s.clock.now + ':' + i), result || 'first', { ms: 30000, attempted: true }); }

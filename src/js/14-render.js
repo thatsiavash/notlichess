@@ -576,6 +576,9 @@ function ctxHtml(a, answered) {
   var g = a.it.g, b = a.it.b;
   var bits = ['vs <b>' + esc(g.opp) + '</b>' + (g.oppR ? ' (' + g.oppR + ')' : ''), gameDateLine(g), perfLabel(g.perf).toLowerCase(), 'move ' + (Math.floor(b.p / 2) + 1)];
   if (b.c != null) bits.push(clockWords(b.c) + ' left');
+  /* a game drill keeps its game one tap away */
+  var ss0 = ui.session;
+  if (ss0 && ss0.spec && ss0.spec.type === 'game') bits.push('<a href="' + gameHref(g.id, g.color, b.p) + '">Open the game ↗</a>');
   var h = '<p class="ctx">' + bits.join(' · ') + '</p>';
   if (answered) return h;
   var tags = [];
@@ -682,7 +685,7 @@ function panelHtml(a, ss) {
   var t = patternOf(b), info = patternInfo(t);
   h += '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
     + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>';
-  if (a.showHabit) h += '<p class="habit">' + esc(info.habit) + '</p>';
+  if (a.showHabit) h += '<p class="habit">' + esc(habitFor(a, t, info)) + '</p>';
   var repSan = a.explore && a.explore.reply && a.explore.san.length ? (function () { var m = uciToMove(a.explore.st, a.explore.reply); return m ? sanOf(a.explore.st, m) : ''; })() : '';
   if (a.explore) h += '<p class="explore-line">Your analysis: ' + esc(a.explore.san.join(' ') || 'make a move on the board')
     + (a.explore.ev != null ? ' · ' + (a.tier === 1 ? standingWords(winPct(a.explore.ev)) : Math.round(winPct(a.explore.ev)) + '% winning chances for you') + (repSan ? '. Stockfish would answer ' + esc(repSan) + ' (the gold arrow)' : '') : (a.explore.san.length ? ' · thinking…' : ''))
@@ -705,6 +708,20 @@ function opponentLine(a) {
     return 'Your opponent missed it. They played ' + esc(a.lines.game.san[1] || '') + ' and you were back in the game.';
   if (real === r1) return 'Your opponent found ' + esc(a.lines.game.san[1] || '') + ' right away.';
   return '';
+}
+/* the habit fits the move that was played: a king walk is not a pawn
+   shield problem, a finished opening is not a development problem, and an
+   endgame king move does not need "bring your king in" */
+function habitFor(a, t, info) {
+  var c = a.cls, pre = a.pre, mover = pType(pre.b[a.played.from]);
+  if (t === 'kingSafety' && c.kingMoved) return 'Keep your king out of the open while the queens are on the board.';
+  if (t === 'openingSlip') {
+    var home = pre.w ? 0 : 7, left = 0;
+    for (var sq = home * 8; sq < home * 8 + 8; sq++) { var p = pre.b[sq]; if (p && colorW(p) === pre.w && (pType(p) === 'N' || pType(p) === 'B')) left++; }
+    if (left === 0) return PATTERN.drift.habit;
+  }
+  if (t === 'endgame' && mover === 'K') return 'In the endgame, check every pawn race before you move your king.';
+  return info.habit;
 }
 /* winning chances in words, for newer players */
 function standingWords(w) {

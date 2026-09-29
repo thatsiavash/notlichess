@@ -332,10 +332,6 @@ function notice(msg, action) {
    games since the newest cached one), so staying current costs almost
    nothing and the user never has to think about refreshing. */
 
-if (window.MutationObserver) {
-  new MutationObserver(function () { makeFocusable(); })
-    .observe(document.body, { childList: true, subtree: true });
-}
 
 /* ── 14c. The engine ─────────────────────────────────────────────────────
    Stockfish 16 NNUE, fetched once from a CDN and booted as a blob worker
@@ -352,7 +348,9 @@ if (window.MutationObserver) {
    Results persist in the game cache, so each game is scanned once ever.   */
 
 var SCAN_RECENT = 20;    /* incoming games always jump the queue */
-var scanState = { running: false, current: null, done: 0 };
+/* up to two games are read at once, so the engines never wait on the slow
+   tail of one game; inflight holds their ids */
+var scanState = { running: false, current: null, done: 0, inflight: {}, active: 0 };
 
 /* Coverage, not buffering: the newest SCAN_WINDOW games should each have
    analysis from somewhere, Lichess's servers or the engine here. Training
@@ -390,26 +388,29 @@ function scannableAny(g) {
    first, then one game per coach custom set in turn, then the general pool,
    round and round until the whole window is covered. */
 function nextScanTarget() {
-  var i, g;
+  var i, g, free = function (x) { return !scanState.inflight[x.id]; };
   /* anything new at the top of the list first */
   for (i = 0; i < Math.min(SCAN_RECENT, data.games.length); i++) {
-    if (scannable(data.games[i])) return data.games[i];
+    if (scannable(data.games[i]) && free(data.games[i])) return data.games[i];
   }
-  /* then games whose moves are already here, rotating across formats */
+  /* then games whose moves are already here, rotating across formats; losses
+     first, since only a loss or a draw has a move that decided it */
   var perfs = trackedPerfs();
   var fStart = (scanState.frr || 0) % perfs.length;
-  for (var fs = 0; fs < perfs.length; fs++) {
-    var pf = perfs[(fStart + fs) % perfs.length];
-    for (i = 0; i < data.games.length; i++) {
-      g = data.games[i];
-      if (g.perf === pf && g.mv && scannable(g)) {
-        scanState.frr = (fStart + fs + 1) % perfs.length;
-        return g;
+  for (var pass = 0; pass < 2; pass++) {
+    for (var fs = 0; fs < perfs.length; fs++) {
+      var pf = perfs[(fStart + fs) % perfs.length];
+      for (i = 0; i < data.games.length; i++) {
+        g = data.games[i];
+        if (g.perf === pf && g.mv && scannable(g) && free(g) && (pass === 1 || g.res === 'loss')) {
+          scanState.frr = (fStart + fs + 1) % perfs.length;
+          return g;
+        }
       }
     }
   }
-  for (i = 0; i < data.games.length; i++) if (scannable(data.games[i])) return data.games[i];
-  for (i = 0; i < data.games.length; i++) if (scannableAny(data.games[i])) return data.games[i];
+  for (i = 0; i < data.games.length; i++) if (scannable(data.games[i]) && free(data.games[i])) return data.games[i];
+  for (i = 0; i < data.games.length; i++) if (scannableAny(data.games[i]) && free(data.games[i])) return data.games[i];
   return null;
 }
 
@@ -545,7 +546,9 @@ function ccRefuel() {
 function autoScan() {
   var tr = function () {};
   if (!cfg.user) { scanState.running = false; scanState.pending = false; return; }
-  if (scanState.running || SF.state === 'failed') { tr('busy/failed'); return; }
+  /* a second game joins only when both analysts can be kept busy */
+  var lanes = SF.workers.length >= 3 ? 2 : 1;
+  if (scanState.active >= lanes || SF.state === 'failed' || scanState.fetching) { tr('busy/failed'); return; }
   /* the scan is the politest customer in the shop: it waits out any backoff
      with room to spare rather than being the thing that causes one */
   if (Date.now() < backoffUntil) {
@@ -557,10 +560,12 @@ function autoScan() {
   if (!target) { tr('no-target'); scanState.current = null; scanState.pending = false; renderAnalysisStatus(); return; }
   if (!target.mv && bulkAllowed()) {
     /* refuel first, the same games come back fetchless in a few seconds */
-    scanState.running = true;
+    if (scanState.active) return;
+    scanState.fetching = scanState.running = true;
     renderAnalysisStatus();
     bulkRetain().then(function (fed) {
-      scanState.running = false;
+      scanState.fetching = false;
+      scanState.running = scanState.active > 0;
       setTimeout(autoScan, fed ? 800 : 1500);
     });
     return;
@@ -568,10 +573,12 @@ function autoScan() {
   if (isCC() && !target.mv) {
     if (!bulkState.busy && bulkState.fails < 3 && Date.now() - bulkState.at > 60000) {
       tr('ccRefuel');
-      scanState.running = true;
+      if (scanState.active) return;
+      scanState.fetching = scanState.running = true;
       renderAnalysisStatus();
       ccRefuel().then(function (fed) {
-        scanState.running = false;
+        scanState.fetching = false;
+        scanState.running = scanState.active > 0;
         if (fed) bulkState.fails = 0; else bulkState.fails++;
         setTimeout(autoScan, fed ? 300 : 1000);
       });
@@ -586,13 +593,20 @@ function autoScan() {
   }
   tr('scan:' + target.id);
   scanState.running = true;
+  scanState.active++;
+  scanState.inflight[target.id] = 1;
   scanState.current = target;
   scanState.lastLocal = !!(target.mv && !target.bl);
   renderAnalysisStatus();
+  /* the second lane starts at once, if there is room and work */
+  if (scanState.active < lanes && scanState.lastLocal) setTimeout(autoScan, 0);
+  var local = scanState.lastLocal;
   scanGame(target)
     .catch(function (e) { if (window.console) console.error('scan fail', e && e.message); scanMiss(target); })
     .then(function () {
-      scanState.running = false;
+      scanState.active--;
+      delete scanState.inflight[target.id];
+      scanState.running = scanState.active > 0;
       /* the fish stays awake through the breather between games, grey means
          genuinely done (or the engine failed), never "between bites" */
       scanState.pending = !!nextScanTarget();
@@ -606,7 +620,8 @@ function autoScan() {
         if (ui.view === 'insights' && !ui.session) renderInsights();
         if (!scanState.pending) setTimeout(autoEnrich, 500);
       }
-      setTimeout(autoScan, scanState.lastLocal ? 150 : 20000);
+      /* the next local game follows straight on; a fetched one waits politely */
+      setTimeout(autoScan, local ? 0 : 20000);
     });
 }
 

@@ -142,9 +142,7 @@ function gameContinuation(g, pre, i) {
       var ja = g.analysis[k];
       if (ja && ja.judgment) break;                 /* they erred: no longer the refutation */
     }
-    var m = sanApply(cloneState(st), toks[k]);
-    if (!m) break;
-    var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0];
+    var mv = sanToMove(st, toks[k]);
     if (!mv) break;
     if (k > i) out.push(moveUci(mv));
     applyMove(st, mv);
@@ -154,20 +152,13 @@ function gameContinuation(g, pre, i) {
 function uciOfSan(moves, i) {
   var st = stateAtPly(moves, i);
   if (!st) return null;
-  var probe = cloneState(st), m = sanApply(probe, moves.split(' ')[i]);
-  if (!m) return null;
-  var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0];
+  var mv = sanToMove(st, moves.split(' ')[i]);
   return mv ? moveUci(mv) : null;
 }
 function sanLineToUci(st0, sans) {
   var st = cloneState(st0), out = [];
   for (var i = 0; i < sans.length; i++) {
-    var probe = cloneState(st), m = sanApply(probe, sans[i]);
-    if (!m) break;
-    var promo = /=([QRBN])/.exec(sans[i]);
-    var mv = legalMoves(st).filter(function (x) {
-      return x.from === m.from && x.to === m.to && (!promo || x.promo === promo[1]);
-    })[0];
+    var mv = sanToMove(st, sans[i]);
     if (!mv) break;
     out.push(moveUci(mv));
     applyMove(st, mv);
@@ -178,7 +169,7 @@ function sanLineToUci(st0, sans) {
 /* name the mistake from what the lines show; cheap (a few ms), so it runs
    at ingest, at scan and again after every deeper look */
 /* raise when the classifier changes: stored mistakes are re-labelled on load */
-var CLASSIFY_V = 3;
+var CLASSIFY_V = 4;        /* bump whenever test/explanations.txt changes (CI checks) */
 function classifyEntry(b, moves) {
   var pre = stateAtPly(moves, b.p);
   if (!pre) return;
@@ -300,15 +291,6 @@ function scanGame(g) {
         g.scanned = 1;
         g.eng = SF.build || 'sf17.1';       /* which engine judged this game */
         scanState.dirty = (scanState.dirty || 0) + 1;
-        /* accuracy metrics: unevaluated plies carry the last value forward */
-        var lastCp = 20;
-        var pseudo = cps.map(function (c) { if (c != null) lastCp = c; return { eval: lastCp }; });
-        var em2 = evalMetrics(pseudo, meWhite, full.moves);
-        if (em2) {
-          g.ev = [em2.acpl, em2.best, em2.worst, em2.o, em2.m, em2.e];
-          g.acc2 = [em2.acc, em2.accO, em2.accM, em2.accE, em2.ta, em2.taN];
-          g.pcs = em2.pieces;
-        }
         modelDirty();
       });
     });

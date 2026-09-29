@@ -4,10 +4,9 @@
    show is computed here from the game records, once per data change. */
 
           /* win-chance points; lichess's own blunder line is 15 */
-var LEGACY_PATTERN = { hung: 'hung', tactic: 'missedTactic', slip: 'slipped', collapse: 'drift' };
 
 function mKey(g, b) { return g.id + ':' + b.p; }
-function patternOf(b) { return b.t || LEGACY_PATTERN[b.k] || 'drift'; }
+function patternOf(b) { return b.t || 'drift'; }
 function patternInfo(key) { return PATTERN[key] || PATTERN.drift; }
 function covered(g) { return !!(g.analysed || g.scanned || g.bl); }
 
@@ -41,13 +40,12 @@ function scopedGames() { return data.games.filter(inScope); }
 function model() {
   var tok = modelToken();
   if (modelCache.token === tok) return modelCache.m;
-  var items = [], byKey = {}, dirtyGames = false;
+  var items = [], byKey = {};
   data.games.forEach(function (g) {
     if (!g.bl || !g.mv || !inScope(g)) return;
-    migrateGame(g);
     markDecisive(g);
     g.bl.forEach(function (b) {
-      if (!b.x && b.bu && (b.cv || 1) < CLASSIFY_V) { classifyEntry(b, g.mv); dirtyGames = true; }
+      if (!b.x && b.bu && (b.cv || 1) < CLASSIFY_V) relabelLater();
       if (b.x) return;                  /* refuted, disputed, or the game move itself */
       if (b.sc && !b.d) return;         /* a time-scramble premove that decided nothing */
       var it = { g: g, b: b, key: mKey(g, b) };
@@ -56,8 +54,25 @@ function model() {
     });
   });
   modelCache = { token: tok, m: { items: items, byKey: byKey } };
-  if (dirtyGames) scheduleSave();
   return modelCache.m;
+}
+/* cards named by an older classifier are renamed in small batches while
+   the page is idle, never in one long pause (a card on screen is always
+   explained afresh anyway) */
+var relabelTimer = null;
+function relabelLater() {
+  if (relabelTimer) return;
+  relabelTimer = setTimeout(function step() {
+    var n = 0;
+    data.games.forEach(function (g) {
+      if (!g.bl || !g.mv || n >= 120) return;
+      g.bl.forEach(function (b) {
+        if (n < 120 && !b.x && b.bu && (b.cv || 1) < CLASSIFY_V) { classifyEntry(b, g.mv); n++; }
+      });
+    });
+    if (n) { modelDirty(); scheduleSave(); relabelTimer = setTimeout(step, 40); }
+    else { relabelTimer = null; if (!ui.session) { renderTrain(); if (ui.view === 'insights') renderInsights(); } }
+  }, 200);
 }
 function allMistakes() { return model().items; }
 /* the stored cache's bookkeeping with the games already in memory: work
@@ -70,72 +85,6 @@ function liveCache() {
 }
 function trainable(it) { return !!(it.g.mv && it.b.bu && !it.b.x); }
 
-/* records written before the rebuild: answers in a rough shorthand, no
-   refutation, an old label. Converted once, with no engine time: the
-   shorthand is matched against the legal moves, the game's own
-   continuation stands in for the refutation until the card's deeper look */
-function roughToMove(st, tok) {
-  if (!tok) return null;
-  tok = String(tok).replace(/[+#?!]+$/, '');
-  if (tok === 'O-O' || tok === 'O-O-O') return legalMoves(st).filter(function (m) { return m.castle === tok; })[0] || null;
-  var promo = /=([QRBN])/.exec(tok);
-  var body = tok.replace(/=[QRBN]/, '').replace('x', '');
-  var dest = body.slice(-2), piece = /^[NBRQK]/.test(body) ? body[0] : 'P';
-  if (!/^[a-h][1-8]$/.test(dest)) return null;
-  var to = (dest.charCodeAt(1) - 49) * 8 + (dest.charCodeAt(0) - 97);
-  var fromFile = piece === 'P' && body.length === 3 ? body.charCodeAt(0) - 97 : -1;
-  var hits = legalMoves(st).filter(function (m) {
-    var p = st.b[m.from];
-    return m.to === to && p && p.toUpperCase() === piece && (!promo || m.promo === promo[1])
-      && (fromFile < 0 || m.from % 8 === fromFile) && (!m.promo || !promo || m.promo === promo[1]);
-  });
-  if (hits.length > 1 && !promo) hits = hits.filter(function (m) { return !m.promo || m.promo === 'Q'; });
-  return hits.length === 1 ? hits[0] : null;
-}
-function migrateGame(g) {
-  if (g.mig === 2) return;
-  g.bl.forEach(function (b) {
-    if (b.bu || b.x) return;
-    var pre = stateAtPly(g.mv, b.p);
-    if (!pre) { b.x = 'moves'; return; }
-    var first = b.j === 'scan' ? roughToMove(pre, b.bs) : (function () {
-      var probe = cloneState(pre), m = sanApply(probe, b.bs || '');
-      return m ? legalMoves(pre).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0] : null;
-    })();
-    if (!first) { b.x = 'moves'; return; }
-    b.bu = moveUci(first);
-    var st = cloneState(pre), lu = [];
-    var toks = String(b.bv || '').split(' ').filter(Boolean);
-    for (var i = 0; i < toks.length && lu.length < 8; i++) {
-      var mv = i === 0 ? first : (b.j === 'scan' ? roughToMove(st, toks[i]) : (function (tk) {
-        var probe = cloneState(st), m = sanApply(probe, tk);
-        return m ? legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0] : null;
-      })(toks[i]));
-      if (!mv) break;
-      lu.push(moveUci(mv));
-      applyMove(st, mv);
-    }
-    b.lu = packUci(lu.length ? lu : [b.bu]);
-    b.ru = packUci(gameContinuationPlain(g.mv, pre, b.p));
-    b.j = b.j === 'scan' ? 's' : 'l';
-    delete b.bs; delete b.bv; delete b.k; delete b.loc; delete b.rf;
-    classifyEntry(b, g.mv);
-  });
-  g.mig = 2;
-}
-/* the real moves that followed a ply, as UCI */
-function gameContinuationPlain(moves, pre, p) {
-  var toks = moves.split(' '), st = cloneState(pre), out = [];
-  for (var k = p; k < Math.min(toks.length, p + 7); k++) {
-    var probe = cloneState(st), m = sanApply(probe, toks[k]);
-    if (!m) break;
-    var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0];
-    if (!mv) break;
-    if (k > p) out.push(moveUci(mv));
-    applyMove(st, mv);
-  }
-  return out;
-}
 
 /* ── decisive mistakes ──────────────────────────────────────────────────
    The move that decided a game. With the stored win-chance series (g.wp,

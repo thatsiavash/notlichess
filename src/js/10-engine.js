@@ -226,7 +226,9 @@ function enginePump() {
   for (var wi = 0; wi < SF.workers.length && SF.queue.length; wi++) {
     var slot = SF.workers[wi];
     slotWire(slot);
-    if (reserve && wi === 0 && !SF.queue[0].prio) continue;
+    /* the kept analyst still takes a short scan job: 18k nodes is a few
+       milliseconds, never long enough to delay a checked move */
+    if (reserve && wi === 0 && !SF.queue[0].prio && !(SF.queue[0].movetime && SF.queue[0].movetime.nodes <= TRIAGE_NODES)) continue;
     if (!slot.pending.length && SF.queue.length) {
       var job = SF.queue.shift();
       slot.pending.push(job);

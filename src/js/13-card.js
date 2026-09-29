@@ -39,9 +39,7 @@ function cardLines(a) {
   /* what really happened: the game's own moves, evaluated by the scan */
   var toks = g.mv.split(' '), gm = [], st = cloneState(pre);
   for (var k = p; k < Math.min(toks.length, p + 8); k++) {
-    var probe = cloneState(st), m = sanApply(probe, toks[k]);
-    if (!m) break;
-    var mv = legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !m.promo || x.promo === m.promo); })[0];
+    var mv = sanToMove(st, toks[k]);
     if (!mv) break;
     gm.push(moveUci(mv));
     applyMove(st, mv);
@@ -426,9 +424,10 @@ function miss(m, u, info) {
     var reply = info.pv[0] === u ? info.pv.slice(1) : info.pv;
     var c = classifyMistake(a.st, u, { pv: [] }, { pv: reply, mate: info.mate }, winPct(it.b.eb), info.win, it.b.p);
     var concrete = c.mateAgainst || c.matGame <= -1;
-    why = concrete ? c.sentences.short
-      : san + (a.tier === 1 ? ' does not lose anything, but there is something stronger here.'
-        : ' keeps ' + Math.round(info.win) + '%. There is something stronger here.');
+    /* a wrong try is told in words at every level: the numbers belong to
+       the close and the found states */
+    why = concrete ? c.sentences.short.replace(/ \(\d+% to \d+%\)/g, '')
+      : san + ' does not lose anything, but there is something stronger here.';
   }
   why = why || san + ' does not work.';
   a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ ' + why, '✗ ' + firstClause(why), '✗ ' + san + ' does not work.'])) };

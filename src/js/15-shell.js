@@ -263,7 +263,6 @@ function boot() {
       renderAll();
       setTimeout(autoScan, 600);
       setTimeout(autoEnrich, 2500);
-      setTimeout(reingestLichess, 8000);
     })
     .catch(function (err) {
       if (err && err.stop === 'none') renderNoAccount();
@@ -271,44 +270,6 @@ function boot() {
     });
 }
 
-/* lichess games analysed before the rebuild lost their evaluations when
-   they were first stored; they come back once, in bulk, so every old
-   mistake gets exact numbers and a full win-chance series */
-var reingestState = { busy: false, done: false };
-function reingestLichess() {
-  if (isCC() || reingestState.busy || reingestState.done || !cfg.user) return;
-  var myGen = gen;
-  var ids = data.games.filter(function (g) { return g.analysed && !g.wp; }).map(function (g) { return g.id; });
-  if (!ids.length) { reingestState.done = true; return; }
-  reingestState.busy = true;
-  var meId = String(cfg.user).toLowerCase(), byId = {};
-  data.games.forEach(function (g) { byId[g.id] = g; });
-  var batches = [];
-  for (var i = 0; i < ids.length; i += 300) batches.push(ids.slice(i, i + 300));
-  var chain = Promise.resolve();
-  batches.forEach(function (batch) {
-    chain = chain.then(function () {
-      if (stale(myGen)) return;
-      return request('/api/games/export/_ids?' + GAME_PARAMS, { method: 'POST', body: batch.join(','), accept: 'application/x-ndjson', quiet: true })
-        .then(function (res) { return res.text(); })
-        .then(function (text) {
-          if (stale(myGen)) return;
-          text.split('\n').forEach(function (line) {
-            if (!line.trim()) return;
-            try {
-              var raw = JSON.parse(line), old = byId[raw.id], fresh = compact(raw, meId);
-              if (!old || !fresh) return;
-              adoptFresh(old, fresh);
-            } catch (e) {}
-          });
-          modelDirty();
-          scheduleSave();
-        });
-    });
-  });
-  chain.then(function () { reingestState.busy = false; reingestState.done = true; flushSave(); renderAll(); },
-             function () { reingestState.busy = false; });
-}
 /* a refetched record replaces the old one's analysis, but the practice
    keys (gameId:ply) and anything the player marked survive */
 function adoptFresh(old, fresh) {
@@ -319,8 +280,7 @@ function adoptFresh(old, fresh) {
     if (o && o.x && /^user/.test(o.x)) b.x = o.x;
     if (o && (o.v || 0) >= 2 && o.ru) { b.ru = o.ru; b.ma = o.ma; b.v = o.v; }
   });
-  ['bl', 'mv', 'wp', 'ev', 'acc2', 'pcs', 'opening', 'analysed'].forEach(function (k) { if (fresh[k] != null) old[k] = fresh[k]; });
-  delete old.mig;
+  ['bl', 'mv', 'wp', 'opening', 'analysed'].forEach(function (k) { if (fresh[k] != null) old[k] = fresh[k]; });
 }
 
 /* ── progress between devices, as a file ────────────────────────────────── */
@@ -485,9 +445,7 @@ document.addEventListener('click', function (e) {
           if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === sessKey())) del.push(kk);
         }
         del.forEach(function (x) { localStorage.removeItem(x); });
-        /* the mistakes' records go; the retired trainer's lines stay */
-        var keptLines = splitSrs(store.get('nl:srs:' + u, {})).kept;
-        if (Object.keys(keptLines).length) store.set('nl:srs:' + u, keptLines); else store.del('nl:srs:' + u);
+        store.del('nl:srs:' + u);
       } catch (e2) {}
       srsMem = null; srsRevision++; ui.session = null; ui.resetArmed = false; modelDirty();
       notice('Practice history reset. Your games and analysis are kept.');
@@ -553,7 +511,7 @@ function typedMove(txt) {
   if (!a || a.phase !== 'guess') return;
   var t = String(txt || '').trim().replace(/0/g, 'O');
   var m = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(t) ? uciToMove(a.st, t.toLowerCase()) : null;
-  if (!m && t) { var probe = cloneState(a.st), sm = sanApply(probe, t); if (sm) m = legalMoves(a.st).filter(function (x) { return x.from === sm.from && x.to === sm.to && (!x.promo || x.promo === (sm.promo || 'Q')); })[0] || null; }
+  if (!m && t) m = sanToMove(a.st, t);
   if (!m) { notice('That move is not legal here. Try a move like Nf3, exd5, O-O or g1f3.'); return; }
   gradeMove(m);
 }

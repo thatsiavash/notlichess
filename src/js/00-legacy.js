@@ -240,74 +240,7 @@ function splitND(text, onLine) {
 
 /* ── 6. Game cache and normalisation ─────────────────────────────────── */
 
-/* one move's accuracy on Lichess's own curve */
-function moveAcc(wb, wa) {
-  if (wa >= wb) return 100;
-  return Math.max(0, Math.min(100, 103.1668 * Math.exp(-0.04354 * (wb - wa)) - 3.1669));
-}
 
-function evalMetrics(analysis, meIsWhite, moves) {
-  if (!analysis || analysis.length < 10) return null;
-  var sign = meIsWhite ? 1 : -1;
-  var prev = 20, best = -10000, worst = 10000;
-  var lossSum = 0, lossN = 0;
-  var bs = { o: [0, 0], m: [0, 0], e: [0, 0] };
-  var accs = [], phAcc = { o: [], m: [], e: [] }, ta = [];
-  var pieces = {};
-  var toks = moves ? moves.split(' ') : null;
-  var oppJustDropped = false;
-  for (var i = 0; i < analysis.length; i++) {
-    var cp = evalCp(analysis[i]);
-    if ((i % 2 === 0) === meIsWhite) {
-      var d = meIsWhite ? (prev - cp) : (cp - prev);
-      d = Math.max(0, Math.min(1000, d));
-      lossSum += d; lossN++;
-      var k = i < 30 ? 'o' : (i < 60 ? 'm' : 'e');
-      bs[k][0] += d; bs[k][1]++;
-      /* accuracy in win-chance terms, the number Tutor speaks */
-      var wb = winPct(meIsWhite ? prev : -prev);
-      var wa = winPct(meIsWhite ? cp : -cp);
-      var a = moveAcc(wb, wa);
-      accs.push(a);
-      phAcc[k].push(a);
-      if (oppJustDropped) ta.push(a);
-      if (toks && toks[i]) {
-        var t0 = toks[i][0];
-        var pk = t0 === 'O' ? 'K' : ('NBRQK'.indexOf(t0) !== -1 ? t0 : 'P');
-        (pieces[pk] = pieces[pk] || [0, 0]);
-        pieces[pk][0] += wb - wa > 0 ? wb - wa : 0;
-        pieces[pk][1]++;
-      }
-    } else {
-      var owb = winPct(meIsWhite ? -prev : prev);
-      var owa = winPct(meIsWhite ? -cp : cp);
-      oppJustDropped = (owb - owa) >= 10;
-    }
-    var mine = cp * sign;
-    if (mine > best) best = mine;
-    if (mine < worst) worst = mine;
-    prev = cp;
-  }
-  if (lossN < 5) return null;
-  var avg = function (b) { return b[1] >= 3 ? Math.round(b[0] / b[1]) : null; };
-  var mean = function (l) { return l.length ? Math.round(l.reduce(function (x, y) { return x + y; }, 0) / l.length * 10) / 10 : null; };
-  var pcOut = {};
-  Object.keys(pieces).forEach(function (k2) {
-    if (pieces[k2][1] >= 3) pcOut[k2] = [Math.round(pieces[k2][0] / pieces[k2][1] * 100) / 100, pieces[k2][1]];
-  });
-  return {
-    acpl: Math.round(lossSum / lossN),
-    best: best, worst: worst,
-    o: avg(bs.o), m: avg(bs.m), e: avg(bs.e),
-    acc: mean(accs),
-    accO: phAcc.o.length >= 3 ? mean(phAcc.o) : null,
-    accM: phAcc.m.length >= 3 ? mean(phAcc.m) : null,
-    accE: phAcc.e.length >= 3 ? mean(phAcc.e) : null,
-    ta: ta.length >= 2 ? mean(ta) : null,
-    taN: ta.length,
-    pieces: pcOut
-  };
-}
 
 /* ── chess.com adapter ───────────────────────────────────────────────────
    Emits Lichess-SHAPED game objects, so compact() and everything above it
@@ -457,7 +390,6 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
         return ccJSON(url, { quiet: idx > 2 }).then(function (mo) {
           var counts = {};
           mergeAll().forEach(function (g5) { counts[g5.perf] = (counts[g5.perf] || 0) + 1; });
-          var total = mergeAll().length;
           var kept = 0;
           (mo.games || []).slice().reverse().forEach(function (raw) {
             /* formats the user does not track must not squat in the
@@ -481,7 +413,6 @@ function ccFetchGames(meId, onProgress, onFirstPaint) {
             c.u = shaped.ccUrl;
             got.push(c);
             counts[c.perf] = (counts[c.perf] || 0) + 1;
-            total++;
             kept++;
             n++;
             if (onProgress) onProgress(Math.min(n, windowCap()));
@@ -565,28 +496,6 @@ function compact(g, meId) {
 
   var result = g.winner ? (g.winner === myColor ? 'win' : 'loss') : 'draw';
 
-  /* Clock left at my last move, as a share of my starting clock. */
-  var clockPct = null;
-  if (g.clocks && g.clocks.length && g.clock && g.clock.initial) {
-    var last = null;
-    for (var i = g.clocks.length - 1; i >= 0; i--) {
-      if ((i % 2 === 0) === meIsWhite) { last = g.clocks[i]; break; }
-    }
-    if (last != null) clockPct = Math.max(0, Math.min(100, (last / (g.clock.initial * 100)) * 100));
-  }
-
-  var em = evalMetrics(g.analysis, meIsWhite, g.moves);
-  /* speed: mean share of clock remaining across my moves from ply 16 on */
-  var spd = null;
-  if (g.clocks && g.clocks.length > 20 && g.clock && g.clock.initial) {
-    var acc2 = 0, n2 = 0;
-    for (var ci = 16; ci < g.clocks.length; ci++) {
-      if ((ci % 2 === 0) !== meIsWhite) continue;
-      acc2 += Math.max(0, Math.min(1, g.clocks[ci] / 100 / g.clock.initial));
-      n2++;
-    }
-    if (n2 >= 5) spd = Math.round(acc2 / n2 * 1000) / 10;
-  }
   var bl = blunderLedger(g, meIsWhite, { myR: me.rating, perf: g.perf || g.speed, res: result, color: myColor });
   return {
     id: g.id,
@@ -610,13 +519,6 @@ function compact(g, meId) {
     ckTmp: !(g.analysis && g.analysis.length) && g.clocks
       && (!g.variant || g.variant === 'standard') ? g.clocks : null,
     wp: g.analysis && g.analysis.length ? analysisSeries(g) : null,
-    clockPct: clockPct == null ? null : Math.round(clockPct * 10) / 10,
-    /* Our own eval-derived numbers, comparable with the peer baselines. */
-    ev: em ? [em.acpl, em.best, em.worst, em.o, em.m, em.e] : null,
-    acc2: em ? [em.acc, em.accO, em.accM, em.accE, em.ta, em.taN] : null,
-    pcs: em ? em.pieces : null,
-    spd: spd,
-    secs: g.lastMoveAt && g.createdAt ? Math.round((g.lastMoveAt - g.createdAt) / 1000) : null,
     /* moves are kept only when there are mistakes to replay from them;
        the opening prefix is kept for every game, it feeds the book */
     bl: bl,
@@ -793,10 +695,10 @@ function merge(fresh, old) {
     var o = oldBy[g.id];
     if (!o || o === g) return;
     if (!g.analysed && (o.scanned || o.bl)) {
-      ['bl', 'mv', 'scanned', 'wp', 'ev', 'acc2', 'pcs', 'mig'].forEach(function (k) { if (o[k] != null) g[k] = o[k]; });
+      ['bl', 'mv', 'scanned', 'wp', 'eng'].forEach(function (k) { if (o[k] != null) g[k] = o[k]; });
     } else if (g.analysed && o.bl) {
       adoptFresh(o, g);
-      ['bl', 'mv', 'wp', 'mig'].forEach(function (k) { if (o[k] != null) g[k] = o[k]; });
+      ['bl', 'mv', 'wp', 'eng'].forEach(function (k) { if (o[k] != null) g[k] = o[k]; });
     }
   });
   all.sort(function (a, b) { return b.ts - a.ts; });
@@ -903,6 +805,14 @@ function pseudoReaches(b, from, to, piece) {
 
 /* Applies one SAN token in place. Returns false only on a token it cannot
    read, which callers treat as "stop replaying this game". */
+/* a SAN token as a legal move of this position, or null; an explicit
+   promotion piece is honoured, otherwise the first (queen) is taken */
+function sanToMove(st, tok) {
+  var m = sanApply(cloneState(st), tok);
+  if (!m) return null;
+  var want = (/=([QRBN])/.exec(String(tok)) || [])[1] || m.promo;
+  return legalMoves(st).filter(function (x) { return x.from === m.from && x.to === m.to && (!x.promo || !want || x.promo === want); })[0] || null;
+}
 function sanApply(st, san) {
   var tok = san.replace(/[+#?!]+$/, '');
   var me = st.w, b = st.b;
@@ -1154,10 +1064,5 @@ var data = {
   sections: {}   /* per-section load state: 'loading' | 'ok' | 'fail' */
 };
 
-/* ── 8b. Peer baselines ──────────────────────────────────────────────────
-   Computed once from the Lichess open database (CC0 monthly dump), banded by
-   rating and speed, using exactly the method evalMetrics() uses here. This is
-   what lets the page say "players at your rating" instead of "your other
-   formats". Lichess's own peer numbers are private; these are ours, and the
-   page says so.                                                             */
+
 
