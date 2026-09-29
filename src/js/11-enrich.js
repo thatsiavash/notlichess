@@ -45,15 +45,24 @@ function deepEnrich(it, prio, bg) {
   if ((b.v || 0) >= 2 && !recheck) return Promise.resolve(it);
   var DN = deep ? CONFIRM_NODES : DEEP_NODES;
   if (enrichPending[it.key]) {
+    var c0 = enrichCtx[it.key];
+    /* a Thorough look in flight, and now the player is waiting: it stops, and
+       a standard look runs instead, so nobody waits on a deep search */
+    if (prio && c0 && c0.deep) {
+      engineStop(it.key);
+      return enrichPending[it.key].then(function () { delete enrichState.failed[it.key]; return deepEnrich(it, true); });
+    }
     /* started in the background, and now the player is waiting on it */
-    if (prio && enrichCtx[it.key] && !enrichCtx[it.key].prio) { enrichCtx[it.key].prio = true; promoteTag(it.key); }
+    if (prio && c0 && !c0.prio) { c0.prio = true; promoteTag(it.key); }
     return enrichPending[it.key].then(function () { return it; });
   }
   var pre = stateAtPly(g.mv, b.p), post = postState(g, b.p);
   if (!pre || !post) { b.x = 'moves'; modelDirty(); return Promise.resolve(it); }
   var sign = g.color === 'white' ? 1 : -1;
   var key = it.key, done = function () { delete enrichPending[key]; delete enrichCtx[key]; return it; };
-  var ctx = enrichCtx[key] = { prio: !!prio };
+  var ctx = enrichCtx[key] = { prio: !!prio, deep: deep };
+  /* a search stopped part-way is not an answer */
+  var ev = function (fen, mt, pr, opts) { return engineEval(fen, mt, pr, opts).then(function (r) { if (r && r.stopped) throw { stopped: true }; return r; }); };
   var p;
   if (b.j === 'l') {
     /* lichess analysed this: keep its verdict, its answer and its line */
@@ -76,49 +85,53 @@ function deepEnrich(it, prio, bg) {
     });
   } else {
     var r1, bar = Math.max(10, mistakeMinFor(g) - 3);
-    p = engineEval(stateFen(pre), { nodes: DN }, ctx.prio, { multipv: 2, tag: key })
-      .then(function (r) { r1 = r; return engineEval(stateFen(post), { nodes: DN }, ctx.prio, { tag: key }); })
+    p = ev(stateFen(pre), { nodes: DN }, ctx.prio, { multipv: 2, tag: key })
+      .then(function (r) { r1 = r; return ev(stateFen(post), { nodes: DN }, ctx.prio, { tag: key }); })
       .then(function (r2) {
         /* a close call on a thin board is searched again, four times deeper,
            but only in the background: a player never waits on it */
         var drop = winPct(sign * r1.cp) - winPct(sign * r2.cp);
         if (stale(myGen) || ctx.prio || deep || !thinBoard(pre) || drop < bar || drop >= bar + 10) return r2;
-        return engineEval(stateFen(pre), { nodes: CONFIRM_NODES }, ctx.prio, { multipv: 2, tag: key }).then(function (r) {
+        return ev(stateFen(pre), { nodes: CONFIRM_NODES }, ctx.prio, { multipv: 2, tag: key }).then(function (r) {
           r1 = r;
-          return engineEval(stateFen(post), { nodes: CONFIRM_NODES }, ctx.prio, { tag: key });
+          return ev(stateFen(post), { nodes: CONFIRM_NODES }, ctx.prio, { tag: key });
         });
       })
       .then(function (r2) {
         if (stale(myGen) || ((b.v || 0) >= 2 && !recheck)) return;
-        if (deep) b.dv = 1;
+        /* a recheck never touches a card that is in today's session, nor one
+           the player has disputed meanwhile: it tries again another time */
+        var blocked = function () { return recheck && (!!b.x || cardInSession(key)); };
+        if (blocked()) return;
         var wb2 = winPct(sign * r1.cp), wa2 = winPct(sign * r2.cp);
         /* a mistake the deeper look does not confirm never becomes a card,
            nor does a slip in a game that was already lost and not decided by it */
-        if (wb2 - wa2 < bar) { b.x = 'deep'; modelDirty(); return; }
-        if (!b.d && wb2 < 15) { b.x = 'lost'; modelDirty(); return; }
-        if (!r1.bestUci || r1.bestUci === uciOfSan(g.mv, b.p)) { b.x = 'same'; modelDirty(); return; }
-        b.wb = wb2; b.wa = wa2;
-        b.bu = r1.bestUci;
-        b.eb = r1.cp * sign;
-        b.ea = r2.cp * sign;
-        b.mb = r1.mate != null ? r1.mate * sign : null;
-        b.ma = r2.mate != null ? r2.mate * sign : null;
+        var drop = null;
+        if (wb2 - wa2 < bar) drop = 'deep';
+        else if (!b.d && wb2 < 15) drop = 'lost';
+        else if (!r1.bestUci || r1.bestUci === uciOfSan(g.mv, b.p)) drop = 'same';
+        if (drop) { b.x = drop; if (deep) b.dv = 1; modelDirty(); return; }
+        var upd = { wb: wb2, wa: wa2, bu: r1.bestUci, eb: r1.cp * sign, ea: r2.cp * sign,
+                    mb: r1.mate != null ? r1.mate * sign : null, ma: r2.mate != null ? r2.mate * sign : null };
         var second = r1.lines && r1.lines[1];
         if (second && second.pv && second.pv[0]) {
           /* only move: every alternative is 15 or more points worse */
-          b.om = winPct(b.eb) - winPct(second.cp * sign) >= 15 ? 1 : 0;
+          upd.om = winPct(upd.eb) - winPct(second.cp * sign) >= 15 ? 1 : 0;
           /* the gap to the second-best move, in win-chance points */
-          b.g2 = Math.round(winPct(b.eb) - winPct(second.cp * sign));
+          upd.g2 = Math.round(winPct(upd.eb) - winPct(second.cp * sign));
         }
         return Promise.all([
           extendLine(pre, r1.pv || [], EXT_NODES, ctx, key),
           extendLine(post, r2.pv || [], EXT_NODES, ctx, key)
         ]).then(function (lines) {
-          if (stale(myGen)) return;
+          /* everything lands together, or nothing does */
+          if (stale(myGen) || blocked()) return;
+          Object.keys(upd).forEach(function (k2) { b[k2] = upd[k2]; });
           b.lu = packUci(lines[0]);
           b.ru = packUci(lines[1]);
           classifyEntry(b, g.mv);
           b.v = 2;
+          if (deep) b.dv = 1;
           modelDirty();
         });
       });
@@ -145,11 +158,20 @@ function enrichTargets() {
     var inSession = {}, ss = ui.session || savedSession();
     if (ss && ss.keys) ss.keys.forEach(function (k) { inSession[k] = 1; });
     allMistakes().forEach(function (it) {
-      if (out.length < 1 && trainable(it) && (it.b.v || 0) >= 2 && it.b.dv !== 1 && it.b.j !== 'l' && !it.b.x
+      if (out.length < 1 && trainable(it) && it.b.dv !== 1 && it.b.j !== 'l' && !it.b.x
           && !inSession[it.key] && !enrichState.failed[it.key]) out.push(it);
     });
   }
   return out;
+}
+function recheckText(rc) {
+  if (rc.done >= rc.n) return rc.n === 1 ? 'Your saved position is rechecked.' : 'All ' + rc.n + ' saved positions rechecked.';
+  return 'Saved positions rechecked: ' + rc.done + ' of ' + rc.n + '.';
+}
+/* a card in today's session, open or paused */
+function cardInSession(key) {
+  var ss = ui.session || savedSession();
+  return !!(ss && ss.keys && ss.keys.indexOf(key) !== -1);
 }
 /* the recheck, counted for Settings */
 function recheckCount() {
@@ -172,6 +194,8 @@ function autoEnrich() {
   deepEnrich(next, false, true).then(function () {
     enrichState.running = false;
     enrichState.done++;
+    var rl = el('recheck-line');
+    if (rl) rl.textContent = recheckText(recheckCount());
     scheduleSave();
     setTimeout(autoEnrich, 200);
   });

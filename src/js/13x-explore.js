@@ -18,7 +18,7 @@ function sideName(w) { return w ? 'White' : 'Black'; }
 /* the invite under the lesson, written once when the card is answered:
    "Why Rxc5?" jumps to the moment the opponent chose */
 function inviteFor(a) {
-  var fallback = { text: 'Move any piece to test an idea. Stockfish answers.', view: null };
+  var fallback = { text: 'Move a piece to test an idea. Stockfish answers.', view: null };
   var L = a.lines && a.lines.best;
   if (!L || L.moves.length < 2) return fallback;
   var mine = L.moves[0], reply = L.moves[1], before = L.states[0];
@@ -38,8 +38,10 @@ function startExplore(o) {
   if (o.view) a.view = { line: o.view.line, idx: o.view.idx };
   var v = lineView(a);
   a.xpRes = a.xpRes || {};
+  var ask = o.via === 'invite' && a.lines.best.uci[1] ? { uci: a.lines.best.uci[1], san: a.lines.best.san[1] } : null;
   a.explore = { root: { line: a.view.line, idx: a.view.idx }, nodes: [xpNode(v.st, v.last, null)],
-                at: 0, sel: o.sq != null ? o.sq : -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null };
+                at: 0, sel: o.sq != null ? o.sq : -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null,
+                ask: ask, wantRow: o.via === 'invite' ? 0 : null };
   xpSync(a.explore);
   xpSpoilIndex();
   track('explore_start_' + (o.via || 'link'));
@@ -73,7 +75,8 @@ function explorePlay(m, dragged) {
   ex.nodes.push(xpNode(st, [m.from, m.to], { san: san, uci: uci, byYou: P.st.w === myPov(a.it), pick: pick, ply: xpPly(P.st) }));
   ex.at++;
   Object.keys(ex.say).forEach(function (k) { if (+k >= ex.at) delete ex.say[k]; });
-  ex.sel = -1; ex.hot = 0; ex.flash = null;
+  ex.sel = -1; ex.hot = 0; ex.flash = null; ex.hover = null;
+  xpThaw(ex);
   xpSync(ex);
   ex.anim = dragged ? null : [m.from, m.to];
   snd('move');
@@ -86,7 +89,8 @@ function exploreGo(i) {
   var a = ui.session && ui.session.active, ex = a && a.explore;
   if (!ex || i < 0 || i >= ex.nodes.length || i === ex.at) return;
   var fwd = i === ex.at + 1;
-  ex.at = i; ex.sel = -1; ex.hot = 0; ex.flash = null;
+  ex.at = i; ex.sel = -1; ex.hot = 0; ex.flash = null; ex.hover = null;
+  xpThaw(ex);
   xpSync(ex);
   var n = xpCur(ex);
   ex.anim = fwd && n.last ? n.last : null;
@@ -128,15 +132,22 @@ function xpGameOver(st) { return !legalMoves(st).length; }
 function xpSpoilIndex() {
   var ss = ui.session;
   if (!ss || ss.xpSpoil) return;
-  var idx = {}, act = ss.active;
+  var idx = {};
   allMistakes().forEach(function (it) {
-    if (!trainable(it) || it.b.x || (act && it.key === act.key)) return;
+    if (!trainable(it) || it.b.x) return;
     var st = stateAtPly(it.g.mv, it.b.p);
     if (st) idx[posKey(st)] = it.key;
   });
   ss.xpSpoil = idx;
 }
-function xpSpoil(n) { var ss = ui.session; return !!(ss && ss.xpSpoil && ss.xpSpoil[n.key]); }
+/* another card's position, never the position of the card on screen (a
+   twin card from another game at the same position included) */
+function xpSpoil(n) {
+  var ss = ui.session, a = ss && ss.active;
+  if (!ss || !ss.xpSpoil || !ss.xpSpoil[n.key]) return false;
+  if (a && !a.preKey) a.preKey = posKey(a.pre);
+  return !(a && n.key === a.preKey);
+}
 function xpRun(a, ex, n, step) {
   return engineEval(n.fen, { nodes: XP_NODES[step] }, true,
     { multipv: 3, tag: 'explore', lanes: [0, 1], hash: xpTouch() ? 32 : 64, xp: { key: n.key, step: step } })
@@ -146,15 +157,26 @@ function xpRun(a, ex, n, step) {
       if (a2 !== a || a2.explore !== ex) return;
       var old = ex.res[n.key];
       if (old && old.step >= step) return;
+      /* rows under the pointer or keyboard focus keep what they show for up
+         to 3 s: the sentence, meter and bar still update */
+      if (n === xpCur(ex) && old && old.lines.length && !ex.frozen && (ex.hover != null || xpRowFocused())) {
+        ex.frozen = { key: n.key, lines: old.lines };
+        ex.frozenT = setTimeout(function () { var a3 = ui.session && ui.session.active; if (xpThaw(ex) && a3 && a3.explore === ex) renderCard(); }, 3000);
+      }
       ex.res[n.key] = { step: step, lines: keepSlots(old && old.lines, r.lines.slice(0, 3)), depth: r.depth };
       xpAfterResult(a, ex, n);
-    }, function () {
+    }, function (err) {
+      if (err && err.stopped) return;
       var a2 = ui.session && ui.session.active;
       if (a2 !== a || a2.explore !== ex) return;
       n.fails = (n.fails || 0) + 1;
       if (SF.state === 'failed' || n.fails >= 2) { n.down = true; if (xpCur(ex) === n) renderCard(); }
     });
 }
+function xpRowFocused() { var f = document.activeElement; return !!(f && f.closest && f.closest('#xp .xp-row[data-act="xpRow"]')); }
+/* the lines the rows show: the frozen ones while the rows are held */
+function xpShown(ex, n) { return ex.frozen && ex.frozen.key === n.key ? ex.frozen.lines : (ex.res[n.key] ? ex.res[n.key].lines : null); }
+function xpThaw(ex) { if (!ex.frozen) return false; ex.frozen = null; clearTimeout(ex.frozenT); return true; }
 /* slot 0 is always the new best (the gold arrow is row 1); the other rows
    keep their place while their first move stays in the top three */
 function keepSlots(old, fresh) {
@@ -174,7 +196,6 @@ function xpAfterResult(a, ex, n) {
   var cur = xpCur(ex), parent = ex.at > 0 ? ex.nodes[ex.at - 1] : null;
   if (n === cur || n === parent) {
     if (pointerState.dragFrom >= 0) ex.dirty = true;
-    else if (ex.hover != null) ex.dirtyRows = true;
     else renderCard();
   }
   exploreAnalyse(false, true);
@@ -220,11 +241,26 @@ function xpMaterialWords(c, tier) {
     if (!n || !n.captured) continue;
     (n.pov ? theirs : mine).push(pType(n.captured));
   }
-  for (var x = mine.length - 1; x >= 0; x--) { var j = theirs.indexOf(mine[x]); if (j !== -1) { mine.splice(x, 1); theirs.splice(j, 1); } }
+  var cancel = function (cross) {
+    for (var x = mine.length - 1; x >= 0; x--) {
+      var j = theirs.indexOf(mine[x]);
+      if (j === -1 && cross && (mine[x] === 'N' || mine[x] === 'B')) j = theirs.indexOf(mine[x] === 'N' ? 'B' : 'N');
+      if (j !== -1) { mine.splice(x, 1); theirs.splice(j, 1); }
+    }
+  };
+  cancel(false); cancel(true);
   var val = function (l) { return l.reduce(function (s, p) { return s + MOTIF_VAL[p]; }, 0); };
-  var word = function (l) { return l.length === 1 ? 'a ' + PIECE_WORD[l[0]] : (l.length === 2 && l[0] === l[1] ? 'two ' + PIECE_WORD[l[0]] + 's' : 'material'); };
+  var NUMW = ['', 'a', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
+  var word = function (l) {
+    var cnt = {};
+    l.forEach(function (p) { cnt[p] = (cnt[p] || 0) + 1; });
+    var ks = Object.keys(cnt).sort(function (p1, p2) { return MOTIF_VAL[p2] - MOTIF_VAL[p1]; });
+    if (ks.length > 2) return null;
+    return ks.map(function (p) { return cnt[p] === 1 ? 'a ' + PIECE_WORD[p] : (NUMW[cnt[p]] || cnt[p]) + ' ' + PIECE_WORD[p] + 's'; }).join(' and ');
+  };
   var exch = function (a1, b1) { return a1.length === 1 && b1.length === 1 && a1[0] === 'R' && (b1[0] === 'N' || b1[0] === 'B'); };
   if (!mine.length && !theirs.length) return '';
+  if (word(mine) === null || word(theirs) === null) return '';
   if (val(mine) > val(theirs)) {
     if (exch(mine, theirs)) return tier === 1 ? 'wins a rook for a ' + PIECE_WORD[theirs[0]] : 'wins the exchange';
     return theirs.length ? 'wins ' + word(mine) + ' for ' + word(theirs) : 'wins ' + (mine.length === 1 ? 'the ' + PIECE_WORD[mine[0]] : word(mine));
@@ -242,10 +278,19 @@ function xpBigLoss(c) {
   var g = c.gameLine;
   if (!g) return null;
   var up = Math.min(g.nodes.length - 1, c.gSettle != null ? c.gSettle : g.nodes.length - 1), big = null;
-  for (var i = 1; i <= up; i++) {
-    var n = g.nodes[i];
-    if (n && n.captured && n.pov && (!big || MOTIF_VAL[pType(n.captured)] > MOTIF_VAL[big.p])) big = { p: pType(n.captured), at: i };
+  /* a piece taken back for a piece of the same kind is a trade, not a loss */
+  var mine = [], lost = [];
+  for (var i = 0; i <= up; i++) {
+    var n0 = g.nodes[i];
+    if (!n0 || !n0.captured) continue;
+    if (n0.pov) lost.push({ p: pType(n0.captured), at: i }); else mine.push(pType(n0.captured));
   }
+  mine.forEach(function (p) {
+    var j = -1;
+    lost.forEach(function (l, k) { if (j === -1 && (l.p === p || ((l.p === 'N' || l.p === 'B') && (p === 'N' || p === 'B')))) j = k; });
+    if (j !== -1) lost.splice(j, 1);
+  });
+  lost.forEach(function (l) { if (!big || MOTIF_VAL[l.p] > MOTIF_VAL[big.p]) big = l; });
   if (!big || MOTIF_VAL[big.p] < 5 || c.matGame > -3) return null;
   var sans = [];
   for (var k = 1; k <= big.at; k++) sans.push(sanOf(g.nodes[k].before, g.nodes[k].move));
@@ -275,11 +320,15 @@ function xpVerdict(a, ex, at) {
   var best = pr.lines[0], X = C.mv.uci, B = sanOf(P.st, uciToMove(P.st, best.pv[0]));
   var row = pr.lines.filter(function (l) { return l.pv[0] === X; })[0];
   var cpBest = sideCp(best, s);
-  var cpX = row ? sideCp(row, s) : (cr && cr.lines[0] ? sideCp(cr.lines[0], s) : (checkedKingSq(C.st) != null ? 1500 : 0));
+  /* the move's value: its row in the parent's search, or the child's own
+     search; when both exist the worse of the two, so a move one search
+     finds bad is never called "about as good" */
+  var own = cr && cr.lines[0] ? sideCp(cr.lines[0], s) : null;
+  var cpX = row ? (own != null ? Math.min(sideCp(row, s), own) : sideCp(row, s)) : (own != null ? own : (checkedKingSq(C.st) != null ? 1500 : 0));
   var wBest = winPct(cpBest), wX = winPct(cpX), drop = wBest - wX, gap = cpBest - cpX;
   var R = cr && cr.lines[0] ? cr.lines[0].pv : [];
   var mateOf = function (l, w) { return l && l.mate != null ? (w ? l.mate : -l.mate) : null; };
-  var c = classifyMistake(P.st, X, { pv: best.pv, mate: mateOf(best, s) }, { pv: R, mate: cr && cr.lines[0] ? mateOf(cr.lines[0], !s) : null },
+  var c = classifyMistake(P.st, X, { pv: best.pv, mate: mateOf(best, s) }, { pv: R, mate: cr && cr.lines[0] ? mateOf(cr.lines[0], s) : null },
     wBest, wX, C.mv.ply, voice);
   var text, cat, whose = voice === 'them' ? ' for ' + sideName(s) : '';
   if (X === best.pv[0]) {
@@ -305,7 +354,9 @@ function xpVerdict(a, ex, at) {
         if (stop && voice === 'them') stop = themVoice(stop, sideName(s), sideName(!s));
         cmp = stop && xpThreatBefore(P, R[0]) ? stop : (B + (wBest < 45 ? ' loses less.' : ' keeps more.'));
       }
-      text = fitLine([reason + ' ' + cmp, reason + ' Best was ' + B + '.', reason, firstClause(reason) + ' Best was ' + B + '.', firstClause(reason)]);
+      var lean = reason.replace(/ (You|White|Black) loses? [^.]*\.$/, '');
+      text = fitLine([reason + ' ' + cmp, reason + ' Best was ' + B + '.', reason, lean + ' ' + cmp, lean + ' Best was ' + B + '.',
+        firstClause(reason) + ' Best was ' + B + '.', firstClause(reason), C.mv.san + ' is worse' + whose + ' than ' + B + '.']);
     } else if (drop <= SOLVE_TOL) {
       cat = 'fine';
       text = C.mv.san + ' is about as good' + whose + ' as ' + B + '.';
@@ -323,8 +374,8 @@ function xpVerdict(a, ex, at) {
 /* what the prompt line (phone) and the say line (desktop) show at a node:
    the same string, 80 characters at most */
 function sayAt(a, ex, at) {
-  if (ex.flash) return ex.flash;
   var n = ex.nodes[at];
+  if (ex.flash && !xpGameOver(n.st)) return ex.flash;
   if (xpGameOver(n.st)) {
     if (checkedKingSq(n.st) == null) return 'Stalemate. The game is a draw.';
     var winnerW = !n.st.w;
@@ -337,13 +388,16 @@ function sayAt(a, ex, at) {
     var r = ex.res[n.key], who = n.st.w === myPov(a.it) ? 'Your move.' : sideName(n.st.w) + ' to move.';
     if (!r || !r.lines[0]) return who + ' Stockfish is thinking…';
     var pick = sanOf(n.st, uciToMove(n.st, r.lines[0].pv[0]));
+    if (at === 0 && ex.ask && r.lines[0].pv[0] !== ex.ask.uci)
+      return fitLine([who + ' Stockfish\'s pick is ' + pick + ', not ' + ex.ask.san + ', the gold arrow. › plays it.',
+        who + ' Stockfish\'s pick is ' + pick + ', not ' + ex.ask.san + '. › plays it.']);
     return who + ' Stockfish\'s pick is ' + pick + ', the gold arrow. › plays it.';
   }
   if (n.mv && n.mv.pick) {
     /* walking Stockfish's line keeps the explanation of the move that started it */
     for (var i = at - 1; i >= 1; i--) {
       var sv = ex.say[i] || (ex.nodes[i].mv && !ex.nodes[i].mv.pick ? xpVerdict(a, ex, i) : null);
-      if (sv && sv.cat !== 'best') return sv.text;
+      if (sv && sv.cat !== 'best') return sv.text.replace(/ Best reply: [^,]+, the gold arrow\./, '');
       if (ex.nodes[i].mv && !ex.nodes[i].mv.pick) break;
     }
   }
@@ -351,6 +405,14 @@ function sayAt(a, ex, at) {
   return v ? v.text : n.mv.san + '. Stockfish is thinking…';
 }
 
+/* what a screen reader hears: the move before a kept sentence, and only the
+   move while Stockfish thinks */
+function xpLive(a, ex, at) {
+  var s = sayAt(a, ex, at), n = ex.nodes[at];
+  if (/ Stockfish is thinking…$/.test(s)) return s.replace(/ Stockfish is thinking…$/, '');
+  if (ex.flash || at === 0 || !n.mv || xpSpoil(n) || s.indexOf(n.mv.san + ' ') === 0) return s;
+  return n.mv.san + (checkedKingSq(n.st) != null ? ', check. ' : '. ') + s;
+}
 /* ── the rows: Stockfish's three best moves at the position on screen ───── */
 function xpNum(st, i) {
   /* move number of the i-th move from st: "20." before a white move, "20…" for black */
@@ -379,16 +441,30 @@ function xpRowWords(a, n, line, best, tier) {
   return standingWords(winPct(myPov(a.it) ? line.cp : -line.cp));
 }
 function xpRows(a, ex) {
-  var n = xpCur(ex), r = ex.res[n.key];
-  if (!r || !r.lines.length || xpSpoil(n) || xpGameOver(n.st)) return null;
+  var n = xpCur(ex), shown = xpShown(ex, n);
+  if (!shown || !shown.length || xpSpoil(n) || xpGameOver(n.st)) return null;
   var tier = a.tier || 2, me = myPov(a.it), touch = window.innerWidth <= 860;
-  var lines = r.lines.slice(0, tier === 1 ? 2 : 3);
-  return lines.map(function (l, i) {
+  var lines = shown.slice(0, 3), idx = [0, 1, 2].filter(function (i) { return lines[i]; }), ws = null;
+  if (tier === 1) {
+    /* two rows: the best, and the line that teaches something different,
+       a tactic before a plain standing, never the same words twice */
+    ws = lines.map(function (l) { return xpRowWords(a, n, l, lines[0], 1); });
+    var tac = /^(allows a fork|walks into a pin|allows a hidden attack|allows mate|loses the|misses )/;
+    var two = [1, 2].filter(function (i) { return lines[i] && tac.test(ws[i]); })[0];
+    if (two == null) two = lines[1] ? 1 : -1;
+    if (two > 0 && ws[two] === ws[0]) {
+      var alt = [1, 2].filter(function (i) { return lines[i] && i !== two && ws[i] !== ws[0]; })[0];
+      if (alt != null) two = alt;
+    }
+    idx = two > 0 ? [0, two] : [0];
+  }
+  return idx.map(function (li) {
+    var l = lines[li];
     var sans = playUci(n.st, l.pv.slice(0, 8)).san;
     var first = sans[0] || l.pv[0];
-    var row = { uci: l.pv[0], first: first, num: xpNum(n.st, 0) };
+    var row = { uci: l.pv[0], first: first, num: xpNum(n.st, 0), li: li };
     if (tier === 1) {
-      row.words = xpRowWords(a, n, l, r.lines[0], 1);
+      row.words = ws[li];
       row.label = first + ', ' + row.words + '.';
       return row;
     }

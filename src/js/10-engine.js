@@ -226,7 +226,10 @@ function slotWire(slot) {
         && (m.indexOf(' pv ') > 0 || m.indexOf('score mate 0') > 0)) {
       var k = m.match(/ multipv (\d+)/), dm = m.match(/ depth (\d+)/), d = dm ? +dm[1] : 0, kk = k ? +k[1] : 1;
       slot.infos[kk] = m;
-      (slot.byDepth[d] = slot.byDepth[d] || {})[kk] = m;
+      /* a search cut mid-depth reprints unsearched lines at the depth before:
+         those reprints never overwrite that depth's real lines */
+      if (d >= (slot.maxD || 0)) (slot.byDepth[d] = slot.byDepth[d] || {})[kk] = m;
+      slot.maxD = Math.max(slot.maxD || 0, d);
       /* a listener hears each finished set of lines, as the search deepens */
       var cur = slot.pending[0];
       if (cur && cur.onInfo && kk >= Math.min(cur.mpv, Object.keys(slot.infos).length)) {
@@ -238,14 +241,20 @@ function slotWire(slot) {
       var job = slot.pending.shift();
       slot.guardAt = Date.now();
       var infos = slot.infos, byDepth = slot.byDepth;
-      slot.infos = {}; slot.byDepth = {};
+      slot.infos = {}; slot.byDepth = {}; slot.maxD = 0;
       if (!job) return;
       var got = linesOf(infos, byDepth, job.fen), lines = got.lines;
-      var top = lines[0] || { cp: 0, mate: null, pv: [] };
       var best = m.split(' ')[1];
       /* a search stopped mid-way can name a new best move whose line was
-         never printed: the line must start with the move it explains */
-      if (best && best !== '(none)' && top.pv.length && top.pv[0] !== best) top.pv = [best];
+         never printed: its own line moves to the top if it has one, and the
+         first line always starts with the move it explains */
+      if (best && best !== '(none)' && lines.length && lines[0].pv[0] !== best) {
+        var bi = -1;
+        lines.forEach(function (l, i) { if (bi === -1 && l.pv[0] === best) bi = i; });
+        if (bi > 0) lines.unshift(lines.splice(bi, 1)[0]);
+        else lines[0] = { cp: lines[0].cp, mate: lines[0].mate, pv: [best] };
+      }
+      var top = lines[0] || { cp: 0, mate: null, pv: [] };
       job.resolve({ cp: top.cp, mate: top.mate, bestUci: best && best !== '(none)' ? best : null,
                     pv: top.pv, lines: lines, depth: got.depth, stopped: !!job.stopping });
       enginePump();

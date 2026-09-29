@@ -749,7 +749,11 @@ a.lg-row{color:inherit}
 .card.xp-card .tag-row,.card.xp-card .habit,.card.xp-card .explore-line{display:none}
 .xp-back-ph{display:none}
 @media (max-width:860px){
-  .explore-line{order:-1}
+  /* the invite sits right under the red line, above the fixed bar */
+  .card:not(.xp-card) .result{display:contents}
+  .card:not(.xp-card) .result .tl-bad,.card:not(.xp-card) .result .tl-alt{order:-3}
+  .explore-line{order:-2;margin-bottom:8px}
+  .card:not(.xp-card) .result .tl-opp{order:-1}
   .done-acts{height:calc(64px + env(safe-area-inset-bottom));padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:var(--surface-2)}
   .card.xp-card .panel{padding-top:4px}
   .card.xp-card .result,.card.xp-card .ctx{display:none}

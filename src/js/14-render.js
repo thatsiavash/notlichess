@@ -424,7 +424,7 @@ function renderCardBoard(a) {
     view = { st: ex.st, last: ex.last, ev: ex.lastEv != null ? ex.lastEv : lineView(a).ev };
     opts.sel = ex.sel;
     /* one arrow: Stockfish's move, or the row under the pointer */
-    var hl = xr && !quiet && xr.lines[ex.hot || 0] ? uciToMove(ex.st, xr.lines[ex.hot || 0].pv[0]) : null;
+    var xs = xpShown(ex, xn), hl = xs && !quiet && xs[ex.hot || 0] ? uciToMove(ex.st, xs[ex.hot || 0].pv[0]) : null;
     if (hl) opts.ghost = [hl.from, hl.to];
     if (ex.anim) { opts.anim = ex.anim; ex.anim = null; }
     if (ex.sel >= 0) opts.dots = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel; }).map(function (m) { return m.to; });
@@ -514,16 +514,21 @@ function renderCard() {
   /* once, on a phone: the board after an answer is a question box */
   if (a.phase === 'done' && !a.explore && xpTouch() && !store.get('nl:xpTip', 0)) {
     store.set('nl:xpTip', 1);
-    setTimeout(function () { notice('Tip: tap any piece to test your own ideas.'); }, 1200);
+    setTimeout(function () { notice('Tip: tap a piece whose turn it is to test an idea.'); }, 1200);
   }
   makeFocusable(fp);
   if (newCard) { var th = el('task-h'); if (th) th.focus({ preventScroll: true }); }
   else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
   else if (focKey) {
     var back = focKey.indexOf('|') < 0 ? el(focKey) : fp.querySelector('[data-act="' + focKey.split('|')[0] + '"]' + (focKey.split('|')[1] ? '[data-k="' + focKey.split('|')[1] + '"]' : ''));
-    (back || fp.querySelector(a.phase === 'done' ? '[data-act="next"]' : '#kbmove, [data-act]') || fp).focus({ preventScroll: true });
+    var xe = a.phase === 'done' && a.explore;
+    if (xe && xe.wantRow != null && (!back || back.id === 'xp' || back.classList.contains('xp-mv'))) {
+      var wr = fp.querySelector('#xp [data-act="xpRow"][data-k="' + xe.wantRow + '"]');
+      if (wr) { back = wr; xe.wantRow = null; }
+    }
+    (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : fp.querySelector(a.phase === 'done' ? '[data-act="next"]' : '#kbmove, [data-act]')) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
-  var said = (el('ctop').querySelector('.card-task') || {}).textContent || '';
+  var said = a.phase === 'done' && a.explore ? xpLive(a, a.explore, a.explore.at) : ((el('ctop').querySelector('.card-task') || {}).textContent || '');
   var live = el('sr-live');
   if (!live) { live = document.createElement('div'); live.id = 'sr-live'; live.className = 'sr-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('data-clarity-mask', 'true'); document.body.appendChild(live); }
   if (live.textContent !== said) live.textContent = said;
@@ -609,7 +614,7 @@ function menuHtml(a) {
   var g = a.it.g;
   return '<div class="menu-pop">'
     + '<a href="' + gameHref(g.id, g.color, a.it.b.p) + '">Open the game ↗</a>'
-    + '<a href="' + analysisHref(stateFen(a.pre), g.color) + '">Analyse on ' + (isCC() ? 'chess.com' : 'lichess') + ' ↗</a>'
+    + '<a href="' + analysisHref(a.explore ? xpCur(a.explore).fen : stateFen(a.pre), g.color) + '">Analyse on ' + (isCC() ? 'chess.com' : 'lichess') + ' ↗</a>'
     + '<span class="sep"></span>'
     + '<a data-act="dispute" data-k="misclick">Not a real mistake: a misclick or premove</a>'
     + '<a data-act="dispute" data-k="decided">Not a real mistake: the game was already decided</a>'
@@ -761,7 +766,8 @@ function panelHtml(a, ss) {
 function xpHtml(a) {
   var ex = a.explore, n = xpCur(ex), res = ex.res[n.key], rows = xpRows(a, ex), tier = a.tier || 2;
   var quiet = xpSpoil(n) || xpGameOver(n.st) || n.down;
-  var busy = !quiet && (!res || res.step < 2);
+  var P = ex.at > 0 ? ex.nodes[ex.at - 1] : null, pr = P && ex.res[P.key];
+  var busy = !quiet && (!res || res.step < 2 || !!(P && !xpSpoil(P) && !xpGameOver(P.st) && !(pr && pr.step >= 2)));
   var trail = '';
   var from = Math.max(1, ex.nodes.length - 6);
   for (var i = from; i < ex.nodes.length; i++) {
@@ -770,7 +776,7 @@ function xpHtml(a) {
       + esc(xpNum(ex.nodes[i - 1].st, 0) + mv.san) + '</button>';
   }
   if (!trail) trail = '<span class="xp-label">Your analysis</span>';
-  var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis">'
+  var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis" tabindex="-1">'
     + '<span class="xp-meter' + (busy ? ' run' : '') + '" aria-hidden="true"><i></i></span>'
     + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>'
     + '<p class="xp-say">' + esc(sayAt(a, ex, ex.at)) + '</p>';
@@ -778,8 +784,8 @@ function xpHtml(a) {
     var mine = n.st.w === myPov(a.it), who = mine ? 'Your best moves' : sideName(n.st.w) + '\'s best moves';
     h += '<p class="xp-cap">' + who + (tier === 1 ? '' : ' · your winning chances') + '</p>'
       + '<div class="xp-rows k' + (ex.k || 3) + '">';
-    if (rows) h += rows.map(function (r, k) {
-      return '<button type="button" class="xp-row' + (k === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + k + '" aria-label="' + esc(r.label) + '">'
+    if (rows) h += rows.map(function (r) {
+      return '<button type="button" class="xp-row' + (r.li === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + r.li + '" aria-label="' + esc(r.label) + '">'
         + (r.chip ? '<span class="xp-chip">' + esc(r.chip) + '</span>' : '')
         + '<span class="xp-first">' + esc(tier === 1 ? r.first : r.num + r.first) + '</span>'
         + '<span class="xp-cont' + (tier === 1 ? ' t1' : '') + '">' + esc(tier === 1 ? '· ' + r.words : r.cont) + '</span></button>';
@@ -1040,7 +1046,7 @@ function settingsHtml() {
     + '<div class="set-block"><span class="kicker">Analysis</span><p>Reading your games</p><div class="chips">'
       + [['std', 'Standard'], ['thorough', 'Thorough']].map(function (o) { return chip('scanDepth', o[0], o[1], scanDepth() === o[0]); }).join('')
       + '</div><p>Thorough reads new games more deeply and finds a few more mistakes. It takes about twice as long, so leave this tab open while it reads.</p>'
-      + (scanDepth() === 'thorough' ? (function () { var rc = recheckCount(); return rc.n ? '<p class="dim">' + (rc.done >= rc.n ? 'All ' + rc.n + ' saved positions rechecked.' : 'Rechecking your saved positions: ' + rc.done + ' of ' + rc.n + '.') + '</p>' : ''; })() : '')
+      + (scanDepth() === 'thorough' ? (function () { var rc = recheckCount(); return rc.n ? '<p class="dim" id="recheck-line">' + recheckText(rc) + '</p>' : ''; })() : '')
       + '<p class="dim">' + engineLine() + '</p></div>'
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'

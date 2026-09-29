@@ -401,18 +401,21 @@ function passedPawn(b, sq, white) {
    colour, with the other side (the learner) as "you". The explainer's words
    for the other side are its colour name, so the two swap cleanly */
 function themVoice(s, mover, me) {
-  var mark = '\u0001';
+  /* the learner's phrases are set aside first, so the mover's rules below
+     can never turn them back into the mover */
+  var keep = ['your ', 'you are better', 'you attack it', 'lets you '];
+  var mark = function (i) { return String.fromCharCode(1 + i); };
   return String(s)
-    .replace(new RegExp('\\b' + me + '\'s ', 'g'), mark)
-    .replace(new RegExp('\\b' + me + ' is better', 'g'), 'you are better')
-    .replace(new RegExp('\\b' + me + ' attacks it', 'g'), 'you attack it')
-    .replace(new RegExp('\\blets ' + me + ' ', 'g'), 'lets you ')
+    .replace(new RegExp('\\b' + me + '\'s ', 'g'), mark(0))
+    .replace(new RegExp('\\b' + me + ' is better', 'g'), mark(1))
+    .replace(new RegExp('\\b' + me + ' attacks it', 'g'), mark(2))
+    .replace(new RegExp('\\blets ' + me + ' ', 'g'), mark(3))
     .replace(/\bboth your /g, 'both of ' + mover + '\'s ')
     .replace(/\b[Yy]our /g, mover + '\'s ')
     .replace(/\b[Yy]ou lose\b/g, mover + ' loses')
     .replace(/\byou are\b/g, mover + ' is')
     .replace(/\byou come out\b/g, mover + ' comes out')
-    .replace(new RegExp(mark, 'g'), 'your ');
+    .replace(/[\u0001-\u0004]/g, function (ch) { return keep[ch.charCodeAt(0) - 1]; });
 }
 /* the same sentence for a small screen: the move and what it costs, without
    the path of moves or the percentages the board has just shown */

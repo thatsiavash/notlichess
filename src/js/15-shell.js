@@ -479,7 +479,7 @@ document.addEventListener('click', function (e) {
     case 'next': nextCard(); break;
     case 'dismissStronger': if (a) { a.strongerOffer = false; a.verdict = null; renderCard(); } break;
     case 'promo': promoChoose(k); break;
-    case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); } break;
+    case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;
     case 'marksSeen': store.set('nl:marksSeen', true); renderCard(); break;
     /* a teaching line plays from the start: its arrow first, then the moves */
@@ -491,9 +491,9 @@ document.addEventListener('click', function (e) {
     case 'exploreOff': exploreExit('link'); break;
     case 'xpGo': if (a && a.explore) exploreGo(parseInt(k, 10)); break;
     case 'xpRow': if (a && a.explore) {
-      var xn = xpCur(a.explore), xr = a.explore.res[xn.key], xl = xr && xr.lines[parseInt(k, 10)];
+      var xn = xpCur(a.explore), xs = xpShown(a.explore, xn), xl = xs && xs[parseInt(k, 10)];
       var xm = xl && uciToMove(xn.st, xl.pv[0]);
-      if (xm) { track(parseInt(k, 10) === 0 ? 'explore_pick' : 'explore_row'); explorePlay(xm, false); }
+      if (xm) { track(parseInt(k, 10) === 0 ? 'explore_pick' : 'explore_row'); a.explore.wantRow = 0; explorePlay(xm, false); }
     } break;
     case 'perf': {
       var cur = trackedPerfs().slice(), at = cur.indexOf(k);
@@ -552,7 +552,8 @@ document.addEventListener('change', function (e) {
 });
 document.addEventListener('keydown', function (e) {
   if (e.target && e.target.id === 'kbmove' && e.key === 'Enter') { e.preventDefault(); typedMove(e.target.value); return; }
-  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  /* typing belongs to the field, but Esc from the move field leaves exploring */
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !(e.target.id === 'kbmove' && e.key === 'Escape')) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'Tab' && ui.sheet) {
     /* focus stays inside the open sheet */
@@ -568,7 +569,7 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
     if (ui.sheet) { closeSheet(); return; }
     var ae = ui.session && ui.session.active;
-    if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); return; }
+    if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
   }
   var a = ui.session && ui.session.active;
@@ -726,19 +727,28 @@ function pointerFinish(e, cancelled) {
 }
 document.addEventListener('pointerup', function (e) { pointerFinish(e, false); });
 /* desktop: pointing at one of Stockfish's rows moves the one arrow to it */
-function xpHover(k) {
+function xpHover(k, byFocus) {
   var a = ui.session && ui.session.active, ex = a && a.explore;
-  if (!ex || !(window.matchMedia && window.matchMedia('(hover: hover)').matches)) return;
+  if (!ex || (!byFocus && !(window.matchMedia && window.matchMedia('(hover: hover)').matches))) return;
   var want = k == null ? 0 : k;
   ex.hover = k;
   if (ex.hot !== want) {
     ex.hot = want;
     renderCardBoard(a);
-    var rows = document.querySelectorAll('#xp .xp-row');
-    for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('on', i === want);
+    var rows = document.querySelectorAll('#xp .xp-row[data-act="xpRow"]');
+    for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('on', parseInt(rows[i].getAttribute('data-k'), 10) === want);
   }
-  if (k == null && ex.dirtyRows) { ex.dirtyRows = false; renderCard(); }
+  /* rows held while pointed at: the latest lines show once the pointer leaves */
+  if (k == null && xpThaw(ex)) renderCard();
 }
+document.addEventListener('focusin', function (e) {
+  var r = e.target.closest && e.target.closest('#xp .xp-row[data-act="xpRow"]');
+  if (r) xpHover(parseInt(r.getAttribute('data-k'), 10), true);
+});
+document.addEventListener('focusout', function (e) {
+  var r = e.target.closest && e.target.closest('#xp .xp-row[data-act="xpRow"]');
+  if (r && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('#xp .xp-row[data-act="xpRow"]'))) xpHover(null, true);
+});
 document.addEventListener('mouseover', function (e) {
   var r = e.target.closest && e.target.closest('#xp .xp-row[data-act="xpRow"]');
   if (r) xpHover(parseInt(r.getAttribute('data-k'), 10));

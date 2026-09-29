@@ -796,7 +796,11 @@ a.lg-row{color:inherit}
 .card.xp-card .tag-row,.card.xp-card .habit,.card.xp-card .explore-line{display:none}
 .xp-back-ph{display:none}
 @media (max-width:860px){
-  .explore-line{order:-1}
+  /* the invite sits right under the red line, above the fixed bar */
+  .card:not(.xp-card) .result{display:contents}
+  .card:not(.xp-card) .result .tl-bad,.card:not(.xp-card) .result .tl-alt{order:-3}
+  .explore-line{order:-2;margin-bottom:8px}
+  .card:not(.xp-card) .result .tl-opp{order:-1}
   .done-acts{height:calc(64px + env(safe-area-inset-bottom));padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:var(--surface-2)}
   .card.xp-card .panel{padding-top:4px}
   .card.xp-card .result,.card.xp-card .ctx{display:none}
@@ -3690,18 +3694,21 @@ function passedPawn(b, sq, white) {
    colour, with the other side (the learner) as "you". The explainer's words
    for the other side are its colour name, so the two swap cleanly */
 function themVoice(s, mover, me) {
-  var mark = '\u0001';
+  /* the learner's phrases are set aside first, so the mover's rules below
+     can never turn them back into the mover */
+  var keep = ['your ', 'you are better', 'you attack it', 'lets you '];
+  var mark = function (i) { return String.fromCharCode(1 + i); };
   return String(s)
-    .replace(new RegExp('\\b' + me + '\'s ', 'g'), mark)
-    .replace(new RegExp('\\b' + me + ' is better', 'g'), 'you are better')
-    .replace(new RegExp('\\b' + me + ' attacks it', 'g'), 'you attack it')
-    .replace(new RegExp('\\blets ' + me + ' ', 'g'), 'lets you ')
+    .replace(new RegExp('\\b' + me + '\'s ', 'g'), mark(0))
+    .replace(new RegExp('\\b' + me + ' is better', 'g'), mark(1))
+    .replace(new RegExp('\\b' + me + ' attacks it', 'g'), mark(2))
+    .replace(new RegExp('\\blets ' + me + ' ', 'g'), mark(3))
     .replace(/\bboth your /g, 'both of ' + mover + '\'s ')
     .replace(/\b[Yy]our /g, mover + '\'s ')
     .replace(/\b[Yy]ou lose\b/g, mover + ' loses')
     .replace(/\byou are\b/g, mover + ' is')
     .replace(/\byou come out\b/g, mover + ' comes out')
-    .replace(new RegExp(mark, 'g'), 'your ');
+    .replace(/[\u0001-\u0004]/g, function (ch) { return keep[ch.charCodeAt(0) - 1]; });
 }
 /* the same sentence for a small screen: the move and what it costs, without
    the path of moves or the percentages the board has just shown */
@@ -5015,7 +5022,10 @@ function slotWire(slot) {
         && (m.indexOf(' pv ') > 0 || m.indexOf('score mate 0') > 0)) {
       var k = m.match(/ multipv (\d+)/), dm = m.match(/ depth (\d+)/), d = dm ? +dm[1] : 0, kk = k ? +k[1] : 1;
       slot.infos[kk] = m;
-      (slot.byDepth[d] = slot.byDepth[d] || {})[kk] = m;
+      /* a search cut mid-depth reprints unsearched lines at the depth before:
+         those reprints never overwrite that depth's real lines */
+      if (d >= (slot.maxD || 0)) (slot.byDepth[d] = slot.byDepth[d] || {})[kk] = m;
+      slot.maxD = Math.max(slot.maxD || 0, d);
       /* a listener hears each finished set of lines, as the search deepens */
       var cur = slot.pending[0];
       if (cur && cur.onInfo && kk >= Math.min(cur.mpv, Object.keys(slot.infos).length)) {
@@ -5027,14 +5037,20 @@ function slotWire(slot) {
       var job = slot.pending.shift();
       slot.guardAt = Date.now();
       var infos = slot.infos, byDepth = slot.byDepth;
-      slot.infos = {}; slot.byDepth = {};
+      slot.infos = {}; slot.byDepth = {}; slot.maxD = 0;
       if (!job) return;
       var got = linesOf(infos, byDepth, job.fen), lines = got.lines;
-      var top = lines[0] || { cp: 0, mate: null, pv: [] };
       var best = m.split(' ')[1];
       /* a search stopped mid-way can name a new best move whose line was
-         never printed: the line must start with the move it explains */
-      if (best && best !== '(none)' && top.pv.length && top.pv[0] !== best) top.pv = [best];
+         never printed: its own line moves to the top if it has one, and the
+         first line always starts with the move it explains */
+      if (best && best !== '(none)' && lines.length && lines[0].pv[0] !== best) {
+        var bi = -1;
+        lines.forEach(function (l, i) { if (bi === -1 && l.pv[0] === best) bi = i; });
+        if (bi > 0) lines.unshift(lines.splice(bi, 1)[0]);
+        else lines[0] = { cp: lines[0].cp, mate: lines[0].mate, pv: [best] };
+      }
+      var top = lines[0] || { cp: 0, mate: null, pv: [] };
       job.resolve({ cp: top.cp, mate: top.mate, bestUci: best && best !== '(none)' ? best : null,
                     pv: top.pv, lines: lines, depth: got.depth, stopped: !!job.stopping });
       enginePump();
@@ -5162,15 +5178,24 @@ function deepEnrich(it, prio, bg) {
   if ((b.v || 0) >= 2 && !recheck) return Promise.resolve(it);
   var DN = deep ? CONFIRM_NODES : DEEP_NODES;
   if (enrichPending[it.key]) {
+    var c0 = enrichCtx[it.key];
+    /* a Thorough look in flight, and now the player is waiting: it stops, and
+       a standard look runs instead, so nobody waits on a deep search */
+    if (prio && c0 && c0.deep) {
+      engineStop(it.key);
+      return enrichPending[it.key].then(function () { delete enrichState.failed[it.key]; return deepEnrich(it, true); });
+    }
     /* started in the background, and now the player is waiting on it */
-    if (prio && enrichCtx[it.key] && !enrichCtx[it.key].prio) { enrichCtx[it.key].prio = true; promoteTag(it.key); }
+    if (prio && c0 && !c0.prio) { c0.prio = true; promoteTag(it.key); }
     return enrichPending[it.key].then(function () { return it; });
   }
   var pre = stateAtPly(g.mv, b.p), post = postState(g, b.p);
   if (!pre || !post) { b.x = 'moves'; modelDirty(); return Promise.resolve(it); }
   var sign = g.color === 'white' ? 1 : -1;
   var key = it.key, done = function () { delete enrichPending[key]; delete enrichCtx[key]; return it; };
-  var ctx = enrichCtx[key] = { prio: !!prio };
+  var ctx = enrichCtx[key] = { prio: !!prio, deep: deep };
+  /* a search stopped part-way is not an answer */
+  var ev = function (fen, mt, pr, opts) { return engineEval(fen, mt, pr, opts).then(function (r) { if (r && r.stopped) throw { stopped: true }; return r; }); };
   var p;
   if (b.j === 'l') {
     /* lichess analysed this: keep its verdict, its answer and its line */
@@ -5193,49 +5218,53 @@ function deepEnrich(it, prio, bg) {
     });
   } else {
     var r1, bar = Math.max(10, mistakeMinFor(g) - 3);
-    p = engineEval(stateFen(pre), { nodes: DN }, ctx.prio, { multipv: 2, tag: key })
-      .then(function (r) { r1 = r; return engineEval(stateFen(post), { nodes: DN }, ctx.prio, { tag: key }); })
+    p = ev(stateFen(pre), { nodes: DN }, ctx.prio, { multipv: 2, tag: key })
+      .then(function (r) { r1 = r; return ev(stateFen(post), { nodes: DN }, ctx.prio, { tag: key }); })
       .then(function (r2) {
         /* a close call on a thin board is searched again, four times deeper,
            but only in the background: a player never waits on it */
         var drop = winPct(sign * r1.cp) - winPct(sign * r2.cp);
         if (stale(myGen) || ctx.prio || deep || !thinBoard(pre) || drop < bar || drop >= bar + 10) return r2;
-        return engineEval(stateFen(pre), { nodes: CONFIRM_NODES }, ctx.prio, { multipv: 2, tag: key }).then(function (r) {
+        return ev(stateFen(pre), { nodes: CONFIRM_NODES }, ctx.prio, { multipv: 2, tag: key }).then(function (r) {
           r1 = r;
-          return engineEval(stateFen(post), { nodes: CONFIRM_NODES }, ctx.prio, { tag: key });
+          return ev(stateFen(post), { nodes: CONFIRM_NODES }, ctx.prio, { tag: key });
         });
       })
       .then(function (r2) {
         if (stale(myGen) || ((b.v || 0) >= 2 && !recheck)) return;
-        if (deep) b.dv = 1;
+        /* a recheck never touches a card that is in today's session, nor one
+           the player has disputed meanwhile: it tries again another time */
+        var blocked = function () { return recheck && (!!b.x || cardInSession(key)); };
+        if (blocked()) return;
         var wb2 = winPct(sign * r1.cp), wa2 = winPct(sign * r2.cp);
         /* a mistake the deeper look does not confirm never becomes a card,
            nor does a slip in a game that was already lost and not decided by it */
-        if (wb2 - wa2 < bar) { b.x = 'deep'; modelDirty(); return; }
-        if (!b.d && wb2 < 15) { b.x = 'lost'; modelDirty(); return; }
-        if (!r1.bestUci || r1.bestUci === uciOfSan(g.mv, b.p)) { b.x = 'same'; modelDirty(); return; }
-        b.wb = wb2; b.wa = wa2;
-        b.bu = r1.bestUci;
-        b.eb = r1.cp * sign;
-        b.ea = r2.cp * sign;
-        b.mb = r1.mate != null ? r1.mate * sign : null;
-        b.ma = r2.mate != null ? r2.mate * sign : null;
+        var drop = null;
+        if (wb2 - wa2 < bar) drop = 'deep';
+        else if (!b.d && wb2 < 15) drop = 'lost';
+        else if (!r1.bestUci || r1.bestUci === uciOfSan(g.mv, b.p)) drop = 'same';
+        if (drop) { b.x = drop; if (deep) b.dv = 1; modelDirty(); return; }
+        var upd = { wb: wb2, wa: wa2, bu: r1.bestUci, eb: r1.cp * sign, ea: r2.cp * sign,
+                    mb: r1.mate != null ? r1.mate * sign : null, ma: r2.mate != null ? r2.mate * sign : null };
         var second = r1.lines && r1.lines[1];
         if (second && second.pv && second.pv[0]) {
           /* only move: every alternative is 15 or more points worse */
-          b.om = winPct(b.eb) - winPct(second.cp * sign) >= 15 ? 1 : 0;
+          upd.om = winPct(upd.eb) - winPct(second.cp * sign) >= 15 ? 1 : 0;
           /* the gap to the second-best move, in win-chance points */
-          b.g2 = Math.round(winPct(b.eb) - winPct(second.cp * sign));
+          upd.g2 = Math.round(winPct(upd.eb) - winPct(second.cp * sign));
         }
         return Promise.all([
           extendLine(pre, r1.pv || [], EXT_NODES, ctx, key),
           extendLine(post, r2.pv || [], EXT_NODES, ctx, key)
         ]).then(function (lines) {
-          if (stale(myGen)) return;
+          /* everything lands together, or nothing does */
+          if (stale(myGen) || blocked()) return;
+          Object.keys(upd).forEach(function (k2) { b[k2] = upd[k2]; });
           b.lu = packUci(lines[0]);
           b.ru = packUci(lines[1]);
           classifyEntry(b, g.mv);
           b.v = 2;
+          if (deep) b.dv = 1;
           modelDirty();
         });
       });
@@ -5262,11 +5291,20 @@ function enrichTargets() {
     var inSession = {}, ss = ui.session || savedSession();
     if (ss && ss.keys) ss.keys.forEach(function (k) { inSession[k] = 1; });
     allMistakes().forEach(function (it) {
-      if (out.length < 1 && trainable(it) && (it.b.v || 0) >= 2 && it.b.dv !== 1 && it.b.j !== 'l' && !it.b.x
+      if (out.length < 1 && trainable(it) && it.b.dv !== 1 && it.b.j !== 'l' && !it.b.x
           && !inSession[it.key] && !enrichState.failed[it.key]) out.push(it);
     });
   }
   return out;
+}
+function recheckText(rc) {
+  if (rc.done >= rc.n) return rc.n === 1 ? 'Your saved position is rechecked.' : 'All ' + rc.n + ' saved positions rechecked.';
+  return 'Saved positions rechecked: ' + rc.done + ' of ' + rc.n + '.';
+}
+/* a card in today's session, open or paused */
+function cardInSession(key) {
+  var ss = ui.session || savedSession();
+  return !!(ss && ss.keys && ss.keys.indexOf(key) !== -1);
 }
 /* the recheck, counted for Settings */
 function recheckCount() {
@@ -5289,6 +5327,8 @@ function autoEnrich() {
   deepEnrich(next, false, true).then(function () {
     enrichState.running = false;
     enrichState.done++;
+    var rl = el('recheck-line');
+    if (rl) rl.textContent = recheckText(recheckCount());
     scheduleSave();
     setTimeout(autoEnrich, 200);
   });
@@ -5851,6 +5891,7 @@ function sessionClick(sq) {
            frame on screen (a swipe over the board still scrolls the page) */
         var vs = lineView(a).st, pc = vs.b[sq];
         if (pc && isW(pc) === vs.w) startExplore({ sq: sq, via: 'tap' });
+        else if (pc) notice('It is ' + sideName(vs.w) + '\'s move here. Tap a ' + sideName(vs.w).toLowerCase() + ' piece to test an idea.');
       }
     }
     return;
@@ -6402,7 +6443,7 @@ function sideName(w) { return w ? 'White' : 'Black'; }
 /* the invite under the lesson, written once when the card is answered:
    "Why Rxc5?" jumps to the moment the opponent chose */
 function inviteFor(a) {
-  var fallback = { text: 'Move any piece to test an idea. Stockfish answers.', view: null };
+  var fallback = { text: 'Move a piece to test an idea. Stockfish answers.', view: null };
   var L = a.lines && a.lines.best;
   if (!L || L.moves.length < 2) return fallback;
   var mine = L.moves[0], reply = L.moves[1], before = L.states[0];
@@ -6422,8 +6463,10 @@ function startExplore(o) {
   if (o.view) a.view = { line: o.view.line, idx: o.view.idx };
   var v = lineView(a);
   a.xpRes = a.xpRes || {};
+  var ask = o.via === 'invite' && a.lines.best.uci[1] ? { uci: a.lines.best.uci[1], san: a.lines.best.san[1] } : null;
   a.explore = { root: { line: a.view.line, idx: a.view.idx }, nodes: [xpNode(v.st, v.last, null)],
-                at: 0, sel: o.sq != null ? o.sq : -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null };
+                at: 0, sel: o.sq != null ? o.sq : -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null,
+                ask: ask, wantRow: o.via === 'invite' ? 0 : null };
   xpSync(a.explore);
   xpSpoilIndex();
   track('explore_start_' + (o.via || 'link'));
@@ -6457,7 +6500,8 @@ function explorePlay(m, dragged) {
   ex.nodes.push(xpNode(st, [m.from, m.to], { san: san, uci: uci, byYou: P.st.w === myPov(a.it), pick: pick, ply: xpPly(P.st) }));
   ex.at++;
   Object.keys(ex.say).forEach(function (k) { if (+k >= ex.at) delete ex.say[k]; });
-  ex.sel = -1; ex.hot = 0; ex.flash = null;
+  ex.sel = -1; ex.hot = 0; ex.flash = null; ex.hover = null;
+  xpThaw(ex);
   xpSync(ex);
   ex.anim = dragged ? null : [m.from, m.to];
   snd('move');
@@ -6470,7 +6514,8 @@ function exploreGo(i) {
   var a = ui.session && ui.session.active, ex = a && a.explore;
   if (!ex || i < 0 || i >= ex.nodes.length || i === ex.at) return;
   var fwd = i === ex.at + 1;
-  ex.at = i; ex.sel = -1; ex.hot = 0; ex.flash = null;
+  ex.at = i; ex.sel = -1; ex.hot = 0; ex.flash = null; ex.hover = null;
+  xpThaw(ex);
   xpSync(ex);
   var n = xpCur(ex);
   ex.anim = fwd && n.last ? n.last : null;
@@ -6512,15 +6557,22 @@ function xpGameOver(st) { return !legalMoves(st).length; }
 function xpSpoilIndex() {
   var ss = ui.session;
   if (!ss || ss.xpSpoil) return;
-  var idx = {}, act = ss.active;
+  var idx = {};
   allMistakes().forEach(function (it) {
-    if (!trainable(it) || it.b.x || (act && it.key === act.key)) return;
+    if (!trainable(it) || it.b.x) return;
     var st = stateAtPly(it.g.mv, it.b.p);
     if (st) idx[posKey(st)] = it.key;
   });
   ss.xpSpoil = idx;
 }
-function xpSpoil(n) { var ss = ui.session; return !!(ss && ss.xpSpoil && ss.xpSpoil[n.key]); }
+/* another card's position, never the position of the card on screen (a
+   twin card from another game at the same position included) */
+function xpSpoil(n) {
+  var ss = ui.session, a = ss && ss.active;
+  if (!ss || !ss.xpSpoil || !ss.xpSpoil[n.key]) return false;
+  if (a && !a.preKey) a.preKey = posKey(a.pre);
+  return !(a && n.key === a.preKey);
+}
 function xpRun(a, ex, n, step) {
   return engineEval(n.fen, { nodes: XP_NODES[step] }, true,
     { multipv: 3, tag: 'explore', lanes: [0, 1], hash: xpTouch() ? 32 : 64, xp: { key: n.key, step: step } })
@@ -6530,15 +6582,26 @@ function xpRun(a, ex, n, step) {
       if (a2 !== a || a2.explore !== ex) return;
       var old = ex.res[n.key];
       if (old && old.step >= step) return;
+      /* rows under the pointer or keyboard focus keep what they show for up
+         to 3 s: the sentence, meter and bar still update */
+      if (n === xpCur(ex) && old && old.lines.length && !ex.frozen && (ex.hover != null || xpRowFocused())) {
+        ex.frozen = { key: n.key, lines: old.lines };
+        ex.frozenT = setTimeout(function () { var a3 = ui.session && ui.session.active; if (xpThaw(ex) && a3 && a3.explore === ex) renderCard(); }, 3000);
+      }
       ex.res[n.key] = { step: step, lines: keepSlots(old && old.lines, r.lines.slice(0, 3)), depth: r.depth };
       xpAfterResult(a, ex, n);
-    }, function () {
+    }, function (err) {
+      if (err && err.stopped) return;
       var a2 = ui.session && ui.session.active;
       if (a2 !== a || a2.explore !== ex) return;
       n.fails = (n.fails || 0) + 1;
       if (SF.state === 'failed' || n.fails >= 2) { n.down = true; if (xpCur(ex) === n) renderCard(); }
     });
 }
+function xpRowFocused() { var f = document.activeElement; return !!(f && f.closest && f.closest('#xp .xp-row[data-act="xpRow"]')); }
+/* the lines the rows show: the frozen ones while the rows are held */
+function xpShown(ex, n) { return ex.frozen && ex.frozen.key === n.key ? ex.frozen.lines : (ex.res[n.key] ? ex.res[n.key].lines : null); }
+function xpThaw(ex) { if (!ex.frozen) return false; ex.frozen = null; clearTimeout(ex.frozenT); return true; }
 /* slot 0 is always the new best (the gold arrow is row 1); the other rows
    keep their place while their first move stays in the top three */
 function keepSlots(old, fresh) {
@@ -6558,7 +6621,6 @@ function xpAfterResult(a, ex, n) {
   var cur = xpCur(ex), parent = ex.at > 0 ? ex.nodes[ex.at - 1] : null;
   if (n === cur || n === parent) {
     if (pointerState.dragFrom >= 0) ex.dirty = true;
-    else if (ex.hover != null) ex.dirtyRows = true;
     else renderCard();
   }
   exploreAnalyse(false, true);
@@ -6604,11 +6666,26 @@ function xpMaterialWords(c, tier) {
     if (!n || !n.captured) continue;
     (n.pov ? theirs : mine).push(pType(n.captured));
   }
-  for (var x = mine.length - 1; x >= 0; x--) { var j = theirs.indexOf(mine[x]); if (j !== -1) { mine.splice(x, 1); theirs.splice(j, 1); } }
+  var cancel = function (cross) {
+    for (var x = mine.length - 1; x >= 0; x--) {
+      var j = theirs.indexOf(mine[x]);
+      if (j === -1 && cross && (mine[x] === 'N' || mine[x] === 'B')) j = theirs.indexOf(mine[x] === 'N' ? 'B' : 'N');
+      if (j !== -1) { mine.splice(x, 1); theirs.splice(j, 1); }
+    }
+  };
+  cancel(false); cancel(true);
   var val = function (l) { return l.reduce(function (s, p) { return s + MOTIF_VAL[p]; }, 0); };
-  var word = function (l) { return l.length === 1 ? 'a ' + PIECE_WORD[l[0]] : (l.length === 2 && l[0] === l[1] ? 'two ' + PIECE_WORD[l[0]] + 's' : 'material'); };
+  var NUMW = ['', 'a', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
+  var word = function (l) {
+    var cnt = {};
+    l.forEach(function (p) { cnt[p] = (cnt[p] || 0) + 1; });
+    var ks = Object.keys(cnt).sort(function (p1, p2) { return MOTIF_VAL[p2] - MOTIF_VAL[p1]; });
+    if (ks.length > 2) return null;
+    return ks.map(function (p) { return cnt[p] === 1 ? 'a ' + PIECE_WORD[p] : (NUMW[cnt[p]] || cnt[p]) + ' ' + PIECE_WORD[p] + 's'; }).join(' and ');
+  };
   var exch = function (a1, b1) { return a1.length === 1 && b1.length === 1 && a1[0] === 'R' && (b1[0] === 'N' || b1[0] === 'B'); };
   if (!mine.length && !theirs.length) return '';
+  if (word(mine) === null || word(theirs) === null) return '';
   if (val(mine) > val(theirs)) {
     if (exch(mine, theirs)) return tier === 1 ? 'wins a rook for a ' + PIECE_WORD[theirs[0]] : 'wins the exchange';
     return theirs.length ? 'wins ' + word(mine) + ' for ' + word(theirs) : 'wins ' + (mine.length === 1 ? 'the ' + PIECE_WORD[mine[0]] : word(mine));
@@ -6626,10 +6703,19 @@ function xpBigLoss(c) {
   var g = c.gameLine;
   if (!g) return null;
   var up = Math.min(g.nodes.length - 1, c.gSettle != null ? c.gSettle : g.nodes.length - 1), big = null;
-  for (var i = 1; i <= up; i++) {
-    var n = g.nodes[i];
-    if (n && n.captured && n.pov && (!big || MOTIF_VAL[pType(n.captured)] > MOTIF_VAL[big.p])) big = { p: pType(n.captured), at: i };
+  /* a piece taken back for a piece of the same kind is a trade, not a loss */
+  var mine = [], lost = [];
+  for (var i = 0; i <= up; i++) {
+    var n0 = g.nodes[i];
+    if (!n0 || !n0.captured) continue;
+    if (n0.pov) lost.push({ p: pType(n0.captured), at: i }); else mine.push(pType(n0.captured));
   }
+  mine.forEach(function (p) {
+    var j = -1;
+    lost.forEach(function (l, k) { if (j === -1 && (l.p === p || ((l.p === 'N' || l.p === 'B') && (p === 'N' || p === 'B')))) j = k; });
+    if (j !== -1) lost.splice(j, 1);
+  });
+  lost.forEach(function (l) { if (!big || MOTIF_VAL[l.p] > MOTIF_VAL[big.p]) big = l; });
   if (!big || MOTIF_VAL[big.p] < 5 || c.matGame > -3) return null;
   var sans = [];
   for (var k = 1; k <= big.at; k++) sans.push(sanOf(g.nodes[k].before, g.nodes[k].move));
@@ -6659,11 +6745,15 @@ function xpVerdict(a, ex, at) {
   var best = pr.lines[0], X = C.mv.uci, B = sanOf(P.st, uciToMove(P.st, best.pv[0]));
   var row = pr.lines.filter(function (l) { return l.pv[0] === X; })[0];
   var cpBest = sideCp(best, s);
-  var cpX = row ? sideCp(row, s) : (cr && cr.lines[0] ? sideCp(cr.lines[0], s) : (checkedKingSq(C.st) != null ? 1500 : 0));
+  /* the move's value: its row in the parent's search, or the child's own
+     search; when both exist the worse of the two, so a move one search
+     finds bad is never called "about as good" */
+  var own = cr && cr.lines[0] ? sideCp(cr.lines[0], s) : null;
+  var cpX = row ? (own != null ? Math.min(sideCp(row, s), own) : sideCp(row, s)) : (own != null ? own : (checkedKingSq(C.st) != null ? 1500 : 0));
   var wBest = winPct(cpBest), wX = winPct(cpX), drop = wBest - wX, gap = cpBest - cpX;
   var R = cr && cr.lines[0] ? cr.lines[0].pv : [];
   var mateOf = function (l, w) { return l && l.mate != null ? (w ? l.mate : -l.mate) : null; };
-  var c = classifyMistake(P.st, X, { pv: best.pv, mate: mateOf(best, s) }, { pv: R, mate: cr && cr.lines[0] ? mateOf(cr.lines[0], !s) : null },
+  var c = classifyMistake(P.st, X, { pv: best.pv, mate: mateOf(best, s) }, { pv: R, mate: cr && cr.lines[0] ? mateOf(cr.lines[0], s) : null },
     wBest, wX, C.mv.ply, voice);
   var text, cat, whose = voice === 'them' ? ' for ' + sideName(s) : '';
   if (X === best.pv[0]) {
@@ -6689,7 +6779,9 @@ function xpVerdict(a, ex, at) {
         if (stop && voice === 'them') stop = themVoice(stop, sideName(s), sideName(!s));
         cmp = stop && xpThreatBefore(P, R[0]) ? stop : (B + (wBest < 45 ? ' loses less.' : ' keeps more.'));
       }
-      text = fitLine([reason + ' ' + cmp, reason + ' Best was ' + B + '.', reason, firstClause(reason) + ' Best was ' + B + '.', firstClause(reason)]);
+      var lean = reason.replace(/ (You|White|Black) loses? [^.]*\.$/, '');
+      text = fitLine([reason + ' ' + cmp, reason + ' Best was ' + B + '.', reason, lean + ' ' + cmp, lean + ' Best was ' + B + '.',
+        firstClause(reason) + ' Best was ' + B + '.', firstClause(reason), C.mv.san + ' is worse' + whose + ' than ' + B + '.']);
     } else if (drop <= SOLVE_TOL) {
       cat = 'fine';
       text = C.mv.san + ' is about as good' + whose + ' as ' + B + '.';
@@ -6707,8 +6799,8 @@ function xpVerdict(a, ex, at) {
 /* what the prompt line (phone) and the say line (desktop) show at a node:
    the same string, 80 characters at most */
 function sayAt(a, ex, at) {
-  if (ex.flash) return ex.flash;
   var n = ex.nodes[at];
+  if (ex.flash && !xpGameOver(n.st)) return ex.flash;
   if (xpGameOver(n.st)) {
     if (checkedKingSq(n.st) == null) return 'Stalemate. The game is a draw.';
     var winnerW = !n.st.w;
@@ -6721,13 +6813,16 @@ function sayAt(a, ex, at) {
     var r = ex.res[n.key], who = n.st.w === myPov(a.it) ? 'Your move.' : sideName(n.st.w) + ' to move.';
     if (!r || !r.lines[0]) return who + ' Stockfish is thinking…';
     var pick = sanOf(n.st, uciToMove(n.st, r.lines[0].pv[0]));
+    if (at === 0 && ex.ask && r.lines[0].pv[0] !== ex.ask.uci)
+      return fitLine([who + ' Stockfish\'s pick is ' + pick + ', not ' + ex.ask.san + ', the gold arrow. › plays it.',
+        who + ' Stockfish\'s pick is ' + pick + ', not ' + ex.ask.san + '. › plays it.']);
     return who + ' Stockfish\'s pick is ' + pick + ', the gold arrow. › plays it.';
   }
   if (n.mv && n.mv.pick) {
     /* walking Stockfish's line keeps the explanation of the move that started it */
     for (var i = at - 1; i >= 1; i--) {
       var sv = ex.say[i] || (ex.nodes[i].mv && !ex.nodes[i].mv.pick ? xpVerdict(a, ex, i) : null);
-      if (sv && sv.cat !== 'best') return sv.text;
+      if (sv && sv.cat !== 'best') return sv.text.replace(/ Best reply: [^,]+, the gold arrow\./, '');
       if (ex.nodes[i].mv && !ex.nodes[i].mv.pick) break;
     }
   }
@@ -6735,6 +6830,14 @@ function sayAt(a, ex, at) {
   return v ? v.text : n.mv.san + '. Stockfish is thinking…';
 }
 
+/* what a screen reader hears: the move before a kept sentence, and only the
+   move while Stockfish thinks */
+function xpLive(a, ex, at) {
+  var s = sayAt(a, ex, at), n = ex.nodes[at];
+  if (/ Stockfish is thinking…$/.test(s)) return s.replace(/ Stockfish is thinking…$/, '');
+  if (ex.flash || at === 0 || !n.mv || xpSpoil(n) || s.indexOf(n.mv.san + ' ') === 0) return s;
+  return n.mv.san + (checkedKingSq(n.st) != null ? ', check. ' : '. ') + s;
+}
 /* ── the rows: Stockfish's three best moves at the position on screen ───── */
 function xpNum(st, i) {
   /* move number of the i-th move from st: "20." before a white move, "20…" for black */
@@ -6763,16 +6866,30 @@ function xpRowWords(a, n, line, best, tier) {
   return standingWords(winPct(myPov(a.it) ? line.cp : -line.cp));
 }
 function xpRows(a, ex) {
-  var n = xpCur(ex), r = ex.res[n.key];
-  if (!r || !r.lines.length || xpSpoil(n) || xpGameOver(n.st)) return null;
+  var n = xpCur(ex), shown = xpShown(ex, n);
+  if (!shown || !shown.length || xpSpoil(n) || xpGameOver(n.st)) return null;
   var tier = a.tier || 2, me = myPov(a.it), touch = window.innerWidth <= 860;
-  var lines = r.lines.slice(0, tier === 1 ? 2 : 3);
-  return lines.map(function (l, i) {
+  var lines = shown.slice(0, 3), idx = [0, 1, 2].filter(function (i) { return lines[i]; }), ws = null;
+  if (tier === 1) {
+    /* two rows: the best, and the line that teaches something different,
+       a tactic before a plain standing, never the same words twice */
+    ws = lines.map(function (l) { return xpRowWords(a, n, l, lines[0], 1); });
+    var tac = /^(allows a fork|walks into a pin|allows a hidden attack|allows mate|loses the|misses )/;
+    var two = [1, 2].filter(function (i) { return lines[i] && tac.test(ws[i]); })[0];
+    if (two == null) two = lines[1] ? 1 : -1;
+    if (two > 0 && ws[two] === ws[0]) {
+      var alt = [1, 2].filter(function (i) { return lines[i] && i !== two && ws[i] !== ws[0]; })[0];
+      if (alt != null) two = alt;
+    }
+    idx = two > 0 ? [0, two] : [0];
+  }
+  return idx.map(function (li) {
+    var l = lines[li];
     var sans = playUci(n.st, l.pv.slice(0, 8)).san;
     var first = sans[0] || l.pv[0];
-    var row = { uci: l.pv[0], first: first, num: xpNum(n.st, 0) };
+    var row = { uci: l.pv[0], first: first, num: xpNum(n.st, 0), li: li };
     if (tier === 1) {
-      row.words = xpRowWords(a, n, l, r.lines[0], 1);
+      row.words = ws[li];
       row.label = first + ', ' + row.words + '.';
       return row;
     }
@@ -7212,7 +7329,7 @@ function renderCardBoard(a) {
     view = { st: ex.st, last: ex.last, ev: ex.lastEv != null ? ex.lastEv : lineView(a).ev };
     opts.sel = ex.sel;
     /* one arrow: Stockfish's move, or the row under the pointer */
-    var hl = xr && !quiet && xr.lines[ex.hot || 0] ? uciToMove(ex.st, xr.lines[ex.hot || 0].pv[0]) : null;
+    var xs = xpShown(ex, xn), hl = xs && !quiet && xs[ex.hot || 0] ? uciToMove(ex.st, xs[ex.hot || 0].pv[0]) : null;
     if (hl) opts.ghost = [hl.from, hl.to];
     if (ex.anim) { opts.anim = ex.anim; ex.anim = null; }
     if (ex.sel >= 0) opts.dots = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel; }).map(function (m) { return m.to; });
@@ -7302,16 +7419,21 @@ function renderCard() {
   /* once, on a phone: the board after an answer is a question box */
   if (a.phase === 'done' && !a.explore && xpTouch() && !store.get('nl:xpTip', 0)) {
     store.set('nl:xpTip', 1);
-    setTimeout(function () { notice('Tip: tap any piece to test your own ideas.'); }, 1200);
+    setTimeout(function () { notice('Tip: tap a piece whose turn it is to test an idea.'); }, 1200);
   }
   makeFocusable(fp);
   if (newCard) { var th = el('task-h'); if (th) th.focus({ preventScroll: true }); }
   else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
   else if (focKey) {
     var back = focKey.indexOf('|') < 0 ? el(focKey) : fp.querySelector('[data-act="' + focKey.split('|')[0] + '"]' + (focKey.split('|')[1] ? '[data-k="' + focKey.split('|')[1] + '"]' : ''));
-    (back || fp.querySelector(a.phase === 'done' ? '[data-act="next"]' : '#kbmove, [data-act]') || fp).focus({ preventScroll: true });
+    var xe = a.phase === 'done' && a.explore;
+    if (xe && xe.wantRow != null && (!back || back.id === 'xp' || back.classList.contains('xp-mv'))) {
+      var wr = fp.querySelector('#xp [data-act="xpRow"][data-k="' + xe.wantRow + '"]');
+      if (wr) { back = wr; xe.wantRow = null; }
+    }
+    (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : fp.querySelector(a.phase === 'done' ? '[data-act="next"]' : '#kbmove, [data-act]')) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
-  var said = (el('ctop').querySelector('.card-task') || {}).textContent || '';
+  var said = a.phase === 'done' && a.explore ? xpLive(a, a.explore, a.explore.at) : ((el('ctop').querySelector('.card-task') || {}).textContent || '');
   var live = el('sr-live');
   if (!live) { live = document.createElement('div'); live.id = 'sr-live'; live.className = 'sr-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('data-clarity-mask', 'true'); document.body.appendChild(live); }
   if (live.textContent !== said) live.textContent = said;
@@ -7397,7 +7519,7 @@ function menuHtml(a) {
   var g = a.it.g;
   return '<div class="menu-pop">'
     + '<a href="' + gameHref(g.id, g.color, a.it.b.p) + '">Open the game ↗</a>'
-    + '<a href="' + analysisHref(stateFen(a.pre), g.color) + '">Analyse on ' + (isCC() ? 'chess.com' : 'lichess') + ' ↗</a>'
+    + '<a href="' + analysisHref(a.explore ? xpCur(a.explore).fen : stateFen(a.pre), g.color) + '">Analyse on ' + (isCC() ? 'chess.com' : 'lichess') + ' ↗</a>'
     + '<span class="sep"></span>'
     + '<a data-act="dispute" data-k="misclick">Not a real mistake: a misclick or premove</a>'
     + '<a data-act="dispute" data-k="decided">Not a real mistake: the game was already decided</a>'
@@ -7549,7 +7671,8 @@ function panelHtml(a, ss) {
 function xpHtml(a) {
   var ex = a.explore, n = xpCur(ex), res = ex.res[n.key], rows = xpRows(a, ex), tier = a.tier || 2;
   var quiet = xpSpoil(n) || xpGameOver(n.st) || n.down;
-  var busy = !quiet && (!res || res.step < 2);
+  var P = ex.at > 0 ? ex.nodes[ex.at - 1] : null, pr = P && ex.res[P.key];
+  var busy = !quiet && (!res || res.step < 2 || !!(P && !xpSpoil(P) && !xpGameOver(P.st) && !(pr && pr.step >= 2)));
   var trail = '';
   var from = Math.max(1, ex.nodes.length - 6);
   for (var i = from; i < ex.nodes.length; i++) {
@@ -7558,7 +7681,7 @@ function xpHtml(a) {
       + esc(xpNum(ex.nodes[i - 1].st, 0) + mv.san) + '</button>';
   }
   if (!trail) trail = '<span class="xp-label">Your analysis</span>';
-  var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis">'
+  var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis" tabindex="-1">'
     + '<span class="xp-meter' + (busy ? ' run' : '') + '" aria-hidden="true"><i></i></span>'
     + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>'
     + '<p class="xp-say">' + esc(sayAt(a, ex, ex.at)) + '</p>';
@@ -7566,8 +7689,8 @@ function xpHtml(a) {
     var mine = n.st.w === myPov(a.it), who = mine ? 'Your best moves' : sideName(n.st.w) + '\'s best moves';
     h += '<p class="xp-cap">' + who + (tier === 1 ? '' : ' · your winning chances') + '</p>'
       + '<div class="xp-rows k' + (ex.k || 3) + '">';
-    if (rows) h += rows.map(function (r, k) {
-      return '<button type="button" class="xp-row' + (k === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + k + '" aria-label="' + esc(r.label) + '">'
+    if (rows) h += rows.map(function (r) {
+      return '<button type="button" class="xp-row' + (r.li === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + r.li + '" aria-label="' + esc(r.label) + '">'
         + (r.chip ? '<span class="xp-chip">' + esc(r.chip) + '</span>' : '')
         + '<span class="xp-first">' + esc(tier === 1 ? r.first : r.num + r.first) + '</span>'
         + '<span class="xp-cont' + (tier === 1 ? ' t1' : '') + '">' + esc(tier === 1 ? '· ' + r.words : r.cont) + '</span></button>';
@@ -7828,7 +7951,7 @@ function settingsHtml() {
     + '<div class="set-block"><span class="kicker">Analysis</span><p>Reading your games</p><div class="chips">'
       + [['std', 'Standard'], ['thorough', 'Thorough']].map(function (o) { return chip('scanDepth', o[0], o[1], scanDepth() === o[0]); }).join('')
       + '</div><p>Thorough reads new games more deeply and finds a few more mistakes. It takes about twice as long, so leave this tab open while it reads.</p>'
-      + (scanDepth() === 'thorough' ? (function () { var rc = recheckCount(); return rc.n ? '<p class="dim">' + (rc.done >= rc.n ? 'All ' + rc.n + ' saved positions rechecked.' : 'Rechecking your saved positions: ' + rc.done + ' of ' + rc.n + '.') + '</p>' : ''; })() : '')
+      + (scanDepth() === 'thorough' ? (function () { var rc = recheckCount(); return rc.n ? '<p class="dim" id="recheck-line">' + recheckText(rc) + '</p>' : ''; })() : '')
       + '<p class="dim">' + engineLine() + '</p></div>'
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
@@ -8335,7 +8458,7 @@ document.addEventListener('click', function (e) {
     case 'next': nextCard(); break;
     case 'dismissStronger': if (a) { a.strongerOffer = false; a.verdict = null; renderCard(); } break;
     case 'promo': promoChoose(k); break;
-    case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); } break;
+    case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;
     case 'marksSeen': store.set('nl:marksSeen', true); renderCard(); break;
     /* a teaching line plays from the start: its arrow first, then the moves */
@@ -8347,9 +8470,9 @@ document.addEventListener('click', function (e) {
     case 'exploreOff': exploreExit('link'); break;
     case 'xpGo': if (a && a.explore) exploreGo(parseInt(k, 10)); break;
     case 'xpRow': if (a && a.explore) {
-      var xn = xpCur(a.explore), xr = a.explore.res[xn.key], xl = xr && xr.lines[parseInt(k, 10)];
+      var xn = xpCur(a.explore), xs = xpShown(a.explore, xn), xl = xs && xs[parseInt(k, 10)];
       var xm = xl && uciToMove(xn.st, xl.pv[0]);
-      if (xm) { track(parseInt(k, 10) === 0 ? 'explore_pick' : 'explore_row'); explorePlay(xm, false); }
+      if (xm) { track(parseInt(k, 10) === 0 ? 'explore_pick' : 'explore_row'); a.explore.wantRow = 0; explorePlay(xm, false); }
     } break;
     case 'perf': {
       var cur = trackedPerfs().slice(), at = cur.indexOf(k);
@@ -8408,7 +8531,8 @@ document.addEventListener('change', function (e) {
 });
 document.addEventListener('keydown', function (e) {
   if (e.target && e.target.id === 'kbmove' && e.key === 'Enter') { e.preventDefault(); typedMove(e.target.value); return; }
-  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  /* typing belongs to the field, but Esc from the move field leaves exploring */
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !(e.target.id === 'kbmove' && e.key === 'Escape')) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'Tab' && ui.sheet) {
     /* focus stays inside the open sheet */
@@ -8424,7 +8548,7 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
     if (ui.sheet) { closeSheet(); return; }
     var ae = ui.session && ui.session.active;
-    if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); return; }
+    if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
   }
   var a = ui.session && ui.session.active;
@@ -8582,19 +8706,28 @@ function pointerFinish(e, cancelled) {
 }
 document.addEventListener('pointerup', function (e) { pointerFinish(e, false); });
 /* desktop: pointing at one of Stockfish's rows moves the one arrow to it */
-function xpHover(k) {
+function xpHover(k, byFocus) {
   var a = ui.session && ui.session.active, ex = a && a.explore;
-  if (!ex || !(window.matchMedia && window.matchMedia('(hover: hover)').matches)) return;
+  if (!ex || (!byFocus && !(window.matchMedia && window.matchMedia('(hover: hover)').matches))) return;
   var want = k == null ? 0 : k;
   ex.hover = k;
   if (ex.hot !== want) {
     ex.hot = want;
     renderCardBoard(a);
-    var rows = document.querySelectorAll('#xp .xp-row');
-    for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('on', i === want);
+    var rows = document.querySelectorAll('#xp .xp-row[data-act="xpRow"]');
+    for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('on', parseInt(rows[i].getAttribute('data-k'), 10) === want);
   }
-  if (k == null && ex.dirtyRows) { ex.dirtyRows = false; renderCard(); }
+  /* rows held while pointed at: the latest lines show once the pointer leaves */
+  if (k == null && xpThaw(ex)) renderCard();
 }
+document.addEventListener('focusin', function (e) {
+  var r = e.target.closest && e.target.closest('#xp .xp-row[data-act="xpRow"]');
+  if (r) xpHover(parseInt(r.getAttribute('data-k'), 10), true);
+});
+document.addEventListener('focusout', function (e) {
+  var r = e.target.closest && e.target.closest('#xp .xp-row[data-act="xpRow"]');
+  if (r && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('#xp .xp-row[data-act="xpRow"]'))) xpHover(null, true);
+});
 document.addEventListener('mouseover', function (e) {
   var r = e.target.closest && e.target.closest('#xp .xp-row[data-act="xpRow"]');
   if (r) xpHover(parseInt(r.getAttribute('data-k'), 10));

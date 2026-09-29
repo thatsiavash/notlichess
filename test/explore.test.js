@@ -178,6 +178,68 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
     eq(A.ev('window.__jobs.filter(function (j) { return j.opts.tag === "explore"; }).length'), 0, 'no explore job after Next');
   });
 
+  await test('mates read the right way round in the sentence', async () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    /* a made-up exploration: White mates with Rh8; Rh7 still mates, Ra7 walks into mate */
+    const say = (fen, x, bestPv, bestMate, replyPv, replyMate) => JSON.parse(A.ev(`(function () {
+      var a = ui.session.active, st = stateFromFen('${fen}');
+      a.explore = { root: { line: 'best', idx: -1 }, nodes: [xpNode(st, null, null)], at: 0, sel: -1, res: {}, hot: 0, k: 3, say: {}, flash: null };
+      var ex = a.explore, P = ex.nodes[0], m = uciToMove(st, '${x}'), c = cloneState(st); applyMove(c, m);
+      ex.nodes.push(xpNode(c, [m.from, m.to], { san: sanOf(st, m), uci: '${x}', byYou: true, pick: false, ply: xpPly(st) }));
+      ex.at = 1;
+      ex.res[P.key] = { step: 2, lines: [{ cp: 1500, mate: ${bestMate}, pv: ${JSON.stringify(bestPv)} }] };
+      ex.res[ex.nodes[1].key] = { step: 2, lines: [{ cp: ${replyMate} > 0 ? 1500 : -1500, mate: ${replyMate}, pv: ${JSON.stringify(replyPv)} }] };
+      return JSON.stringify(xpVerdict(a, ex, 1));
+    })()`));
+    const still = say('k7/8/1K6/8/8/8/8/7R w - - 0 1', 'h1h7', ['h1h8'], 1, ['a8b8', 'h7h8'], 2);
+    ok(!/allows mate/.test(still.text), 'a move that still mates: ' + still.text);
+    const walks = say('4r1k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1', 'a1a7', ['h2h3'], null, ['e8e1'], -1);
+    ok(/^Ra7 allows mate in 1/.test(walks.text), 'a move that walks into mate: ' + walks.text);
+  });
+
+  await test("the card's own position is never silenced, a twin card's position is", () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    A.ev(`startExplore({})`);
+    A.ev(`(function () { var a = ui.session.active; ui.session.xpSpoil = {}; ui.session.xpSpoil[posKey(a.pre)] = 'someone-else:1'; ui.session.xpSpoil['8/8/8/8/8/8/8/8 w - -'] = 'x:1'; return 1; })()`);
+    eq(A.ev(`xpSpoil({ key: posKey(ui.session.active.pre) })`), false, 'own position');
+    eq(A.ev(`xpSpoil({ key: '8/8/8/8/8/8/8/8 w - -' })`), true, 'another card');
+  });
+
+  await test('a search stopped by stepping never marks a position as down', async () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    A.ev(`startExplore({})`);
+    A.ev(`(function () { var ex = ui.session.active.explore; explorePlay(legalMoves(ex.st)[0]); return 1; })()`);
+    A.ev('exploreStep(-1)'); A.ev('exploreStep(1)'); A.ev('exploreStep(-1)'); A.ev('exploreStep(1)');
+    await flush(A);
+    eq(A.ev('!!xpCur(ui.session.active.explore).down'), false, 'not down');
+    ok(A.ev('window.__jobs.some(function (j) { return j.opts.tag === "explore"; })'), 'asked again');
+  });
+
+  await test('engine: a line reprinted from a shallower depth never replaces a real one', () => {
+    const A = boot();
+    const got = JSON.parse(A.ev(`(function () {
+      var slot = { w: { postMessage: function () {} } }, out = null;
+      slotWire(slot);
+      clearInterval(slot.guardTimer);
+      slot.pending.push({ fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', mpv: 3, resolve: function (r) { out = r; }, reject: function () {} });
+      var say = function (t) { slot.w.onmessage({ data: t }); };
+      say('info depth 14 multipv 1 score cp 30 nodes 1 pv e2e4 e7e5');
+      say('info depth 14 multipv 2 score cp 25 nodes 1 pv d2d4 d7d5');
+      say('info depth 14 multipv 3 score cp 20 nodes 1 pv g1f3 g8f6');
+      say('info depth 15 multipv 1 score cp 31 nodes 1 pv e2e4 c7c5');
+      say('info depth 15 multipv 2 score cp 24 nodes 1 pv c2c4 e7e5');
+      say('info depth 14 multipv 3 score cp 25 nodes 1 pv d2d4 d7d5');
+      say('bestmove e2e4');
+      return JSON.stringify(out.lines.map(function (l) { return l.pv[0]; }));
+    })()`));
+    eq(JSON.stringify(got), JSON.stringify(['e2e4', 'd2d4', 'g1f3']), 'three distinct lines from depth 14');
+  });
+
+  await test("the opponent's voice keeps the learner as 'you' in 'is better'", () => {
+    eq(C.themVoice('Nb5 lets your winning position slip: after Na6 Black is better.', 'White', 'Black'),
+      "Nb5 lets White's winning position slip: after Na6 you are better.", 'voice');
+  });
+
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'exploring: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));
   process.exit(failed ? 1 : 0);
