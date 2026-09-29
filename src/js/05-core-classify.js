@@ -133,6 +133,9 @@ function captureWord(line, upto, from) {
     }).join(' and ');
   };
   if (!gained.length) return null;
+  /* three kinds of piece do not fit in words that stay true */
+  var kinds = function (list) { var c = {}; list.forEach(function (p) { c[p] = 1; }); return Object.keys(c).length; };
+  if (kinds(gained) > 2 || kinds(lost) > 2) return 'material';
   if (gained.length === 1 && !lost.length) return 'the ' + PIECE_WORD[gained[0]];
   if (gained.length === 1 && lost.length === 1 && gained[0] === 'R' && (lost[0] === 'N' || lost[0] === 'B'))
     return 'the exchange';
@@ -420,30 +423,34 @@ function explainMistake(c, pre, wb, wa) {
         gameS = played + ' puts your ' + pc + ' where ' + reply + ' takes it.';
       else if (n0.captured && sq === n0.move.to)
         gameS = played + ' takes a ' + PIECE_WORD[pType(n0.captured)] + ', but the ' + pc + ' is lost' + (reply ? ' to ' + reply : '') + '.';
-      else gameS = played + ' leaves your ' + pc + (sq != null ? ' on ' + sqWord(sq) : '') + ' undefended' + (reply ? ': ' + reply + ' takes it' + (ep ? ' en passant' : '') : '') + '.';
+      else if (ep) gameS = played + ' lets ' + (reply || them) + ' take your pawn en passant.';
+      else gameS = played + ' leaves your ' + pc + (sq != null ? ' on ' + sqWord(sq) : '') + ' undefended' + (reply ? ': ' + reply + ' takes it' : '') + '.';
       break;
     }
     case 'forkAllowed': {
       var f = c.allowed.fork, fm = g.nodes[f.ply];
-      var targets = f.targets.map(function (s) { return PIECE_WORD[pType(fm.after.b[s])]; });
+      var targets = f.targets.map(function (s) { return PIECE_WORD[pType(fm.after.b[s])]; }).slice(0, 2);
       var forkSan = sanOf(fm.before, fm.move);
+      var tw = targets.length === 2 && targets[0] === targets[1] ? 'both ' + targets[0] + 's' : targets.join(' and ');
+      /* a fork that also takes a big piece says so */
+      var grab = fm.captured && MOTIF_VAL[pType(fm.captured)] >= 5 ? ', which takes your ' + PIECE_WORD[pType(fm.captured)] + ' and forks your ' + tw : null;
       gameS = f.ply <= 1
-        ? played + ' allows ' + forkSan + ', forking your ' + targets.slice(0, 2).join(' and ') + '.'
-        : played + ' allows ' + lineSans(g, f.ply - 1).join(' ') + ', and then ' + forkSan + ' forks your ' + targets.slice(0, 2).join(' and ') + '.';
+        ? played + ' allows ' + forkSan + (grab || ', forking your ' + tw) + '.'
+        : played + ' allows ' + lineSans(g, f.ply - 1).join(' ') + ', and then ' + forkSan + (grab ? grab.replace(', which', '') : ' forks your ' + tw) + '.';
       break;
     }
     case 'pinAllowed': {
       var pinned = c.allowed.pin && PIECE_WORD[c.allowed.pin.piece];
       var skewerFirst = c.allowed.skewer && (!c.allowed.pin || c.allowed.pin.piece === 'P' || (c.allowed.skewer.ply || 9) < (c.allowed.pin.ply || 9));
       gameS = skewerFirst
-        ? played + ' walks into a skewer: you lose ' + (lost || 'material') + '.'
-        : (lost === 'the ' + pinned
+        ? played + ' walks into a skewer' + (c.matGame <= -1 ? ': you lose ' + (lost || 'material') : '') + '.'
+        : (lost === 'the ' + pinned && c.matGame <= -1
             ? played + ' walks into a pin, and the pinned ' + pinned + ' is lost.'
-            : played + ' walks into a pin: you lose ' + (lost || 'material') + '.');
+            : played + ' walks into a pin' + (c.matGame <= -1 ? ': you lose ' + (lost || 'material') : '') + '.');
       break;
     }
     case 'discoveredAllowed':
-      gameS = played + ' allows a discovered ' + ((c.allowed.discoveredAttack && c.allowed.discoveredAttack.check) || c.allowed.doubleCheck ? 'check' : 'attack') + '. You lose ' + (lost || 'material') + '.';
+      gameS = played + ' allows a discovered ' + ((c.allowed.discoveredAttack && c.allowed.discoveredAttack.check) || c.allowed.doubleCheck ? 'check' : 'attack') + '.' + (c.matGame <= -1 ? ' You lose ' + (lost || 'material') + '.' : '');
       break;
     case 'badTrade': {
       var got = n0 && n0.captured ? PIECE_WORD[pType(n0.captured)] : 'piece';
@@ -452,9 +459,12 @@ function explainMistake(c, pre, wb, wa) {
         + (lost && c.matGame <= -1 && lost !== 'the ' + gone && lost !== 'a ' + gone + ' for a ' + got ? ' You lose ' + lost + '.' : '');
       break;
     }
-    case 'kingSafety':
-      gameS = played + (c.kingMoved ? ' walks your king into danger' : c.loosened ? ' opens up your king' : ' leaves your king exposed') + (reply ? ': after ' + reply + ' ' + them + ' attacks it' : '') + ' (' + Math.round(wb) + '% to ' + Math.round(wa) + '%).';
+    case 'kingSafety': {
+      /* a quiet king move of theirs is not the attack: name it only when it is one */
+      var kr = r1 && pType(r1.before.b[r1.move.from]) === 'K' && !r1.captured && !checkersOf(r1.after).length;
+      gameS = played + (c.kingMoved ? ' walks your king into danger' : c.loosened ? ' opens up your king' : ' leaves your king exposed') + (reply && !kr ? ': after ' + reply + ' ' + them + ' attacks it' : '') + ' (' + Math.round(wb) + '% to ' + Math.round(wa) + '%).';
       break;
+    }
     case 'promotion':
       gameS = played + ' lets ' + them + '\'s pawn run through to promote.';
       break;
@@ -477,7 +487,7 @@ function explainMistake(c, pre, wb, wa) {
     case 'missedMaterial': {
       var bm = bl && bl.nodes[1], hp2 = c.missed.hangingPiece;
       var what = bm && bm.captured ? { piece: pType(bm.captured), sq: bm.move.ep >= 0 ? bm.move.ep : bm.move.to } : (hp2 ? { piece: hp2.piece, sq: hp2.sq } : null);
-      gameS = what ? played + ' leaves ' + them + '\'s ' + PIECE_WORD[what.piece] + ' on ' + sqWord(what.sq) + ' undefended.'
+      gameS = what ? played + ' misses ' + them + '\'s undefended ' + PIECE_WORD[what.piece] + ' on ' + sqWord(what.sq) + '.'
         : played + ' misses a chance to win material.';
       break;
     }
@@ -517,7 +527,7 @@ function explainMistake(c, pre, wb, wa) {
     var pw = PIECE_WORD[c.missed.pin.piece];
     bestS = won === 'the ' + pw ? bestSan + ' pins and wins the ' + pw + '.' : bestSan + ' pins the ' + pw + ' and wins ' + won + '.';
   }
-  else if (c.sameCapture && bestPiece) bestS = 'Take back with the ' + PIECE_WORD[bestPiece] + ': ' + bestSan + '.';
+  else if (c.sameCapture && bestPiece) bestS = 'Take with the ' + PIECE_WORD[bestPiece] + ' instead: ' + bestSan + '.';
   else if (c.matBest >= 1 && !bl.unsettled) bestS = bestSan + ' wins ' + won + '.';
   else if (checksAll(bl, 1) && wb >= 35 && wb <= 65) bestS = bestSan + ' forces a draw with checks.';
   else if (stop) bestS = stop;

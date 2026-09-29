@@ -3366,6 +3366,9 @@ function captureWord(line, upto, from) {
     }).join(' and ');
   };
   if (!gained.length) return null;
+  /* three kinds of piece do not fit in words that stay true */
+  var kinds = function (list) { var c = {}; list.forEach(function (p) { c[p] = 1; }); return Object.keys(c).length; };
+  if (kinds(gained) > 2 || kinds(lost) > 2) return 'material';
   if (gained.length === 1 && !lost.length) return 'the ' + PIECE_WORD[gained[0]];
   if (gained.length === 1 && lost.length === 1 && gained[0] === 'R' && (lost[0] === 'N' || lost[0] === 'B'))
     return 'the exchange';
@@ -3653,30 +3656,34 @@ function explainMistake(c, pre, wb, wa) {
         gameS = played + ' puts your ' + pc + ' where ' + reply + ' takes it.';
       else if (n0.captured && sq === n0.move.to)
         gameS = played + ' takes a ' + PIECE_WORD[pType(n0.captured)] + ', but the ' + pc + ' is lost' + (reply ? ' to ' + reply : '') + '.';
-      else gameS = played + ' leaves your ' + pc + (sq != null ? ' on ' + sqWord(sq) : '') + ' undefended' + (reply ? ': ' + reply + ' takes it' + (ep ? ' en passant' : '') : '') + '.';
+      else if (ep) gameS = played + ' lets ' + (reply || them) + ' take your pawn en passant.';
+      else gameS = played + ' leaves your ' + pc + (sq != null ? ' on ' + sqWord(sq) : '') + ' undefended' + (reply ? ': ' + reply + ' takes it' : '') + '.';
       break;
     }
     case 'forkAllowed': {
       var f = c.allowed.fork, fm = g.nodes[f.ply];
-      var targets = f.targets.map(function (s) { return PIECE_WORD[pType(fm.after.b[s])]; });
+      var targets = f.targets.map(function (s) { return PIECE_WORD[pType(fm.after.b[s])]; }).slice(0, 2);
       var forkSan = sanOf(fm.before, fm.move);
+      var tw = targets.length === 2 && targets[0] === targets[1] ? 'both ' + targets[0] + 's' : targets.join(' and ');
+      /* a fork that also takes a big piece says so */
+      var grab = fm.captured && MOTIF_VAL[pType(fm.captured)] >= 5 ? ', which takes your ' + PIECE_WORD[pType(fm.captured)] + ' and forks your ' + tw : null;
       gameS = f.ply <= 1
-        ? played + ' allows ' + forkSan + ', forking your ' + targets.slice(0, 2).join(' and ') + '.'
-        : played + ' allows ' + lineSans(g, f.ply - 1).join(' ') + ', and then ' + forkSan + ' forks your ' + targets.slice(0, 2).join(' and ') + '.';
+        ? played + ' allows ' + forkSan + (grab || ', forking your ' + tw) + '.'
+        : played + ' allows ' + lineSans(g, f.ply - 1).join(' ') + ', and then ' + forkSan + (grab ? grab.replace(', which', '') : ' forks your ' + tw) + '.';
       break;
     }
     case 'pinAllowed': {
       var pinned = c.allowed.pin && PIECE_WORD[c.allowed.pin.piece];
       var skewerFirst = c.allowed.skewer && (!c.allowed.pin || c.allowed.pin.piece === 'P' || (c.allowed.skewer.ply || 9) < (c.allowed.pin.ply || 9));
       gameS = skewerFirst
-        ? played + ' walks into a skewer: you lose ' + (lost || 'material') + '.'
-        : (lost === 'the ' + pinned
+        ? played + ' walks into a skewer' + (c.matGame <= -1 ? ': you lose ' + (lost || 'material') : '') + '.'
+        : (lost === 'the ' + pinned && c.matGame <= -1
             ? played + ' walks into a pin, and the pinned ' + pinned + ' is lost.'
-            : played + ' walks into a pin: you lose ' + (lost || 'material') + '.');
+            : played + ' walks into a pin' + (c.matGame <= -1 ? ': you lose ' + (lost || 'material') : '') + '.');
       break;
     }
     case 'discoveredAllowed':
-      gameS = played + ' allows a discovered ' + ((c.allowed.discoveredAttack && c.allowed.discoveredAttack.check) || c.allowed.doubleCheck ? 'check' : 'attack') + '. You lose ' + (lost || 'material') + '.';
+      gameS = played + ' allows a discovered ' + ((c.allowed.discoveredAttack && c.allowed.discoveredAttack.check) || c.allowed.doubleCheck ? 'check' : 'attack') + '.' + (c.matGame <= -1 ? ' You lose ' + (lost || 'material') + '.' : '');
       break;
     case 'badTrade': {
       var got = n0 && n0.captured ? PIECE_WORD[pType(n0.captured)] : 'piece';
@@ -3685,9 +3692,12 @@ function explainMistake(c, pre, wb, wa) {
         + (lost && c.matGame <= -1 && lost !== 'the ' + gone && lost !== 'a ' + gone + ' for a ' + got ? ' You lose ' + lost + '.' : '');
       break;
     }
-    case 'kingSafety':
-      gameS = played + (c.kingMoved ? ' walks your king into danger' : c.loosened ? ' opens up your king' : ' leaves your king exposed') + (reply ? ': after ' + reply + ' ' + them + ' attacks it' : '') + ' (' + Math.round(wb) + '% to ' + Math.round(wa) + '%).';
+    case 'kingSafety': {
+      /* a quiet king move of theirs is not the attack: name it only when it is one */
+      var kr = r1 && pType(r1.before.b[r1.move.from]) === 'K' && !r1.captured && !checkersOf(r1.after).length;
+      gameS = played + (c.kingMoved ? ' walks your king into danger' : c.loosened ? ' opens up your king' : ' leaves your king exposed') + (reply && !kr ? ': after ' + reply + ' ' + them + ' attacks it' : '') + ' (' + Math.round(wb) + '% to ' + Math.round(wa) + '%).';
       break;
+    }
     case 'promotion':
       gameS = played + ' lets ' + them + '\'s pawn run through to promote.';
       break;
@@ -3710,7 +3720,7 @@ function explainMistake(c, pre, wb, wa) {
     case 'missedMaterial': {
       var bm = bl && bl.nodes[1], hp2 = c.missed.hangingPiece;
       var what = bm && bm.captured ? { piece: pType(bm.captured), sq: bm.move.ep >= 0 ? bm.move.ep : bm.move.to } : (hp2 ? { piece: hp2.piece, sq: hp2.sq } : null);
-      gameS = what ? played + ' leaves ' + them + '\'s ' + PIECE_WORD[what.piece] + ' on ' + sqWord(what.sq) + ' undefended.'
+      gameS = what ? played + ' misses ' + them + '\'s undefended ' + PIECE_WORD[what.piece] + ' on ' + sqWord(what.sq) + '.'
         : played + ' misses a chance to win material.';
       break;
     }
@@ -3750,7 +3760,7 @@ function explainMistake(c, pre, wb, wa) {
     var pw = PIECE_WORD[c.missed.pin.piece];
     bestS = won === 'the ' + pw ? bestSan + ' pins and wins the ' + pw + '.' : bestSan + ' pins the ' + pw + ' and wins ' + won + '.';
   }
-  else if (c.sameCapture && bestPiece) bestS = 'Take back with the ' + PIECE_WORD[bestPiece] + ': ' + bestSan + '.';
+  else if (c.sameCapture && bestPiece) bestS = 'Take with the ' + PIECE_WORD[bestPiece] + ' instead: ' + bestSan + '.';
   else if (c.matBest >= 1 && !bl.unsettled) bestS = bestSan + ' wins ' + won + '.';
   else if (checksAll(bl, 1) && wb >= 35 && wb <= 65) bestS = bestSan + ' forces a draw with checks.';
   else if (stop) bestS = stop;
@@ -5575,7 +5585,11 @@ function loadCard() {
   if (!ss) return;
   ss.active = null;
   if (ss.idx >= ss.keys.length && queueRelearn(ss)) saveSession();
-  if (ss.idx >= ss.keys.length) { finishSession(); return; }
+  if (ss.idx >= ss.keys.length) {
+    /* every position was removed by the deeper look before one was shown */
+    if (!Object.keys(ss.results || {}).length) { endSession(); notice('On a deeper look that position was not a real mistake, so it was removed.'); return; }
+    finishSession(); return;
+  }
   var it = currentItem();
   if (!it || !trainable(it) || it.b.x) { ss.keys.splice(ss.idx, 1); saveSession(); loadCard(); return; }
   var myGen = gen, key = it.key;
@@ -5715,7 +5729,7 @@ function stepLine(m, u) {
   a.phase = 'reply';
   /* my moves sit at even offsets of the line: the next one is number n */
   a.hintAfter = false;
-  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (a.solIdx / 2 + 1.5 | 0) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.', panel: '✓ ' + esc(san) + '.' };
+  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (Math.floor(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.', panel: '✓ ' + esc(san) + '.' };
   renderCard();
   var cardKey = a.key;
   setTimeout(function () {
@@ -5977,6 +5991,9 @@ function hintText(a) {
   }
   var key = (k && g.nodes[k]) || r1, word = { forkAllowed: ', a fork', pinAllowed: ', a pin', discoveredAllowed: ', a discovered attack' }[t] || '';
   var said = 'Your move allowed ' + sanOf(r1.before, r1.move) + (key !== r1 ? ', then ' + sanOf(key.before, key.move) : '') + word + '.';
+  /* a reply on the answer's own square would give the answer away */
+  var ans = a.best, hit = function (n) { return ans && n && n.move && n.move.to === ans.to; };
+  if (hit(r1) || hit(key)) said = 'Your move allowed a strong reply' + word + '.';
   return fitLine([said + ' Find a move that stops it.', said]);
 }
 function finishCard(result) {
@@ -5991,7 +6008,7 @@ function finishCard(result) {
     if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
     a.rec = rec;
     ss.results[a.key] = result;
-    if ((result === 'fail' || result === 'retry') && (ss.relearn || []).length < 3) {
+    if ((result === 'fail' || result === 'retry') && !a.check1 && (ss.relearn || []).length < 3) {
       ss.relearn = ss.relearn || [];
       ss.relearn.push(a.key);
       a.relearnQueued = true;
@@ -6388,7 +6405,8 @@ function heroHtml() {
   var why;
   var first0 = model().byKey[plan.keys[0]];
   if (plan.firstTime) why = first0 && first0.b.d
-    ? 'First, the move that ' + decisiveWords(first0.g, first0.b) + ' vs ' + esc(first0.g.opp) + '. Then easier ones.'
+    ? 'First, the move that ' + decisiveWords(first0.g, first0.b) + ' vs ' + esc(first0.g.opp) + '.'
+      + (plan.keys.slice(1).some(function (k) { var x = model().byKey[k]; return x && cardEase(x) > cardEase(first0); }) ? ' Then easier ones.' : '')
     : 'We\'ll start with the easier ones.';
   else {
     /* the reason to start now: the newest game one of these positions decided */
@@ -6422,6 +6440,7 @@ function nextDueHtml() {
   var d1 = new Date(d0); d1.setDate(d0.getDate() + 1);
   var n = Object.keys(srs).filter(function (k) { var r = srs[k]; return r.due && !r.hidden && r.due >= d0.getTime() && r.due < d1.getTime(); }).length;
   var w = dueWhen(next);
+  n = Math.min(n, sessionSize());
   return (w === 'tomorrow' ? 'Tomorrow' : w === 'later today' ? 'Later today' : w.charAt(0).toUpperCase() + w.slice(1)) + ': ' + plur(n, 'review') + ', about ' + Math.max(1, Math.round(n * 0.8)) + (Math.round(n * 0.8) > 1 ? ' minutes.' : ' minute.');
 }
 function doneTodayHtml() {
@@ -6700,7 +6719,7 @@ function cardTaskHtml(a) {
   else if (a.check1 && !a.check1.done) txt = fitLine(['You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now? Move their piece.',
     'You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now?']);
   else if (a.hints >= 1) { txt = esc(hintText(a)); cls = ' hint'; }
-  else if (a.sol && a.solIdx > 0) txt = 'Move ' + (a.solIdx / 2 + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
+  else if (a.sol && a.solIdx > 0) txt = 'Move ' + (Math.floor(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
   else {
     var san = esc(sanOf(a.pre, a.played)), task = 'You are ' + side + '. Find a better move. ';
     txt = fitLine([task + (a.it.b.d ? 'Your ' + san + ', the red arrow, ' + decisiveWords(a.it.g, a.it.b) + '.' : ''), task + 'Your ' + san + ' is the red arrow.']);
@@ -6800,7 +6819,7 @@ function panelHtml(a, ss) {
     var rec0 = srsRec(it), review = rec0 && rec0.box >= 2 && !a.firstSight;
     var san = sanOf(a.pre, a.played);
     h += '<h2 class="task" id="task-h" tabindex="-1">' + (a.sol && a.solIdx > 0
-      ? 'Move ' + (a.solIdx / 2 + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.'
+      ? 'Move ' + (Math.floor(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.'
       : 'You are ' + side + '. Find a better move.') + '</h2>';
     if (!review && a.solIdx === 0) h += '<p class="stakes">' + stakesWords(a, san) + '</p>';
     /* the feedback slot: one message at a time, in a space kept for it */
@@ -6826,7 +6845,7 @@ function panelHtml(a, ss) {
         acts += '<a class="' + (a.misses >= 2 ? 'btn-big' : 'btn-line') + '" data-act="reveal">Show the answer</a>';
       }
       h += '<div class="acts-row sticky-acts guess-acts">' + acts + '</div>';
-      h += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. Nf3 or g1f3" aria-label="Type your move"></label>';
+      h += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
     }
     return h;
   }

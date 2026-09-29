@@ -17,7 +17,7 @@
   your move: Be3 loses the bishop after Qb4+ Bd2 Rxb7 Bxb4 and more.
   best move: b4 keeps your bishop safe.
 #6 missedMaterial
-  your move: Bf6 leaves White's knight on f5 undefended.
+  your move: Bf6 misses White's undefended knight on f5.
   best move: Bxf5 wins the knight.
 #7 slipped
   your move: Kc7 lets your winning position slip: after Rd2+ it is roughly level (83% to 46%).
@@ -38,7 +38,7 @@
   your move: Qf2 walks into a pin: you lose a queen and a bishop.
   best move: Qg5 keeps everything safe.
 #13 missedMaterial
-  your move: Qf3 leaves Black's pawn on e5 undefended.
+  your move: Qf3 misses Black's undefended pawn on e5.
   best move: Qxe5+ wins the pawn.
 #14 drift
   your move: Qe5 lets Black take over (50% to 20%).
@@ -177,7 +177,7 @@
   best move: Be6+ forks the knight and king.
 #59 drift
   your move: Kxe3 lets Black take over (51% to 28%).
-  best move: Take back with the pawn: fxe3.
+  best move: Take with the pawn instead: fxe3.
 #60 hung
   your move: Ne4 leaves your knight on e4 undefended: Bxe4 takes it.
   best move: Re1 keeps your knight safe.
@@ -215,7 +215,7 @@
   your move: Rg1 ignores Black's threat: Rxe5 takes your bishop.
   best move: Bf4 moves the bishop out of danger.
 #72 missedMaterial
-  your move: O-O leaves Black's knight on c6 undefended.
+  your move: O-O misses Black's undefended knight on c6.
   best move: Bxc6 wins the knight.
 #73 slipped
   your move: Be2+ lets your winning position slip: after N1xe2 it is roughly level (84% to 42%).
@@ -248,7 +248,7 @@
   your move: Be3 loses the bishop after Qb4+ Bd2 Rxb7 Bxb4 and more.
   best move: b4 keeps your bishop safe.
 #83 missedMaterial
-  your move: Bf6 leaves White's knight on f5 undefended.
+  your move: Bf6 misses White's undefended knight on f5.
   best move: Bxf5 wins the knight.
 #84 slipped
   your move: Kc7 lets your winning position slip: after Rd2+ it is roughly level (83% to 46%).
@@ -269,7 +269,7 @@
   your move: Qf2 walks into a pin: you lose a queen and a bishop.
   best move: Qg5 keeps everything safe.
 #90 missedMaterial
-  your move: Qf3 leaves Black's pawn on e5 undefended.
+  your move: Qf3 misses Black's undefended pawn on e5.
   best move: Qxe5+ wins the pawn.
 #91 drift
   your move: Qe5 lets Black take over (50% to 20%).
@@ -329,7 +329,7 @@
   your move: Ne7 lets your winning position slip: after Nc3 it is roughly level (66% to 43%).
   best move: Nd4 keeps your advantage.
 #110 missedMaterial
-  your move: Rc8 leaves White's pawn on c4 undefended.
+  your move: Rc8 misses White's undefended pawn on c4.
   best move: Bxc4 wins the pawn.
 #111 drift
   your move: Ke8 lets White take over: Rfe7+ is strong (64% to 11%).
@@ -383,13 +383,13 @@
   your move: Bd7 lets White take over (54% to 31%).
   best move: Nd7 keeps the game balanced.
 #128 missedMaterial
-  your move: Bh6 leaves Black's queen on c7 undefended.
+  your move: Bh6 misses Black's undefended queen on c7.
   best move: Qxc7 wins the queen.
 #129 missedMaterial
-  your move: Bxf8 leaves Black's queen on c7 undefended.
+  your move: Bxf8 misses Black's undefended queen on c7.
   best move: Qxc7 wins a queen and a rook for a bishop.
 #130 missedMaterial
-  your move: Qf3 leaves Black's queen on c7 undefended.
+  your move: Qf3 misses Black's undefended queen on c7.
   best move: Qxc7 wins the queen.
 #131 material
   your move: Ng5 loses the pawn after bxc3 Nxh7 cxb2.
@@ -522,7 +522,7 @@
   best move: Be6+ forks the knight and king.
 #174 drift
   your move: Kxe3 lets Black take over (52% to 23%).
-  best move: Take back with the pawn: fxe3.
+  best move: Take with the pawn instead: fxe3.
 #175 hung
   your move: Ne4 leaves your knight on e4 undefended: Bxe4 takes it.
   best move: Ng5 keeps your knight safe.
@@ -629,7 +629,7 @@
   your move: Rxc3 takes a pawn, but Nxc3 takes your rook.
   best move: Bc4 stops Nxc3.
 #210 missedMaterial
-  your move: Qb5+ leaves Black's pawn on d5 undefended.
+  your move: Qb5+ misses Black's undefended pawn on d5.
   best move: exd6 wins the pawn.
 #211 mateMissed
   your move: Qe7# lets a forced mate slip away.
@@ -665,13 +665,13 @@
   your move: Rg1 ignores Black's threat: Rxe5 takes your bishop.
   best move: Bf4 moves the bishop out of danger.
 #222 missedMaterial
-  your move: O-O leaves Black's knight on c6 undefended.
+  your move: O-O misses Black's undefended knight on c6.
   best move: Bxc6 wins the knight.
 #223 material
   your move: Be2+ loses the bishop after N1xe2.
   best move: Rad8 keeps your bishop safe.
 #224 missedMaterial
-  your move: Bxg5 leaves Black's rook on d8 undefended.
+  your move: Bxg5 misses Black's undefended rook on d8.
   best move: Rxd8 wins the rook.
 #225 slipped
   your move: Ne4 lets your winning position slip: after Be7 it is roughly level (87% to 56%).
@@ -686,7 +686,7 @@
   your move: b5 lets White take over (54% to 34%).
   best move: bxa5 trades pawns.
 #229 missedMaterial
-  your move: Bc4 leaves White's pawn on c3 undefended.
+  your move: Bc4 misses White's undefended pawn on c3.
   best move: Rxc3+ wins the pawn.
 #230 slipped
   your move: R8d6 lets White force a draw with checks, starting with Ra8+ (63% to 38%).
@@ -734,5 +734,5 @@
   your move: R5a6 lets a forced mate slip away.
   best move: R8a6 forces mate in 5.
 #245 missedMaterial
-  your move: Qa1 leaves Black's knight on c6 undefended.
+  your move: Qa1 misses Black's undefended knight on c6.
   best move: Bxc6 wins the knight.

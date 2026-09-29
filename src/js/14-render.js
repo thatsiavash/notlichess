@@ -228,7 +228,8 @@ function heroHtml() {
   var why;
   var first0 = model().byKey[plan.keys[0]];
   if (plan.firstTime) why = first0 && first0.b.d
-    ? 'First, the move that ' + decisiveWords(first0.g, first0.b) + ' vs ' + esc(first0.g.opp) + '. Then easier ones.'
+    ? 'First, the move that ' + decisiveWords(first0.g, first0.b) + ' vs ' + esc(first0.g.opp) + '.'
+      + (plan.keys.slice(1).some(function (k) { var x = model().byKey[k]; return x && cardEase(x) > cardEase(first0); }) ? ' Then easier ones.' : '')
     : 'We\'ll start with the easier ones.';
   else {
     /* the reason to start now: the newest game one of these positions decided */
@@ -262,6 +263,7 @@ function nextDueHtml() {
   var d1 = new Date(d0); d1.setDate(d0.getDate() + 1);
   var n = Object.keys(srs).filter(function (k) { var r = srs[k]; return r.due && !r.hidden && r.due >= d0.getTime() && r.due < d1.getTime(); }).length;
   var w = dueWhen(next);
+  n = Math.min(n, sessionSize());
   return (w === 'tomorrow' ? 'Tomorrow' : w === 'later today' ? 'Later today' : w.charAt(0).toUpperCase() + w.slice(1)) + ': ' + plur(n, 'review') + ', about ' + Math.max(1, Math.round(n * 0.8)) + (Math.round(n * 0.8) > 1 ? ' minutes.' : ' minute.');
 }
 function doneTodayHtml() {
@@ -540,7 +542,7 @@ function cardTaskHtml(a) {
   else if (a.check1 && !a.check1.done) txt = fitLine(['You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now? Move their piece.',
     'You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now?']);
   else if (a.hints >= 1) { txt = esc(hintText(a)); cls = ' hint'; }
-  else if (a.sol && a.solIdx > 0) txt = 'Move ' + (a.solIdx / 2 + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
+  else if (a.sol && a.solIdx > 0) txt = 'Move ' + (Math.floor(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
   else {
     var san = esc(sanOf(a.pre, a.played)), task = 'You are ' + side + '. Find a better move. ';
     txt = fitLine([task + (a.it.b.d ? 'Your ' + san + ', the red arrow, ' + decisiveWords(a.it.g, a.it.b) + '.' : ''), task + 'Your ' + san + ' is the red arrow.']);
@@ -640,7 +642,7 @@ function panelHtml(a, ss) {
     var rec0 = srsRec(it), review = rec0 && rec0.box >= 2 && !a.firstSight;
     var san = sanOf(a.pre, a.played);
     h += '<h2 class="task" id="task-h" tabindex="-1">' + (a.sol && a.solIdx > 0
-      ? 'Move ' + (a.solIdx / 2 + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.'
+      ? 'Move ' + (Math.floor(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.'
       : 'You are ' + side + '. Find a better move.') + '</h2>';
     if (!review && a.solIdx === 0) h += '<p class="stakes">' + stakesWords(a, san) + '</p>';
     /* the feedback slot: one message at a time, in a space kept for it */
@@ -666,7 +668,7 @@ function panelHtml(a, ss) {
         acts += '<a class="' + (a.misses >= 2 ? 'btn-big' : 'btn-line') + '" data-act="reveal">Show the answer</a>';
       }
       h += '<div class="acts-row sticky-acts guess-acts">' + acts + '</div>';
-      h += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. Nf3 or g1f3" aria-label="Type your move"></label>';
+      h += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
     }
     return h;
   }

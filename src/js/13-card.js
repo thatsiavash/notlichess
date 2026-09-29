@@ -145,7 +145,11 @@ function loadCard() {
   if (!ss) return;
   ss.active = null;
   if (ss.idx >= ss.keys.length && queueRelearn(ss)) saveSession();
-  if (ss.idx >= ss.keys.length) { finishSession(); return; }
+  if (ss.idx >= ss.keys.length) {
+    /* every position was removed by the deeper look before one was shown */
+    if (!Object.keys(ss.results || {}).length) { endSession(); notice('On a deeper look that position was not a real mistake, so it was removed.'); return; }
+    finishSession(); return;
+  }
   var it = currentItem();
   if (!it || !trainable(it) || it.b.x) { ss.keys.splice(ss.idx, 1); saveSession(); loadCard(); return; }
   var myGen = gen, key = it.key;
@@ -285,7 +289,7 @@ function stepLine(m, u) {
   a.phase = 'reply';
   /* my moves sit at even offsets of the line: the next one is number n */
   a.hintAfter = false;
-  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (a.solIdx / 2 + 1.5 | 0) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.', panel: '✓ ' + esc(san) + '.' };
+  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (Math.floor(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.', panel: '✓ ' + esc(san) + '.' };
   renderCard();
   var cardKey = a.key;
   setTimeout(function () {
@@ -547,6 +551,9 @@ function hintText(a) {
   }
   var key = (k && g.nodes[k]) || r1, word = { forkAllowed: ', a fork', pinAllowed: ', a pin', discoveredAllowed: ', a discovered attack' }[t] || '';
   var said = 'Your move allowed ' + sanOf(r1.before, r1.move) + (key !== r1 ? ', then ' + sanOf(key.before, key.move) : '') + word + '.';
+  /* a reply on the answer's own square would give the answer away */
+  var ans = a.best, hit = function (n) { return ans && n && n.move && n.move.to === ans.to; };
+  if (hit(r1) || hit(key)) said = 'Your move allowed a strong reply' + word + '.';
   return fitLine([said + ' Find a move that stops it.', said]);
 }
 function finishCard(result) {
@@ -561,7 +568,7 @@ function finishCard(result) {
     if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
     a.rec = rec;
     ss.results[a.key] = result;
-    if ((result === 'fail' || result === 'retry') && (ss.relearn || []).length < 3) {
+    if ((result === 'fail' || result === 'retry') && !a.check1 && (ss.relearn || []).length < 3) {
       ss.relearn = ss.relearn || [];
       ss.relearn.push(a.key);
       a.relearnQueued = true;
