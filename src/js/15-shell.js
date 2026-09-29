@@ -483,12 +483,18 @@ document.addEventListener('click', function (e) {
     case 'dispute': disputeCard(k); break;
     case 'marksSeen': store.set('nl:marksSeen', true); renderCard(); break;
     /* a teaching line plays from the start: its arrow first, then the moves */
-    case 'lineTab': if (a && a.lines && a.lines[k]) { a.explore = null; autoplayLine(k, null, 0, a.lines[k].states.length); } break;
-    case 'lineTo': if (a && a.lines) { stopAuto(a); a.explore = null; a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
+    case 'lineTab': if (a && a.lines && a.lines[k]) { if (a.explore) exploreExit('silent'); autoplayLine(k, null, 0, a.lines[k].states.length); } break;
+    case 'lineTo': if (a && a.lines) { stopAuto(a); if (a.explore) exploreExit('silent'); a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
     case 'lineBack': stepView(-1); break;
     case 'lineFwd': stepView(1); break;
-    case 'explore': stopAuto(a); startExplore(); break;
-    case 'exploreOff': if (a) { a.explore = null; renderCard(); } break;
+    case 'explore': if (a) startExplore({ view: a.invite && a.invite.view, via: 'invite' }); break;
+    case 'exploreOff': exploreExit('link'); break;
+    case 'xpGo': if (a && a.explore) exploreGo(parseInt(k, 10)); break;
+    case 'xpRow': if (a && a.explore) {
+      var xn = xpCur(a.explore), xr = a.explore.res[xn.key], xl = xr && xr.lines[parseInt(k, 10)];
+      var xm = xl && uciToMove(xn.st, xl.pv[0]);
+      if (xm) { track(parseInt(k, 10) === 0 ? 'explore_pick' : 'explore_row'); explorePlay(xm, false); }
+    } break;
     case 'perf': {
       var cur = trackedPerfs().slice(), at = cur.indexOf(k);
       if (at === -1) cur.push(k); else if (cur.length > 1) cur.splice(at, 1);
@@ -560,6 +566,9 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Escape') {
     if (ui.sheet) { closeSheet(); return; }
+    var ae = ui.session && ui.session.active;
+    if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); return; }
+    if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
   }
   var a = ui.session && ui.session.active;
   if (!a || ui.sheet) return;
@@ -576,12 +585,15 @@ function reducedMotion() { return !!(window.matchMedia && window.matchMedia('(pr
 /* a move typed as SAN (Nf3, exd5, O-O, e8=Q) or as squares (g1f3) */
 function typedMove(txt) {
   var a = ui.session && ui.session.active;
-  if (!a || a.phase !== 'guess') return;
+  var xp = a && a.phase === 'done' && a.explore;
+  if (!a || (a.phase !== 'guess' && !xp)) return;
+  var st = xp ? a.explore.st : a.st;
   var t = String(txt || '').trim().replace(/0/g, 'O');
-  var m = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(t) ? uciToMove(a.st, t.toLowerCase()) : null;
-  if (!m && t) m = sanToMove(a.st, t);
+  var m = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(t) ? uciToMove(st, t.toLowerCase()) : null;
+  if (!m && t) m = sanToMove(st, t);
   if (!m) { notice('That move is not legal here. Try a move like Nf3, exd5, O-O or g1f3.'); return; }
-  gradeMove(m);
+  if (xp) { explorePlay(m, false); var kb = el('kbmove'); if (kb) { kb.value = ''; kb.focus(); } }
+  else gradeMove(m);
 }
 /* Enter and Space on focusable actions; the view tabs keep their own role */
 function makeFocusable(root) {
@@ -639,6 +651,20 @@ document.addEventListener('pointerdown', function (e) {
   if (sq < 0) return;
   if (e.button === 2) { pointerState.rightFrom = sq; return; }
   var bs = boardState(a);
+  /* a mouse or pen press on a piece of the side to move starts exploring
+     and the drag in one gesture (touch taps go through the click) */
+  if (e.button === 0 && a.phase === 'done' && !a.explore && !a.pendingPromo && e.pointerType !== 'touch') {
+    var vs0 = lineView(a).st, pc0 = vs0.b[sq];
+    if (pc0 && isW(pc0) === vs0.w) {
+      startExplore({ sq: sq, via: 'press' });
+      bs = boardState(a);
+      pointerState.suppressClick = false;
+      pointerState.dragFrom = sq; pointerState.dragPiece = pc0; pointerState.moved = false;
+      pointerState.startX = e.clientX; pointerState.startY = e.clientY;
+      pointerState.justSelected = true;
+      return;
+    }
+  }
   if (e.button !== 0 || !bs.live || a.pendingPromo) return;
   pointerState.suppressClick = false;
   if (!bs.explore && a.shapes.length) { a.shapes = []; renderCard(); }
@@ -693,9 +719,34 @@ function pointerFinish(e, cancelled) {
       pointerState.suppressClick = true;
     }
     pointerState.justSelected = false;
+    /* a result that arrived mid-drag is drawn now */
+    if (a.explore && a.explore.dirty) { a.explore.dirty = false; renderCard(); }
   }
 }
 document.addEventListener('pointerup', function (e) { pointerFinish(e, false); });
+/* desktop: pointing at one of Stockfish's rows moves the one arrow to it */
+function xpHover(k) {
+  var a = ui.session && ui.session.active, ex = a && a.explore;
+  if (!ex || !(window.matchMedia && window.matchMedia('(hover: hover)').matches)) return;
+  var want = k == null ? 0 : k;
+  ex.hover = k;
+  if (ex.hot !== want) {
+    ex.hot = want;
+    renderCardBoard(a);
+    var rows = document.querySelectorAll('#xp .xp-row');
+    for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('on', i === want);
+  }
+  if (k == null && ex.dirtyRows) { ex.dirtyRows = false; renderCard(); }
+}
+document.addEventListener('mouseover', function (e) {
+  var r = e.target.closest && e.target.closest('#xp .xp-row[data-act="xpRow"]');
+  if (r) xpHover(parseInt(r.getAttribute('data-k'), 10));
+});
+document.addEventListener('mouseout', function (e) {
+  var r = e.target.closest && e.target.closest('#xp .xp-rows');
+  if (r && !(e.relatedTarget && r.contains(e.relatedTarget))) xpHover(null);
+});
+window.addEventListener('resize', function () { if (xpActive()) fitRows(); });
 document.addEventListener('pointercancel', function (e) { pointerFinish(e, true); });
 
 /* ── games: checking for new ones, formats, limits ───────────────────────── */
@@ -742,7 +793,16 @@ window.__nlTest = {
     var m = uciToMove(st, uci);
     if (!m) return 'illegal';
     if (a.phase === 'guess' || a.phase === 'check') { gradeMove(m); return 'graded'; }
+    if (a.phase === 'done' && a.explore) { explorePlay(m, false); return 'explored'; }
     return 'not guessing';
+  },
+  explore: function () {
+    var a = ui.session && ui.session.active, ex = a && a.explore;
+    if (!ex) return null;
+    var n = xpCur(ex), r = ex.res[n.key];
+    return { at: ex.at, n: ex.nodes.length, fens: ex.nodes.map(function (x) { return x.fen; }), key: n.key,
+             lines: r ? r.lines.map(function (l) { return { pv: l.pv, cp: l.cp, mate: l.mate }; }) : null, step: r ? r.step : 0,
+             say: sayAt(a, ex, ex.at), k: ex.k, spoil: xpSpoil(n) };
   },
   stats: function () {
     var items = allMistakes();

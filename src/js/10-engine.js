@@ -102,7 +102,7 @@ function engineEval(fen, movetime, priority, opts) {
   return new Promise(function (resolve, reject) {
     var job = { fen: fen, movetime: movetime || 80, resolve: resolve, reject: reject,
                 mpv: opts.multipv || 1, moves: opts.searchmoves || null, prio: !!priority, tag: opts.tag || null,
-                onInfo: opts.onInfo || null };
+                onInfo: opts.onInfo || null, lanes: opts.lanes || null, hash: opts.hash || 0, xp: opts.xp || null };
     /* a player is waiting on priority jobs; the scan can wait */
     if (priority) {
       var at = 0;
@@ -129,14 +129,16 @@ function promoteTag(tag) {
    the one command Stockfish reads safely mid-search) */
 function engineStop(tag) {
   if (!tag) return;
+  /* a tag, or a test for the jobs to stop */
+  var hit = typeof tag === 'function' ? tag : function (j) { return j.tag === tag; };
   SF.queue = SF.queue.filter(function (j) {
-    if (j.tag !== tag) return true;
+    if (!hit(j)) return true;
     j.reject({ stopped: true });
     return false;
   });
   SF.workers.forEach(function (slot) {
     var j = slot.pending && slot.pending[0];
-    if (j && j.tag === tag && !j.stopping) { j.stopping = true; slot.w.postMessage('stop'); }
+    if (j && hit(j) && !j.stopping) { j.stopping = true; slot.w.postMessage('stop'); }
   });
 }
 /* the same question asked twice (the eval bar revisiting a position) is
@@ -149,7 +151,8 @@ function engineEvalCached(fen, movetime, priority, opts) {
   evalCache[k] = p;
   evalCacheOrder.push(k);
   if (evalCacheOrder.length > 600) delete evalCache[evalCacheOrder.shift()];
-  p.catch(function () { delete evalCache[k]; });
+  /* a search cut short never answers a later full question */
+  p.then(function (r) { if (r && r.stopped && evalCache[k] === p) delete evalCache[k]; }, function () { delete evalCache[k]; });
   return p;
 }
 function parseInfo(line) {
@@ -274,18 +277,37 @@ function enginePump() {
   /* while a card is open, the first analyst waits for the player's own
      questions, so a checked move never queues behind background work */
   var reserve = !!(ui.session && (ui.session.active || ui.session.loadingKey)) && SF.workers.length > 1;
+  /* exploring on a small pool (phones, small laptops): the background
+     reading waits, so the explored position gets the engine and the device
+     stays cool */
+  var hold = SF.workers.length <= 2 && typeof xpActive === 'function' && xpActive();
   for (var wi = 0; wi < SF.workers.length && SF.queue.length; wi++) {
     var slot = SF.workers[wi];
     slotWire(slot);
-    /* the kept analyst still takes a short scan job: 18k nodes is a few
-       milliseconds, never long enough to delay a checked move */
-    if (reserve && wi === 0 && !SF.queue[0].prio && !(SF.queue[0].movetime && SF.queue[0].movetime.nodes <= RESERVE_NODES)) continue;
-    if (!slot.pending.length && SF.queue.length) {
-      var job = SF.queue.shift();
+    if (slot.pending.length) continue;
+    /* the first queued job this analyst may run: a job with lanes runs only
+       on those analysts; the kept analyst still takes a short scan job (18k
+       nodes is a few milliseconds, never long enough to delay a checked move) */
+    var qi = -1;
+    for (var q = 0; q < SF.queue.length; q++) {
+      var cand = SF.queue[q];
+      if (cand.lanes && cand.lanes.indexOf(wi) === -1) continue;
+      if (hold && !cand.prio) continue;
+      if (reserve && wi === 0 && !cand.prio && !(cand.movetime && cand.movetime.nodes <= RESERVE_NODES)) continue;
+      qi = q;
+      break;
+    }
+    if (qi >= 0) {
+      var job = SF.queue.splice(qi, 1)[0];
       slot.pending.push(job);
       if (slot.mpv !== job.mpv) {
         slot.w.postMessage('setoption name MultiPV value ' + job.mpv);
         slot.mpv = job.mpv;
+      }
+      /* sent only between searches, like MultiPV */
+      if (job.hash && slot.hash !== job.hash) {
+        slot.w.postMessage('setoption name Hash value ' + job.hash);
+        slot.hash = job.hash;
       }
       var nodes = job.movetime && job.movetime.nodes;
       slot.w.postMessage('position fen ' + job.fen);

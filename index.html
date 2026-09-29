@@ -758,6 +758,57 @@ a.lg-row{color:inherit}
 .which-row{display:flex;flex-wrap:wrap;gap:12px}
 .which-row .btn-line{min-height:44px}
 .which-none{font-size:14px;color:var(--text-2);margin:12px 0 0}
+/* explore: the answered board as a question box */
+.xp{position:relative;background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r2);padding:8px 14px 4px;margin:0 0 12px}
+.xp-meter{position:absolute;left:0;right:0;top:0;height:2px;overflow:hidden;border-radius:var(--r2) var(--r2) 0 0;visibility:hidden}
+.xp-meter.run{visibility:visible;background:var(--rule)}
+.xp-meter i{position:absolute;top:0;bottom:0;width:40%;background:var(--gold);animation:sweep 1s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.xp-meter i{animation:none !important;left:0;width:100%;opacity:.5}}
+.xp-head{display:flex;align-items:center;gap:12px;height:28px}
+.xp-trail{flex:1 1 auto;min-width:0;display:flex;gap:8px;overflow:hidden;white-space:nowrap;font-size:13.5px;font-variant-numeric:lining-nums tabular-nums}
+.xp-label{font-size:11px;line-height:16px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-3)}
+.xp-mv{color:var(--text-1);border:0;border-bottom:1.5px solid transparent;line-height:20px;background:none;padding:0;font:inherit;cursor:pointer}
+.xp-mv.xp-sf{color:var(--text-3)}
+.xp-mv.on{border-bottom-color:var(--accent)}
+.xp-back{flex:none;font-size:13.5px;color:var(--text-2);padding:8px 0;text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px;cursor:pointer}
+.xp-say{font-size:16px;line-height:24px;color:var(--text-1);min-height:48px;margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.xp-cap{font-size:12px;line-height:18px;color:var(--text-3);margin:8px 0 0}
+.xp-rows{display:flex;flex-direction:column;margin:0 -14px}
+.xp-rows.k1 .xp-row:nth-child(n+2),.xp-rows.k2 .xp-row:nth-child(n+3){display:none}
+.xp-row{position:relative;display:flex;align-items:center;gap:10px;width:100%;height:44px;padding:0 14px;border:0;border-top:1px solid var(--line);font:inherit;font-size:14px;color:var(--text-3);white-space:nowrap;text-align:left;background:none;cursor:pointer}
+.xp-row:first-child{border-top:0}
+@media (hover:hover){.xp-row:hover{background:rgba(236,232,223,.04)}}
+.xp-row:focus-visible{outline:2px solid var(--text-1);outline-offset:-2px}
+.xp-row.on::before{content:'';position:absolute;left:0;top:9px;bottom:9px;width:2px;border-radius:1px;background:var(--gold)}
+.xp-chip{flex:none;min-width:70px;height:24px;padding:0 8px;border-radius:12px;background:var(--surface-2);color:var(--text-1);font-size:13px;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:lining-nums tabular-nums}
+.xp-first{flex:none;color:var(--text-1);font-weight:600;font-variant-numeric:lining-nums tabular-nums}
+.xp-cont{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:lining-nums tabular-nums}
+.xp-cont.t1{color:var(--text-2)}
+.xp-row.skel{cursor:default}
+.xp-row.skel .xp-chip,.xp-row.skel .xp-first,.xp-row.skel .xp-cont{color:transparent;background:var(--line);border-radius:4px}
+.xp-kb{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.xp-kb:focus-within{position:static;width:auto;height:auto;clip:auto;margin:8px 0 4px;display:block}
+.result.xp-on{padding:8px 14px;margin:4px 0 10px}
+.result.xp-on .result-head{margin:0;gap:10px}
+.result.xp-on .disc{width:22px;height:22px;font-size:12px}
+.result.xp-on .result-h{font-size:21px;line-height:28px}
+.result.xp-on .result-sub,.result.xp-on .tline{display:none}
+.card.xp-card .tag-row,.card.xp-card .habit,.card.xp-card .explore-line{display:none}
+.xp-back-ph{display:none}
+@media (max-width:860px){
+  .explore-line{order:-1}
+  .done-acts{height:calc(64px + env(safe-area-inset-bottom));padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:var(--surface-2)}
+  .card.xp-card .panel{padding-top:4px}
+  .card.xp-card .result,.card.xp-card .ctx{display:none}
+  .xp{order:-2;background:none;border:0;border-radius:0;padding:0;margin:0 calc(-1 * var(--gutter))}
+  .xp-head,.xp-say,.xp-kb{display:none}
+  .xp-meter{border-radius:0}
+  .xp-cap{margin:0;padding:0 var(--gutter)}
+  .xp-rows{margin:0}
+  .xp-row{padding:0 var(--gutter)}
+  .xp-back-ph{display:flex;align-items:center;min-height:44px;font-size:14px;color:var(--text-2);padding:0 var(--gutter);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
+  .card-task.xp{border-left:2px solid var(--accent);padding-left:10px;margin-left:-12px}
+}
 </style>
 </head>
 <body>
@@ -3445,7 +3496,7 @@ function checksAll(line, first) {
    mate: n|null } for the position after my move, also from MY point of view;
    wb/wa = my win chance before/after (0-100).
    output: { t: pattern key, tags: {...}, matGame, matBest, sentences } */
-function classifyMistake(pre, played, best, after, wb, wa, ply) {
+function classifyMistake(pre, played, best, after, wb, wa, ply, voice) {
   var meW = pre.w;
   var gameLine = buildLine(pre, played, (after && after.pv || []).slice(0, 8), !meW);
   var bestLine = best && best.pv && best.pv.length ? buildLine(pre, '0000', best.pv.slice(0, 8), meW) : null;
@@ -3550,6 +3601,12 @@ function classifyMistake(pre, played, best, after, wb, wa, ply) {
   };
   res.sentences = explainMistake(res, pre, wb, wa);
   res.sentences.short = shortSentence(res.sentences.game);
+  /* exploring: the move being judged may be the opponent's, so "your" names
+     the side that moved and the learner is "you" */
+  if (voice === 'them') {
+    var mover = meW ? 'White' : 'Black', me = meW ? 'Black' : 'White';
+    ['game', 'short', 'best'].forEach(function (k) { if (res.sentences[k]) res.sentences[k] = themVoice(res.sentences[k], mover, me); });
+  }
   return res;
 }
 /* the piece the refutation takes was already attacked, and already short
@@ -3629,6 +3686,23 @@ function passedPawn(b, sq, white) {
   return true;
 }
 /* Two sentences: what the game move did, and what the best move does. */
+/* a sentence written to the mover as "you", rewritten about the mover by
+   colour, with the other side (the learner) as "you". The explainer's words
+   for the other side are its colour name, so the two swap cleanly */
+function themVoice(s, mover, me) {
+  var mark = '\u0001';
+  return String(s)
+    .replace(new RegExp('\\b' + me + '\'s ', 'g'), mark)
+    .replace(new RegExp('\\b' + me + ' is better', 'g'), 'you are better')
+    .replace(new RegExp('\\b' + me + ' attacks it', 'g'), 'you attack it')
+    .replace(new RegExp('\\blets ' + me + ' ', 'g'), 'lets you ')
+    .replace(/\bboth your /g, 'both of ' + mover + '\'s ')
+    .replace(/\b[Yy]our /g, mover + '\'s ')
+    .replace(/\b[Yy]ou lose\b/g, mover + ' loses')
+    .replace(/\byou are\b/g, mover + ' is')
+    .replace(/\byou come out\b/g, mover + ' comes out')
+    .replace(new RegExp(mark, 'g'), 'your ');
+}
 /* the same sentence for a small screen: the move and what it costs, without
    the path of moves or the percentages the board has just shown */
 var SAN_RE = '(?:O-O(?:-O)?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?)[+#]?';
@@ -3637,7 +3711,7 @@ function shortSentence(s) {
     .replace(/ \(\d+% to \d+%\)/g, '')
     .replace(new RegExp(' after (?:' + SAN_RE + ' )*' + SAN_RE + '(?: and more)?\\.$'), '.');
   /* still too long for two lines: the material count goes, the move stays */
-  return s.length > 84 ? s.replace(/ You lose [^.]*\.$/, '') : s;
+  return s.length > 84 ? s.replace(/ (You|White|Black) loses? [^.]*\.$/, '') : s;
 }
 function explainMistake(c, pre, wb, wa) {
   var g = c.gameLine, bl = c.bestLine;
@@ -4816,7 +4890,7 @@ function engineEval(fen, movetime, priority, opts) {
   return new Promise(function (resolve, reject) {
     var job = { fen: fen, movetime: movetime || 80, resolve: resolve, reject: reject,
                 mpv: opts.multipv || 1, moves: opts.searchmoves || null, prio: !!priority, tag: opts.tag || null,
-                onInfo: opts.onInfo || null };
+                onInfo: opts.onInfo || null, lanes: opts.lanes || null, hash: opts.hash || 0, xp: opts.xp || null };
     /* a player is waiting on priority jobs; the scan can wait */
     if (priority) {
       var at = 0;
@@ -4843,14 +4917,16 @@ function promoteTag(tag) {
    the one command Stockfish reads safely mid-search) */
 function engineStop(tag) {
   if (!tag) return;
+  /* a tag, or a test for the jobs to stop */
+  var hit = typeof tag === 'function' ? tag : function (j) { return j.tag === tag; };
   SF.queue = SF.queue.filter(function (j) {
-    if (j.tag !== tag) return true;
+    if (!hit(j)) return true;
     j.reject({ stopped: true });
     return false;
   });
   SF.workers.forEach(function (slot) {
     var j = slot.pending && slot.pending[0];
-    if (j && j.tag === tag && !j.stopping) { j.stopping = true; slot.w.postMessage('stop'); }
+    if (j && hit(j) && !j.stopping) { j.stopping = true; slot.w.postMessage('stop'); }
   });
 }
 /* the same question asked twice (the eval bar revisiting a position) is
@@ -4863,7 +4939,8 @@ function engineEvalCached(fen, movetime, priority, opts) {
   evalCache[k] = p;
   evalCacheOrder.push(k);
   if (evalCacheOrder.length > 600) delete evalCache[evalCacheOrder.shift()];
-  p.catch(function () { delete evalCache[k]; });
+  /* a search cut short never answers a later full question */
+  p.then(function (r) { if (r && r.stopped && evalCache[k] === p) delete evalCache[k]; }, function () { delete evalCache[k]; });
   return p;
 }
 function parseInfo(line) {
@@ -4988,18 +5065,37 @@ function enginePump() {
   /* while a card is open, the first analyst waits for the player's own
      questions, so a checked move never queues behind background work */
   var reserve = !!(ui.session && (ui.session.active || ui.session.loadingKey)) && SF.workers.length > 1;
+  /* exploring on a small pool (phones, small laptops): the background
+     reading waits, so the explored position gets the engine and the device
+     stays cool */
+  var hold = SF.workers.length <= 2 && typeof xpActive === 'function' && xpActive();
   for (var wi = 0; wi < SF.workers.length && SF.queue.length; wi++) {
     var slot = SF.workers[wi];
     slotWire(slot);
-    /* the kept analyst still takes a short scan job: 18k nodes is a few
-       milliseconds, never long enough to delay a checked move */
-    if (reserve && wi === 0 && !SF.queue[0].prio && !(SF.queue[0].movetime && SF.queue[0].movetime.nodes <= RESERVE_NODES)) continue;
-    if (!slot.pending.length && SF.queue.length) {
-      var job = SF.queue.shift();
+    if (slot.pending.length) continue;
+    /* the first queued job this analyst may run: a job with lanes runs only
+       on those analysts; the kept analyst still takes a short scan job (18k
+       nodes is a few milliseconds, never long enough to delay a checked move) */
+    var qi = -1;
+    for (var q = 0; q < SF.queue.length; q++) {
+      var cand = SF.queue[q];
+      if (cand.lanes && cand.lanes.indexOf(wi) === -1) continue;
+      if (hold && !cand.prio) continue;
+      if (reserve && wi === 0 && !cand.prio && !(cand.movetime && cand.movetime.nodes <= RESERVE_NODES)) continue;
+      qi = q;
+      break;
+    }
+    if (qi >= 0) {
+      var job = SF.queue.splice(qi, 1)[0];
       slot.pending.push(job);
       if (slot.mpv !== job.mpv) {
         slot.w.postMessage('setoption name MultiPV value ' + job.mpv);
         slot.mpv = job.mpv;
+      }
+      /* sent only between searches, like MultiPV */
+      if (job.hash && slot.hash !== job.hash) {
+        slot.w.postMessage('setoption name Hash value ' + job.hash);
+        slot.hash = job.hash;
       }
       var nodes = job.movetime && job.movetime.nodes;
       slot.w.postMessage('position fen ' + job.fen);
@@ -5480,6 +5576,7 @@ function finishSession() {
 function endSession(fromPop) {
   var ss = ui.session;
   if (!ss) return;
+  if (ss.active && ss.active.explore) exploreExit('silent');
   var open = ss.active, done = sessionDoneCount(ss), total = sessionTotal(ss);
   /* a move still being checked counts as a try that did not land */
   if (open && open.phase === 'checking') { open.checkTok = ++checkSeq; open.phase = 'guess'; open.attempts = Math.max(open.attempts || 0, 1); }
@@ -5710,7 +5807,15 @@ function prefetchCards(ss) {
 function sessionClick(sq) {
   var ss = ui.session, a = ss && ss.active;
   if (!a || (a.phase !== 'guess' && a.phase !== 'check') || a.pendingPromo) {
-    if (a && a.phase === 'done' && a.explore) exploreClick(sq);
+    if (a && a.phase === 'done' && !a.pendingPromo) {
+      if (a.explore) exploreClick(sq);
+      else {
+        /* a tap on a piece of the side to move starts exploring from the
+           frame on screen (a swipe over the board still scrolls the page) */
+        var vs = lineView(a).st, pc = vs.b[sq];
+        if (pc && isW(pc) === vs.w) startExplore({ sq: sq, via: 'tap' });
+      }
+    }
     return;
   }
   var p = a.st.b[sq];
@@ -5733,7 +5838,8 @@ function promoChoose(piece) {
   if (!a || !a.pendingPromo) return;
   var m = a.pendingPromo.moves.filter(function (x) { return x.promo === piece; })[0];
   a.pendingPromo = null;
-  if (m) gradeMove(m); else renderCard();
+  if (!m) { renderCard(); return; }
+  if (a.phase === 'done' && a.explore) explorePlay(m, false); else gradeMove(m);
 }
 
 function gradeMove(m) {
@@ -6114,6 +6220,7 @@ function finishCard(result) {
     ss.results[a.key + '#r'] = result;
   }
   a.lines = cardLines(a);
+  a.invite = inviteFor(a);
   /* the habit line: every card for newer players, otherwise once a week
      per pattern (decided once here, not on every repaint) */
   var habitKey = 'nl:habitSeen:' + patternOf(a.it.b);
@@ -6134,7 +6241,7 @@ function finishCard(result) {
      point where it pays off */
   var toPayoff = function () {
     var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== a.key) return;
+    if (!a2 || a2.key !== a.key || a2.explore) return;
     var key = a2.view.line, L = a2.lines[key];
     if (!L) return;
     var endIdx = Math.min(L.states.length - 1, Math.max(2, key !== 'best' ? 2 : a2.cls && a2.cls.mateFor ? L.states.length - 1 : (a2.settleBest || 2)));
@@ -6159,7 +6266,7 @@ function autoplayLine(key, then, from, count) {
   if (reducedMotion()) { renderCard(); if (then) then(); return; }
   var step = function () {
     var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== cardKey || a2.autoTok !== tok || a2.phase !== 'done') return;
+    if (!a2 || a2.key !== cardKey || a2.autoTok !== tok || a2.phase !== 'done' || a2.explore) return;
     if (i < end) { a2.view.idx = i; i++; snd('move'); renderCard(); setTimeout(step, 700); return; }
     if (then) setTimeout(function () { if (a2.autoTok === tok) then(); }, 900);
   };
@@ -6178,6 +6285,7 @@ function queueRelearn(ss) {
 function nextCard() {
   var ss = ui.session;
   if (!ss) return;
+  if (ss.active && ss.active.explore) exploreExit('silent');
   ss.active = null;
   ss.idx++;
   saveSession();
@@ -6228,50 +6336,419 @@ function lineView(a) {
 function stepView(d) {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'done' || !a.lines) return;
+  if (a.explore) { exploreStep(d); return; }
   var L = a.lines[a.view.line];
   if (!L) return;
-  a.explore = null;
   stopAuto(a);
   a.view.idx = Math.max(-1, Math.min(L.states.length - 1, a.view.idx + d));
   if (d > 0) snd('move');
   renderCard();
 }
-/* after the answer, the board is free: try your own ideas, the bar follows */
+
+/* ── Explore: after the answer, test any move ─────────────────────────────
+   The board becomes a question box: play the move you doubt, for either
+   side, and Stockfish answers with one arrow, three lines and one sentence
+   that says why. One straight trail (a new move drops the moves after it),
+   stepped with ‹ ›; ‹ at the start returns to the lesson. Nothing here runs
+   before the card is answered. */
+
+var XP_NODES = [0, 250000, 1000000];
+function xpActive() { return !!(ui.session && ui.session.active && ui.session.active.explore); }
+function posKey(st) { return stateFen(st).split(' ').slice(0, 4).join(' '); }
+function xpNode(st, last, mv) { return { st: cloneState(st), key: posKey(st), fen: stateFen(st), last: last || null, mv: mv || null }; }
+function xpCur(ex) { return ex.nodes[ex.at]; }
+/* the board code reads ex.st, ex.last and ex.sel: they follow the trail */
+function xpSync(ex) { var n = xpCur(ex); ex.st = n.st; ex.last = n.last; }
+function xpTouch() { return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches; }
+function sideName(w) { return w ? 'White' : 'Black'; }
+
+/* the invite under the lesson, written once when the card is answered:
+   "Why Rxc5?" jumps to the moment the opponent chose */
+function inviteFor(a) {
+  var fallback = { text: 'Move any piece to test an idea. Stockfish answers.', view: null };
+  var L = a.lines && a.lines.best;
+  if (!L || L.moves.length < 2) return fallback;
+  var mine = L.moves[0], reply = L.moves[1], before = L.states[0];
+  var myCapture = a.pre.b[mine.to] != null || mine.ep >= 0;
+  if (legalMoves(before).length < 2) return fallback;
+  if (myCapture && reply.to === mine.to) return fallback;
+  var them = a.it.g.color === 'white' ? 'black' : 'white';
+  return { text: 'Why ' + L.san[1] + '? Try another ' + them + ' move and Stockfish answers.', view: { line: 'best', idx: 0 } };
+}
+
+function startExplore(o) {
+  var a = ui.session && ui.session.active;
+  if (!a || a.phase !== 'done' || a.explore || a.pendingPromo || !a.lines) return;
+  o = o || {};
+  stopAuto(a);
+  a.menuOpen = false;
+  if (o.view) a.view = { line: o.view.line, idx: o.view.idx };
+  var v = lineView(a);
+  a.xpRes = a.xpRes || {};
+  a.explore = { root: { line: a.view.line, idx: a.view.idx }, nodes: [xpNode(v.st, v.last, null)],
+                at: 0, sel: o.sq != null ? o.sq : -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null };
+  xpSync(a.explore);
+  xpSpoilIndex();
+  track('explore_start_' + (o.via || 'link'));
+  renderCard();
+  exploreAnalyse(false);
+}
+function exploreExit(how) {
+  var a = ui.session && ui.session.active;
+  if (!a || !a.explore) return;
+  var root = a.explore.root;
+  engineStop('explore');
+  a.explore = null;
+  a.view = { line: root.line, idx: root.idx };
+  a.lastView = { line: root.line, idx: root.idx };
+  track('explore_exit_' + (how || 'link'));
+  enginePump();
+  if (how === 'silent') return;
+  renderCard();
+  var inv = document.querySelector('#cpanel [data-act="explore"]');
+  if (inv && how !== 'pop') inv.focus({ preventScroll: true });
+}
+/* a move in the exploration, by either side */
+function explorePlay(m, dragged) {
+  var a = ui.session && ui.session.active, ex = a && a.explore;
+  if (!ex) return;
+  var P = xpCur(ex), uci = moveUci(m);
+  var pr = ex.res[P.key], pick = !!(pr && pr.lines[0] && pr.lines[0].pv[0] === uci);
+  var san = sanOf(P.st, m), st = cloneState(P.st);
+  applyMove(st, m);
+  ex.nodes = ex.nodes.slice(0, ex.at + 1);
+  ex.nodes.push(xpNode(st, [m.from, m.to], { san: san, uci: uci, byYou: P.st.w === myPov(a.it), pick: pick, ply: xpPly(P.st) }));
+  ex.at++;
+  Object.keys(ex.say).forEach(function (k) { if (+k >= ex.at) delete ex.say[k]; });
+  ex.sel = -1; ex.hot = 0; ex.flash = null;
+  xpSync(ex);
+  ex.anim = dragged ? null : [m.from, m.to];
+  snd('move');
+  track(pick ? 'explore_pick' : 'explore_move');
+  renderCard();
+  exploreAnalyse(true);
+}
+function xpPly(st) { return (st.full - 1) * 2 + (st.w ? 0 : 1); }
+function exploreGo(i) {
+  var a = ui.session && ui.session.active, ex = a && a.explore;
+  if (!ex || i < 0 || i >= ex.nodes.length || i === ex.at) return;
+  var fwd = i === ex.at + 1;
+  ex.at = i; ex.sel = -1; ex.hot = 0; ex.flash = null;
+  xpSync(ex);
+  var n = xpCur(ex);
+  ex.anim = fwd && n.last ? n.last : null;
+  if (fwd) snd('move');
+  renderCard();
+  exploreAnalyse(false);
+}
+function exploreStep(d) {
+  var a = ui.session && ui.session.active, ex = a && a.explore;
+  if (!ex) return;
+  if (d < 0) { if (ex.at === 0) exploreExit('back'); else exploreGo(ex.at - 1); return; }
+  if (ex.at < ex.nodes.length - 1) { exploreGo(ex.at + 1); return; }
+  /* at the end, › plays Stockfish's pick */
+  var n = xpCur(ex), r = ex.res[n.key];
+  if (!r || !r.lines[0] || xpSpoil(n) || !legalMoves(n.st).length) return;
+  var m = uciToMove(n.st, r.lines[0].pv[0]);
+  if (m) explorePlay(m, false);
+}
+/* a click on the board while exploring: pick up a piece of the side to move,
+   or play the picked-up one */
 function exploreClick(sq) {
   var a = ui.session.active, ex = a.explore;
   var p = ex.st.b[sq];
-  if (p && isW(p) === ex.st.w) { ex.sel = ex.sel === sq ? -1 : sq; renderCard(); return; }
-  if (ex.sel < 0) return;
+  if (p && isW(p) === ex.st.w) { ex.sel = ex.sel === sq ? -1 : sq; ex.flash = null; renderCard(); return; }
+  if (ex.sel < 0) {
+    if (p) { ex.flash = 'It is ' + sideName(ex.st.w) + '\'s move here. Move a ' + sideName(ex.st.w).toLowerCase() + ' piece.'; renderCard(); }
+    return;
+  }
   var legal = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel && m.to === sq; });
-  ex.sel = -1;
-  if (!legal.length) { renderCard(); return; }
-  var m = legal[0];
-  ex.san.push(sanOf(ex.st, m));
-  applyMove(ex.st, m);
-  ex.last = [m.from, m.to];
-  ex.anim = pointerState.suppressClick ? null : [m.from, m.to];
-  ex.ev = null;
-  ex.reply = null;
-  snd('move');
-  renderCard();
-  var cardKey = a.key, fen = stateFen(ex.st);
-  engineEvalCached(fen, { nodes: EXT_NODES }, true).then(function (r) {
-    var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== cardKey || !a2.explore || stateFen(a2.explore.st) !== fen) return;
-    a2.explore.ev = r.cp * (myPov(a2.it) ? 1 : -1);
-    a2.explore.reply = r.bestUci;
-    /* a cached answer arrives at once: let the slide finish first */
-    setTimeout(renderCard, 260);
-  }, function () {});
-}
-function startExplore() {
-  var a = ui.session && ui.session.active;
-  if (!a || a.phase !== 'done') return;
-  var v = lineView(a);
-  a.explore = { st: cloneState(v.st), sel: -1, san: [], last: v.last, ev: v.ev };
-  renderCard();
+  if (!legal.length) { ex.sel = -1; renderCard(); return; }
+  if (legal.length > 1 && legal[0].promo) { a.pendingPromo = { moves: legal, to: sq, explore: true }; renderCard(); return; }
+  explorePlay(legal[0], pointerState.suppressClick);
 }
 
+/* ── the analysis loop ───────────────────────────────────────────────────── */
+function xpGameOver(st) { return !legalMoves(st).length; }
+/* another card's own position: Stockfish stays quiet there, or exploring
+   would print the answer to a card still to come */
+function xpSpoilIndex() {
+  var ss = ui.session;
+  if (!ss || ss.xpSpoil) return;
+  var idx = {}, act = ss.active;
+  allMistakes().forEach(function (it) {
+    if (!trainable(it) || it.b.x || (act && it.key === act.key)) return;
+    var st = stateAtPly(it.g.mv, it.b.p);
+    if (st) idx[posKey(st)] = it.key;
+  });
+  ss.xpSpoil = idx;
+}
+function xpSpoil(n) { var ss = ui.session; return !!(ss && ss.xpSpoil && ss.xpSpoil[n.key]); }
+function xpRun(a, ex, n, step) {
+  return engineEval(n.fen, { nodes: XP_NODES[step] }, true,
+    { multipv: 3, tag: 'explore', lanes: [0, 1], hash: xpTouch() ? 32 : 64, xp: { key: n.key, step: step } })
+    .then(function (r) {
+      if (!r || r.stopped) return;
+      var a2 = ui.session && ui.session.active;
+      if (a2 !== a || a2.explore !== ex) return;
+      var old = ex.res[n.key];
+      if (old && old.step >= step) return;
+      ex.res[n.key] = { step: step, lines: keepSlots(old && old.lines, r.lines.slice(0, 3)), depth: r.depth };
+      xpAfterResult(a, ex, n);
+    }, function () {
+      var a2 = ui.session && ui.session.active;
+      if (a2 !== a || a2.explore !== ex) return;
+      n.fails = (n.fails || 0) + 1;
+      if (SF.state === 'failed' || n.fails >= 2) { n.down = true; if (xpCur(ex) === n) renderCard(); }
+    });
+}
+/* slot 0 is always the new best (the gold arrow is row 1); the other rows
+   keep their place while their first move stays in the top three */
+function keepSlots(old, fresh) {
+  if (!old || !old.length) return fresh;
+  var out = [fresh[0]], rest = fresh.slice(1), used = {};
+  used[fresh[0].pv[0]] = 1;
+  for (var i = 1; i < 3; i++) {
+    var prev = old[i] && old[i].pv[0], same = null;
+    rest.forEach(function (l) { if (!same && l.pv[0] === prev && !used[prev]) same = l; });
+    out[i] = same || null;
+    if (same) used[prev] = 1;
+  }
+  rest.forEach(function (l) { if (used[l.pv[0]]) return; for (var j = 1; j < 3; j++) if (!out[j]) { out[j] = l; used[l.pv[0]] = 1; return; } });
+  return out.filter(Boolean);
+}
+function xpAfterResult(a, ex, n) {
+  var cur = xpCur(ex), parent = ex.at > 0 ? ex.nodes[ex.at - 1] : null;
+  if (n === cur || n === parent) {
+    if (pointerState.dragFrom >= 0) ex.dirty = true;
+    else if (ex.hover != null) ex.dirtyRows = true;
+    else renderCard();
+  }
+  exploreAnalyse(false, true);
+}
+/* what to search next: the current position to 1M, and the position before
+   it to 1M when the sentence still needs it. A new move stops everything but
+   the parent's deep search; a step stops everything */
+function exploreAnalyse(newMove, cont) {
+  var a = ui.session && ui.session.active, ex = a && a.explore;
+  if (!ex) return;
+  var C = xpCur(ex), P = ex.at > 0 ? ex.nodes[ex.at - 1] : null;
+  var pNeeds = !!(P && !xpSpoil(P) && !xpGameOver(P.st) && !(ex.res[P.key] && ex.res[P.key].step >= 2));
+  if (!cont) {
+    var keepKey = newMove && pNeeds ? P.key : null;
+    engineStop(function (j) { return j.tag === 'explore' && !(keepKey && j.xp && j.xp.key === keepKey && j.xp.step === 2); });
+  }
+  var want = [];
+  var cNeeds = !xpSpoil(C) && !xpGameOver(C.st) && !C.down;
+  var cStep = ex.res[C.key] ? ex.res[C.key].step : 0;
+  if (cNeeds && cStep < 1) want.push([C, 1]);
+  if (pNeeds) want.push([P, 2]);
+  if (cNeeds && cStep < 2) want.push([C, 2]);
+  var busy = {};
+  SF.queue.forEach(function (j) { if (j.tag === 'explore' && j.xp) busy[j.xp.key + '|' + j.xp.step] = 1; });
+  SF.workers.forEach(function (sl) { var j = sl.pending && sl.pending[0]; if (j && j.tag === 'explore' && j.xp && !j.stopping) busy[j.xp.key + '|' + j.xp.step] = 1; });
+  want.forEach(function (w) { if (!busy[w[0].key + '|' + w[1]]) xpRun(a, ex, w[0], w[1]); });
+}
+
+/* ── the sentence ────────────────────────────────────────────────────────── */
+var XP_TACTIC = ['mateAllowed', 'forkAllowed', 'pinAllowed', 'discoveredAllowed', 'threat', 'badTrade', 'hung', 'promotion', 'material', 'missedMaterial', 'missedTactic', 'mateMissed'];
+var XP_MISSED = ['missedMaterial', 'missedTactic', 'mateMissed'];
+/* the score of a line for the side `w` (true = White), mates as +-1500 */
+function sideCp(line, w) { return w ? line.cp : -line.cp; }
+/* the material a line wins or gives up for the mover, in words, once it
+   settles: "wins the rook", "gives up the exchange" */
+function xpMaterialWords(c, tier) {
+  var g = c.gameLine;
+  if (!g) return '';
+  var up = Math.min(g.nodes.length - 1, c.gSettle != null ? c.gSettle : g.nodes.length - 1);
+  var mine = [], theirs = [];
+  for (var i = 0; i <= up; i++) {
+    var n = g.nodes[i];
+    if (!n || !n.captured) continue;
+    (n.pov ? theirs : mine).push(pType(n.captured));
+  }
+  for (var x = mine.length - 1; x >= 0; x--) { var j = theirs.indexOf(mine[x]); if (j !== -1) { mine.splice(x, 1); theirs.splice(j, 1); } }
+  var val = function (l) { return l.reduce(function (s, p) { return s + MOTIF_VAL[p]; }, 0); };
+  var word = function (l) { return l.length === 1 ? 'a ' + PIECE_WORD[l[0]] : (l.length === 2 && l[0] === l[1] ? 'two ' + PIECE_WORD[l[0]] + 's' : 'material'); };
+  var exch = function (a1, b1) { return a1.length === 1 && b1.length === 1 && a1[0] === 'R' && (b1[0] === 'N' || b1[0] === 'B'); };
+  if (!mine.length && !theirs.length) return '';
+  if (val(mine) > val(theirs)) {
+    if (exch(mine, theirs)) return tier === 1 ? 'wins a rook for a ' + PIECE_WORD[theirs[0]] : 'wins the exchange';
+    return theirs.length ? 'wins ' + word(mine) + ' for ' + word(theirs) : 'wins ' + (mine.length === 1 ? 'the ' + PIECE_WORD[mine[0]] : word(mine));
+  }
+  if (val(mine) < val(theirs)) {
+    if (exch(theirs, mine)) return tier === 1 ? 'gives up a rook for a ' + PIECE_WORD[mine[0]] : 'gives up the exchange';
+    return 'gives up ' + word(theirs) + (mine.length ? ' for ' + word(mine) : '');
+  }
+  return '';
+}
+/* the biggest piece the move loses once the line settles, and the moves
+   that take it: exploring often meets a quiet first capture before the real
+   loss ("Qxd5+ Kh8 Rxa4"), and the sentence must name the real loss */
+function xpBigLoss(c) {
+  var g = c.gameLine;
+  if (!g) return null;
+  var up = Math.min(g.nodes.length - 1, c.gSettle != null ? c.gSettle : g.nodes.length - 1), big = null;
+  for (var i = 1; i <= up; i++) {
+    var n = g.nodes[i];
+    if (n && n.captured && n.pov && (!big || MOTIF_VAL[pType(n.captured)] > MOTIF_VAL[big.p])) big = { p: pType(n.captured), at: i };
+  }
+  if (!big || MOTIF_VAL[big.p] < 5 || c.matGame > -3) return null;
+  var sans = [];
+  for (var k = 1; k <= big.at; k++) sans.push(sanOf(g.nodes[k].before, g.nodes[k].move));
+  return { word: PIECE_WORD[big.p], line: sans.join(' ') };
+}
+/* was the reply already a threat before the move? (the other side to move,
+   in the position before) */
+function xpThreatBefore(P, reply) {
+  if (!reply) return false;
+  var st = cloneState(P.st);
+  st.w = !st.w; st.ep = -1;
+  var m = uciToMove(st, reply);
+  if (!m) return false;
+  var after = cloneState(st);
+  applyMove(after, m);
+  return !!(st.b[m.to] || checkedKingSq(after) != null);
+}
+function xpVerdict(a, ex, at) {
+  if (ex.say[at]) return ex.say[at];
+  var C = ex.nodes[at], P = ex.nodes[at - 1];
+  if (!P || !C.mv) return null;
+  var pr = ex.res[P.key], cr = ex.res[C.key];
+  var over = xpGameOver(C.st);
+  if (!over && (!pr || pr.step < 2 || !cr || cr.step < 2)) return null;
+  if (!pr || pr.step < 2) return null;
+  var tier = a.tier || 2, s = P.st.w, voice = C.mv.byYou ? 'you' : 'them';
+  var best = pr.lines[0], X = C.mv.uci, B = sanOf(P.st, uciToMove(P.st, best.pv[0]));
+  var row = pr.lines.filter(function (l) { return l.pv[0] === X; })[0];
+  var cpBest = sideCp(best, s);
+  var cpX = row ? sideCp(row, s) : (cr && cr.lines[0] ? sideCp(cr.lines[0], s) : (checkedKingSq(C.st) != null ? 1500 : 0));
+  var wBest = winPct(cpBest), wX = winPct(cpX), drop = wBest - wX, gap = cpBest - cpX;
+  var R = cr && cr.lines[0] ? cr.lines[0].pv : [];
+  var mateOf = function (l, w) { return l && l.mate != null ? (w ? l.mate : -l.mate) : null; };
+  var c = classifyMistake(P.st, X, { pv: best.pv, mate: mateOf(best, s) }, { pv: R, mate: cr && cr.lines[0] ? mateOf(cr.lines[0], !s) : null },
+    wBest, wX, C.mv.ply, voice);
+  var text, cat, whose = voice === 'them' ? ' for ' + sideName(s) : '';
+  if (X === best.pv[0]) {
+    cat = 'best';
+    var mw = xpMaterialWords(c, tier), mateIn = mateOf(best, s);
+    text = C.mv.san + ' is Stockfish\'s pick.' + (mateIn > 0 ? ' It mates in ' + mateIn + '.' : (mw ? ' It ' + mw + '.' : ''));
+  } else {
+    var decided = Math.abs(cpBest) >= 1000 && Math.abs(cpX) >= 1000 && (cpBest > 0) === (cpX > 0);
+    var concrete = XP_TACTIC.indexOf(c.t) !== -1 && (c.mateAgainst || c.t === 'mateMissed' || gap >= 100 || (decided && c.lossG >= 3));
+    /* near 0% or 100% the winning-chance scale is flat: a real difference in
+       material is still a difference, unless the game is decided either way */
+    if (concrete || drop > STRONGER_TOL || (gap >= 100 && !decided)) {
+      cat = concrete ? 'concrete' : 'worse';
+      var reason = String(c.sentences.short || c.sentences.game).replace(/ \(\d+% to \d+%\)/g, '');
+      var big = XP_MISSED.indexOf(c.t) === -1 ? xpBigLoss(c) : null;
+      if (big && reason.indexOf(big.word) === -1) reason = C.mv.san + ' loses the ' + big.word + ': ' + big.line + '.';
+      var cmp;
+      if (XP_MISSED.indexOf(c.t) !== -1 && c.sentences.best) {
+        cmp = c.sentences.best;
+        if (cmp.indexOf(B + ' ') === 0 && reason.indexOf(B) !== -1) cmp = 'It ' + cmp.slice(B.length + 1);
+      } else {
+        var stop = stopsWhat(c, P.st);
+        if (stop && voice === 'them') stop = themVoice(stop, sideName(s), sideName(!s));
+        cmp = stop && xpThreatBefore(P, R[0]) ? stop : (B + (wBest < 45 ? ' loses less.' : ' keeps more.'));
+      }
+      text = fitLine([reason + ' ' + cmp, reason + ' Best was ' + B + '.', reason, firstClause(reason) + ' Best was ' + B + '.', firstClause(reason)]);
+    } else if (drop <= SOLVE_TOL) {
+      cat = 'fine';
+      text = C.mv.san + ' is about as good' + whose + ' as ' + B + '.';
+    } else {
+      cat = 'little';
+      var rep = R[0] ? sanOf(C.st, uciToMove(C.st, R[0])) : '';
+      text = fitLine([C.mv.san + ' is a little worse' + whose + ' than ' + B + '.' + (rep ? ' Best reply: ' + rep + ', the gold arrow.' : ''),
+        C.mv.san + ' is a little worse' + whose + ' than ' + B + '.']);
+    }
+  }
+  ex.say[at] = { text: text, cat: cat };
+  track('explore_say_' + cat);
+  return ex.say[at];
+}
+/* what the prompt line (phone) and the say line (desktop) show at a node:
+   the same string, 80 characters at most */
+function sayAt(a, ex, at) {
+  if (ex.flash) return ex.flash;
+  var n = ex.nodes[at];
+  if (xpGameOver(n.st)) {
+    if (checkedKingSq(n.st) == null) return 'Stalemate. The game is a draw.';
+    var winnerW = !n.st.w;
+    return 'Checkmate. ' + (winnerW === myPov(a.it) ? 'You win.' : sideName(winnerW) + ' wins.');
+  }
+  if (xpSpoil(n)) return 'This is one of your own positions. Stockfish stays quiet so it can test you.';
+  if (n.down) return 'Stockfish is not answering right now. Try again, or go back to the lesson.';
+  var P = at > 0 ? ex.nodes[at - 1] : null;
+  if (at === 0 || (P && xpSpoil(P))) {
+    var r = ex.res[n.key], who = n.st.w === myPov(a.it) ? 'Your move.' : sideName(n.st.w) + ' to move.';
+    if (!r || !r.lines[0]) return who + ' Stockfish is thinking…';
+    var pick = sanOf(n.st, uciToMove(n.st, r.lines[0].pv[0]));
+    return who + ' Stockfish\'s pick is ' + pick + ', the gold arrow. › plays it.';
+  }
+  if (n.mv && n.mv.pick) {
+    /* walking Stockfish's line keeps the explanation of the move that started it */
+    for (var i = at - 1; i >= 1; i--) {
+      var sv = ex.say[i] || (ex.nodes[i].mv && !ex.nodes[i].mv.pick ? xpVerdict(a, ex, i) : null);
+      if (sv && sv.cat !== 'best') return sv.text;
+      if (ex.nodes[i].mv && !ex.nodes[i].mv.pick) break;
+    }
+  }
+  var v = xpVerdict(a, ex, at);
+  return v ? v.text : n.mv.san + '. Stockfish is thinking…';
+}
+
+/* ── the rows: Stockfish's three best moves at the position on screen ───── */
+function xpNum(st, i) {
+  /* move number of the i-th move from st: "20." before a white move, "20…" for black */
+  var ply = xpPly(st) + i, full = Math.floor(ply / 2) + 1;
+  return ply % 2 === 0 ? full + '.' : full + '…';
+}
+function xpRowWords(a, n, line, best, tier) {
+  var w = n.st.w, m0 = line.pv[0];
+  var mateFor = line.mate != null ? (w ? line.mate : -line.mate) : null;
+  if (mateFor != null && mateFor > 0) return 'mates in ' + mateFor;
+  if (mateFor != null && mateFor < 0) return 'allows mate in ' + (-mateFor);
+  var cpB = sideCp(best, w), cpL = sideCp(line, w), isBest = line === best || (winPct(cpB) - winPct(cpL) <= SOLVE_TOL && cpB - cpL < 100);
+  var c = classifyMistake(n.st, m0, { pv: best.pv, mate: null }, { pv: line.pv.slice(1), mate: null }, winPct(cpB), winPct(cpL), xpPly(n.st));
+  if (isBest) {
+    var mw = xpMaterialWords(c, tier);
+    if (mw) return mw;
+  } else {
+    var g = c.gameLine, r1 = g && g.nodes[1], rSan = r1 && r1.move ? sanOf(r1.before, r1.move) : '';
+    if (c.t === 'forkAllowed' && c.allowed.fork) { var fm = g.nodes[c.allowed.fork.ply]; return 'allows a fork: ' + sanOf(fm.before, fm.move); }
+    if (c.t === 'pinAllowed') return 'walks into a pin';
+    if (c.t === 'discoveredAllowed') return 'allows a hidden attack';
+    if (c.t === 'mateAllowed') return 'allows mate in ' + (c.mateAgainst || 2);
+    if (['threat', 'hung', 'badTrade', 'material'].indexOf(c.t) !== -1 && r1 && r1.captured) return 'loses the ' + PIECE_WORD[pType(r1.captured)] + ' to ' + rSan;
+    if (XP_MISSED.indexOf(c.t) !== -1) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return 'misses ' + bs; }
+  }
+  return standingWords(winPct(myPov(a.it) ? line.cp : -line.cp));
+}
+function xpRows(a, ex) {
+  var n = xpCur(ex), r = ex.res[n.key];
+  if (!r || !r.lines.length || xpSpoil(n) || xpGameOver(n.st)) return null;
+  var tier = a.tier || 2, me = myPov(a.it), touch = window.innerWidth <= 860;
+  var lines = r.lines.slice(0, tier === 1 ? 2 : 3);
+  return lines.map(function (l, i) {
+    var sans = playUci(n.st, l.pv.slice(0, 8)).san;
+    var first = sans[0] || l.pv[0];
+    var row = { uci: l.pv[0], first: first, num: xpNum(n.st, 0) };
+    if (tier === 1) {
+      row.words = xpRowWords(a, n, l, r.lines[0], 1);
+      row.label = first + ', ' + row.words + '.';
+      return row;
+    }
+    var myMate = l.mate != null ? (me ? l.mate : -l.mate) : null;
+    row.chip = myMate != null ? (myMate > 0 ? 'You mate in ' + myMate : 'They mate in ' + (-myMate))
+      : 'You ' + Math.max(1, Math.min(99, Math.round(winPct(me ? l.cp : -l.cp)))) + '%';
+    var plies = tier === 3 ? (touch ? 4 : 6) : 2, cont = [];
+    for (var k = 1; k <= plies && k < sans.length; k++) cont.push(((xpPly(n.st) + k) % 2 === 0 ? xpNum(n.st, k) : '') + sans[k]);
+    row.cont = cont.join(' ');
+    row.label = first + (cont.length ? ', then ' + sans.slice(1, plies + 1).join(' ') : '') + '. ' + (myMate != null ? row.chip + '.' : 'Your winning chances ' + row.chip.replace('You ', '') + '.');
+    return row;
+  });
+}
 /* ── Rendering ──────────────────────────────────────────────────────────────
    Two views (Today, Insights), a sheet for details, settings at the foot.
    The card is built once per position and then updated in place, so the
@@ -6314,6 +6791,8 @@ window.addEventListener('popstate', function () {
   if (ui.sheet) { closeSheet(true); return; }
   var am = ui.session && ui.session.active;
   if (am && am.menuOpen) { am.menuOpen = false; renderCard(); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
+  /* then leaves an exploration, back to the lesson */
+  if (am && am.explore) { exploreExit('pop'); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
   if (ui.session) { endSession(true); return; }
   var h = (location.hash || '').replace('#', '');
   if (h === 'coach' || h === 'insights') h = 'insights'; else h = 'train';
@@ -6683,42 +7162,23 @@ function doneHtml(ss) {
 }
 
 /* ── the card ────────────────────────────────────────────────────────────── */
-function renderCard() {
-  var box = el('trainbox'), ss = ui.session;
-  if (!box || !ss) return;
-  if (ss.finished) { renderTrain(); return; }
-  var a = ss.active;
-  if (!a) {
-    box.dataset.card = '';
-    box.innerHTML = '<div class="card"><div class="card-top">' + sessionBarHtml(ss, null) + '</div>'
-      + '<div class="panel"><div class="checking"><span class="meter"><i></i></span>Taking a closer look at this position…</div></div></div>';
-    return;
-  }
+/* the card's board and its bar, drawn from the card's state */
+function renderCardBoard(a) {
   var it = a.it, flip = it.g.color === 'black';
-  if (box.dataset.card !== a.key) {
-    box.dataset.card = a.key;
-    box.innerHTML = '<div class="card">'
-      + '<div class="card-top" id="ctop"></div>'
-      + '<div class="board-col"><div class="board-row">'
-        + '<div class="evalbar' + (flip ? ' flip' : '') + '" id="ebar"><i class="evalbar-fill" id="ebar-fill"></i><span class="evalbar-label" id="ebar-lab"></span></div>'
-        + '<div class="board-wrap" id="bwrap"></div>'
-      + '</div></div>'
-      + '<div class="panel" id="cpanel"></div>'
-      + '</div>';
-  }
-  var newCard = !a.shown;
-  a.shown = true;
-  el('ctop').innerHTML = sessionBarHtml(ss, a) + cardTaskHtml(a);
   /* the board */
   var view, opts = { flip: flip };
   if (a.phase === 'done' && a.explore) {
-    view = { st: a.explore.st, last: a.explore.last, ev: a.explore.ev };
-    opts.sel = a.explore.sel;
-    /* the engine's answer to your idea, as a quiet arrow */
-    var rep = a.explore.reply && a.explore.san.length ? uciToMove(a.explore.st, a.explore.reply) : null;
-    if (rep) opts.ghost = [rep.from, rep.to];
-    if (a.explore.anim) { opts.anim = a.explore.anim; a.explore.anim = null; }
-    if (a.explore.sel >= 0) opts.dots = legalMoves(a.explore.st).filter(function (m) { return m.from === a.explore.sel; }).map(function (m) { return m.to; });
+    var ex = a.explore, xn = xpCur(ex), xr = ex.res[xn.key], quiet = xpSpoil(xn);
+    /* the bar follows the explored position, from the learner's side; it
+       keeps its last value while Stockfish thinks */
+    if (xr && xr.lines[0] && !quiet) ex.lastEv = myPov(it) ? xr.lines[0].cp : -xr.lines[0].cp;
+    view = { st: ex.st, last: ex.last, ev: ex.lastEv != null ? ex.lastEv : lineView(a).ev };
+    opts.sel = ex.sel;
+    /* one arrow: Stockfish's move, or the row under the pointer */
+    var hl = xr && !quiet && xr.lines[ex.hot || 0] ? uciToMove(ex.st, xr.lines[ex.hot || 0].pv[0]) : null;
+    if (hl) opts.ghost = [hl.from, hl.to];
+    if (ex.anim) { opts.anim = ex.anim; ex.anim = null; }
+    if (ex.sel >= 0) opts.dots = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel; }).map(function (m) { return m.to; });
   } else if (a.phase === 'done') {
     view = lineView(a);
     /* a line played or stepped forward slides its move; the solving move
@@ -6763,14 +7223,50 @@ function renderCard() {
      fills only once the card is answered: a tall bar during the guess
      would say "you are winning, find it" */
   var myCp = view.ev != null ? view.ev : it.b.eb;
-  el('ebar').classList.toggle('pending', a.phase !== 'done');
+  el('ebar').classList.toggle('pending', a.phase !== 'done' || !!(a.explore && xpSpoil(xpCur(a.explore))));
   el('ebar-fill').style.height = winPct(evalWhite(it, myCp)) + '%';
   el('ebar-lab').textContent = '';
+}
+function renderCard() {
+  var box = el('trainbox'), ss = ui.session;
+  if (!box || !ss) return;
+  if (ss.finished) { renderTrain(); return; }
+  var a = ss.active;
+  if (!a) {
+    box.dataset.card = '';
+    box.innerHTML = '<div class="card"><div class="card-top">' + sessionBarHtml(ss, null) + '</div>'
+      + '<div class="panel"><div class="checking"><span class="meter"><i></i></span>Taking a closer look at this position…</div></div></div>';
+    return;
+  }
+  var it = a.it, flip = it.g.color === 'black';
+  if (box.dataset.card !== a.key) {
+    box.dataset.card = a.key;
+    box.innerHTML = '<div class="card">'
+      + '<div class="card-top" id="ctop"></div>'
+      + '<div class="board-col"><div class="board-row">'
+        + '<div class="evalbar' + (flip ? ' flip' : '') + '" id="ebar"><i class="evalbar-fill" id="ebar-fill"></i><span class="evalbar-label" id="ebar-lab"></span></div>'
+        + '<div class="board-wrap" id="bwrap"></div>'
+      + '</div></div>'
+      + '<div class="panel" id="cpanel"></div>'
+      + '</div>';
+  }
+  var newCard = !a.shown;
+  a.shown = true;
+  el('ctop').innerHTML = sessionBarHtml(ss, a) + cardTaskHtml(a);
+  renderCardBoard(a);
   /* keyboard focus stays on the same control across a repaint, and the
      verdict is read out to screen readers */
   var foc = document.activeElement, fp = el('cpanel');
   var focKey = foc && fp && fp.contains(foc) ? (foc.id || ((foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || ''))) : null;
   fp.innerHTML = panelHtml(a, ss);
+  var cardEl = box.querySelector('.card');
+  if (cardEl) cardEl.classList.toggle('xp-card', !!(a.phase === 'done' && a.explore));
+  if (a.phase === 'done' && a.explore) fitRows();
+  /* once, on a phone: the board after an answer is a question box */
+  if (a.phase === 'done' && !a.explore && xpTouch() && !store.get('nl:xpTip', 0)) {
+    store.set('nl:xpTip', 1);
+    setTimeout(function () { notice('Tip: tap any piece to test your own ideas.'); }, 1200);
+  }
   makeFocusable(fp);
   if (newCard) { var th = el('task-h'); if (th) th.focus({ preventScroll: true }); }
   else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
@@ -6796,6 +7292,7 @@ function altNames(a) {
 function cardTaskHtml(a) {
   var side = a.it.g.color === 'white' ? 'White' : 'Black', txt, cls = '', act = '';
   var strip = function (h) { return String(h).replace(/<span class="dim">[\s\S]*?<\/span>/g, '').replace(/<[^>]+>/g, ''); };
+  if (a.phase === 'done' && a.explore) return '<div class="card-task xp" aria-hidden="true">' + esc(sayAt(a, a.explore, a.explore.at)) + '</div>';
   if (a.phase === 'checking') txt = 'Checking ' + esc(a.checking || 'your move') + '…';
   else if (a.phase === 'done') {
     var best = esc(a.lines.best.san[0] || ''), why = esc(a.cls.sentences.best || '');
@@ -6870,7 +7367,7 @@ function menuHtml(a) {
     + '<a data-act="dispute" data-k="engine">Not a real mistake: I think the engine is wrong</a>'
     + '<span class="sep"></span>'
     + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '')
-    + '<span class="menu-keys">Enter: next · ?: hint · ← →: step through the line</span>'
+    + '<span class="menu-keys">Enter: next · ?: hint · ← →: step · Esc: back to the lesson</span>'
     + '</div>';
 }
 function ctxHtml(a, answered) {
@@ -6982,7 +7479,7 @@ function panelHtml(a, ss) {
       + (on ? '' : '<span class="tl-play" aria-hidden="true"></span>') + '</button>';
   };
   h = ctxHtml(a, true);
-  h += '<div class="result' + (a.result === 'first' && !a.alt && !a.revealed ? ' first' : '') + '">'
+  h += '<div class="result' + (a.result === 'first' && !a.alt && !a.revealed ? ' first' : '') + (a.explore ? ' xp-on' : '') + '">'
     + '<div class="result-head">' + disc + '<h2 class="result-h" id="result-h" tabindex="-1">' + head + '</h2></div>'
     + (sub ? '<p class="result-sub">' + sub + '</p>' : '')
     + tline('refute', 'tl-bad', '<span class="tl-long">' + esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game) + '</span><span class="tl-short">' + esc(fitLine([s.short || s.game, firstClause(s.short || s.game)])) + '</span>')
@@ -6995,17 +7492,74 @@ function panelHtml(a, ss) {
   h += '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
     + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>';
   if (a.showHabit) h += '<p class="habit">' + esc(habitFor(a, t, info)) + '</p>';
-  var repSan = a.explore && a.explore.reply && a.explore.san.length ? (function () { var m = uciToMove(a.explore.st, a.explore.reply); return m ? sanOf(a.explore.st, m) : ''; })() : '';
-  if (a.explore) h += '<p class="explore-line">Your analysis: ' + esc(a.explore.san.join(' ') || 'make a move on the board')
-    + (a.explore.ev != null ? ' · ' + (a.tier === 1 ? standingWords(winPct(a.explore.ev)) : Math.round(winPct(a.explore.ev)) + '% winning chances for you') + (repSan ? '. Stockfish would answer ' + esc(repSan) + ' (the gold arrow)' : '') : (a.explore.san.length ? ' · thinking…' : ''))
-    + ' · <a data-act="exploreOff">Back to the lines</a></p>';
-  else h += '<p class="explore-line"><a class="btn-quiet" data-act="explore">Try your own moves</a></p>';
-  var L = a.lines[a.view.line] || a.lines.best;
+  if (a.explore) h += xpHtml(a);
+  else h += '<p class="explore-line"><a class="btn-quiet invite" data-act="explore">' + esc((a.invite || inviteFor(a)).text) + '</a></p>';
+  var L = a.lines[a.view.line] || a.lines.best, backOff, fwdOff, backLab = 'Back one move', fwdLab = 'Forward one move';
+  if (a.explore) {
+    var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
+    backOff = false;
+    if (xe.at === 0) backLab = 'Back to the lesson';
+    fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
+    if (xe.at >= xe.nodes.length - 1) fwdLab = 'Play Stockfish\'s pick';
+  } else { backOff = a.view.idx < 0; fwdOff = a.view.idx >= L.states.length - 1; }
   h += '<div class="acts-row sticky-acts done-acts">'
-    + '<a class="nav-btn' + (a.explore || a.view.idx < 0 ? ' nav-off' : '') + '" data-act="lineBack" aria-label="Back one move">‹</a>'
-    + '<a class="nav-btn' + (a.explore || a.view.idx >= L.states.length - 1 ? ' nav-off' : '') + '" data-act="lineFwd" aria-label="Forward one move">›</a>'
+    + '<a class="nav-btn' + (backOff ? ' nav-off' : '') + '" data-act="lineBack" aria-label="' + backLab + '">‹</a>'
+    + '<a class="nav-btn' + (fwdOff ? ' nav-off' : '') + '" data-act="lineFwd" aria-label="' + fwdLab + '">›</a>'
     + '<a class="btn-big" data-act="next">' + (ss.idx + 1 >= ss.keys.length && !(ss.relearn && ss.relearn.length) ? 'Finish' : 'Next') + '</a></div>';
   return h;
+}
+/* the exploration: the trail, the sentence, Stockfish's three best moves */
+function xpHtml(a) {
+  var ex = a.explore, n = xpCur(ex), res = ex.res[n.key], rows = xpRows(a, ex), tier = a.tier || 2;
+  var quiet = xpSpoil(n) || xpGameOver(n.st) || n.down;
+  var busy = !quiet && (!res || res.step < 2);
+  var trail = '';
+  var from = Math.max(1, ex.nodes.length - 6);
+  for (var i = from; i < ex.nodes.length; i++) {
+    var mv = ex.nodes[i].mv;
+    trail += '<button type="button" class="xp-mv' + (mv.pick ? ' xp-sf' : '') + (i === ex.at ? ' on' : '') + '" data-act="xpGo" data-k="' + i + '">'
+      + esc(xpNum(ex.nodes[i - 1].st, 0) + mv.san) + '</button>';
+  }
+  if (!trail) trail = '<span class="xp-label">Your analysis</span>';
+  var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis">'
+    + '<span class="xp-meter' + (busy ? ' run' : '') + '" aria-hidden="true"><i></i></span>'
+    + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>'
+    + '<p class="xp-say">' + esc(sayAt(a, ex, ex.at)) + '</p>';
+  if (!quiet) {
+    var mine = n.st.w === myPov(a.it), who = mine ? 'Your best moves' : sideName(n.st.w) + '\'s best moves';
+    h += '<p class="xp-cap">' + who + (tier === 1 ? '' : ' · your winning chances') + '</p>'
+      + '<div class="xp-rows k' + (ex.k || 3) + '">';
+    if (rows) h += rows.map(function (r, k) {
+      return '<button type="button" class="xp-row' + (k === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + k + '" aria-label="' + esc(r.label) + '">'
+        + (r.chip ? '<span class="xp-chip">' + esc(r.chip) + '</span>' : '')
+        + '<span class="xp-first">' + esc(tier === 1 ? r.first : r.num + r.first) + '</span>'
+        + '<span class="xp-cont' + (tier === 1 ? ' t1' : '') + '">' + esc(tier === 1 ? '· ' + r.words : r.cont) + '</span></button>';
+    }).join('');
+    else for (var s2 = 0; s2 < (tier === 1 ? 2 : 3); s2++) h += '<div class="xp-row skel" aria-hidden="true">' + (tier === 1 ? '' : '<span class="xp-chip">You 00%</span>') + '<span class="xp-first">00.Nxd3</span><span class="xp-cont">00.Ke2 Rd5</span></div>';
+    h += '</div>';
+  }
+  h += '<label class="kb-move xp-kb">Type a move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type a move"></label>'
+    + '<a class="xp-back-ph" data-act="exploreOff">Back to the lesson</a></div>';
+  return h;
+}
+/* rows that fit: never a half row above the phone bar or below the board */
+function fitRows() {
+  var a = ui.session && ui.session.active, ex = a && a.explore, rowsEl = document.querySelector('#xp .xp-rows');
+  if (!ex || !rowsEl) return;
+  var bar = document.querySelector('.done-acts'), board = document.querySelector('#bwrap .board');
+  if (!bar || !board) return;
+  var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap');
+  if (window.innerWidth <= 860) {
+    var room = bar.getBoundingClientRect().top - br.bottom - 4;
+    k = Math.max(1, Math.min(3, Math.floor(room / 44)));
+    if (cap) cap.style.display = room - 44 * k >= 18 ? '' : 'none';
+  } else {
+    if (cap) cap.style.display = '';
+    rowsEl.className = 'xp-rows k3';
+    while (k > 1 && bar.getBoundingClientRect().bottom > br.bottom + 1) { k--; rowsEl.className = 'xp-rows k' + k; }
+  }
+  ex.k = k;
+  rowsEl.className = 'xp-rows k' + k;
 }
 /* what the opponent did with it, only when that adds something */
 function opponentLine(a) {
@@ -7738,12 +8292,18 @@ document.addEventListener('click', function (e) {
     case 'dispute': disputeCard(k); break;
     case 'marksSeen': store.set('nl:marksSeen', true); renderCard(); break;
     /* a teaching line plays from the start: its arrow first, then the moves */
-    case 'lineTab': if (a && a.lines && a.lines[k]) { a.explore = null; autoplayLine(k, null, 0, a.lines[k].states.length); } break;
-    case 'lineTo': if (a && a.lines) { stopAuto(a); a.explore = null; a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
+    case 'lineTab': if (a && a.lines && a.lines[k]) { if (a.explore) exploreExit('silent'); autoplayLine(k, null, 0, a.lines[k].states.length); } break;
+    case 'lineTo': if (a && a.lines) { stopAuto(a); if (a.explore) exploreExit('silent'); a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
     case 'lineBack': stepView(-1); break;
     case 'lineFwd': stepView(1); break;
-    case 'explore': stopAuto(a); startExplore(); break;
-    case 'exploreOff': if (a) { a.explore = null; renderCard(); } break;
+    case 'explore': if (a) startExplore({ view: a.invite && a.invite.view, via: 'invite' }); break;
+    case 'exploreOff': exploreExit('link'); break;
+    case 'xpGo': if (a && a.explore) exploreGo(parseInt(k, 10)); break;
+    case 'xpRow': if (a && a.explore) {
+      var xn = xpCur(a.explore), xr = a.explore.res[xn.key], xl = xr && xr.lines[parseInt(k, 10)];
+      var xm = xl && uciToMove(xn.st, xl.pv[0]);
+      if (xm) { track(parseInt(k, 10) === 0 ? 'explore_pick' : 'explore_row'); explorePlay(xm, false); }
+    } break;
     case 'perf': {
       var cur = trackedPerfs().slice(), at = cur.indexOf(k);
       if (at === -1) cur.push(k); else if (cur.length > 1) cur.splice(at, 1);
@@ -7815,6 +8375,9 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Escape') {
     if (ui.sheet) { closeSheet(); return; }
+    var ae = ui.session && ui.session.active;
+    if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); return; }
+    if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
   }
   var a = ui.session && ui.session.active;
   if (!a || ui.sheet) return;
@@ -7831,12 +8394,15 @@ function reducedMotion() { return !!(window.matchMedia && window.matchMedia('(pr
 /* a move typed as SAN (Nf3, exd5, O-O, e8=Q) or as squares (g1f3) */
 function typedMove(txt) {
   var a = ui.session && ui.session.active;
-  if (!a || a.phase !== 'guess') return;
+  var xp = a && a.phase === 'done' && a.explore;
+  if (!a || (a.phase !== 'guess' && !xp)) return;
+  var st = xp ? a.explore.st : a.st;
   var t = String(txt || '').trim().replace(/0/g, 'O');
-  var m = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(t) ? uciToMove(a.st, t.toLowerCase()) : null;
-  if (!m && t) m = sanToMove(a.st, t);
+  var m = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(t) ? uciToMove(st, t.toLowerCase()) : null;
+  if (!m && t) m = sanToMove(st, t);
   if (!m) { notice('That move is not legal here. Try a move like Nf3, exd5, O-O or g1f3.'); return; }
-  gradeMove(m);
+  if (xp) { explorePlay(m, false); var kb = el('kbmove'); if (kb) { kb.value = ''; kb.focus(); } }
+  else gradeMove(m);
 }
 /* Enter and Space on focusable actions; the view tabs keep their own role */
 function makeFocusable(root) {
@@ -7894,6 +8460,20 @@ document.addEventListener('pointerdown', function (e) {
   if (sq < 0) return;
   if (e.button === 2) { pointerState.rightFrom = sq; return; }
   var bs = boardState(a);
+  /* a mouse or pen press on a piece of the side to move starts exploring
+     and the drag in one gesture (touch taps go through the click) */
+  if (e.button === 0 && a.phase === 'done' && !a.explore && !a.pendingPromo && e.pointerType !== 'touch') {
+    var vs0 = lineView(a).st, pc0 = vs0.b[sq];
+    if (pc0 && isW(pc0) === vs0.w) {
+      startExplore({ sq: sq, via: 'press' });
+      bs = boardState(a);
+      pointerState.suppressClick = false;
+      pointerState.dragFrom = sq; pointerState.dragPiece = pc0; pointerState.moved = false;
+      pointerState.startX = e.clientX; pointerState.startY = e.clientY;
+      pointerState.justSelected = true;
+      return;
+    }
+  }
   if (e.button !== 0 || !bs.live || a.pendingPromo) return;
   pointerState.suppressClick = false;
   if (!bs.explore && a.shapes.length) { a.shapes = []; renderCard(); }
@@ -7948,9 +8528,34 @@ function pointerFinish(e, cancelled) {
       pointerState.suppressClick = true;
     }
     pointerState.justSelected = false;
+    /* a result that arrived mid-drag is drawn now */
+    if (a.explore && a.explore.dirty) { a.explore.dirty = false; renderCard(); }
   }
 }
 document.addEventListener('pointerup', function (e) { pointerFinish(e, false); });
+/* desktop: pointing at one of Stockfish's rows moves the one arrow to it */
+function xpHover(k) {
+  var a = ui.session && ui.session.active, ex = a && a.explore;
+  if (!ex || !(window.matchMedia && window.matchMedia('(hover: hover)').matches)) return;
+  var want = k == null ? 0 : k;
+  ex.hover = k;
+  if (ex.hot !== want) {
+    ex.hot = want;
+    renderCardBoard(a);
+    var rows = document.querySelectorAll('#xp .xp-row');
+    for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('on', i === want);
+  }
+  if (k == null && ex.dirtyRows) { ex.dirtyRows = false; renderCard(); }
+}
+document.addEventListener('mouseover', function (e) {
+  var r = e.target.closest && e.target.closest('#xp .xp-row[data-act="xpRow"]');
+  if (r) xpHover(parseInt(r.getAttribute('data-k'), 10));
+});
+document.addEventListener('mouseout', function (e) {
+  var r = e.target.closest && e.target.closest('#xp .xp-rows');
+  if (r && !(e.relatedTarget && r.contains(e.relatedTarget))) xpHover(null);
+});
+window.addEventListener('resize', function () { if (xpActive()) fitRows(); });
 document.addEventListener('pointercancel', function (e) { pointerFinish(e, true); });
 
 /* ── games: checking for new ones, formats, limits ───────────────────────── */
@@ -7997,7 +8602,16 @@ window.__nlTest = {
     var m = uciToMove(st, uci);
     if (!m) return 'illegal';
     if (a.phase === 'guess' || a.phase === 'check') { gradeMove(m); return 'graded'; }
+    if (a.phase === 'done' && a.explore) { explorePlay(m, false); return 'explored'; }
     return 'not guessing';
+  },
+  explore: function () {
+    var a = ui.session && ui.session.active, ex = a && a.explore;
+    if (!ex) return null;
+    var n = xpCur(ex), r = ex.res[n.key];
+    return { at: ex.at, n: ex.nodes.length, fens: ex.nodes.map(function (x) { return x.fen; }), key: n.key,
+             lines: r ? r.lines.map(function (l) { return { pv: l.pv, cp: l.cp, mate: l.mate }; }) : null, step: r ? r.step : 0,
+             say: sayAt(a, ex, ex.at), k: ex.k, spoil: xpSpoil(n) };
   },
   stats: function () {
     var items = allMistakes();

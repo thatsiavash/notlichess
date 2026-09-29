@@ -40,6 +40,8 @@ window.addEventListener('popstate', function () {
   if (ui.sheet) { closeSheet(true); return; }
   var am = ui.session && ui.session.active;
   if (am && am.menuOpen) { am.menuOpen = false; renderCard(); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
+  /* then leaves an exploration, back to the lesson */
+  if (am && am.explore) { exploreExit('pop'); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
   if (ui.session) { endSession(true); return; }
   var h = (location.hash || '').replace('#', '');
   if (h === 'coach' || h === 'insights') h = 'insights'; else h = 'train';
@@ -409,42 +411,23 @@ function doneHtml(ss) {
 }
 
 /* ── the card ────────────────────────────────────────────────────────────── */
-function renderCard() {
-  var box = el('trainbox'), ss = ui.session;
-  if (!box || !ss) return;
-  if (ss.finished) { renderTrain(); return; }
-  var a = ss.active;
-  if (!a) {
-    box.dataset.card = '';
-    box.innerHTML = '<div class="card"><div class="card-top">' + sessionBarHtml(ss, null) + '</div>'
-      + '<div class="panel"><div class="checking"><span class="meter"><i></i></span>Taking a closer look at this position…</div></div></div>';
-    return;
-  }
+/* the card's board and its bar, drawn from the card's state */
+function renderCardBoard(a) {
   var it = a.it, flip = it.g.color === 'black';
-  if (box.dataset.card !== a.key) {
-    box.dataset.card = a.key;
-    box.innerHTML = '<div class="card">'
-      + '<div class="card-top" id="ctop"></div>'
-      + '<div class="board-col"><div class="board-row">'
-        + '<div class="evalbar' + (flip ? ' flip' : '') + '" id="ebar"><i class="evalbar-fill" id="ebar-fill"></i><span class="evalbar-label" id="ebar-lab"></span></div>'
-        + '<div class="board-wrap" id="bwrap"></div>'
-      + '</div></div>'
-      + '<div class="panel" id="cpanel"></div>'
-      + '</div>';
-  }
-  var newCard = !a.shown;
-  a.shown = true;
-  el('ctop').innerHTML = sessionBarHtml(ss, a) + cardTaskHtml(a);
   /* the board */
   var view, opts = { flip: flip };
   if (a.phase === 'done' && a.explore) {
-    view = { st: a.explore.st, last: a.explore.last, ev: a.explore.ev };
-    opts.sel = a.explore.sel;
-    /* the engine's answer to your idea, as a quiet arrow */
-    var rep = a.explore.reply && a.explore.san.length ? uciToMove(a.explore.st, a.explore.reply) : null;
-    if (rep) opts.ghost = [rep.from, rep.to];
-    if (a.explore.anim) { opts.anim = a.explore.anim; a.explore.anim = null; }
-    if (a.explore.sel >= 0) opts.dots = legalMoves(a.explore.st).filter(function (m) { return m.from === a.explore.sel; }).map(function (m) { return m.to; });
+    var ex = a.explore, xn = xpCur(ex), xr = ex.res[xn.key], quiet = xpSpoil(xn);
+    /* the bar follows the explored position, from the learner's side; it
+       keeps its last value while Stockfish thinks */
+    if (xr && xr.lines[0] && !quiet) ex.lastEv = myPov(it) ? xr.lines[0].cp : -xr.lines[0].cp;
+    view = { st: ex.st, last: ex.last, ev: ex.lastEv != null ? ex.lastEv : lineView(a).ev };
+    opts.sel = ex.sel;
+    /* one arrow: Stockfish's move, or the row under the pointer */
+    var hl = xr && !quiet && xr.lines[ex.hot || 0] ? uciToMove(ex.st, xr.lines[ex.hot || 0].pv[0]) : null;
+    if (hl) opts.ghost = [hl.from, hl.to];
+    if (ex.anim) { opts.anim = ex.anim; ex.anim = null; }
+    if (ex.sel >= 0) opts.dots = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel; }).map(function (m) { return m.to; });
   } else if (a.phase === 'done') {
     view = lineView(a);
     /* a line played or stepped forward slides its move; the solving move
@@ -489,14 +472,50 @@ function renderCard() {
      fills only once the card is answered: a tall bar during the guess
      would say "you are winning, find it" */
   var myCp = view.ev != null ? view.ev : it.b.eb;
-  el('ebar').classList.toggle('pending', a.phase !== 'done');
+  el('ebar').classList.toggle('pending', a.phase !== 'done' || !!(a.explore && xpSpoil(xpCur(a.explore))));
   el('ebar-fill').style.height = winPct(evalWhite(it, myCp)) + '%';
   el('ebar-lab').textContent = '';
+}
+function renderCard() {
+  var box = el('trainbox'), ss = ui.session;
+  if (!box || !ss) return;
+  if (ss.finished) { renderTrain(); return; }
+  var a = ss.active;
+  if (!a) {
+    box.dataset.card = '';
+    box.innerHTML = '<div class="card"><div class="card-top">' + sessionBarHtml(ss, null) + '</div>'
+      + '<div class="panel"><div class="checking"><span class="meter"><i></i></span>Taking a closer look at this position…</div></div></div>';
+    return;
+  }
+  var it = a.it, flip = it.g.color === 'black';
+  if (box.dataset.card !== a.key) {
+    box.dataset.card = a.key;
+    box.innerHTML = '<div class="card">'
+      + '<div class="card-top" id="ctop"></div>'
+      + '<div class="board-col"><div class="board-row">'
+        + '<div class="evalbar' + (flip ? ' flip' : '') + '" id="ebar"><i class="evalbar-fill" id="ebar-fill"></i><span class="evalbar-label" id="ebar-lab"></span></div>'
+        + '<div class="board-wrap" id="bwrap"></div>'
+      + '</div></div>'
+      + '<div class="panel" id="cpanel"></div>'
+      + '</div>';
+  }
+  var newCard = !a.shown;
+  a.shown = true;
+  el('ctop').innerHTML = sessionBarHtml(ss, a) + cardTaskHtml(a);
+  renderCardBoard(a);
   /* keyboard focus stays on the same control across a repaint, and the
      verdict is read out to screen readers */
   var foc = document.activeElement, fp = el('cpanel');
   var focKey = foc && fp && fp.contains(foc) ? (foc.id || ((foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || ''))) : null;
   fp.innerHTML = panelHtml(a, ss);
+  var cardEl = box.querySelector('.card');
+  if (cardEl) cardEl.classList.toggle('xp-card', !!(a.phase === 'done' && a.explore));
+  if (a.phase === 'done' && a.explore) fitRows();
+  /* once, on a phone: the board after an answer is a question box */
+  if (a.phase === 'done' && !a.explore && xpTouch() && !store.get('nl:xpTip', 0)) {
+    store.set('nl:xpTip', 1);
+    setTimeout(function () { notice('Tip: tap any piece to test your own ideas.'); }, 1200);
+  }
   makeFocusable(fp);
   if (newCard) { var th = el('task-h'); if (th) th.focus({ preventScroll: true }); }
   else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
@@ -522,6 +541,7 @@ function altNames(a) {
 function cardTaskHtml(a) {
   var side = a.it.g.color === 'white' ? 'White' : 'Black', txt, cls = '', act = '';
   var strip = function (h) { return String(h).replace(/<span class="dim">[\s\S]*?<\/span>/g, '').replace(/<[^>]+>/g, ''); };
+  if (a.phase === 'done' && a.explore) return '<div class="card-task xp" aria-hidden="true">' + esc(sayAt(a, a.explore, a.explore.at)) + '</div>';
   if (a.phase === 'checking') txt = 'Checking ' + esc(a.checking || 'your move') + '…';
   else if (a.phase === 'done') {
     var best = esc(a.lines.best.san[0] || ''), why = esc(a.cls.sentences.best || '');
@@ -596,7 +616,7 @@ function menuHtml(a) {
     + '<a data-act="dispute" data-k="engine">Not a real mistake: I think the engine is wrong</a>'
     + '<span class="sep"></span>'
     + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '')
-    + '<span class="menu-keys">Enter: next · ?: hint · ← →: step through the line</span>'
+    + '<span class="menu-keys">Enter: next · ?: hint · ← →: step · Esc: back to the lesson</span>'
     + '</div>';
 }
 function ctxHtml(a, answered) {
@@ -708,7 +728,7 @@ function panelHtml(a, ss) {
       + (on ? '' : '<span class="tl-play" aria-hidden="true"></span>') + '</button>';
   };
   h = ctxHtml(a, true);
-  h += '<div class="result' + (a.result === 'first' && !a.alt && !a.revealed ? ' first' : '') + '">'
+  h += '<div class="result' + (a.result === 'first' && !a.alt && !a.revealed ? ' first' : '') + (a.explore ? ' xp-on' : '') + '">'
     + '<div class="result-head">' + disc + '<h2 class="result-h" id="result-h" tabindex="-1">' + head + '</h2></div>'
     + (sub ? '<p class="result-sub">' + sub + '</p>' : '')
     + tline('refute', 'tl-bad', '<span class="tl-long">' + esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game) + '</span><span class="tl-short">' + esc(fitLine([s.short || s.game, firstClause(s.short || s.game)])) + '</span>')
@@ -721,17 +741,74 @@ function panelHtml(a, ss) {
   h += '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
     + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>';
   if (a.showHabit) h += '<p class="habit">' + esc(habitFor(a, t, info)) + '</p>';
-  var repSan = a.explore && a.explore.reply && a.explore.san.length ? (function () { var m = uciToMove(a.explore.st, a.explore.reply); return m ? sanOf(a.explore.st, m) : ''; })() : '';
-  if (a.explore) h += '<p class="explore-line">Your analysis: ' + esc(a.explore.san.join(' ') || 'make a move on the board')
-    + (a.explore.ev != null ? ' · ' + (a.tier === 1 ? standingWords(winPct(a.explore.ev)) : Math.round(winPct(a.explore.ev)) + '% winning chances for you') + (repSan ? '. Stockfish would answer ' + esc(repSan) + ' (the gold arrow)' : '') : (a.explore.san.length ? ' · thinking…' : ''))
-    + ' · <a data-act="exploreOff">Back to the lines</a></p>';
-  else h += '<p class="explore-line"><a class="btn-quiet" data-act="explore">Try your own moves</a></p>';
-  var L = a.lines[a.view.line] || a.lines.best;
+  if (a.explore) h += xpHtml(a);
+  else h += '<p class="explore-line"><a class="btn-quiet invite" data-act="explore">' + esc((a.invite || inviteFor(a)).text) + '</a></p>';
+  var L = a.lines[a.view.line] || a.lines.best, backOff, fwdOff, backLab = 'Back one move', fwdLab = 'Forward one move';
+  if (a.explore) {
+    var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
+    backOff = false;
+    if (xe.at === 0) backLab = 'Back to the lesson';
+    fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
+    if (xe.at >= xe.nodes.length - 1) fwdLab = 'Play Stockfish\'s pick';
+  } else { backOff = a.view.idx < 0; fwdOff = a.view.idx >= L.states.length - 1; }
   h += '<div class="acts-row sticky-acts done-acts">'
-    + '<a class="nav-btn' + (a.explore || a.view.idx < 0 ? ' nav-off' : '') + '" data-act="lineBack" aria-label="Back one move">‹</a>'
-    + '<a class="nav-btn' + (a.explore || a.view.idx >= L.states.length - 1 ? ' nav-off' : '') + '" data-act="lineFwd" aria-label="Forward one move">›</a>'
+    + '<a class="nav-btn' + (backOff ? ' nav-off' : '') + '" data-act="lineBack" aria-label="' + backLab + '">‹</a>'
+    + '<a class="nav-btn' + (fwdOff ? ' nav-off' : '') + '" data-act="lineFwd" aria-label="' + fwdLab + '">›</a>'
     + '<a class="btn-big" data-act="next">' + (ss.idx + 1 >= ss.keys.length && !(ss.relearn && ss.relearn.length) ? 'Finish' : 'Next') + '</a></div>';
   return h;
+}
+/* the exploration: the trail, the sentence, Stockfish's three best moves */
+function xpHtml(a) {
+  var ex = a.explore, n = xpCur(ex), res = ex.res[n.key], rows = xpRows(a, ex), tier = a.tier || 2;
+  var quiet = xpSpoil(n) || xpGameOver(n.st) || n.down;
+  var busy = !quiet && (!res || res.step < 2);
+  var trail = '';
+  var from = Math.max(1, ex.nodes.length - 6);
+  for (var i = from; i < ex.nodes.length; i++) {
+    var mv = ex.nodes[i].mv;
+    trail += '<button type="button" class="xp-mv' + (mv.pick ? ' xp-sf' : '') + (i === ex.at ? ' on' : '') + '" data-act="xpGo" data-k="' + i + '">'
+      + esc(xpNum(ex.nodes[i - 1].st, 0) + mv.san) + '</button>';
+  }
+  if (!trail) trail = '<span class="xp-label">Your analysis</span>';
+  var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis">'
+    + '<span class="xp-meter' + (busy ? ' run' : '') + '" aria-hidden="true"><i></i></span>'
+    + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>'
+    + '<p class="xp-say">' + esc(sayAt(a, ex, ex.at)) + '</p>';
+  if (!quiet) {
+    var mine = n.st.w === myPov(a.it), who = mine ? 'Your best moves' : sideName(n.st.w) + '\'s best moves';
+    h += '<p class="xp-cap">' + who + (tier === 1 ? '' : ' · your winning chances') + '</p>'
+      + '<div class="xp-rows k' + (ex.k || 3) + '">';
+    if (rows) h += rows.map(function (r, k) {
+      return '<button type="button" class="xp-row' + (k === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + k + '" aria-label="' + esc(r.label) + '">'
+        + (r.chip ? '<span class="xp-chip">' + esc(r.chip) + '</span>' : '')
+        + '<span class="xp-first">' + esc(tier === 1 ? r.first : r.num + r.first) + '</span>'
+        + '<span class="xp-cont' + (tier === 1 ? ' t1' : '') + '">' + esc(tier === 1 ? '· ' + r.words : r.cont) + '</span></button>';
+    }).join('');
+    else for (var s2 = 0; s2 < (tier === 1 ? 2 : 3); s2++) h += '<div class="xp-row skel" aria-hidden="true">' + (tier === 1 ? '' : '<span class="xp-chip">You 00%</span>') + '<span class="xp-first">00.Nxd3</span><span class="xp-cont">00.Ke2 Rd5</span></div>';
+    h += '</div>';
+  }
+  h += '<label class="kb-move xp-kb">Type a move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type a move"></label>'
+    + '<a class="xp-back-ph" data-act="exploreOff">Back to the lesson</a></div>';
+  return h;
+}
+/* rows that fit: never a half row above the phone bar or below the board */
+function fitRows() {
+  var a = ui.session && ui.session.active, ex = a && a.explore, rowsEl = document.querySelector('#xp .xp-rows');
+  if (!ex || !rowsEl) return;
+  var bar = document.querySelector('.done-acts'), board = document.querySelector('#bwrap .board');
+  if (!bar || !board) return;
+  var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap');
+  if (window.innerWidth <= 860) {
+    var room = bar.getBoundingClientRect().top - br.bottom - 4;
+    k = Math.max(1, Math.min(3, Math.floor(room / 44)));
+    if (cap) cap.style.display = room - 44 * k >= 18 ? '' : 'none';
+  } else {
+    if (cap) cap.style.display = '';
+    rowsEl.className = 'xp-rows k3';
+    while (k > 1 && bar.getBoundingClientRect().bottom > br.bottom + 1) { k--; rowsEl.className = 'xp-rows k' + k; }
+  }
+  ex.k = k;
+  rowsEl.className = 'xp-rows k' + k;
 }
 /* what the opponent did with it, only when that adds something */
 function opponentLine(a) {

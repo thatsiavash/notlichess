@@ -185,7 +185,15 @@ function prefetchCards(ss) {
 function sessionClick(sq) {
   var ss = ui.session, a = ss && ss.active;
   if (!a || (a.phase !== 'guess' && a.phase !== 'check') || a.pendingPromo) {
-    if (a && a.phase === 'done' && a.explore) exploreClick(sq);
+    if (a && a.phase === 'done' && !a.pendingPromo) {
+      if (a.explore) exploreClick(sq);
+      else {
+        /* a tap on a piece of the side to move starts exploring from the
+           frame on screen (a swipe over the board still scrolls the page) */
+        var vs = lineView(a).st, pc = vs.b[sq];
+        if (pc && isW(pc) === vs.w) startExplore({ sq: sq, via: 'tap' });
+      }
+    }
     return;
   }
   var p = a.st.b[sq];
@@ -208,7 +216,8 @@ function promoChoose(piece) {
   if (!a || !a.pendingPromo) return;
   var m = a.pendingPromo.moves.filter(function (x) { return x.promo === piece; })[0];
   a.pendingPromo = null;
-  if (m) gradeMove(m); else renderCard();
+  if (!m) { renderCard(); return; }
+  if (a.phase === 'done' && a.explore) explorePlay(m, false); else gradeMove(m);
 }
 
 function gradeMove(m) {
@@ -589,6 +598,7 @@ function finishCard(result) {
     ss.results[a.key + '#r'] = result;
   }
   a.lines = cardLines(a);
+  a.invite = inviteFor(a);
   /* the habit line: every card for newer players, otherwise once a week
      per pattern (decided once here, not on every repaint) */
   var habitKey = 'nl:habitSeen:' + patternOf(a.it.b);
@@ -609,7 +619,7 @@ function finishCard(result) {
      point where it pays off */
   var toPayoff = function () {
     var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== a.key) return;
+    if (!a2 || a2.key !== a.key || a2.explore) return;
     var key = a2.view.line, L = a2.lines[key];
     if (!L) return;
     var endIdx = Math.min(L.states.length - 1, Math.max(2, key !== 'best' ? 2 : a2.cls && a2.cls.mateFor ? L.states.length - 1 : (a2.settleBest || 2)));
@@ -634,7 +644,7 @@ function autoplayLine(key, then, from, count) {
   if (reducedMotion()) { renderCard(); if (then) then(); return; }
   var step = function () {
     var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== cardKey || a2.autoTok !== tok || a2.phase !== 'done') return;
+    if (!a2 || a2.key !== cardKey || a2.autoTok !== tok || a2.phase !== 'done' || a2.explore) return;
     if (i < end) { a2.view.idx = i; i++; snd('move'); renderCard(); setTimeout(step, 700); return; }
     if (then) setTimeout(function () { if (a2.autoTok === tok) then(); }, 900);
   };
@@ -653,6 +663,7 @@ function queueRelearn(ss) {
 function nextCard() {
   var ss = ui.session;
   if (!ss) return;
+  if (ss.active && ss.active.explore) exploreExit('silent');
   ss.active = null;
   ss.idx++;
   saveSession();
@@ -703,47 +714,12 @@ function lineView(a) {
 function stepView(d) {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'done' || !a.lines) return;
+  if (a.explore) { exploreStep(d); return; }
   var L = a.lines[a.view.line];
   if (!L) return;
-  a.explore = null;
   stopAuto(a);
   a.view.idx = Math.max(-1, Math.min(L.states.length - 1, a.view.idx + d));
   if (d > 0) snd('move');
-  renderCard();
-}
-/* after the answer, the board is free: try your own ideas, the bar follows */
-function exploreClick(sq) {
-  var a = ui.session.active, ex = a.explore;
-  var p = ex.st.b[sq];
-  if (p && isW(p) === ex.st.w) { ex.sel = ex.sel === sq ? -1 : sq; renderCard(); return; }
-  if (ex.sel < 0) return;
-  var legal = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel && m.to === sq; });
-  ex.sel = -1;
-  if (!legal.length) { renderCard(); return; }
-  var m = legal[0];
-  ex.san.push(sanOf(ex.st, m));
-  applyMove(ex.st, m);
-  ex.last = [m.from, m.to];
-  ex.anim = pointerState.suppressClick ? null : [m.from, m.to];
-  ex.ev = null;
-  ex.reply = null;
-  snd('move');
-  renderCard();
-  var cardKey = a.key, fen = stateFen(ex.st);
-  engineEvalCached(fen, { nodes: EXT_NODES }, true).then(function (r) {
-    var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== cardKey || !a2.explore || stateFen(a2.explore.st) !== fen) return;
-    a2.explore.ev = r.cp * (myPov(a2.it) ? 1 : -1);
-    a2.explore.reply = r.bestUci;
-    /* a cached answer arrives at once: let the slide finish first */
-    setTimeout(renderCard, 260);
-  }, function () {});
-}
-function startExplore() {
-  var a = ui.session && ui.session.active;
-  if (!a || a.phase !== 'done') return;
-  var v = lineView(a);
-  a.explore = { st: cloneState(v.st), sel: -1, san: [], last: v.last, ev: v.ev };
   renderCard();
 }
 

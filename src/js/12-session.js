@@ -307,6 +307,7 @@ function finishSession() {
 function endSession(fromPop) {
   var ss = ui.session;
   if (!ss) return;
+  if (ss.active && ss.active.explore) exploreExit('silent');
   var open = ss.active, done = sessionDoneCount(ss), total = sessionTotal(ss);
   /* a move still being checked counts as a try that did not land */
   if (open && open.phase === 'checking') { open.checkTok = ++checkSeq; open.phase = 'guess'; open.attempts = Math.max(open.attempts || 0, 1); }

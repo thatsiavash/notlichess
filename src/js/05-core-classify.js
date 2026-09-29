@@ -207,7 +207,7 @@ function checksAll(line, first) {
    mate: n|null } for the position after my move, also from MY point of view;
    wb/wa = my win chance before/after (0-100).
    output: { t: pattern key, tags: {...}, matGame, matBest, sentences } */
-function classifyMistake(pre, played, best, after, wb, wa, ply) {
+function classifyMistake(pre, played, best, after, wb, wa, ply, voice) {
   var meW = pre.w;
   var gameLine = buildLine(pre, played, (after && after.pv || []).slice(0, 8), !meW);
   var bestLine = best && best.pv && best.pv.length ? buildLine(pre, '0000', best.pv.slice(0, 8), meW) : null;
@@ -312,6 +312,12 @@ function classifyMistake(pre, played, best, after, wb, wa, ply) {
   };
   res.sentences = explainMistake(res, pre, wb, wa);
   res.sentences.short = shortSentence(res.sentences.game);
+  /* exploring: the move being judged may be the opponent's, so "your" names
+     the side that moved and the learner is "you" */
+  if (voice === 'them') {
+    var mover = meW ? 'White' : 'Black', me = meW ? 'Black' : 'White';
+    ['game', 'short', 'best'].forEach(function (k) { if (res.sentences[k]) res.sentences[k] = themVoice(res.sentences[k], mover, me); });
+  }
   return res;
 }
 /* the piece the refutation takes was already attacked, and already short
@@ -391,6 +397,23 @@ function passedPawn(b, sq, white) {
   return true;
 }
 /* Two sentences: what the game move did, and what the best move does. */
+/* a sentence written to the mover as "you", rewritten about the mover by
+   colour, with the other side (the learner) as "you". The explainer's words
+   for the other side are its colour name, so the two swap cleanly */
+function themVoice(s, mover, me) {
+  var mark = '\u0001';
+  return String(s)
+    .replace(new RegExp('\\b' + me + '\'s ', 'g'), mark)
+    .replace(new RegExp('\\b' + me + ' is better', 'g'), 'you are better')
+    .replace(new RegExp('\\b' + me + ' attacks it', 'g'), 'you attack it')
+    .replace(new RegExp('\\blets ' + me + ' ', 'g'), 'lets you ')
+    .replace(/\bboth your /g, 'both of ' + mover + '\'s ')
+    .replace(/\b[Yy]our /g, mover + '\'s ')
+    .replace(/\b[Yy]ou lose\b/g, mover + ' loses')
+    .replace(/\byou are\b/g, mover + ' is')
+    .replace(/\byou come out\b/g, mover + ' comes out')
+    .replace(new RegExp(mark, 'g'), 'your ');
+}
 /* the same sentence for a small screen: the move and what it costs, without
    the path of moves or the percentages the board has just shown */
 var SAN_RE = '(?:O-O(?:-O)?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?)[+#]?';
@@ -399,7 +422,7 @@ function shortSentence(s) {
     .replace(/ \(\d+% to \d+%\)/g, '')
     .replace(new RegExp(' after (?:' + SAN_RE + ' )*' + SAN_RE + '(?: and more)?\\.$'), '.');
   /* still too long for two lines: the material count goes, the move stays */
-  return s.length > 84 ? s.replace(/ You lose [^.]*\.$/, '') : s;
+  return s.length > 84 ? s.replace(/ (You|White|Black) loses? [^.]*\.$/, '') : s;
 }
 function explainMistake(c, pre, wb, wa) {
   var g = c.gameLine, bl = c.bestLine;
