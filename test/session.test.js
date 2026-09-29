@@ -130,6 +130,51 @@ const OPEN = `function openCard(it, guess) {
     eq(B.storage['nl:user'], undefined, 'fresh browser');
   });
 
+  await test('a ?u= link is read once: a reload opens the saved player', () => {
+    const A = boot({ session: { 'nl:linkUser': 'someone', 'nl:linkSrc': 'lichess' } });
+    eq(A.ev('cfg.user'), 'someone', 'link player');
+    eq(A.session['nl:linkUser'], undefined, 'link cleared from the tab');
+    const B = makeApp({ now: T0, storage: A.storage, session: A.session });
+    eq(B.ev('cfg.user'), 'tester', 'after reload');
+    const C = makeApp({ now: T0, storage: {}, session: { 'nl:linkUser': 'someone' } });
+    const D = makeApp({ now: T0, storage: C.storage, session: C.session });
+    eq(D.ev('cfg.user'), '', 'fresh browser reload shows the landing');
+  });
+
+  await test('a ?u= link never saves the linked player\'s formats', () => {
+    const st = Object.assign(base(), { 'nl:perfs': JSON.stringify(['rapid']), 'nl:tcs': JSON.stringify(['10+0']), 'nl:perfsFor': JSON.stringify('cc:tester') });
+    const A = makeApp({ now: T0, storage: st, session: { 'nl:linkUser': 'someone', 'nl:linkSrc': 'lichess' } });
+    eq(A.ev('cfg.perfs'), null, 'link starts from its own profile');
+    A.ev(`setPerfs(['bullet'])`);
+    eq(A.storage['nl:perfs'], JSON.stringify(['rapid']), 'saved formats kept');
+    eq(A.storage['nl:tcs'], JSON.stringify(['10+0']), 'saved time controls kept');
+    eq(JSON.stringify(A.ev('trackedPerfs()')), JSON.stringify(['bullet']), 'link trains its own format');
+  });
+
+  await test('saved formats belong to one player', () => {
+    const st = Object.assign(base(), { 'nl:perfs': JSON.stringify(['bullet']), 'nl:perfsFor': JSON.stringify('other') });
+    const A = makeApp({ now: T0, storage: st });
+    eq(A.ev('cfg.perfs'), null, 'another player\'s formats dropped');
+    const st2 = Object.assign(base(), { 'nl:perfs': JSON.stringify(['blitz']), 'nl:perfsFor': JSON.stringify('cc:tester') });
+    eq(JSON.stringify(makeApp({ now: T0, storage: st2 }).ev('cfg.perfs')), JSON.stringify(['blitz']), 'own formats kept');
+  });
+
+  await test('a first visit and a same-day reload send first_visit only', () => {
+    const A = boot();
+    A.ev(`(function () { window.clarity = function () { window.__calls = (window.__calls || []).concat([Array.prototype.slice.call(arguments)]); }; return 1; })()`);
+    A.ev(`(function () { store.del('nl:firstSeen:' + playerId()); returnEvents(); returnEvents(); return 1; })()`);
+    const got = JSON.parse(A.ev('JSON.stringify(window.__calls || [])'));
+    ok(got.some((c) => c[1] === 'first_visit'), 'first_visit');
+    ok(!got.some((c) => /^return_/.test(c[1]) || c[1] === 'active_days'), JSON.stringify(got));
+  });
+
+  await test('a paused session counts one more try in its totals', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`JSON.stringify([sessionDoneCount({ keys: ['a', 'b', 'a'], results: { a: 'fail', b: 'first', 'a#r': 'first' }, relearn: [] }),
+      sessionTotal({ keys: ['a', 'b'], results: {}, relearn: ['a'] })])`));
+    eq(r[0], 3, 'done'); eq(r[1], 3, 'total');
+  });
+
   await test('the page title never names the player', () => {
     const A = boot();
     ok(A.ev('document.title').indexOf('tester') === -1, A.ev('document.title'));

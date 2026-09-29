@@ -313,6 +313,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 
 .run{display:inline-flex;align-items:center;gap:4px}
 
+.tl-text .tl-short{display:none}
 @media (max-width:860px){
   .card{grid-template-columns:1fr;gap:12px}
   .board-col{margin:0 calc(-1 * var(--gutter))}
@@ -323,9 +324,11 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .sticky-acts{
     position:fixed;left:0;right:0;bottom:0;z-index:7;background:rgba(27,26,23,.97);
     border-top:1px solid var(--rule);padding:10px var(--gutter) calc(10px + env(safe-area-inset-bottom));
-    display:flex;gap:10px;align-items:center;
+    display:flex;gap:10px;align-items:center;margin:0;
   }
   .sticky-acts .btn-big{flex:1;min-width:0;padding:13px 16px}
+  .tl-text .tl-long{display:none}
+  .tl-text .tl-short{display:inline}
   .sticky-acts{flex-wrap:nowrap}
   .sticky-acts > *{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .task{font-size:24px}

@@ -332,7 +332,7 @@ function standing(wa, them) {
   if (wa < 25) return 'you are losing';
   if (wa < 42) return them + ' is better';
   if (wa < 58) return 'it is roughly level';
-  return 'you are still better, but only just';
+  return 'you are only just better';
 }
 /* what the better move does about the reply that hurt: it makes it
    illegal, takes the target away, or defends it */

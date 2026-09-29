@@ -20,7 +20,7 @@ function renderFirstVisit(prefill) {
       + '<button class="btn-big" data-act="findUser" id="findBtn">Find my mistakes</button>'
     + '</div>'
     + '<div id="whichSite" aria-live="polite"></div>'
-    + '<p class="first-foot">Free, with no account. Your games stay in this browser.</p>'
+    + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
     + '<figure class="proof"><figcaption>What a 1350 rapid player saw</figcaption>'
       + '<blockquote>169 of your 237 losses came down to one big mistake. The biggest leak is giving away material. It decided 107 games.</blockquote></figure>'
     + '</div>'
@@ -33,7 +33,7 @@ function renderFirstVisit(prefill) {
       + valueItem('A few minutes a day', 'Five of your own positions. Each comes back just before you would forget it.')
       + valueItem('Free, no account', 'Nothing to buy. Open source.')
     + '</div>'
-    + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
+    + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device.</p>'
     + '</div>';
   var input = el('firstUser');
   if (input) {
@@ -105,7 +105,7 @@ function renderNoAccount() {
     .then(function (p) {
       var box = el('other-site');
       if (!box || !p || cfg.user !== name) return;
-      box.innerHTML = '<div class="hero state other-site"><h2>Found ' + esc(p.username || name) + ' on ' + (other === 'chesscom' ? 'chess.com' : 'lichess') + '.</h2>'
+      box.innerHTML = '<div class="hero state other-site"><h2>Found ' + esc(p.username || name) + ' on ' + (other === 'chesscom' ? 'chess.com' : 'lichess') + '. Is that you?</h2>'
         + '<div class="acts"><a class="btn-big" data-act="useOtherSite" data-k="' + other + '">Use that</a></div></div>';
     }, function () {});
 }
@@ -114,11 +114,11 @@ function renderNoAccount() {
 function returnEvents() {
   try {
     var k = 'nl:firstSeen:' + playerId(), first = store.get(k, 0), now = Date.now();
-    if (urlUser && linkStore.get('nl:linkUser')) track('open_link');
+    if (linkVisit && !linkTracked) { linkTracked = true; track('open_link'); }
     var utm = linkStore.get('nl:utm');
     if (utm && window.clarity) window.clarity('set', 'utm_source', utm.slice(0, 40));
-    if (!first) { store.set(k, now); track('first_visit'); return; }
     var sent = 'nl:retDay:' + playerId();
+    if (!first) { store.set(k, now); store.set(sent, dayStamp()); track('first_visit'); return; }
     if (store.get(sent, '') === dayStamp()) return;
     store.set(sent, dayStamp());
     var days = (now - first) / DAY;
@@ -129,7 +129,7 @@ function returnEvents() {
     if (window.clarity) window.clarity('set', 'active_days', act === 0 ? '0' : act === 1 ? '1' : act <= 3 ? '2-3' : act <= 7 ? '4-7' : act <= 14 ? '8-14' : '15+');
   } catch (e) {}
 }
-function forgetLink() { try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:linkSrc'); } catch (e) {} }
+function forgetLink() { linkVisit = false; }
 function setUser(name) {
   name = String(name || '').trim();
   if (!name) return;
@@ -257,6 +257,10 @@ function computeGreeting() {
 function boot() {
   gen++;
   var myGen = gen;
+  /* the saved formats belong to one player: another player starts from
+     their own profile */
+  var pf = store.get('nl:perfsFor', '');
+  if (!linkVisit && cfg.user && pf && pf !== playerId()) { cfg.perfs = null; cfg.tcs = DEFAULT_TC.slice(); store.del('nl:perfs'); store.del('nl:tcs'); store.del('nl:perfsFor'); }
   applyLinkTarget();
   if (typeof navigator.onLine === 'boolean' && !navigator.onLine) notice('You are offline. Showing what was saved last time.');
   if (!cfg.user) { renderHeader(); renderFirstVisit(); renderFoot(); return; }
@@ -265,7 +269,6 @@ function boot() {
   /* a link's player lives in this tab only (sessionStorage), and the page
      title never names anyone */
   document.title = 'notlichess.org';
-  returnEvents();
   engineLoad().catch(function () {});           /* in parallel with everything else */
   ui.session = null;
   var cached = loadCachedGames();
@@ -288,8 +291,10 @@ function boot() {
     .then(function () {
       if (stale(myGen)) throw { stop: 'stale' };
       if (data.sections.user === 'fail' && data.userErr === 404) throw { stop: 'none' };
-      /* first login: the formats come from the profile, no questions asked */
-      if (!store.get('nl:perfs', null) && data.user) {
+      returnEvents();
+      /* first login: the formats come from the profile, no questions asked;
+         a linked player always gets their own, in memory only */
+      if ((linkVisit || !store.get('nl:perfs', null)) && data.user) {
         setPerfs(autoPerfs(data.user));
         if (el('identity')) el('identity').innerHTML = identityHtml();
       }
@@ -424,9 +429,11 @@ document.addEventListener('click', function (e) {
       flushSave();
       gen++;
       document.title = 'notlichess.org';
+      /* switching away from a linked player keeps this browser's own player */
+      if (!linkVisit) { store.del('nl:user'); store.del('nl:perfs'); store.del('nl:perfsFor'); cfg.perfs = null; }
+      else { cfg.perfs = store.get('nl:perfs', null); cfg.tcs = store.get('nl:tcs', DEFAULT_TC.slice()); cfg.src = store.get('nl:src', 'lichess'); }
       forgetLink();
-      cfg.user = ''; store.del('nl:user');
-      cfg.perfs = null; store.del('nl:perfs');
+      cfg.user = '';
       ui.settingsOpen = false; ui.session = null; data.narrate = false; data.user = null;
       closeSheet();
       renderHeader(); renderFirstVisit(); renderFoot();

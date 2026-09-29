@@ -83,7 +83,7 @@ function narrAnimate() {
     }, 300);
     setTimeout(tick, 4600);
   }
-  tick();
+  setTimeout(tick, 5000);   /* the tips start after 5 s, never at once */
 }
 
 /* new games are picked up about once an hour while the page is open */

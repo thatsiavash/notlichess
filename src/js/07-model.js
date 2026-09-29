@@ -211,7 +211,7 @@ function patternStats() {
 }
 function coverage() {
   var n = 0, c = 0, lost = 0, decided = 0;
-  data.games.forEach(function (g) {
+  scopedGames().forEach(function (g) {
     n++;
     if (!covered(g)) return;
     c++;

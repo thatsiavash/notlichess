@@ -54,6 +54,10 @@ var params = new URLSearchParams(location.search);
 var linkStore = { get: function (k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } } };
 var urlUser = (linkStore.get('nl:linkUser') || params.get('u') || params.get('user') || '').trim();
 var urlSrc = (linkStore.get('nl:linkSrc') || params.get('src') || '').trim();
+/* the link is read once: a reload opens the saved player (or the landing),
+   and while it is open nothing about the linked player is saved */
+var linkVisit = !!urlUser, linkTracked = false;
+try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:linkSrc'); } catch (e) {}
 
 /* Defaults per format lean no-increment: the most-played pools, and a
    clean three-tile Play stage for a fresh account. Increments stay one tap
@@ -64,9 +68,9 @@ var PERF_HINT = { bullet: '1–2 min games', blitz: '3–5 min',
                   rapid: '10–15 min', classical: '30+ min' };
 var cfg = {
   user: urlUser || store.get('nl:user', ''),
-  tcs: store.get('nl:tcs', DEFAULT_TC.slice()),
+  tcs: linkVisit ? DEFAULT_TC.slice() : store.get('nl:tcs', DEFAULT_TC.slice()),
   sound: store.get('nl:sound', true),
-  perfs: store.get('nl:perfs', null),   /* the formats being trained; null = derive from tcs */
+  perfs: linkVisit ? null : store.get('nl:perfs', null),   /* the formats being trained; null = derive from tcs */
   hidden: store.get('nl:hidden', {}),
   findingsOff: store.get('nl:findingsOff', {}),
   perFormat: store.get('nl:perFormat', 500),  /* rated games kept per tracked format */
@@ -128,11 +132,11 @@ function trackedPerfs() {
 
 function setPerfs(perfs) {
   cfg.perfs = perfs;
-  saveCfg('perfs');
+  if (!linkVisit) { saveCfg('perfs'); store.set('nl:perfsFor', playerId()); }
   /* Time controls follow the formats so Play and the filters agree. */
   var tcs = [];
   perfs.forEach(function (p) { (PERF_TCS[p] || []).forEach(function (tc) { if (tcs.length < MAX_TC) tcs.push(tc); }); });
-  if (tcs.length) { cfg.tcs = tcs; saveCfg('tcs'); }
+  if (tcs.length) { cfg.tcs = tcs; if (!linkVisit) saveCfg('tcs'); }
 }
 
 /* ── 4. Deep links (handoff §4) ──────────────────────────────────────── */
@@ -547,10 +551,11 @@ function loadCachedGames() {
 
 function trimGames(games) {
   /* newest quota per tracked format; untracked formats take no space */
-  var Q = cfg.perFormat, per = {}, out = [];
+  var Q = cfg.perFormat, per = {}, out = [], ids = {}, tp = trackedPerfs();
   for (var i = 0; i < games.length; i++) {
     var p = games[i].perf;
-    if (trackedPerfs().indexOf(p) === -1) continue;
+    if (tp.indexOf(p) === -1 || ids[games[i].id]) continue;
+    ids[games[i].id] = 1;
     if ((per[p] || 0) >= Q) continue;
     per[p] = (per[p] || 0) + 1;
     out.push(games[i]);

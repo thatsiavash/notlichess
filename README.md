@@ -10,7 +10,7 @@ the better move played out, and what really happened in your game. Insights
 rank your mistakes by the games they decided.
 
 One static HTML file plus the engine. No server, no account, no ads. Your
-games and progress are saved in your browser, not on our servers. Microsoft
+games and progress are saved in this browser, not on our servers. Microsoft
 Clarity records clicks and the screen, with all text hidden, to show how the
 site is used.
 

@@ -211,7 +211,7 @@ function gradeMove(m) {
   var u = moveUci(m);
   a.sel = -1;
   a.shapes = [];
-  a.verdict = null;
+  a.verdict = null; a.hintAfter = false;
   a.strongerOffer = false;
   a.attempts++;
   store.set('nl:marksSeen', true);
@@ -277,6 +277,7 @@ function stepLine(m, u) {
   if (!reply) { solved(null, null, null, true); return; }
   a.phase = 'reply';
   /* my moves sit at even offsets of the line: the next one is number n */
+  a.hintAfter = false;
   a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (a.solIdx / 2 + 1.5 | 0) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.' };
   renderCard();
   var cardKey = a.key;
@@ -305,6 +306,8 @@ function sameAsGame(m) {
   var said = (a.cls.sentences.short || a.cls.sentences.game).replace(/^\S+\s/, 'It ');
   var bestSan = sanOf(a.pre, a.best);
   if (said.indexOf(bestSan) >= 0 || familyOf(patternOf(it.b)).key === 'chances') said = 'There is something stronger here.';
+  a.lastTry = sanOf(a.pre, a.played);
+  a.hintAfter = false;
   a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ Your game move again. ' + said, '✗ Your game move again. ' + firstClause(said), '✗ Your game move again.'])) };
   escalate(line);
 }
@@ -320,7 +323,7 @@ function keepProgress(a) {
 function escalate(line) {
   var a = ui.session.active;
   keepProgress(a);
-  if (a.misses >= 3) { reveal(); return; }
+  if (a.misses >= 3) { a.thirdMiss = true; reveal(); return; }
   if (a.misses === 2 && !a.hints) a.hints = 1;
   playPunish(line, a.misses);
 }
@@ -435,6 +438,8 @@ function miss(m, u, info) {
       : san + ' does not lose anything, but there is something stronger here.';
   }
   why = why || san + ' does not work.';
+  a.lastTry = san;
+  a.hintAfter = false;
   a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ ' + why, '✗ ' + firstClause(why), '✗ ' + san + ' does not work.'])) };
   escalate(line);
 }
@@ -491,6 +496,7 @@ function giveHint() {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'guess' || a.hints >= 2 || (a.tier === 3 && !a.misses)) return;
   a.hints = a.hints + 1;
+  a.hintAfter = true;
   keepProgress(a);
   renderCard();
 }

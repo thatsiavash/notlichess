@@ -661,11 +661,15 @@ function topUpFormats() {
     data.topups[p] = 1;
     chain = chain.then(function () {
       if (stale(myGen)) return;
+      /* a game already held is never pushed twice, even if this read is cut short */
+      var held = {};
+      data.games.forEach(function (g) { held[g.id] = 1; });
       return getND('/api/games/user/' + encodeURIComponent(cfg.user)
           + '?perfType=' + p + '&' + GAME_PARAMS + '&max=' + cfg.perFormat,
         function (g) {
+          if (stale(myGen)) return;
           var c = compact(g, meId);
-          if (c) data.games.push(c);
+          if (c && !held[c.id]) { held[c.id] = 1; data.games.push(c); }
         }, { quiet: true }
       ).then(function () {
         if (stale(myGen)) return;

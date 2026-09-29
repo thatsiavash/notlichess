@@ -10,11 +10,9 @@
 (function () { try {
   var p = new URLSearchParams(location.search), u = p.get('u') || p.get('user'), s = p.get('src');
   if (p.get('utm_source')) sessionStorage.setItem('nl:utm', p.get('utm_source'));
-  if (u || s) {
-    if (u) sessionStorage.setItem('nl:linkUser', u);
-    if (s) sessionStorage.setItem('nl:linkSrc', s);
-    history.replaceState(null, '', location.pathname + location.hash);
-  }
+  if (u) sessionStorage.setItem('nl:linkUser', u);
+  if (s) sessionStorage.setItem('nl:linkSrc', s);
+  if (location.search) history.replaceState(null, '', location.pathname + location.hash);
 } catch (e) {} })();
 </script>
 <script type="text/javascript">

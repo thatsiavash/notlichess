@@ -120,9 +120,10 @@ function todayPlan() {
     fresh.sort(function (x, y) { return cardEase(y) - cardEase(x) || (y.b.d ? 1 : 0) - (x.b.d ? 1 : 0) || y.g.ts - x.g.ts; });
     /* the first card of all is the move that lost the latest game, when it
        is not a quiet one */
-    var lostLast = fresh.filter(function (it) { return it.b.d && it.g.res === 'loss' && cardEase(it) >= 2; })
+    var lostLast = fresh.filter(function (it) { return it.b.d && it.g.res === 'loss'; })
       .sort(function (x, y) { return y.g.ts - x.g.ts; })[0];
-    if (lostLast) fresh = [lostLast].concat(fresh.filter(function (x) { return x !== lostLast; }));
+    /* a hard one there: the easiest card leads instead, not an older loss */
+    if (lostLast && cardEase(lostLast) >= 2) fresh = [lostLast].concat(fresh.filter(function (x) { return x !== lostLast; }));
   }
   /* a reserved slot: the best new mistake from games since the last visit */
   var since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
@@ -199,9 +200,10 @@ function resumeSession() {
   loadCard();
   return true;
 }
-function sessionDoneCount(s) {
-  return Object.keys(s.results || {}).filter(function (k) { return k.indexOf('#r') < 0; }).length;
-}
+/* positions done and positions in all, one more try included, so the
+   counts match the dots */
+function sessionDoneCount(s) { return Object.keys(s.results || {}).length; }
+function sessionTotal(s) { return s.keys.length + (s.relearn || []).length; }
 function specFilter(spec) {
   return function (it) {
     var t = patternOf(it.b);
@@ -281,7 +283,9 @@ function finishSession() {
 function endSession(fromPop) {
   var ss = ui.session;
   if (!ss) return;
-  var open = ss.active, done = sessionDoneCount(ss), total = ss.keys.length;
+  var open = ss.active, done = sessionDoneCount(ss), total = sessionTotal(ss);
+  /* a move still being checked counts as a try that did not land */
+  if (open && open.phase === 'checking') { open.checkTok = (open.checkTok || 0) + 1; open.misses = Math.max(open.misses || 0, 1); open.attempts = Math.max(open.attempts || 0, 1); }
   if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints)) keepProgress(open);
   var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints)));
   if (keep) saveSession(); else store.del(sessKey());

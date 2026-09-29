@@ -10,11 +10,9 @@
 (function () { try {
   var p = new URLSearchParams(location.search), u = p.get('u') || p.get('user'), s = p.get('src');
   if (p.get('utm_source')) sessionStorage.setItem('nl:utm', p.get('utm_source'));
-  if (u || s) {
-    if (u) sessionStorage.setItem('nl:linkUser', u);
-    if (s) sessionStorage.setItem('nl:linkSrc', s);
-    history.replaceState(null, '', location.pathname + location.hash);
-  }
+  if (u) sessionStorage.setItem('nl:linkUser', u);
+  if (s) sessionStorage.setItem('nl:linkSrc', s);
+  if (location.search) history.replaceState(null, '', location.pathname + location.hash);
 } catch (e) {} })();
 </script>
 <script type="text/javascript">
@@ -360,6 +358,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 
 .run{display:inline-flex;align-items:center;gap:4px}
 
+.tl-text .tl-short{display:none}
 @media (max-width:860px){
   .card{grid-template-columns:1fr;gap:12px}
   .board-col{margin:0 calc(-1 * var(--gutter))}
@@ -370,9 +369,11 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .sticky-acts{
     position:fixed;left:0;right:0;bottom:0;z-index:7;background:rgba(27,26,23,.97);
     border-top:1px solid var(--rule);padding:10px var(--gutter) calc(10px + env(safe-area-inset-bottom));
-    display:flex;gap:10px;align-items:center;
+    display:flex;gap:10px;align-items:center;margin:0;
   }
   .sticky-acts .btn-big{flex:1;min-width:0;padding:13px 16px}
+  .tl-text .tl-long{display:none}
+  .tl-text .tl-short{display:inline}
   .sticky-acts{flex-wrap:nowrap}
   .sticky-acts > *{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .task{font-size:24px}
@@ -827,6 +828,10 @@ var params = new URLSearchParams(location.search);
 var linkStore = { get: function (k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } } };
 var urlUser = (linkStore.get('nl:linkUser') || params.get('u') || params.get('user') || '').trim();
 var urlSrc = (linkStore.get('nl:linkSrc') || params.get('src') || '').trim();
+/* the link is read once: a reload opens the saved player (or the landing),
+   and while it is open nothing about the linked player is saved */
+var linkVisit = !!urlUser, linkTracked = false;
+try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:linkSrc'); } catch (e) {}
 
 /* Defaults per format lean no-increment: the most-played pools, and a
    clean three-tile Play stage for a fresh account. Increments stay one tap
@@ -837,9 +842,9 @@ var PERF_HINT = { bullet: '1–2 min games', blitz: '3–5 min',
                   rapid: '10–15 min', classical: '30+ min' };
 var cfg = {
   user: urlUser || store.get('nl:user', ''),
-  tcs: store.get('nl:tcs', DEFAULT_TC.slice()),
+  tcs: linkVisit ? DEFAULT_TC.slice() : store.get('nl:tcs', DEFAULT_TC.slice()),
   sound: store.get('nl:sound', true),
-  perfs: store.get('nl:perfs', null),   /* the formats being trained; null = derive from tcs */
+  perfs: linkVisit ? null : store.get('nl:perfs', null),   /* the formats being trained; null = derive from tcs */
   hidden: store.get('nl:hidden', {}),
   findingsOff: store.get('nl:findingsOff', {}),
   perFormat: store.get('nl:perFormat', 500),  /* rated games kept per tracked format */
@@ -901,11 +906,11 @@ function trackedPerfs() {
 
 function setPerfs(perfs) {
   cfg.perfs = perfs;
-  saveCfg('perfs');
+  if (!linkVisit) { saveCfg('perfs'); store.set('nl:perfsFor', playerId()); }
   /* Time controls follow the formats so Play and the filters agree. */
   var tcs = [];
   perfs.forEach(function (p) { (PERF_TCS[p] || []).forEach(function (tc) { if (tcs.length < MAX_TC) tcs.push(tc); }); });
-  if (tcs.length) { cfg.tcs = tcs; saveCfg('tcs'); }
+  if (tcs.length) { cfg.tcs = tcs; if (!linkVisit) saveCfg('tcs'); }
 }
 
 /* ── 4. Deep links (handoff §4) ──────────────────────────────────────── */
@@ -1320,10 +1325,11 @@ function loadCachedGames() {
 
 function trimGames(games) {
   /* newest quota per tracked format; untracked formats take no space */
-  var Q = cfg.perFormat, per = {}, out = [];
+  var Q = cfg.perFormat, per = {}, out = [], ids = {}, tp = trackedPerfs();
   for (var i = 0; i < games.length; i++) {
     var p = games[i].perf;
-    if (trackedPerfs().indexOf(p) === -1) continue;
+    if (tp.indexOf(p) === -1 || ids[games[i].id]) continue;
+    ids[games[i].id] = 1;
     if ((per[p] || 0) >= Q) continue;
     per[p] = (per[p] || 0) + 1;
     out.push(games[i]);
@@ -2502,11 +2508,15 @@ function topUpFormats() {
     data.topups[p] = 1;
     chain = chain.then(function () {
       if (stale(myGen)) return;
+      /* a game already held is never pushed twice, even if this read is cut short */
+      var held = {};
+      data.games.forEach(function (g) { held[g.id] = 1; });
       return getND('/api/games/user/' + encodeURIComponent(cfg.user)
           + '?perfType=' + p + '&' + GAME_PARAMS + '&max=' + cfg.perFormat,
         function (g) {
+          if (stale(myGen)) return;
           var c = compact(g, meId);
-          if (c) data.games.push(c);
+          if (c && !held[c.id]) { held[c.id] = 1; data.games.push(c); }
         }, { quiet: true }
       ).then(function () {
         if (stale(myGen)) return;
@@ -3555,7 +3565,7 @@ function standing(wa, them) {
   if (wa < 25) return 'you are losing';
   if (wa < 42) return them + ' is better';
   if (wa < 58) return 'it is roughly level';
-  return 'you are still better, but only just';
+  return 'you are only just better';
 }
 /* what the better move does about the reply that hurt: it makes it
    illegal, takes the target away, or defends it */
@@ -4260,7 +4270,7 @@ function patternStats() {
 }
 function coverage() {
   var n = 0, c = 0, lost = 0, decided = 0;
-  data.games.forEach(function (g) {
+  scopedGames().forEach(function (g) {
     n++;
     if (!covered(g)) return;
     c++;
@@ -5173,9 +5183,10 @@ function todayPlan() {
     fresh.sort(function (x, y) { return cardEase(y) - cardEase(x) || (y.b.d ? 1 : 0) - (x.b.d ? 1 : 0) || y.g.ts - x.g.ts; });
     /* the first card of all is the move that lost the latest game, when it
        is not a quiet one */
-    var lostLast = fresh.filter(function (it) { return it.b.d && it.g.res === 'loss' && cardEase(it) >= 2; })
+    var lostLast = fresh.filter(function (it) { return it.b.d && it.g.res === 'loss'; })
       .sort(function (x, y) { return y.g.ts - x.g.ts; })[0];
-    if (lostLast) fresh = [lostLast].concat(fresh.filter(function (x) { return x !== lostLast; }));
+    /* a hard one there: the easiest card leads instead, not an older loss */
+    if (lostLast && cardEase(lostLast) >= 2) fresh = [lostLast].concat(fresh.filter(function (x) { return x !== lostLast; }));
   }
   /* a reserved slot: the best new mistake from games since the last visit */
   var since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
@@ -5252,9 +5263,10 @@ function resumeSession() {
   loadCard();
   return true;
 }
-function sessionDoneCount(s) {
-  return Object.keys(s.results || {}).filter(function (k) { return k.indexOf('#r') < 0; }).length;
-}
+/* positions done and positions in all, one more try included, so the
+   counts match the dots */
+function sessionDoneCount(s) { return Object.keys(s.results || {}).length; }
+function sessionTotal(s) { return s.keys.length + (s.relearn || []).length; }
 function specFilter(spec) {
   return function (it) {
     var t = patternOf(it.b);
@@ -5334,7 +5346,9 @@ function finishSession() {
 function endSession(fromPop) {
   var ss = ui.session;
   if (!ss) return;
-  var open = ss.active, done = sessionDoneCount(ss), total = ss.keys.length;
+  var open = ss.active, done = sessionDoneCount(ss), total = sessionTotal(ss);
+  /* a move still being checked counts as a try that did not land */
+  if (open && open.phase === 'checking') { open.checkTok = (open.checkTok || 0) + 1; open.misses = Math.max(open.misses || 0, 1); open.attempts = Math.max(open.attempts || 0, 1); }
   if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints)) keepProgress(open);
   var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints)));
   if (keep) saveSession(); else store.del(sessKey());
@@ -5588,7 +5602,7 @@ function gradeMove(m) {
   var u = moveUci(m);
   a.sel = -1;
   a.shapes = [];
-  a.verdict = null;
+  a.verdict = null; a.hintAfter = false;
   a.strongerOffer = false;
   a.attempts++;
   store.set('nl:marksSeen', true);
@@ -5654,6 +5668,7 @@ function stepLine(m, u) {
   if (!reply) { solved(null, null, null, true); return; }
   a.phase = 'reply';
   /* my moves sit at even offsets of the line: the next one is number n */
+  a.hintAfter = false;
   a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (a.solIdx / 2 + 1.5 | 0) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.' };
   renderCard();
   var cardKey = a.key;
@@ -5682,6 +5697,8 @@ function sameAsGame(m) {
   var said = (a.cls.sentences.short || a.cls.sentences.game).replace(/^\S+\s/, 'It ');
   var bestSan = sanOf(a.pre, a.best);
   if (said.indexOf(bestSan) >= 0 || familyOf(patternOf(it.b)).key === 'chances') said = 'There is something stronger here.';
+  a.lastTry = sanOf(a.pre, a.played);
+  a.hintAfter = false;
   a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ Your game move again. ' + said, '✗ Your game move again. ' + firstClause(said), '✗ Your game move again.'])) };
   escalate(line);
 }
@@ -5697,7 +5714,7 @@ function keepProgress(a) {
 function escalate(line) {
   var a = ui.session.active;
   keepProgress(a);
-  if (a.misses >= 3) { reveal(); return; }
+  if (a.misses >= 3) { a.thirdMiss = true; reveal(); return; }
   if (a.misses === 2 && !a.hints) a.hints = 1;
   playPunish(line, a.misses);
 }
@@ -5812,6 +5829,8 @@ function miss(m, u, info) {
       : san + ' does not lose anything, but there is something stronger here.';
   }
   why = why || san + ' does not work.';
+  a.lastTry = san;
+  a.hintAfter = false;
   a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ ' + why, '✗ ' + firstClause(why), '✗ ' + san + ' does not work.'])) };
   escalate(line);
 }
@@ -5868,6 +5887,7 @@ function giveHint() {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'guess' || a.hints >= 2 || (a.tier === 3 && !a.misses)) return;
   a.hints = a.hints + 1;
+  a.hintAfter = true;
   keepProgress(a);
   renderCard();
 }
@@ -6127,6 +6147,8 @@ function setView(v, fromPop) {
 window.addEventListener('popstate', function () {
   /* Back closes a sheet first, then ends a session */
   if (ui.sheet) { closeSheet(true); return; }
+  var am = ui.session && ui.session.active;
+  if (am && am.menuOpen) { am.menuOpen = false; renderCard(); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
   if (ui.session) { endSession(true); return; }
   var h = (location.hash || '').replace('#', '');
   if (h === 'coach' || h === 'insights') h = 'insights'; else h = 'train';
@@ -6136,7 +6158,7 @@ function renderViews() {
   var nav = el('views');
   if (!nav) return;
   /* a quiet dot while today's session is not done: never a count */
-  var pending = cfg.user && !(dayLoad().sessions > 0) && dueCards().length > 0;
+  var pending = cfg.user && !(dayLoad().sessions > 0) && (dueCards().length > 0 || todayPlan().keys.length > 0);
   nav.innerHTML = VIEWS.map(function (v) {
     return '<a class="view-tab' + (ui.view === v[0] ? ' view-on' : '') + '" data-act="view" data-k="' + v[0] + '" role="tab" aria-selected="' + (ui.view === v[0]) + '">'
       + v[1] + (v[0] === 'train' && pending && !(ui.session && ui.session.active) ? '<span class="tab-dot" aria-label="practice waiting"></span>' : '') + '</a>';
@@ -6330,7 +6352,7 @@ function heroHtml() {
 }
 function resumeHtml(s) {
   return '<div class="hero">'
-    + '<h2>Pick up where you left off.</h2><p class="why">' + Math.min(sessionDoneCount(s), s.keys.length) + ' of ' + s.keys.length + ' done. The rest are waiting where you stopped.</p>' + weekHtml()
+    + '<h2>Pick up where you left off.</h2><p class="why">' + Math.min(sessionDoneCount(s), sessionTotal(s)) + ' of ' + sessionTotal(s) + ' done. The rest are waiting where you stopped.</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">Start over</a></div></div>';
 }
 /* the next time something is due back, and how much */
@@ -6585,7 +6607,7 @@ function renderCard() {
   }
   var said = (el('ctop').querySelector('.card-task') || {}).textContent || '';
   var live = el('sr-live');
-  if (!live) { live = document.createElement('div'); live.id = 'sr-live'; live.className = 'sr-live'; live.setAttribute('aria-live', 'polite'); document.body.appendChild(live); }
+  if (!live) { live = document.createElement('div'); live.id = 'sr-live'; live.className = 'sr-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('data-clarity-mask', 'true'); document.body.appendChild(live); }
   if (live.textContent !== said) live.textContent = said;
 }
 /* phones: the board fills the screen, so the task and the verdict ride
@@ -6608,10 +6630,15 @@ function cardTaskHtml(a) {
     if (best && why.indexOf(best + ' ') === 0) why = 'It ' + why.slice(best.length + 1);
     act = ' data-act="lineTab" data-k="best" role="button"';
     if (a.check1 && a.check1.done) { txt = fitLine([(a.checkVerdict || '') + ' Better: ' + best + '.', a.checkVerdict || '']); cls = a.check1.found ? ' good' : ''; }
-    else if (a.result === 'fail' || a.revealed) txt = fitLine(['The answer is ' + best + '. ' + why, 'The answer is ' + best + '.']);
+    else if (a.result === 'fail' || a.revealed) {
+      /* the third wrong try keeps its verdict, then the answer */
+      var lead = a.thirdMiss && a.lastTry ? '✗ ' + esc(a.lastTry) + ' does not work. ' : '';
+      txt = fitLine([lead + 'The answer is ' + best + '. ' + why, lead + 'The answer is ' + best + '.', 'The answer is ' + best + '. ' + why, 'The answer is ' + best + '.']);
+    }
     else if (a.alt) { txt = fitLine(['✓ ' + esc(altNames(a).mine) + ' works too. The engine prefers ' + esc(altNames(a).theirs) + '.', '✓ ' + esc(altNames(a).mine) + ' works too.']); cls = ' good'; }
     else { var head1 = '✓ ' + best + '. ' + (a.result === 'first' ? 'Found it.' : 'You got there.'); txt = fitLine([head1 + ' ' + why, head1]); cls = ' good'; }
   }
+  else if (a.hints >= 1 && a.hintAfter) { txt = esc(hintText(a)); cls = ' hint'; }
   else if (a.verdict) { txt = strip(a.verdict.html); cls = a.verdict.cls === 'verdict-bad' ? ' bad' : (a.verdict.cls === 'verdict-good' ? ' good' : ''); }
   else if (a.check1 && !a.check1.done) txt = fitLine(['You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now? Move their piece.',
     'You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now?']);
@@ -6724,10 +6751,14 @@ function panelHtml(a, ss) {
     if (a.phase === 'checking') fb = '<div class="checking"><span class="meter"><i></i></span>Checking ' + esc(a.checking || 'your move') + '…</div>';
     else if (a.verdict) fb = '<p class="verdict ' + a.verdict.cls + '">' + a.verdict.html + '</p>';
     else if (!store.get('nl:marksSeen', false) && ss.idx === 0 && a.firstSight && !a.attempts)
-      fb = '<p class="first-line">Drag a piece, or tap it and tap a square. The bar on the left shows who is winning.</p>';
+      fb = '<p class="first-line">Drag a piece, or tap it and tap a square. The bar on the left fills in once you answer.</p>';
     else if (a.tier === 1 && a.solIdx === 0 && !a.hints) fb = '<p class="first-line">Look at every check and capture first, for both sides.</p>';
     if (a.hints >= 1) fb += '<p class="hint-note">' + esc(hintText(a)) + (a.hints >= 2 ? ' The piece to move is circled.' : '') + '</p>';
     h += '<div class="feedback" aria-live="polite">' + fb + '</div>';
+    if (a.phase !== 'guess') {
+      /* while a move is checked or answered, the bar keeps its place, switched off */
+      h += '<div class="acts-row sticky-acts guess-acts"><a class="btn-line btn-off" aria-disabled="true">Hint</a><a class="btn-line btn-off" aria-disabled="true">Show the answer</a></div>';
+    }
     if (a.phase === 'guess') {
       var acts = '';
       if (a.strongerOffer) acts += '<a class="btn-line" data-act="dismissStronger">Keep looking</a><a class="btn-line" data-act="reveal">Show the best move</a>';
@@ -6754,6 +6785,7 @@ function panelHtml(a, ss) {
     disc = '';
     head = 'The answer is ' + esc(best) + '.';
     if (a.foundGood) sub = 'Your ' + esc(a.foundGood.san) + ' was close.';
+    else if (a.thirdMiss && a.verdict) sub = a.verdict.html;
   } else if (a.alt) {
     disc = '<span class="disc disc-help" aria-hidden="true">✓</span>';
     head = esc(altNames(a).mine) + ' works too.';
@@ -6773,7 +6805,7 @@ function panelHtml(a, ss) {
   h += '<div class="result' + (a.result === 'first' && !a.alt && !a.revealed ? ' first' : '') + '">'
     + '<div class="result-head">' + disc + '<h2 class="result-h" id="result-h" tabindex="-1">' + head + '</h2></div>'
     + (sub ? '<p class="result-sub">' + sub + '</p>' : '')
-    + tline('refute', 'tl-bad', esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game))
+    + tline('refute', 'tl-bad', '<span class="tl-long">' + esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game) + '</span><span class="tl-short">' + esc(fitLine([s.short || s.game, firstClause(s.short || s.game)])) + '</span>')
     + (a.alt && a.lines.yours ? tline('yours', 'tl-alt', esc(altNames(a).mine) + ' also holds. Here is how it goes on.') : '')
     + tline('best', 'tl-good', esc(s.best || best + ' keeps your position together.'));
   var opp = opponentLine(a);
@@ -7061,7 +7093,7 @@ function renderFirstVisit(prefill) {
       + '<button class="btn-big" data-act="findUser" id="findBtn">Find my mistakes</button>'
     + '</div>'
     + '<div id="whichSite" aria-live="polite"></div>'
-    + '<p class="first-foot">Free, with no account. Your games stay in this browser.</p>'
+    + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
     + '<figure class="proof"><figcaption>What a 1350 rapid player saw</figcaption>'
       + '<blockquote>169 of your 237 losses came down to one big mistake. The biggest leak is giving away material. It decided 107 games.</blockquote></figure>'
     + '</div>'
@@ -7074,7 +7106,7 @@ function renderFirstVisit(prefill) {
       + valueItem('A few minutes a day', 'Five of your own positions. Each comes back just before you would forget it.')
       + valueItem('Free, no account', 'Nothing to buy. Open source.')
     + '</div>'
-    + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
+    + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device.</p>'
     + '</div>';
   var input = el('firstUser');
   if (input) {
@@ -7146,7 +7178,7 @@ function renderNoAccount() {
     .then(function (p) {
       var box = el('other-site');
       if (!box || !p || cfg.user !== name) return;
-      box.innerHTML = '<div class="hero state other-site"><h2>Found ' + esc(p.username || name) + ' on ' + (other === 'chesscom' ? 'chess.com' : 'lichess') + '.</h2>'
+      box.innerHTML = '<div class="hero state other-site"><h2>Found ' + esc(p.username || name) + ' on ' + (other === 'chesscom' ? 'chess.com' : 'lichess') + '. Is that you?</h2>'
         + '<div class="acts"><a class="btn-big" data-act="useOtherSite" data-k="' + other + '">Use that</a></div></div>';
     }, function () {});
 }
@@ -7155,11 +7187,11 @@ function renderNoAccount() {
 function returnEvents() {
   try {
     var k = 'nl:firstSeen:' + playerId(), first = store.get(k, 0), now = Date.now();
-    if (urlUser && linkStore.get('nl:linkUser')) track('open_link');
+    if (linkVisit && !linkTracked) { linkTracked = true; track('open_link'); }
     var utm = linkStore.get('nl:utm');
     if (utm && window.clarity) window.clarity('set', 'utm_source', utm.slice(0, 40));
-    if (!first) { store.set(k, now); track('first_visit'); return; }
     var sent = 'nl:retDay:' + playerId();
+    if (!first) { store.set(k, now); store.set(sent, dayStamp()); track('first_visit'); return; }
     if (store.get(sent, '') === dayStamp()) return;
     store.set(sent, dayStamp());
     var days = (now - first) / DAY;
@@ -7170,7 +7202,7 @@ function returnEvents() {
     if (window.clarity) window.clarity('set', 'active_days', act === 0 ? '0' : act === 1 ? '1' : act <= 3 ? '2-3' : act <= 7 ? '4-7' : act <= 14 ? '8-14' : '15+');
   } catch (e) {}
 }
-function forgetLink() { try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:linkSrc'); } catch (e) {} }
+function forgetLink() { linkVisit = false; }
 function setUser(name) {
   name = String(name || '').trim();
   if (!name) return;
@@ -7298,6 +7330,10 @@ function computeGreeting() {
 function boot() {
   gen++;
   var myGen = gen;
+  /* the saved formats belong to one player: another player starts from
+     their own profile */
+  var pf = store.get('nl:perfsFor', '');
+  if (!linkVisit && cfg.user && pf && pf !== playerId()) { cfg.perfs = null; cfg.tcs = DEFAULT_TC.slice(); store.del('nl:perfs'); store.del('nl:tcs'); store.del('nl:perfsFor'); }
   applyLinkTarget();
   if (typeof navigator.onLine === 'boolean' && !navigator.onLine) notice('You are offline. Showing what was saved last time.');
   if (!cfg.user) { renderHeader(); renderFirstVisit(); renderFoot(); return; }
@@ -7306,7 +7342,6 @@ function boot() {
   /* a link's player lives in this tab only (sessionStorage), and the page
      title never names anyone */
   document.title = 'notlichess.org';
-  returnEvents();
   engineLoad().catch(function () {});           /* in parallel with everything else */
   ui.session = null;
   var cached = loadCachedGames();
@@ -7329,8 +7364,10 @@ function boot() {
     .then(function () {
       if (stale(myGen)) throw { stop: 'stale' };
       if (data.sections.user === 'fail' && data.userErr === 404) throw { stop: 'none' };
-      /* first login: the formats come from the profile, no questions asked */
-      if (!store.get('nl:perfs', null) && data.user) {
+      returnEvents();
+      /* first login: the formats come from the profile, no questions asked;
+         a linked player always gets their own, in memory only */
+      if ((linkVisit || !store.get('nl:perfs', null)) && data.user) {
         setPerfs(autoPerfs(data.user));
         if (el('identity')) el('identity').innerHTML = identityHtml();
       }
@@ -7465,9 +7502,11 @@ document.addEventListener('click', function (e) {
       flushSave();
       gen++;
       document.title = 'notlichess.org';
+      /* switching away from a linked player keeps this browser's own player */
+      if (!linkVisit) { store.del('nl:user'); store.del('nl:perfs'); store.del('nl:perfsFor'); cfg.perfs = null; }
+      else { cfg.perfs = store.get('nl:perfs', null); cfg.tcs = store.get('nl:tcs', DEFAULT_TC.slice()); cfg.src = store.get('nl:src', 'lichess'); }
       forgetLink();
-      cfg.user = ''; store.del('nl:user');
-      cfg.perfs = null; store.del('nl:perfs');
+      cfg.user = '';
       ui.settingsOpen = false; ui.session = null; data.narrate = false; data.user = null;
       closeSheet();
       renderHeader(); renderFirstVisit(); renderFoot();
@@ -7852,7 +7891,7 @@ function narrAnimate() {
     }, 300);
     setTimeout(tick, 4600);
   }
-  tick();
+  setTimeout(tick, 5000);   /* the tips start after 5 s, never at once */
 }
 
 /* new games are picked up about once an hour while the page is open */

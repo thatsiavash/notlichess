@@ -38,6 +38,8 @@ function setView(v, fromPop) {
 window.addEventListener('popstate', function () {
   /* Back closes a sheet first, then ends a session */
   if (ui.sheet) { closeSheet(true); return; }
+  var am = ui.session && ui.session.active;
+  if (am && am.menuOpen) { am.menuOpen = false; renderCard(); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
   if (ui.session) { endSession(true); return; }
   var h = (location.hash || '').replace('#', '');
   if (h === 'coach' || h === 'insights') h = 'insights'; else h = 'train';
@@ -47,7 +49,7 @@ function renderViews() {
   var nav = el('views');
   if (!nav) return;
   /* a quiet dot while today's session is not done: never a count */
-  var pending = cfg.user && !(dayLoad().sessions > 0) && dueCards().length > 0;
+  var pending = cfg.user && !(dayLoad().sessions > 0) && (dueCards().length > 0 || todayPlan().keys.length > 0);
   nav.innerHTML = VIEWS.map(function (v) {
     return '<a class="view-tab' + (ui.view === v[0] ? ' view-on' : '') + '" data-act="view" data-k="' + v[0] + '" role="tab" aria-selected="' + (ui.view === v[0]) + '">'
       + v[1] + (v[0] === 'train' && pending && !(ui.session && ui.session.active) ? '<span class="tab-dot" aria-label="practice waiting"></span>' : '') + '</a>';
@@ -241,7 +243,7 @@ function heroHtml() {
 }
 function resumeHtml(s) {
   return '<div class="hero">'
-    + '<h2>Pick up where you left off.</h2><p class="why">' + Math.min(sessionDoneCount(s), s.keys.length) + ' of ' + s.keys.length + ' done. The rest are waiting where you stopped.</p>' + weekHtml()
+    + '<h2>Pick up where you left off.</h2><p class="why">' + Math.min(sessionDoneCount(s), sessionTotal(s)) + ' of ' + sessionTotal(s) + ' done. The rest are waiting where you stopped.</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">Start over</a></div></div>';
 }
 /* the next time something is due back, and how much */
@@ -496,7 +498,7 @@ function renderCard() {
   }
   var said = (el('ctop').querySelector('.card-task') || {}).textContent || '';
   var live = el('sr-live');
-  if (!live) { live = document.createElement('div'); live.id = 'sr-live'; live.className = 'sr-live'; live.setAttribute('aria-live', 'polite'); document.body.appendChild(live); }
+  if (!live) { live = document.createElement('div'); live.id = 'sr-live'; live.className = 'sr-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('data-clarity-mask', 'true'); document.body.appendChild(live); }
   if (live.textContent !== said) live.textContent = said;
 }
 /* phones: the board fills the screen, so the task and the verdict ride
@@ -519,10 +521,15 @@ function cardTaskHtml(a) {
     if (best && why.indexOf(best + ' ') === 0) why = 'It ' + why.slice(best.length + 1);
     act = ' data-act="lineTab" data-k="best" role="button"';
     if (a.check1 && a.check1.done) { txt = fitLine([(a.checkVerdict || '') + ' Better: ' + best + '.', a.checkVerdict || '']); cls = a.check1.found ? ' good' : ''; }
-    else if (a.result === 'fail' || a.revealed) txt = fitLine(['The answer is ' + best + '. ' + why, 'The answer is ' + best + '.']);
+    else if (a.result === 'fail' || a.revealed) {
+      /* the third wrong try keeps its verdict, then the answer */
+      var lead = a.thirdMiss && a.lastTry ? '✗ ' + esc(a.lastTry) + ' does not work. ' : '';
+      txt = fitLine([lead + 'The answer is ' + best + '. ' + why, lead + 'The answer is ' + best + '.', 'The answer is ' + best + '. ' + why, 'The answer is ' + best + '.']);
+    }
     else if (a.alt) { txt = fitLine(['✓ ' + esc(altNames(a).mine) + ' works too. The engine prefers ' + esc(altNames(a).theirs) + '.', '✓ ' + esc(altNames(a).mine) + ' works too.']); cls = ' good'; }
     else { var head1 = '✓ ' + best + '. ' + (a.result === 'first' ? 'Found it.' : 'You got there.'); txt = fitLine([head1 + ' ' + why, head1]); cls = ' good'; }
   }
+  else if (a.hints >= 1 && a.hintAfter) { txt = esc(hintText(a)); cls = ' hint'; }
   else if (a.verdict) { txt = strip(a.verdict.html); cls = a.verdict.cls === 'verdict-bad' ? ' bad' : (a.verdict.cls === 'verdict-good' ? ' good' : ''); }
   else if (a.check1 && !a.check1.done) txt = fitLine(['You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now? Move their piece.',
     'You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now?']);
@@ -635,10 +642,14 @@ function panelHtml(a, ss) {
     if (a.phase === 'checking') fb = '<div class="checking"><span class="meter"><i></i></span>Checking ' + esc(a.checking || 'your move') + '…</div>';
     else if (a.verdict) fb = '<p class="verdict ' + a.verdict.cls + '">' + a.verdict.html + '</p>';
     else if (!store.get('nl:marksSeen', false) && ss.idx === 0 && a.firstSight && !a.attempts)
-      fb = '<p class="first-line">Drag a piece, or tap it and tap a square. The bar on the left shows who is winning.</p>';
+      fb = '<p class="first-line">Drag a piece, or tap it and tap a square. The bar on the left fills in once you answer.</p>';
     else if (a.tier === 1 && a.solIdx === 0 && !a.hints) fb = '<p class="first-line">Look at every check and capture first, for both sides.</p>';
     if (a.hints >= 1) fb += '<p class="hint-note">' + esc(hintText(a)) + (a.hints >= 2 ? ' The piece to move is circled.' : '') + '</p>';
     h += '<div class="feedback" aria-live="polite">' + fb + '</div>';
+    if (a.phase !== 'guess') {
+      /* while a move is checked or answered, the bar keeps its place, switched off */
+      h += '<div class="acts-row sticky-acts guess-acts"><a class="btn-line btn-off" aria-disabled="true">Hint</a><a class="btn-line btn-off" aria-disabled="true">Show the answer</a></div>';
+    }
     if (a.phase === 'guess') {
       var acts = '';
       if (a.strongerOffer) acts += '<a class="btn-line" data-act="dismissStronger">Keep looking</a><a class="btn-line" data-act="reveal">Show the best move</a>';
@@ -665,6 +676,7 @@ function panelHtml(a, ss) {
     disc = '';
     head = 'The answer is ' + esc(best) + '.';
     if (a.foundGood) sub = 'Your ' + esc(a.foundGood.san) + ' was close.';
+    else if (a.thirdMiss && a.verdict) sub = a.verdict.html;
   } else if (a.alt) {
     disc = '<span class="disc disc-help" aria-hidden="true">✓</span>';
     head = esc(altNames(a).mine) + ' works too.';
@@ -684,7 +696,7 @@ function panelHtml(a, ss) {
   h += '<div class="result' + (a.result === 'first' && !a.alt && !a.revealed ? ' first' : '') + '">'
     + '<div class="result-head">' + disc + '<h2 class="result-h" id="result-h" tabindex="-1">' + head + '</h2></div>'
     + (sub ? '<p class="result-sub">' + sub + '</p>' : '')
-    + tline('refute', 'tl-bad', esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game))
+    + tline('refute', 'tl-bad', '<span class="tl-long">' + esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game) + '</span><span class="tl-short">' + esc(fitLine([s.short || s.game, firstClause(s.short || s.game)])) + '</span>')
     + (a.alt && a.lines.yours ? tline('yours', 'tl-alt', esc(altNames(a).mine) + ' also holds. Here is how it goes on.') : '')
     + tline('best', 'tl-good', esc(s.best || best + ' keeps your position together.'));
   var opp = opponentLine(a);
