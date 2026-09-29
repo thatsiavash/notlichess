@@ -531,7 +531,7 @@
   best move: Nxd4 sets up Qxc3+, which forks the king and rook.
 #177 badTrade
   your move: Qxc4 takes a rook, but dxc4 takes your queen.
-  best move: Rxb6 wins the pawn.
+  best move: Rxb6 takes the queen, and after the trades you come out ahead.
 #178 material
   your move: c5 loses the pawn after Bxc5.
   best move: d5 keeps your pawn safe.

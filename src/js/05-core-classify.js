@@ -123,6 +123,9 @@ function captureWord(line, upto, from) {
   };
   cancel(false);
   cancel(true);
+  /* "X for Y" only when X is worth more: otherwise it is not a gain */
+  var val = function (l) { return l.reduce(function (s, p) { return s + MOTIF_VAL[p]; }, 0); };
+  if (lost.length && val(gained) <= val(lost)) return null;
   var byVal = function (a, b) { return MOTIF_VAL[b] - MOTIF_VAL[a]; };
   gained.sort(byVal); lost.sort(byVal);
   var words = function (list) {
@@ -528,7 +531,14 @@ function explainMistake(c, pre, wb, wa) {
     bestS = won === 'the ' + pw ? bestSan + ' pins and wins the ' + pw + '.' : bestSan + ' pins the ' + pw + ' and wins ' + won + '.';
   }
   else if (c.sameCapture && bestPiece) bestS = 'Take with the ' + PIECE_WORD[bestPiece] + ' instead: ' + bestSan + '.';
-  else if (c.matBest >= 1 && !bl.unsettled) bestS = bestSan + ' wins ' + won + '.';
+  else if (c.matBest >= 1 && !bl.unsettled) {
+    /* a first capture bigger than the net gain (a queen taken, then traded
+       back) is named, so the sentence matches what the board shows */
+    var b1c = bl.nodes[1] && bl.nodes[1].captured ? pType(bl.nodes[1].captured) : null;
+    bestS = b1c && MOTIF_VAL[b1c] > c.matBest && won.indexOf(PIECE_WORD[b1c]) === -1
+      ? bestSan + ' takes the ' + PIECE_WORD[b1c] + ', and after the trades you come out ahead.'
+      : bestSan + ' wins ' + won + '.';
+  }
   else if (checksAll(bl, 1) && wb >= 35 && wb <= 65) bestS = bestSan + ' forces a draw with checks.';
   else if (stop) bestS = stop;
   else if ((does = whatItDoes(c, pre, c.ply))) bestS = does;

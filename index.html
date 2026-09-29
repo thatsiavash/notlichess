@@ -3356,6 +3356,9 @@ function captureWord(line, upto, from) {
   };
   cancel(false);
   cancel(true);
+  /* "X for Y" only when X is worth more: otherwise it is not a gain */
+  var val = function (l) { return l.reduce(function (s, p) { return s + MOTIF_VAL[p]; }, 0); };
+  if (lost.length && val(gained) <= val(lost)) return null;
   var byVal = function (a, b) { return MOTIF_VAL[b] - MOTIF_VAL[a]; };
   gained.sort(byVal); lost.sort(byVal);
   var words = function (list) {
@@ -3761,7 +3764,14 @@ function explainMistake(c, pre, wb, wa) {
     bestS = won === 'the ' + pw ? bestSan + ' pins and wins the ' + pw + '.' : bestSan + ' pins the ' + pw + ' and wins ' + won + '.';
   }
   else if (c.sameCapture && bestPiece) bestS = 'Take with the ' + PIECE_WORD[bestPiece] + ' instead: ' + bestSan + '.';
-  else if (c.matBest >= 1 && !bl.unsettled) bestS = bestSan + ' wins ' + won + '.';
+  else if (c.matBest >= 1 && !bl.unsettled) {
+    /* a first capture bigger than the net gain (a queen taken, then traded
+       back) is named, so the sentence matches what the board shows */
+    var b1c = bl.nodes[1] && bl.nodes[1].captured ? pType(bl.nodes[1].captured) : null;
+    bestS = b1c && MOTIF_VAL[b1c] > c.matBest && won.indexOf(PIECE_WORD[b1c]) === -1
+      ? bestSan + ' takes the ' + PIECE_WORD[b1c] + ', and after the trades you come out ahead.'
+      : bestSan + ' wins ' + won + '.';
+  }
   else if (checksAll(bl, 1) && wb >= 35 && wb <= 65) bestS = bestSan + ' forces a draw with checks.';
   else if (stop) bestS = stop;
   else if ((does = whatItDoes(c, pre, c.ply))) bestS = does;
@@ -5930,6 +5940,9 @@ function playPunish(ucis, missNo) {
       a3.lastMove = lastMove;
       a3.animMove = null;
       a3.phase = 'guess';
+      /* the second miss brought the first hint: once the replay is over it
+         takes the phone's line */
+      if (missNo === 2 && a3.hints) a3.hintAfter = true;
       renderCard();
     }, 900);
   };
@@ -5975,7 +5988,7 @@ function hintText(a) {
     var mt = c.missed;
     if (c.mateFor) return 'There is a forced mate. Look at every check.';
     /* the first hint names the prize, never the move */
-    var prize = c.bestLine ? (captureWord(c.bestLine, c.bSettle) || materialWord(c.matBest)) : '';
+    var prize = c.bestLine && !c.bestLine.unsettled ? (captureWord(c.bestLine, c.bSettle) || materialWord(c.matBest)) : '';
     if (a.hints < 2 && prize && c.matBest >= 1) return fitLine(['You can win ' + prize + ' here. Look at every check and capture.', 'You can win ' + prize + ' here.']);
     if (mt.fork && c.matBest >= 2) return mt.fork.ply === 1 ? 'There is a fork: one of your pieces can hit two targets.' : 'Your first move sets up a fork.';
     if (mt.pin && mt.pin.ply === 1 && mt.pin.piece !== 'P') return 'Look along the lines: something can be pinned.';

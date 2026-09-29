@@ -486,6 +486,9 @@ function playPunish(ucis, missNo) {
       a3.lastMove = lastMove;
       a3.animMove = null;
       a3.phase = 'guess';
+      /* the second miss brought the first hint: once the replay is over it
+         takes the phone's line */
+      if (missNo === 2 && a3.hints) a3.hintAfter = true;
       renderCard();
     }, 900);
   };
@@ -531,7 +534,7 @@ function hintText(a) {
     var mt = c.missed;
     if (c.mateFor) return 'There is a forced mate. Look at every check.';
     /* the first hint names the prize, never the move */
-    var prize = c.bestLine ? (captureWord(c.bestLine, c.bSettle) || materialWord(c.matBest)) : '';
+    var prize = c.bestLine && !c.bestLine.unsettled ? (captureWord(c.bestLine, c.bSettle) || materialWord(c.matBest)) : '';
     if (a.hints < 2 && prize && c.matBest >= 1) return fitLine(['You can win ' + prize + ' here. Look at every check and capture.', 'You can win ' + prize + ' here.']);
     if (mt.fork && c.matBest >= 2) return mt.fork.ply === 1 ? 'There is a fork: one of your pieces can hit two targets.' : 'Your first move sets up a fork.';
     if (mt.pin && mt.pin.ply === 1 && mt.pin.piece !== 'P') return 'Look along the lines: something can be pinned.';
