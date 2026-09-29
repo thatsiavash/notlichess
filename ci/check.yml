@@ -1,0 +1,17 @@
+# Parked here until the thatsiavash GitHub token has the workflow scope.
+# To enable CI: gh auth refresh -h github.com -s workflow (as thatsiavash), then
+# git mv ci/check.yml .github/workflows/check.yml, commit and push.
+name: check
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: python3 build.py && git diff --exit-code index.html
+      - run: npm test
+      - run: npm run lint
