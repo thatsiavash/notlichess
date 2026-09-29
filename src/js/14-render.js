@@ -397,7 +397,7 @@ function doneHtml(ss) {
     + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
     + (habit ? '<div class="focus recap-habit"><div class="kicker">For your next game</div><div class="plan">' + esc(habit)
-      + (ss.checks ? ' Today you spotted their reply on ' + (ss.checksFound || 0) + ' of ' + ss.checks + '.' : '') + '</div></div>' : '')
+      + (ss.checks ? ' Today you spotted their reply on ' + (dayLoad().checksFound || 0) + ' of ' + Math.max(dayLoad().checks || 0, ss.checks) + '.' : '') + '</div></div>' : '')
     + (recap ? '<div class="recap">' + recap + '</div>' : '')
     + '<div class="acts-row recap-acts">'
       + '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>'

@@ -55,9 +55,14 @@ function settleIndex(line) {
   var quiet = function (x) {
     return !x || (!x.captured && !x.move.promo && !checkersOf(x.after).length);
   };
+  line.unsettled = false;
   for (var i = 1; i < n.length; i++) {
     if (quiet(n[i + 1]) && quiet(n[i + 2]) && !enPrise(n[i].after)) return endCapture(n, i);
   }
+  /* the line ends on the other side's check or capture, material still in
+     motion: its count is not a result */
+  var last = n[n.length - 1];
+  line.unsettled = !!(last && last.move && !last.pov && (last.captured || checkersOf(last.after).length));
   return endCapture(n, n.length - 1);
 }
 /* material is still in motion: the side to move can take something for
@@ -444,7 +449,7 @@ function explainMistake(c, pre, wb, wa) {
       var got = n0 && n0.captured ? PIECE_WORD[pType(n0.captured)] : 'piece';
       var gone = r1 && r1.captured ? PIECE_WORD[pType(r1.captured)] : 'piece';
       gameS = played + ' takes a ' + got + ', but ' + (reply || 'the reply') + ' takes your ' + gone + '.'
-        + (lost && lost !== 'the ' + gone && lost !== 'a ' + gone + ' for a ' + got ? ' You lose ' + lost + '.' : '');
+        + (lost && c.matGame <= -1 && lost !== 'the ' + gone && lost !== 'a ' + gone + ' for a ' + got ? ' You lose ' + lost + '.' : '');
       break;
     }
     case 'kingSafety':
@@ -456,7 +461,7 @@ function explainMistake(c, pre, wb, wa) {
     case 'threat': {
       var took = r1 && r1.captured ? 'your ' + PIECE_WORD[pType(r1.captured)] : (lost || 'material');
       gameS = played + ' ignores ' + them + '\'s threat: ' + (reply || 'the reply') + ' takes ' + took + '.'
-        + (lost && r1 && r1.captured && lost !== 'the ' + PIECE_WORD[pType(r1.captured)] ? ' You lose ' + lost + '.' : '');
+        + (lost && c.matGame <= -1 && r1 && r1.captured && lost !== 'the ' + PIECE_WORD[pType(r1.captured)] ? ' You lose ' + lost + '.' : '');
       break;
     }
     case 'material': {
@@ -513,7 +518,7 @@ function explainMistake(c, pre, wb, wa) {
     bestS = won === 'the ' + pw ? bestSan + ' pins and wins the ' + pw + '.' : bestSan + ' pins the ' + pw + ' and wins ' + won + '.';
   }
   else if (c.sameCapture && bestPiece) bestS = 'Take back with the ' + PIECE_WORD[bestPiece] + ': ' + bestSan + '.';
-  else if (c.matBest >= 1) bestS = bestSan + ' wins ' + won + '.';
+  else if (c.matBest >= 1 && !bl.unsettled) bestS = bestSan + ' wins ' + won + '.';
   else if (checksAll(bl, 1) && wb >= 35 && wb <= 65) bestS = bestSan + ' forces a draw with checks.';
   else if (stop) bestS = stop;
   else if ((does = whatItDoes(c, pre, c.ply))) bestS = does;

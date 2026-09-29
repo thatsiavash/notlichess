@@ -248,6 +248,11 @@ function checkStep(m, u) {
   c1.found = found;
   ss.checks = (ss.checks || 0) + 1;
   if (found) ss.checksFound = (ss.checksFound || 0) + 1;
+  /* the recap's tally is the day's, across every session */
+  var dy = dayLoad();
+  dy.checks = (dy.checks || 0) + 1;
+  if (found) dy.checksFound = (dy.checksFound || 0) + 1;
+  daySave(dy);
   if (found) {
     c1.played = san;
     a.checkVerdict = '✓ ' + esc(san) + '. That is what your move allowed.';

@@ -322,7 +322,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .evalbar{width:10px;border-radius:0}
   .panel{padding-bottom:84px}
   .sticky-acts{
-    position:fixed;left:0;right:0;bottom:0;z-index:7;background:rgba(27,26,23,.97);
+    position:fixed;left:0;right:0;bottom:0;z-index:7;background:#1b1a17;
     border-top:1px solid var(--rule);padding:10px var(--gutter) calc(10px + env(safe-area-inset-bottom));
     display:flex;gap:10px;align-items:center;margin:0;
   }
