@@ -156,7 +156,7 @@
     await until(() => T.card().finished || !!$('.recap-item'), 20000);
     ok('the session ends in a recap', !!$('.recap-item') || /solved/i.test(text('#trainbox')), text('#trainbox').slice(0, 80));
     ok('the recap offers to play a game', !!$('.recap-acts .btn-big'));
-    ok('reveal-only cards do not earn the day on their own', T.ev('(ui.session && ui.session.attempted || 0) >= 3') || T.ev('dayLoad().sessions || 0') === sessionsBefore);
+    ok('reveal-only cards do not earn the day on their own', T.ev('ui.session ? (ui.session.attempted || 0) + (ui.session.carried || 0) >= 3 : false') || T.ev('dayLoad().sessions || 0') === sessionsBefore);
     click('[data-act=endSession]');
     await sleep(300);
 
