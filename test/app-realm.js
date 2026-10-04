@@ -1,7 +1,7 @@
 // Boots the whole built app (index.html's main script) in Node with a small DOM stub, and reaches its
 // internals through window.__nlTest.ev (enabled because location.hostname is 'localhost').
 // Usage: const A = require('./app-realm')({ now, storage: {...}, session: {...} });
-//        A.ev('todayPlan()'); A.setNow(ms); A.storage
+//        A.ev('todayPlan()'); A.setNow(ms); A.storage; A.click('tryAgain') (a button click, through the page's handler)
 // Nothing reaches the network (fetch never resolves) and no engine runs (Worker throws), so everything
 // tested here is the app's own bookkeeping.
 const fs = require('fs'), path = require('path');
@@ -39,10 +39,10 @@ module.exports = function makeApp(opts) {
     getBoundingClientRect: () => ({ top: 0, width: 45 }), scrollTop: 0,
   });
   const els = { main: elStub(), overlay: elStub() };
-  const timers = [];
+  const timers = [], listeners = {};
   const document = {
     getElementById: (id) => els[id] || null, querySelector: () => null, querySelectorAll: () => [],
-    addEventListener() {}, createElement: () => elStub(), body: elStub(), documentElement: elStub(), hidden: false, title: '',
+    addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); }, createElement: () => elStub(), body: elStub(), documentElement: elStub(), hidden: false, title: '',
   };
   const window = {
     addEventListener() {}, console, matchMedia: () => ({ matches: false }), scrollTo() {}, innerWidth: 1200,
@@ -70,6 +70,13 @@ module.exports = function makeApp(opts) {
   return {
     ev, storage: local.data, session: session.data, timers, loc,
     setNow: (t) => { now = t; }, getNow: () => now,
+    /* a click on a button with this data-act (and data-k), given to the
+       page's own document click handler */
+    click: (act, k) => {
+      const t = { tagName: 'A', getAttribute: (n) => (n === 'data-act' ? act : n === 'data-k' ? (k == null ? null : String(k)) : null) };
+      t.closest = (sel) => (sel === '[data-act]' ? t : null);
+      (listeners.click || []).forEach((fn) => fn({ target: t, preventDefault() {} }));
+    },
     /* run queued timers once (not recursively forever) */
     flush: (rounds) => { for (let r = 0; r < (rounds || 1); r++) { const t = timers.splice(0); t.forEach((f) => { try { f(); } catch (e) {} }); } },
   };

@@ -26,10 +26,15 @@ function ok(c, what) { if (!c) throw new Error(what || 'condition failed'); }
    the try, else the first legal reply), scored as the game move was; the
    expected move is scored as the best. Searches without searchmoves wait in
    window.__evals for a test to answer them. Answers come on the next tick.
-   The real engine fails to load in Node a few ticks after boot (SF.state
-   'failed', where a try is never checked): readyEngine() says it is up */
+   Every job keeps its opts (the tag among them), and every engineStop call
+   is kept in window.__stops. The real engine fails to load in Node a few
+   ticks after boot (SF.state 'failed', where a try is never checked):
+   readyEngine() says it is up */
 const ENGINE = `(function () {
   window.__evals = [];
+  window.__stops = [];
+  var realStop = engineStop;
+  engineStop = function (tag) { window.__stops.push(tag); return realStop.apply(this, arguments); };
   engineEval = function (fen, mt, prio, opts) {
     opts = opts || {};
     var job = { fen: fen, nodes: mt && mt.nodes, opts: opts };
@@ -291,6 +296,156 @@ function offBook(a) {
     A.ev(`(function () { var a = ui.session.active; tryAgain(); a.misses = 2; a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); return 1; })()`);
     f = still('a third miss');
     eq(f.misses, 3, 'misses'); eq(f.phase, 'tried', 'phase'); eq(f.result, null, 'no result');
+    /* after an answer nothing moves either: a solve on a one-move card, the
+       answer shown, and the answer shown while a try was on the board */
+    const ONE = `${OPEN} var it = allMistakes().filter(trainable).filter(function (x) { var c = cardFor(x); return c && !c.sol && unpackUci(x.b.ru).length; })[0], a = openCard(it);`;
+    A.ev(`(function () { ${ONE} a.tapped = true; window.__nlTest.play(a.bestUci); return 1; })()`);
+    f = still('a solve');
+    eq(f.phase, 'done', 'solved'); eq(f.result, 'first', 'result');
+    A.ev(`(function () { ${ONE} reveal(); return 1; })()`);
+    f = still('the answer shown');
+    eq(f.phase, 'done', 'revealed'); eq(f.result, 'fail', 'result');
+    A.ev(`(function () { ${ONE} a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); reveal(); return 1; })()`);
+    f = still('the answer shown over a try');
+    eq(f.phase, 'done', 'revealed over a try'); eq(f.tried, null, 'the try is gone'); eq(f.result, 'fail', 'result');
+  });
+
+  await test('a reveal or hint click within 450 ms of Try again or See it does nothing', () => {
+    const A = boot();
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    const S = () => JSON.parse(A.ev(`JSON.stringify((function (a) { return { phase: a.phase, result: a.result || null, hints: a.hints,
+      misses: a.misses, seen: !!(a.tried && a.tried.seen) }; })(ui.session.active))`));
+    const wait = (ms) => A.setNow(A.getNow() + ms);
+    /* card n, after its game move again with this many misses before it */
+    const gameMove = (n, before) => A.ev(`(function () { ${OPEN}
+      var it = allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[${n}], a = openCard(it);
+      a.misses = ${before}; gradeMove(uciToMove(a.st, a.playedUci)); return a.phase; })()`);
+    /* Try again at miss 1: the bar becomes [Hint] [Show the answer] under the thumb */
+    eq(gameMove(0, 0), 'tried', 'the game move stays');
+    wait(1000);
+    A.click('tryAgain');
+    eq(S().phase, 'guess', 'Try again takes the try back');
+    wait(150);
+    A.click('reveal'); A.click('hint');
+    let s = S();
+    eq(s.result, null, 'a reveal 150 ms after Try again'); eq(s.hints, 0, 'a hint 150 ms after Try again'); eq(s.phase, 'guess', 'phase');
+    wait(400);
+    A.click('hint');
+    eq(S().hints, 1, 'a hint 550 ms after Try again');
+    wait(150);
+    A.click('reveal');
+    eq(S().result, null, 'a reveal 150 ms after a hint');
+    wait(500);
+    A.click('reveal');
+    s = S();
+    eq(s.phase, 'done', 'a reveal later shows the answer'); eq(s.result, 'fail', 'result');
+    /* See it at miss 1: the left button becomes Hint */
+    gameMove(1, 0);
+    wait(1000);
+    A.click('seeIt');
+    ok(S().seen, 'See it plays their reply');
+    wait(150);
+    A.click('hint'); A.click('reveal');
+    s = S();
+    eq(s.phase, 'tried', 'the try stays'); eq(s.hints, 0, 'a hint 150 ms after See it'); eq(s.result, null, 'a reveal 150 ms after See it');
+    wait(500);
+    A.click('hint');
+    s = S();
+    eq(s.phase, 'guess', 'a hint later takes the try back'); eq(s.hints, 1, 'and gives hint 1');
+    /* See it at miss 3: the left button becomes Show the answer */
+    gameMove(2, 2);
+    wait(1000);
+    A.click('seeIt');
+    wait(150);
+    A.click('reveal');
+    s = S();
+    eq(s.misses, 3, 'misses'); eq(s.phase, 'tried', 'miss 3, the try stays'); eq(s.result, null, 'a reveal 150 ms after See it at miss 3');
+    /* Keep looking after a close move, and Try again after a move that was not checked */
+    A.ev(`(function () { ${OPEN} ${AFTER}
+      var a = openCard(allMistakes().filter(trainable)[3]); a.attempts++; showTry(a, offBook(a), 'close', null); return 1; })()`);
+    wait(1000);
+    A.click('dismissStronger');
+    eq(S().phase, 'guess', 'Keep looking takes the try back');
+    wait(150);
+    A.click('hint'); A.click('reveal');
+    s = S();
+    eq(s.hints, 0, 'a hint 150 ms after Keep looking'); eq(s.result, null, 'a reveal 150 ms after Keep looking');
+    A.ev(`(function () { ${OPEN} ${AFTER}
+      var a = openCard(allMistakes().filter(trainable)[4]); SF.state = 'failed'; gradeMove(offBook(a)); return a.tried && a.tried.kind; })()`);
+    wait(1000);
+    A.click('tryAgain');
+    wait(150);
+    A.click('reveal');
+    s = S();
+    eq(s.phase, 'guess', 'Try again after a move not checked'); eq(s.result, null, 'a reveal 150 ms after it');
+  });
+
+  await test('a tap on any of your pieces takes a try back, the castled rook included', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = 0;
+      allMistakes().filter(trainable).forEach(function (it) {
+        var a0 = openCard(it);
+        if (!a0) return;
+        legalMoves(a0.st).filter(function (m) { return m.castle && moveUci(m) !== a0.bestUci; }).forEach(function (m) {
+          /* the king lands on m.to, the rook beside it, and each is picked up from where it came */
+          var short_ = m.castle === 'O-O', rookTo = m.to + (short_ ? -1 : 1), rookFrom = m.to + (short_ ? 1 : -2);
+          [[m.to, m.from], [rookTo, rookFrom]].forEach(function (p) {
+            var a = openCard(it);
+            showTry(a, uciToMove(a.st, moveUci(m)), 'miss', null);
+            sessionClick(p[0]);
+            n++;
+            if (a.phase !== 'guess' || a.sel !== p[1]) out.push(it.key + ' ' + m.castle + ', a tap on ' + sqName(p[0]) + ': phase ' + a.phase + ', selected ' + (a.sel >= 0 ? sqName(a.sel) : 'none'));
+          });
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n >= 8, 'castling tries ' + r.n);
+    eq(r.out.length, 0, r.out.join(' | '));
+  });
+
+  await test('the automatic first hint comes at miss 1 at tier 1, at miss 2 at tier 2, never at tier 3', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = {}, its = allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; });
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        out[tier] = its.slice(0, 5).map(function (it) {
+          var a = openCard(it), seen = [];
+          for (var i = 0; i < 3; i++) {
+            if (a.phase === 'tried') tryAgain();
+            gradeMove(uciToMove(a.st, a.playedUci));
+            seen.push(a.phase === 'tried' && a.misses === i + 1 ? a.hints : 'phase ' + a.phase + ', misses ' + a.misses);
+          }
+          return seen.join(',');
+        });
+      });
+      return JSON.stringify(out); })()`));
+    const want = { 1: '1,1,1', 2: '0,1,1', 3: '0,0,0' };
+    [1, 2, 3].forEach((t) => r[t].forEach((x, i) => eq(x, want[t], 'tier ' + t + ' card ' + i + ', hints after misses 1 to 3')));
+  });
+
+  await test('a try is searched with the check tag; Try again, Show the answer, Next and ending the session stop it', async () => {
+    const A = boot();
+    const stops = (code) => JSON.parse(A.ev(`(function () { window.__stops = []; ${code}; return JSON.stringify(window.__stops); })()`));
+    const has = (list, what) => ok(list.indexOf('check') >= 0, what + ' stops the check search: ' + JSON.stringify(list));
+    A.ev(`(function () { ${OPEN} ${AFTER}
+      window.__t = { open: openCard, offBook: offBook };
+      var a = openCard(allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[0]);
+      window.readyEngine(); window.__evals = [];
+      gradeMove(offBook(a));
+      return 1; })()`);
+    eq(A.ev('window.__evals.length'), 1, 'one search for the try');
+    eq(A.ev('window.__evals[0].opts.tag'), 'check', 'its tag');
+    await tick(); await tick();
+    eq(A.ev('ui.session.active.tried && ui.session.active.tried.kind'), 'miss', 'the miss is on the board');
+    has(stops('tryAgain()'), 'Try again');
+    /* Show the answer while a check is still running */
+    eq(A.ev('(function () { window.readyEngine(); gradeMove(window.__t.offBook(ui.session.active)); return ui.session.active.phase; })()'), 'checking', 'a second try');
+    has(stops('reveal()'), 'Show the answer');
+    has(stops('nextCard()'), 'Next');
+    A.ev('(function () { window.__t.open(allMistakes().filter(trainable)[1]); return 1; })()');
+    has(stops('endSession()'), 'Ending the session');
   });
 
   results.forEach((l) => console.log(l));

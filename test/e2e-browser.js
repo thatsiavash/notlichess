@@ -71,7 +71,7 @@
     ok('board and band unchanged 5 s after an answer', frame() === f0, JSON.stringify(c.view) + ' -> ' + JSON.stringify(T.card().view));
     click('.tline.tl-bad');
     await sleep(200);
-    ok('tapping the red line plays your game move', T.card().view.line === 'refute');
+    ok('tapping the red line opens your game line at its start', T.card().view.line === 'refute' && T.card().view.idx === -1, JSON.stringify(T.card().view));
     ok('the red arrow shows alone at the start of its line', !!$('#bwrap .bad-arrow') && !$('#bwrap .good-arrow'));
 
     /* ── exploring: the invite, three rows, one arrow, a sentence, the way back ─ */
@@ -110,7 +110,9 @@
       await until(() => T.card().misses === 1, 4000);
       ok('replaying the game move is explained as the game move', /game move again/i.test(text('#cpanel')), text('.verdict'));
       ok('the game-move message never names the answer', text('.verdict').indexOf(T.ev('sanOf(ui.session.active.pre, ui.session.active.best)')) === -1, text('.verdict'));
-      /* the try stays on the board until Try again */
+      /* the try stays on the board until Try again (a button ignores taps in
+         a card's first 450 ms and for 450 ms after the bar changes) */
+      await sleep(500);
       click('[data-act=tryAgain]');
       await until(() => T.card().phase === 'guess', 3000);
       const others = legalOther(c);
@@ -129,6 +131,7 @@
       const c2 = T.card();
       if (c2.phase !== 'done') {
         /* the automatic first hint shows on Try again: after miss 2 at tier 2, miss 1 at tier 1, never at tier 3 */
+        await sleep(500);
         click('[data-act=tryAgain]');
         await until(() => T.card().phase === 'guess', 3000);
         const tier = T.ev('ui.session.active.tier'), c2b = T.card();
@@ -142,8 +145,15 @@
           c3 = await until(() => { const x = T.card(); return x.misses >= 3 || x.phase === 'done' ? x : null; }, 12000);
         }
         /* miss 3 reveals nothing: See it, then the left button offers the answer */
+        if (c3 && c3.phase === 'tried') await sleep(500);
         const offered = !!c3 && c3.phase === 'tried' && click('[data-act=seeIt]') && !!(await until(() => $('#cpanel [data-act=reveal]'), 3000));
         ok('miss 3 offers Show the answer; result still null', offered && T.card().result === null, c3 && (c3.phase + ' ' + c3.result));
+        if (offered) {
+          /* a second tap within 450 ms of See it lands on Show the answer and is ignored */
+          click('#cpanel [data-act=reveal]');
+          ok('a tap on Show the answer right after See it is ignored', T.card().result === null && T.card().phase === 'tried', T.card().phase + ' ' + T.card().result);
+          await sleep(500);
+        }
         click('#cpanel [data-act=reveal]');
         await until(() => T.card().phase === 'done', 3000);
         ok('a revealed card says what the answer is', /answer is/i.test(text('#cpanel')));

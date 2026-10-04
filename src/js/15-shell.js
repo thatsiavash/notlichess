@@ -476,9 +476,11 @@ document.addEventListener('click', function (e) {
     case 'reveal': if (!tooSoon(a)) reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
-    case 'dismissStronger': tryAgain(); break;
-    case 'tryAgain': tryAgain(); break;
-    case 'seeIt': seeIt(); break;
+    /* like Hint and Show the answer, these wait out tooSoon: a second tap of
+       a double tap lands on whatever button just took this one's place */
+    case 'dismissStronger': if (!tooSoon(a)) tryAgain(); break;
+    case 'tryAgain': if (!tooSoon(a)) tryAgain(); break;
+    case 'seeIt': if (!tooSoon(a)) seeIt(); break;
     case 'promo': promoChoose(k); break;
     case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;

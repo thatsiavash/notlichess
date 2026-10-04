@@ -700,13 +700,18 @@ function panelHtml(a, ss) {
       h += '<div class="acts-row sticky-acts guess-acts"><a class="btn-line btn-off" aria-disabled="true">Hint</a><a class="btn-line btn-off" aria-disabled="true">Show the answer</a></div>';
     }
     if (a.phase === 'guess') {
-      /* fixed slots: Hint stays in place, switched off when it has nothing left to give */
+      /* fixed slots: Hint stays in place, switched off when it has nothing
+         left to give, and named by the hint it gives next (as after See it) */
       var hintOff = a.hints >= 2 || (a.tier === 3 && !a.misses);
-      var acts = '<a class="btn-line' + (hintOff ? ' btn-off' : (a.misses ? ' btn-pulse' : '')) + '" data-act="hint"' + (hintOff ? ' aria-disabled="true"' : '') + '>Hint</a>'
+      var hintLab = a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint');
+      var acts = '<a class="btn-line' + (hintOff ? ' btn-off' : (a.misses ? ' btn-pulse' : '')) + '" data-act="hint"' + (hintOff ? ' aria-disabled="true"' : '') + '>' + hintLab + '</a>'
         + '<a class="' + (a.misses >= 2 ? 'btn-big' : 'btn-line') + '" data-act="reveal">Show the answer</a>';
       h += '<div class="acts-row sticky-acts guess-acts">' + acts + '</div>';
-      h += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
     }
+    /* the typed-move field while the board takes a move: a move typed over
+       a try takes the try back first */
+    if (a.phase === 'guess' || a.phase === 'tried')
+      h += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
     return h;
   }
   /* done: the result, then both halves of the lesson, always on screen */

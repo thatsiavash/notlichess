@@ -74,7 +74,7 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
     ok(/^Why \S+\? Try another (white|black) move and Stockfish answers\.$/.test(o.text) || o.text === 'Move a piece to test an idea. Stockfish answers.', o.text);
     ok(o.text.length <= 80, 'length');
     A.flush(6);
-    eq(A.ev('JSON.stringify(ui.session.active.invite)'), inv, 'unchanged after the autoplay');
+    eq(A.ev('JSON.stringify(ui.session.active.invite)'), inv, 'unchanged after every timer runs');
   });
 
   await test('exploring starts from the frame on screen and asks for three lines', () => {

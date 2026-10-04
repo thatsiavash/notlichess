@@ -6060,18 +6060,27 @@ function triedFrame(a) {
   return { st: st, last: last };
 }
 /* the piece a tap picks up while a try is on the board: one of yours where
-   it stands now, the tried piece from where it came; -1 for anything else */
+   it stands now, the tried piece from where it came (a castled rook from its
+   corner); -1 for anything else */
 function triedPick(a, sq) {
-  var p = triedFrame(a).st.b[sq];
+  var p = triedFrame(a).st.b[sq], t = a.tried;
   if (!p || isW(p) !== a.st.w) return -1;
-  var at = sq === a.tried.to ? a.tried.from : sq, q = a.st.b[at];
+  var m = uciToMove(a.st, t.uci), at = sq;
+  if (sq === t.to) at = t.from;
+  else if (m && m.castle) {
+    var short_ = m.castle === 'O-O';
+    if (sq === t.to + (short_ ? -1 : 1)) at = t.to + (short_ ? 1 : -2);
+  }
+  var q = a.st.b[at];
   return q && isW(q) === a.st.w ? at : -1;
 }
 /* Try again: the try leaves the board and the card asks again from the
    position before it (a forcing line keeps the moves already found). The
-   model part runs first for anything pressed while a try is shown */
+   model part runs first for anything pressed while a try is shown. The bar
+   changes under the thumb here, so its buttons wait out tooSoon */
 function clearTry(a) {
   engineStop('check');
+  a.barAt = Date.now();
   a.phase = 'guess';
   a.tried = null;
   a.ghostMove = null;
@@ -6091,6 +6100,8 @@ function seeIt() {
   var a = ui.session && ui.session.active, t = a && a.tried;
   if (!t || a.phase !== 'tried' || !t.reply || t.seen) return;
   t.seen = true;
+  /* the left button becomes help: a second tap of a double tap waits */
+  a.barAt = Date.now();
   a.animMove = triedFrame(a).last;
   snd('move');
   renderCard();
@@ -6231,8 +6242,9 @@ function reveal() {
   finishCard(a.foundGood && !a.misses ? 'hint' : 'fail');
 }
 /* a second tap on Next lands where Show the answer now sits: taps in the
-   first half second of a card are the old card's */
-function tooSoon(a) { return !!a && Date.now() - (a.shownAt || 0) < 450; }
+   first half second of a card are the old card's. The same holds for half a
+   second after the bar changes under the thumb (Try again, See it, a hint) */
+function tooSoon(a) { return !!a && Date.now() - Math.max(a.shownAt || 0, a.barAt || 0) < 450; }
 function giveHint() {
   var a = ui.session && ui.session.active;
   if (!a) return;
@@ -6242,6 +6254,7 @@ function giveHint() {
   if (a.phase !== 'guess' || a.hints >= 2 || (a.tier === 3 && !a.misses)) { if (cleared) renderCard(); return; }
   a.hints = a.hints + 1;
   a.hintAfter = true;
+  a.barAt = Date.now();
   keepProgress(a);
   renderCard();
 }
@@ -7617,13 +7630,18 @@ function panelHtml(a, ss) {
       h += '<div class="acts-row sticky-acts guess-acts"><a class="btn-line btn-off" aria-disabled="true">Hint</a><a class="btn-line btn-off" aria-disabled="true">Show the answer</a></div>';
     }
     if (a.phase === 'guess') {
-      /* fixed slots: Hint stays in place, switched off when it has nothing left to give */
+      /* fixed slots: Hint stays in place, switched off when it has nothing
+         left to give, and named by the hint it gives next (as after See it) */
       var hintOff = a.hints >= 2 || (a.tier === 3 && !a.misses);
-      var acts = '<a class="btn-line' + (hintOff ? ' btn-off' : (a.misses ? ' btn-pulse' : '')) + '" data-act="hint"' + (hintOff ? ' aria-disabled="true"' : '') + '>Hint</a>'
+      var hintLab = a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint');
+      var acts = '<a class="btn-line' + (hintOff ? ' btn-off' : (a.misses ? ' btn-pulse' : '')) + '" data-act="hint"' + (hintOff ? ' aria-disabled="true"' : '') + '>' + hintLab + '</a>'
         + '<a class="' + (a.misses >= 2 ? 'btn-big' : 'btn-line') + '" data-act="reveal">Show the answer</a>';
       h += '<div class="acts-row sticky-acts guess-acts">' + acts + '</div>';
-      h += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
     }
+    /* the typed-move field while the board takes a move: a move typed over
+       a try takes the try back first */
+    if (a.phase === 'guess' || a.phase === 'tried')
+      h += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
     return h;
   }
   /* done: the result, then both halves of the lesson, always on screen */
@@ -8479,9 +8497,11 @@ document.addEventListener('click', function (e) {
     case 'reveal': if (!tooSoon(a)) reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
-    case 'dismissStronger': tryAgain(); break;
-    case 'tryAgain': tryAgain(); break;
-    case 'seeIt': seeIt(); break;
+    /* like Hint and Show the answer, these wait out tooSoon: a second tap of
+       a double tap lands on whatever button just took this one's place */
+    case 'dismissStronger': if (!tooSoon(a)) tryAgain(); break;
+    case 'tryAgain': if (!tooSoon(a)) tryAgain(); break;
+    case 'seeIt': if (!tooSoon(a)) seeIt(); break;
     case 'promo': promoChoose(k); break;
     case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;

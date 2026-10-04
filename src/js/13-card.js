@@ -327,18 +327,27 @@ function triedFrame(a) {
   return { st: st, last: last };
 }
 /* the piece a tap picks up while a try is on the board: one of yours where
-   it stands now, the tried piece from where it came; -1 for anything else */
+   it stands now, the tried piece from where it came (a castled rook from its
+   corner); -1 for anything else */
 function triedPick(a, sq) {
-  var p = triedFrame(a).st.b[sq];
+  var p = triedFrame(a).st.b[sq], t = a.tried;
   if (!p || isW(p) !== a.st.w) return -1;
-  var at = sq === a.tried.to ? a.tried.from : sq, q = a.st.b[at];
+  var m = uciToMove(a.st, t.uci), at = sq;
+  if (sq === t.to) at = t.from;
+  else if (m && m.castle) {
+    var short_ = m.castle === 'O-O';
+    if (sq === t.to + (short_ ? -1 : 1)) at = t.to + (short_ ? 1 : -2);
+  }
+  var q = a.st.b[at];
   return q && isW(q) === a.st.w ? at : -1;
 }
 /* Try again: the try leaves the board and the card asks again from the
    position before it (a forcing line keeps the moves already found). The
-   model part runs first for anything pressed while a try is shown */
+   model part runs first for anything pressed while a try is shown. The bar
+   changes under the thumb here, so its buttons wait out tooSoon */
 function clearTry(a) {
   engineStop('check');
+  a.barAt = Date.now();
   a.phase = 'guess';
   a.tried = null;
   a.ghostMove = null;
@@ -358,6 +367,8 @@ function seeIt() {
   var a = ui.session && ui.session.active, t = a && a.tried;
   if (!t || a.phase !== 'tried' || !t.reply || t.seen) return;
   t.seen = true;
+  /* the left button becomes help: a second tap of a double tap waits */
+  a.barAt = Date.now();
   a.animMove = triedFrame(a).last;
   snd('move');
   renderCard();
@@ -498,8 +509,9 @@ function reveal() {
   finishCard(a.foundGood && !a.misses ? 'hint' : 'fail');
 }
 /* a second tap on Next lands where Show the answer now sits: taps in the
-   first half second of a card are the old card's */
-function tooSoon(a) { return !!a && Date.now() - (a.shownAt || 0) < 450; }
+   first half second of a card are the old card's. The same holds for half a
+   second after the bar changes under the thumb (Try again, See it, a hint) */
+function tooSoon(a) { return !!a && Date.now() - Math.max(a.shownAt || 0, a.barAt || 0) < 450; }
 function giveHint() {
   var a = ui.session && ui.session.active;
   if (!a) return;
@@ -509,6 +521,7 @@ function giveHint() {
   if (a.phase !== 'guess' || a.hints >= 2 || (a.tier === 3 && !a.misses)) { if (cleared) renderCard(); return; }
   a.hints = a.hints + 1;
   a.hintAfter = true;
+  a.barAt = Date.now();
   keepProgress(a);
   renderCard();
 }
