@@ -7364,22 +7364,27 @@ function doneHtml(ss) {
 }
 
 /* ── the card ────────────────────────────────────────────────────────────── */
-/* the card's board and its bar, drawn from the card's state */
-function renderCardBoard(a) {
+/* the card's board as data: the position drawn (st), its last move, the
+   bar's value from the player's side (ev), the marks for boardSvg (opts),
+   whether the board takes moves (live) and whether the bar waits (pending).
+   It reads the card and writes nothing, so a test can check every frame
+   (the spoiler rule) without a page; what drawing a frame remembers is
+   kept by renderCardBoard */
+function boardOptsFor(a) {
   var it = a.it, flip = it.g.color === 'black';
-  /* the board */
-  var view, opts = { flip: flip };
+  var view, opts = { flip: flip }, evLive = false;
   if (a.phase === 'done' && a.explore) {
     var ex = a.explore, xn = xpCur(ex), xr = ex.res[xn.key], quiet = xpSpoil(xn);
     /* the bar follows the explored position, from the learner's side; it
        keeps its last value while Stockfish thinks */
-    if (xr && xr.lines[0] && !quiet) ex.lastEv = myPov(it) ? xr.lines[0].cp : -xr.lines[0].cp;
-    view = { st: ex.st, last: ex.last, ev: ex.lastEv != null ? ex.lastEv : lineView(a).ev };
+    var ev = ex.lastEv;
+    if (xr && xr.lines[0] && !quiet) { ev = myPov(it) ? xr.lines[0].cp : -xr.lines[0].cp; evLive = true; }
+    view = { st: ex.st, last: ex.last, ev: ev != null ? ev : lineView(a).ev };
     opts.sel = ex.sel;
     /* one arrow: Stockfish's move, or the row under the pointer */
     var xs = xpShown(ex, xn), hl = xs && !quiet && xs[ex.hot || 0] ? uciToMove(ex.st, xs[ex.hot || 0].pv[0]) : null;
     if (hl) opts.ghost = [hl.from, hl.to];
-    if (ex.anim) { opts.anim = ex.anim; ex.anim = null; }
+    if (ex.anim) opts.anim = ex.anim;
     if (ex.sel >= 0) opts.dots = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel; }).map(function (m) { return m.to; });
   } else if (a.phase === 'done') {
     view = lineView(a);
@@ -7389,7 +7394,6 @@ function renderCardBoard(a) {
     if (sameMove(a.animMove, view.last)) opts.anim = a.animMove;
     else if (lv && lv.line === a.view.line && a.view.idx === lv.idx + 1 && a.view.idx >= 0 && L1 && L1.moves[a.view.idx])
       opts.anim = [L1.moves[a.view.idx].from, L1.moves[a.view.idx].to];
-    a.lastView = { line: a.view.line, idx: a.view.idx };
     /* one arrow at a time, on the start position only: red for the move you
        played, green for the better one; never both */
     if (a.view && a.view.idx < 0) {
@@ -7416,16 +7420,31 @@ function renderCardBoard(a) {
   opts.label = (view.st.w ? 'White' : 'Black') + ' to move. You played ' + sanOf(a.pre, a.played) + ' in the game.';
   var ck = checkedKingSq(view.st);
   if (ck != null) opts.check = ck;
+  return {
+    st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts,
+    live: a.phase === 'guess' || a.phase === 'check' || !!(a.phase === 'done' && a.explore),
+    /* the bar fills only once the card is answered: a tall bar during the
+       guess would say "you are winning, find it" */
+    pending: a.phase !== 'done' || !!(a.explore && xpSpoil(xpCur(a.explore)))
+  };
+}
+/* the card's board and its bar, drawn from boardOptsFor */
+function renderCardBoard(a) {
+  var it = a.it, f = boardOptsFor(a);
+  /* what drawing this frame remembers: the bar's last live value and a
+     slide already shown while exploring, the line frame on screen after */
+  if (a.phase === 'done' && a.explore) {
+    if (f.evLive) a.explore.lastEv = f.ev;
+    a.explore.anim = null;
+  } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx };
   var bw = el('bwrap');
-  bw.innerHTML = boardSvg(view.st, opts) + (a.pendingPromo ? promoHtml(view.st) : '');
-  bw.classList.toggle('static', !(a.phase === 'guess' || a.phase === 'check' || (a.phase === 'done' && a.explore)));
+  bw.innerHTML = boardSvg(f.st, f.opts) + (a.pendingPromo ? promoHtml(f.st) : '');
+  bw.classList.toggle('static', !f.live);
   releaseAnims(bw);
   a.animMove = null;
-  /* the bar: the player's view of the position, with no pawn number. It
-     fills only once the card is answered: a tall bar during the guess
-     would say "you are winning, find it" */
-  var myCp = view.ev != null ? view.ev : it.b.eb;
-  el('ebar').classList.toggle('pending', a.phase !== 'done' || !!(a.explore && xpSpoil(xpCur(a.explore))));
+  /* the bar: the player's view of the position, with no pawn number */
+  var myCp = f.ev != null ? f.ev : it.b.eb;
+  el('ebar').classList.toggle('pending', f.pending);
   el('ebar-fill').style.height = winPct(evalWhite(it, myCp)) + '%';
   el('ebar-lab').textContent = '';
 }
