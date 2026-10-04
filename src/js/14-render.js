@@ -448,13 +448,17 @@ function boardOptsFor(a) {
       else if (L0 && L0.moves.length) opts.good = [L0.moves[0].from, L0.moves[0].to];
     }
   } else {
-    var st = a.st;
+    var st = a.st, last = a.phase === 'checking' ? a.ghostMove : a.lastMove;
     if (a.phase === 'checking' && a.ghostMove) {
       st = cloneState(a.st);
       var gm = legalMoves(st).filter(function (m) { return m.from === a.ghostMove[0] && m.to === a.ghostMove[1]; })[0];
       if (gm) applyMove(st, gm);
+    } else if (a.phase === 'tried') {
+      /* the try stays drawn over the position before it */
+      var tf = triedFrame(a);
+      st = tf.st; last = tf.last;
     }
-    view = { st: st, last: a.phase === 'checking' ? a.ghostMove : a.lastMove, ev: it.b.eb };
+    view = { st: st, last: last, ev: it.b.eb };
     opts.sel = a.sel;
     if (a.phase === 'guess' && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
     opts.shapes = a.shapes;
@@ -468,7 +472,7 @@ function boardOptsFor(a) {
   if (ck != null) opts.check = ck;
   return {
     st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts,
-    live: a.phase === 'guess' || !!(a.phase === 'done' && a.explore),
+    live: a.phase === 'guess' || a.phase === 'tried' || !!(a.phase === 'done' && a.explore),
     /* the bar fills only once the card is answered: a tall bar during the
        guess would say "you are winning, find it" */
     pending: a.phase !== 'done' || !!(a.explore && xpSpoil(xpCur(a.explore)))
@@ -535,11 +539,6 @@ function renderCard() {
   var cardEl = box.querySelector('.card');
   if (cardEl) cardEl.classList.toggle('xp-card', !!(a.phase === 'done' && a.explore));
   if (a.phase === 'done' && a.explore) fitRows();
-  /* once, on a phone: the board after an answer is a question box */
-  if (a.phase === 'done' && !a.explore && xpTouch() && !store.get('nl:xpTip', 0)) {
-    store.set('nl:xpTip', 1);
-    setTimeout(function () { notice('Tip: tap a piece whose turn it is to test an idea.'); }, 1200);
-  }
   makeFocusable(fp);
   if (newCard) { var th = el('task-h'); if (th) th.focus({ preventScroll: true }); }
   else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
@@ -569,7 +568,7 @@ function altNames(a) {
 }
 /* the phone's prompt line: one message at a time, two lines at most */
 function cardTaskHtml(a) {
-  var side = a.it.g.color === 'white' ? 'White' : 'Black', txt, cls = '', act = '';
+  var side = a.it.g.color === 'white' ? 'White' : 'Black', txt, cls = '';
   var strip = function (h) { return String(h).replace(/<span class="dim">[\s\S]*?<\/span>/g, '').replace(/<[^>]+>/g, ''); };
   if (a.phase === 'done' && a.explore) return '<div class="card-task xp-task" aria-hidden="true">' + esc(sayAt(a, a.explore, a.explore.at)) + '</div>';
   if (a.phase === 'checking') txt = 'Checking ' + esc(a.checking || 'your move') + '…';
@@ -577,12 +576,7 @@ function cardTaskHtml(a) {
     var best = esc(a.lines.best.san[0] || ''), why = esc(a.cls.sentences.best || '');
     /* the move is named once: "Qf8+ wins the pawn" becomes "It wins the pawn" */
     if (best && why.indexOf(best + ' ') === 0) why = 'It ' + why.slice(best.length + 1);
-    act = ' data-act="lineTab" data-k="best" role="button"';
-    if (a.result === 'fail' || a.revealed) {
-      /* the third wrong try keeps its verdict, then the answer */
-      var lead = a.thirdMiss && a.lastTry ? '✗ ' + esc(a.lastTry) + ' does not work. ' : '';
-      txt = fitLine([lead + 'The answer is ' + best + '. ' + why, lead + 'The answer is ' + best + '.', 'The answer is ' + best + '. ' + why, 'The answer is ' + best + '.']);
-    }
+    if (a.result === 'fail' || a.revealed) txt = fitLine(['The answer is ' + best + '. ' + why, 'The answer is ' + best + '.']);
     else if (a.alt) { txt = fitLine(['✓ ' + esc(altNames(a).mine) + ' works too. The engine prefers ' + esc(altNames(a).theirs) + '.', '✓ ' + esc(altNames(a).mine) + ' works too.']); cls = ' good'; }
     else { var head1 = '✓ ' + best + '. ' + (a.result === 'first' ? 'Found it.' : 'You got there.'); txt = fitLine([head1 + ' ' + why, head1]); cls = ' good'; }
   }
@@ -594,7 +588,7 @@ function cardTaskHtml(a) {
     var san = esc(sanOf(a.pre, a.played)), task = 'You are ' + side + '. Find a better move. ';
     txt = fitLine([task + (a.it.b.d ? 'Your ' + san + ', the red arrow, ' + decisiveWords(a.it.g, a.it.b) + '.' : ''), task + 'Your ' + san + ' is the red arrow.']);
   }
-  return '<div class="card-task' + cls + '"' + act + ' aria-hidden="true">' + txt + '</div>';
+  return '<div class="card-task' + cls + '" aria-hidden="true">' + txt + '</div>';
 }
 /* a slide only for the move the board shows as its last one */
 function sameMove(x, y) { return !!(x && y && x[0] === y[0] && x[1] === y[1]); }
@@ -697,21 +691,19 @@ function panelHtml(a, ss) {
     else if (!store.get('nl:marksSeen', false) && ss.idx === 0 && a.firstSight && !a.attempts)
       fb = '<p class="first-line">Drag a piece, or tap it and tap a square. The bar on the left fills in once you answer.</p>';
     else if (a.tier === 1 && a.solIdx === 0 && !a.hints) fb = '<p class="first-line">Look at every check and capture first, for both sides.</p>';
-    if (a.hints >= 1) fb += '<p class="hint-note">' + esc(hintText(a)) + (a.hints >= 2 ? ' The piece to move is circled.' : '') + '</p>';
+    /* while a try is shown, its verdict is the one message; a hint shows on Try again */
+    if (a.hints >= 1 && a.phase !== 'tried') fb += '<p class="hint-note">' + esc(hintText(a)) + (a.hints >= 2 ? ' The piece to move is circled.' : '') + '</p>';
     h += '<div class="feedback" aria-live="polite">' + fb + '</div>';
-    if (a.phase !== 'guess') {
+    if (a.phase === 'tried') h += '<div class="acts-row sticky-acts guess-acts">' + triedActs(a) + '</div>';
+    else if (a.phase !== 'guess') {
       /* while a move is checked or answered, the bar keeps its place, switched off */
       h += '<div class="acts-row sticky-acts guess-acts"><a class="btn-line btn-off" aria-disabled="true">Hint</a><a class="btn-line btn-off" aria-disabled="true">Show the answer</a></div>';
     }
     if (a.phase === 'guess') {
-      var acts = '';
-      if (a.strongerOffer) acts += '<a class="btn-line" data-act="dismissStronger">Keep looking</a><a class="btn-line" data-act="reveal">Show the best move</a>';
-      else {
-        /* fixed slots: Hint stays in place, switched off when it has nothing left to give */
-        var hintOff = a.hints >= 2 || (a.tier === 3 && !a.misses);
-        acts += '<a class="btn-line' + (hintOff ? ' btn-off' : (a.misses ? ' btn-pulse' : '')) + '" data-act="hint"' + (hintOff ? ' aria-disabled="true"' : '') + '>Hint</a>';
-        acts += '<a class="' + (a.misses >= 2 ? 'btn-big' : 'btn-line') + '" data-act="reveal">Show the answer</a>';
-      }
+      /* fixed slots: Hint stays in place, switched off when it has nothing left to give */
+      var hintOff = a.hints >= 2 || (a.tier === 3 && !a.misses);
+      var acts = '<a class="btn-line' + (hintOff ? ' btn-off' : (a.misses ? ' btn-pulse' : '')) + '" data-act="hint"' + (hintOff ? ' aria-disabled="true"' : '') + '>Hint</a>'
+        + '<a class="' + (a.misses >= 2 ? 'btn-big' : 'btn-line') + '" data-act="reveal">Show the answer</a>';
       h += '<div class="acts-row sticky-acts guess-acts">' + acts + '</div>';
       h += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
     }
@@ -724,7 +716,6 @@ function panelHtml(a, ss) {
     disc = '';
     head = 'The answer is ' + esc(best) + '.';
     if (a.foundGood) sub = 'Your ' + esc(a.foundGood.san) + ' was close.';
-    else if (a.thirdMiss && a.verdict) sub = a.verdict.html;
   } else if (a.alt) {
     disc = '<span class="disc disc-help" aria-hidden="true">✓</span>';
     head = esc(altNames(a).mine) + ' works too.';
@@ -769,6 +760,19 @@ function panelHtml(a, ss) {
     + '<a class="nav-btn' + (fwdOff ? ' nav-off' : '') + '" data-act="lineFwd" aria-label="' + fwdLab + '">›</a>'
     + '<a class="btn-big" data-act="next">' + (ss.idx + 1 >= ss.keys.length && !(ss.relearn && ss.relearn.length) ? 'Finish' : 'Next') + '</a></div>';
   return h;
+}
+/* the bar while a try is on the board: Try again is the gold right-hand
+   button; on the left, See it plays their reply, then help is offered (the
+   next hint, or from the third miss the answer). A close move keeps
+   looking; a move the engine could not check offers the answer */
+function triedActs(a) {
+  var t = a.tried, left;
+  if (t.kind === 'close') return '<a class="btn-line" data-act="dismissStronger">Keep looking</a><a class="btn-line" data-act="reveal">Show the best move</a>';
+  if (t.kind === 'miss' && t.reply && !t.seen) left = '<a class="btn-line" data-act="seeIt">See it ›</a>';
+  else if (t.kind === 'unchecked' || a.misses >= 3) left = '<a class="btn-line" data-act="reveal">Show the answer</a>';
+  else if (a.hints >= 2) left = '<a class="btn-line btn-off" aria-disabled="true">No more hints</a>';
+  else left = '<a class="btn-line" data-act="hint">' + (a.hints ? 'Hint 2' : 'Hint') + '</a>';
+  return left + '<a class="btn-big" data-act="tryAgain">Try again</a>';
 }
 /* the exploration: the trail, the sentence, Stockfish's three best moves */
 function xpHtml(a) {

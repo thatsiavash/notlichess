@@ -476,14 +476,16 @@ document.addEventListener('click', function (e) {
     case 'reveal': if (!tooSoon(a)) reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
-    case 'dismissStronger': if (a) { a.strongerOffer = false; a.verdict = null; renderCard(); } break;
+    case 'dismissStronger': tryAgain(); break;
+    case 'tryAgain': tryAgain(); break;
+    case 'seeIt': seeIt(); break;
     case 'promo': promoChoose(k); break;
     case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;
     case 'marksSeen': store.set('nl:marksSeen', true); renderCard(); break;
-    /* a teaching line plays from the start: its arrow first, then the moves */
-    case 'lineTab': if (a && a.lines && a.lines[k]) { if (a.explore) exploreExit('silent'); autoplayLine(k, null, 0, a.lines[k].states.length); } break;
-    case 'lineTo': if (a && a.lines) { stopAuto(a); if (a.explore) exploreExit('silent'); a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
+    /* a teaching line opens at its start, with its arrow; › steps it */
+    case 'lineTab': if (a && a.lines && a.lines[k]) { if (a.explore) exploreExit('silent'); a.view = { line: k, idx: -1 }; renderCard(); } break;
+    case 'lineTo': if (a && a.lines) { if (a.explore) exploreExit('silent'); a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
     case 'lineBack': stepView(-1); break;
     case 'lineFwd': stepView(1); break;
     case 'explore': if (a) startExplore({ view: a.invite && a.invite.view, via: 'invite' }); break;
@@ -577,7 +579,7 @@ document.addEventListener('keydown', function (e) {
     if (e.key === 'ArrowLeft') { e.preventDefault(); stepView(-1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); stepView(1); }
     else if (e.key === 'Enter' || e.key === ' ') { if (!(e.target && e.target.closest && e.target.closest('[data-act]'))) { e.preventDefault(); nextCard(); } }
-  } else if (a.phase === 'guess') {
+  } else if (a.phase === 'guess' || a.phase === 'tried') {
     /* never a letter: letters start moves in the typed-move field */
     if (e.key === '?') { e.preventDefault(); giveHint(); }
   }
@@ -587,14 +589,14 @@ function reducedMotion() { return !!(window.matchMedia && window.matchMedia('(pr
 function typedMove(txt) {
   var a = ui.session && ui.session.active;
   var xp = a && a.phase === 'done' && a.explore;
-  if (!a || (a.phase !== 'guess' && !xp)) return;
+  if (!a || (a.phase !== 'guess' && a.phase !== 'tried' && !xp)) return;
   var st = xp ? a.explore.st : a.st;
   var t = String(txt || '').trim().replace(/0/g, 'O');
   var m = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(t) ? uciToMove(st, t.toLowerCase()) : null;
   if (!m && t) m = sanToMove(st, t);
   if (!m) { notice('That move is not legal here. Try a move like Nf3, exd5, O-O or g1f3.'); return; }
   if (xp) { explorePlay(m, false); var kb = el('kbmove'); if (kb) { kb.value = ''; kb.focus(); } }
-  else gradeMove(m);
+  else { if (a.phase === 'tried') clearTry(a); gradeMove(m); }
 }
 /* Enter and Space on focusable actions; the view tabs keep their own role */
 function makeFocusable(root) {
@@ -643,6 +645,7 @@ function moveGhost(x, y) {
 function boardState(a) {
   if (a.phase === 'done' && a.explore) return { st: a.explore.st, live: true, explore: true };
   if (a.phase === 'guess') return { st: a.st, live: true };
+  if (a.phase === 'tried') return { st: triedFrame(a).st, live: true, tried: true };
   return { st: a.st, live: false };
 }
 document.addEventListener('pointerdown', function (e) {
@@ -667,6 +670,16 @@ document.addEventListener('pointerdown', function (e) {
     }
   }
   if (e.button !== 0 || !bs.live || a.pendingPromo) return;
+  /* a try on the board: a press on one of your pieces takes it back at
+     once, and the press (a tap or a drag) goes on from the real position */
+  if (bs.tried) {
+    var pick = triedPick(a, sq);
+    if (pick < 0) return;
+    clearTry(a);
+    renderCard();
+    bs = boardState(a);
+    sq = pick;
+  }
   pointerState.suppressClick = false;
   if (!bs.explore && a.shapes.length) { a.shapes = []; renderCard(); }
   var p = bs.st.b[sq];
@@ -793,7 +806,7 @@ window.__nlTest = {
     if (!a) return { session: !!ss, finished: !!(ss && ss.finished), idx: ss ? ss.idx : null, n: ss ? ss.keys.length : null };
     return { idx: ss.idx, n: ss.keys.length, key: a.key, phase: a.phase, best: a.bestUci, played: a.playedUci,
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
-             hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view,
+             hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
              sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b };
   },
@@ -803,6 +816,8 @@ window.__nlTest = {
     var st = a.phase === 'done' && a.explore ? a.explore.st : a.st;
     var m = uciToMove(st, uci);
     if (!m) return 'illegal';
+    /* a try on the board is taken back first, as a tap on a piece does */
+    if (a.phase === 'tried') tryAgain();
     if (a.phase === 'guess') { gradeMove(m); return 'graded'; }
     if (a.phase === 'done' && a.explore) { explorePlay(m, false); return 'explored'; }
     return 'not guessing';

@@ -63,9 +63,12 @@
     ok('the solved card shows the best line', !!c && !!c.lines && c.lines.best.length >= 1);
     ok('both halves of the lesson are on screen', /\S/.test(text('.tline.tl-bad')) && /\S/.test(text('.tline.tl-good')), text('.result'));
     ok('no pawn number on the board', !/[+-]\d+\.\d/.test(text('#ebar-lab')));
-    const idx0 = c.view.idx;
-    await sleep(3200);
-    ok('the answer line plays forward by itself', T.card().view.idx > idx0 || T.card().view.line !== 'best' || (c.lines && c.lines.best.length <= idx0 + 1), 'idx ' + idx0 + ' -> ' + T.card().view.idx);
+    /* nothing moves on its own: after the solving move lands, the board and the band stay */
+    await sleep(600);
+    const frame = () => ($('#bwrap') ? $('#bwrap').innerHTML : '') + '|' + text('.card-task') + '|' + JSON.stringify(T.card().view);
+    const f0 = frame();
+    await sleep(5000);
+    ok('board and band unchanged 5 s after an answer', frame() === f0, JSON.stringify(c.view) + ' -> ' + JSON.stringify(T.card().view));
     click('.tline.tl-bad');
     await sleep(200);
     ok('tapping the red line plays your game move', T.card().view.line === 'refute');
@@ -107,32 +110,42 @@
       await until(() => T.card().misses === 1, 4000);
       ok('replaying the game move is explained as the game move', /game move again/i.test(text('#cpanel')), text('.verdict'));
       ok('the game-move message never names the answer', text('.verdict').indexOf(T.ev('sanOf(ui.session.active.pre, ui.session.active.best)')) === -1, text('.verdict'));
-      await until(() => T.card().phase === 'guess', 8000);
+      /* the try stays on the board until Try again */
+      click('[data-act=tryAgain]');
+      await until(() => T.card().phase === 'guess', 3000);
       const others = legalOther(c);
       ok('there are other legal moves to try', others.length >= 2, String(others.length));
       /* a try that is nearly as good counts as close, not as a miss: try another */
       const tried = [];
       for (let oi = 0; oi < Math.min(4, others.length); oi++) {
-        await until(() => T.card().phase === 'guess', 8000);
+        await until(() => T.card().phase === 'guess' || T.card().phase === 'tried', 8000);
         if (T.card().misses >= 2) break;
         tried.push(others[oi]);
         T.play(others[oi]);
-        await until(() => T.card().misses === 2 || T.card().phase === 'done' || (T.card().phase === 'guess' && !!$('.verdict')), 15000);
+        await until(() => T.card().misses === 2 || T.card().phase === 'done' || (T.card().tried && T.card().tried.kind !== 'miss'), 15000);
         if (T.card().misses === 2 || T.card().phase === 'done') break;
       }
       await until(() => T.card().misses === 2 || T.card().phase === 'done', 6000);
       const c2 = T.card();
       if (c2.phase !== 'done') {
-        ok('the second miss brings a hint', c2.hints >= 1 && !!$('.hint-note'), 'hints ' + c2.hints);
+        /* the automatic first hint shows on Try again: after miss 2 at tier 2, miss 1 at tier 1, never at tier 3 */
+        click('[data-act=tryAgain]');
+        await until(() => T.card().phase === 'guess', 3000);
+        const tier = T.ev('ui.session.active.tier'), c2b = T.card();
+        ok('tier 2: hint 1 is on after the second Try again', tier === 3 ? c2b.hints === 0 : c2b.hints >= 1 && !!$('.hint-note'), 'tier ' + tier + ', hints ' + c2b.hints);
         const more = legalOther(c).filter((u) => tried.indexOf(u) === -1);
         let c3 = null;
         for (let mi = 0; mi < Math.min(4, more.length) && !c3; mi++) {
-          await until(() => T.card().phase === 'guess' || T.card().phase === 'done', 8000);
+          await until(() => ['guess', 'tried', 'done'].indexOf(T.card().phase) !== -1, 8000);
           if (T.card().phase === 'done') { c3 = T.card(); break; }
           T.play(more[mi]);
-          c3 = await until(() => { const x = T.card(); return x.phase === 'done' ? x : null; }, 12000);
+          c3 = await until(() => { const x = T.card(); return x.misses >= 3 || x.phase === 'done' ? x : null; }, 12000);
         }
-        ok('the third miss shows the answer', !!c3 && c3.result === 'fail', c3 && c3.result);
+        /* miss 3 reveals nothing: See it, then the left button offers the answer */
+        const offered = !!c3 && c3.phase === 'tried' && click('[data-act=seeIt]') && !!(await until(() => $('#cpanel [data-act=reveal]'), 3000));
+        ok('miss 3 offers Show the answer; result still null', offered && T.card().result === null, c3 && (c3.phase + ' ' + c3.result));
+        click('#cpanel [data-act=reveal]');
+        await until(() => T.card().phase === 'done', 3000);
         ok('a revealed card says what the answer is', /answer is/i.test(text('#cpanel')));
       } else ok('a close alternative was accepted as solved', c2.result !== 'fail');
       click('[data-act=next]');
@@ -163,6 +176,7 @@
       const x = T.card();
       if (x.finished || !x.key && x.session === false) break;
       if (x.phase === 'guess') click('[data-act=reveal]');
+      else if (x.phase === 'tried') click('[data-act=tryAgain]');
       else if (x.phase === 'done') click('[data-act=next]');
       await sleep(900);
       if (T.card().finished) break;

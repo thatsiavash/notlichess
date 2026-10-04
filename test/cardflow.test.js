@@ -25,7 +25,9 @@ function ok(c, what) { if (!c) throw new Error(what || 'condition failed'); }
    refutation (the reply that punished the game move, when it is legal after
    the try, else the first legal reply), scored as the game move was; the
    expected move is scored as the best. Searches without searchmoves wait in
-   window.__evals for a test to answer them. Answers come on the next tick */
+   window.__evals for a test to answer them. Answers come on the next tick.
+   The real engine fails to load in Node a few ticks after boot (SF.state
+   'failed', where a try is never checked): readyEngine() says it is up */
 const ENGINE = `(function () {
   window.__evals = [];
   engineEval = function (fen, mt, prio, opts) {
@@ -47,6 +49,7 @@ const ENGINE = `(function () {
     job.answer = r;
     return Promise.resolve(r);
   };
+  window.readyEngine = function () { SF.state = 'ready'; return 1; };
   return 1;
 })()`;
 /* one card as the active card of a one-card session (every card opens in guess) */
@@ -63,8 +66,9 @@ const OPEN = `function openCard(it) {
    any of those on the answer's to-square, a slide of the solver's own piece
    while guessing, a bar that is not waiting, or a board name that says the
    answer. Exempt: the red game-move arrow, last-move tints, selection and
-   legal dots, the player's own drawn shapes. Inside a forcing line the
-   answer is the move due now. Returns the faults, [] when the frame is clean */
+   legal dots, the player's own drawn shapes, and the slide of the player's
+   own try (or of the move just played in a forcing line). Inside a forcing
+   line the answer is the move due now. Returns the faults, [] when clean */
 const SPOILER = `function spoilerFaults(a, f) {
   f = f || boardOptsFor(a);
   var o = f.opts, out = [];
@@ -81,16 +85,28 @@ const SPOILER = `function spoilerFaults(a, f) {
     if (m.sqs.indexOf(due.to) >= 0) out.push(m.what + ' on the answer square ' + sqName(due.to));
   });
   var mover = o.anim && f.st.b[o.anim[1]];
-  if (a.phase === 'guess' && mover && isW(mover) === myPov(a.it)) out.push('replays a move of yours, ' + o.anim.map(sqName).join('-'));
+  var own = a.phase === 'tried' ? [a.tried.from, a.tried.to] : a.phase === 'checking' ? a.ghostMove : a.phase === 'reply' ? a.lastMove : null;
+  if (mover && isW(mover) === myPov(a.it) && !sameMove(own, o.anim)) out.push('replays a move of yours, ' + o.anim.map(sqName).join('-'));
   if (!f.pending) out.push('the bar shows the score');
   if (String(o.label || '').split(/[\\s.]+/).indexOf(sanOf(a.st, due)) >= 0) out.push('the board name says ' + sanOf(a.st, due));
   return out;
 }`;
+/* the frames after a miss: the try on the board, their reply once See it
+   plays it, and the card again after Try again (the automatic hint by tier) */
+const AFTER = `function afterMiss(a, check, what) {
+  if (a.phase !== 'tried' || !a.tried) return check(what + ', not on the board but ' + a.phase, true);
+  check(what + ', on the board');
+  if (a.tried.reply) { seeIt(); check(what + ', See it'); }
+  tryAgain(); check(what + ', after Try again');
+}
+function offBook(a) {
+  return legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci && !(a.sol && a.sol.indexOf(u) >= 0); })[0] || null;
+}`;
 
 (async () => {
-  await test('the spoiler rule holds on every card before an answer, tiers 1 to 3 (open, hints 0 to 2)', () => {
+  await test('the spoiler rule holds on every card before an answer, tiers 1 to 3 (open, hints 0 to 2, after a miss)', async () => {
     const A = boot();
-    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${SPOILER}
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${SPOILER} ${AFTER}
       var out = [], cards = 0, frames = 0, its = allMistakes().filter(trainable);
       [1, 2, 3].forEach(function (tier) {
         playerTier = function () { return tier; };
@@ -98,16 +114,58 @@ const SPOILER = `function spoilerFaults(a, f) {
           var a = openCard(it);
           if (!a) return;
           cards++;
-          [0, 1, 2].forEach(function (h) {
-            a.hints = h; frames++;
-            spoilerFaults(a).forEach(function (x) { out.push('tier ' + tier + ' ' + it.key + ' hints ' + h + ': ' + x); });
-          });
+          var check = function (what, fault) {
+            frames++;
+            if (fault) out.push('tier ' + tier + ' ' + it.key + ' ' + what);
+            else spoilerFaults(a).forEach(function (x) { out.push('tier ' + tier + ' ' + it.key + ' ' + what + ': ' + x); });
+          };
+          [0, 1, 2].forEach(function (h) { a.hints = h; check('hints ' + h); });
+          /* the game move again, tapped: it stays on the board */
+          a = openCard(it);
+          a.tapped = true;
+          gradeMove(uciToMove(a.st, a.playedUci));
+          afterMiss(a, check, 'game move again');
         });
       });
       return JSON.stringify({ out: out, cards: cards, frames: frames, trainable: its.length }); })()`));
     ok(r.trainable >= 90 && r.cards === 3 * r.trainable, r.cards + ' cards of ' + r.trainable);
-    eq(r.frames, 3 * r.cards, 'frames');
+    ok(r.frames >= 5 * r.cards, 'frames ' + r.frames);
     eq(r.out.length, 0, r.out.length + ' spoilers, first: ' + r.out.slice(0, 3).join(' | '));
+    /* a try off the card's lines, tapped: the checking frame, then the
+       engine's miss (the stub answers on the next tick) */
+    A.ev(`(function () { ${OPEN} ${SPOILER} ${AFTER}
+      window.__t = { open: openCard, faults: spoilerFaults, after: afterMiss, offBook: offBook, out: [], frames: 0, misses: 0 };
+      window.__t.check = function (a, what, fault) {
+        window.__t.frames++;
+        if (fault) window.__t.out.push(what);
+        else spoilerFaults(a).forEach(function (x) { window.__t.out.push(what + ': ' + x); });
+      };
+      return 1; })()`);
+    const n = A.ev('allMistakes().filter(trainable).length');
+    for (const tier of [1, 2, 3]) {
+      A.ev(`(playerTier = function () { return ${tier}; }, 1)`);
+      for (let i = 0; i < n; i++) {
+        const waiting = A.ev(`(function () { var T = window.__t, it = allMistakes().filter(trainable)[${i}], a = T.open(it);
+          var m = a && T.offBook(a);
+          if (!m) return false;
+          a.tapped = true;
+          window.readyEngine();
+          gradeMove(m);
+          T.check(a, 'tier ${tier} ' + it.key + ' checking');
+          return a.phase === 'checking'; })()`);
+        if (!waiting) continue;
+        await tick(); await tick();
+        A.ev(`(function () { var T = window.__t, a = ui.session.active, at = 'tier ${tier} ' + a.key + ' a miss';
+          if (a.phase === 'checking') T.check(a, at + ': still checking', true);
+          if (a.phase !== 'tried' || a.tried.kind !== 'miss') return 0;
+          T.misses++;
+          T.after(a, function (what, fault) { T.check(a, what, fault); }, at);
+          return 1; })()`);
+      }
+    }
+    const t = JSON.parse(A.ev('JSON.stringify({ out: window.__t.out, frames: window.__t.frames, misses: window.__t.misses })'));
+    ok(t.misses >= 2 * n, 'engine misses ' + t.misses);
+    eq(t.out.length, 0, t.out.length + ' spoilers after an engine miss, first: ' + t.out.slice(0, 3).join(' | '));
   });
 
   await test('the spoiler check sees an answer drawn on the board', () => {
@@ -142,7 +200,7 @@ const SPOILER = `function spoilerFaults(a, f) {
         if (snap(a) !== s1) out.push(what + ': the card changed on the second call');
       };
       var a = openCard(it);
-      same('open, with the opponent move sliding', a);
+      same('open', a);
       a.sel = a.played.from; same('a piece selected', a); a.sel = -1;
       a.hints = 2; same('hint 2', a); a.hints = 0;
       var other = legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci && !(a.sol && a.sol.indexOf(u) >= 0); })[0];
@@ -184,6 +242,55 @@ const SPOILER = `function spoilerFaults(a, f) {
     eq(JSON.stringify(s.pv), JSON.stringify([s.t.u].concat(s.t.ru)), 'the stored refutation');
     eq(s.misses, 1, 'misses');
     ok(s.phase !== 'checking' && s.phase !== 'done', s.phase);
+  });
+
+  await test('after a miss, flushing every timer moves no piece', async () => {
+    const A = boot();
+    /* the frame on screen: the position drawn, its last move and any slide,
+       and the card's own state */
+    const FRAME = `JSON.stringify((function (a) { var f = boardOptsFor(a);
+      return { phase: a.phase, shown: stateFen(f.st), last: f.last, anim: f.opts.anim || null, st: stateFen(a.st),
+               tried: a.tried, misses: a.misses, hints: a.hints, result: a.result || null, view: a.view }; })(ui.session.active))`;
+    const still = (what) => {
+      const f0 = A.ev(FRAME);
+      later(A, 60000, 30);
+      eq(A.timers.length, 0, what + ': timers left');
+      eq(A.ev(FRAME), f0, what + ': the frame after every timer ran');
+      return JSON.parse(f0);
+    };
+    /* an engine miss: a try off the card's lines, tapped */
+    A.ev(`(function () { ${OPEN} ${AFTER}
+      allMistakes().filter(trainable).some(function (it) {
+        var a = openCard(it), m = a && !a.sol && unpackUci(it.b.ru).length && offBook(a);
+        if (!m) return false;
+        a.tapped = true;
+        window.readyEngine();
+        gradeMove(m);
+        return true;
+      });
+      return 1; })()`);
+    for (let i = 0; i < 4; i++) await tick();
+    let f = still('an engine miss');
+    eq(f.phase, 'tried', 'the try stays'); eq(f.misses, 1, 'misses'); ok(f.tried && f.tried.kind === 'miss' && f.tried.reply, 'a miss with a reply');
+    ok(f.shown !== f.st, 'the try is drawn over the position before it');
+    /* See it plays their one reply, on the tap; then nothing more */
+    A.ev('seeIt()');
+    f = still('their reply, seen');
+    ok(f.tried.seen && !(f.last[0] === f.tried.from && f.last[1] === f.tried.to), 'the reply is the last move');
+    /* the game move again: no engine, the same rule */
+    A.ev(`(function () { ${OPEN}
+      var it = allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[3], a = openCard(it);
+      a.tapped = true;
+      gradeMove(uciToMove(a.st, a.playedUci));
+      return 1; })()`);
+    f = still('the game move again');
+    eq(f.phase, 'tried', 'the game move stays'); eq(f.misses, 1, 'misses');
+    A.ev('seeIt()');
+    still('the game move again, their reply seen');
+    /* a third miss shows nothing by itself: the answer waits for a tap */
+    A.ev(`(function () { var a = ui.session.active; tryAgain(); a.misses = 2; a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); return 1; })()`);
+    f = still('a third miss');
+    eq(f.misses, 3, 'misses'); eq(f.phase, 'tried', 'phase'); eq(f.result, null, 'no result');
   });
 
   results.forEach((l) => console.log(l));

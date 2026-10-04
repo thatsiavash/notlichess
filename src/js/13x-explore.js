@@ -33,7 +33,6 @@ function startExplore(o) {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'done' || a.explore || a.pendingPromo || !a.lines) return;
   o = o || {};
-  stopAuto(a);
   a.menuOpen = false;
   if (o.view) a.view = { line: o.view.line, idx: o.view.idx };
   var v = lineView(a);

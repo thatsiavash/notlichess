@@ -253,6 +253,20 @@ const OPEN = `function openCard(it) {
     for (let i = 0; i < 6; i++) await tick();
     const r = JSON.parse(A.ev('JSON.stringify({ misses: ui.session.active.misses, v: ui.session.active.verdict && ui.session.active.verdict.html })'));
     eq(r.misses, 0, 'misses'); ok(/cannot check/i.test(r.v || ''), r.v);
+    /* SF failed plus an off-book move: no miss, /cannot check/, the stored best still solves */
+    const f = JSON.parse(A.ev(`(function () { ${OPEN}
+      SF.state = 'failed';
+      var q0 = SF.queue.length, it = allMistakes().filter(trainable).filter(function (x) { var c = cardFor(x); return c && !c.sol; })[5], a = openCard(it);
+      var m = legalMoves(a.st).filter(function (x) { var u = moveUci(x); return u !== a.bestUci && u !== a.playedUci; })[0];
+      gradeMove(m);
+      var out = { misses: a.misses, v: a.verdict && a.verdict.html, phase: a.phase, kind: a.tried && a.tried.kind, asked: SF.queue.length - q0, srs: !!srsLoad()[it.key] };
+      out.play = window.__nlTest.play(a.bestUci);
+      out.after = { phase: a.phase, result: a.result || null, misses: a.misses };
+      return JSON.stringify(out); })()`));
+    eq(f.misses, 0, 'misses with the engine failed'); ok(/cannot check/i.test(f.v || ''), f.v);
+    eq(f.phase, 'tried', 'the try stays on the board'); eq(f.kind, 'unchecked', 'kind'); eq(f.asked, 0, 'engine jobs');
+    eq(f.srs, false, 'a schedule changed');
+    eq(f.play, 'graded', 'the stored best is played'); eq(f.after.phase, 'done', 'solved'); eq(f.after.result, 'first', 'result'); eq(f.after.misses, 0, 'misses after');
   });
 
   await test('no card enters a check phase: every card opens on the position before your move, asking for a better one', () => {

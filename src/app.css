@@ -503,7 +503,6 @@ body.in-session{padding-bottom:0}
   .card-top{position:sticky;top:0;z-index:4;background:var(--bg);flex-wrap:wrap;gap:0 8px;margin:0 calc(-1 * var(--gutter));padding:0 var(--gutter)}
   .card-task{height:56px;padding:8px 0;margin:0;font-size:15px;line-height:20px;color:var(--text-1);-webkit-line-clamp:2}
   .card-task.hint{color:var(--accent-hover)}
-  .card-task[data-act]{cursor:pointer}
   .board-row{justify-content:center}
   .evalbar{width:6px}
   .board-wrap{flex:none;width:var(--board-phone)}
