@@ -473,7 +473,6 @@ document.addEventListener('click', function (e) {
     case 'sheet': openSheet(k); break;
     case 'closeSheet': if (e.target === t) closeSheet(); break;
     case 'hint': if (!tooSoon(a)) giveHint(); break;
-    case 'checkShow': if (a && a.phase === 'check' && !tooSoon(a)) checkStep(null, null); break;
     case 'reveal': if (!tooSoon(a)) reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
@@ -643,7 +642,7 @@ function moveGhost(x, y) {
 }
 function boardState(a) {
   if (a.phase === 'done' && a.explore) return { st: a.explore.st, live: true, explore: true };
-  if (a.phase === 'guess' || a.phase === 'check') return { st: a.st, live: true };
+  if (a.phase === 'guess') return { st: a.st, live: true };
   return { st: a.st, live: false };
 }
 document.addEventListener('pointerdown', function (e) {
@@ -796,7 +795,7 @@ window.__nlTest = {
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
              hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
-             sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, check1: a.check1 ? a.check1.uci : null };
+             sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b };
   },
   play: function (uci) {
     var a = ui.session && ui.session.active;
@@ -804,7 +803,7 @@ window.__nlTest = {
     var st = a.phase === 'done' && a.explore ? a.explore.st : a.st;
     var m = uciToMove(st, uci);
     if (!m) return 'illegal';
-    if (a.phase === 'guess' || a.phase === 'check') { gradeMove(m); return 'graded'; }
+    if (a.phase === 'guess') { gradeMove(m); return 'graded'; }
     if (a.phase === 'done' && a.explore) { explorePlay(m, false); return 'explored'; }
     return 'not guessing';
   },

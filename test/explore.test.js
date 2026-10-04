@@ -47,7 +47,6 @@ const STUB = `(function () {
 const OPEN = `function openCard(it) {
   ui.session = { mode: 't', label: 't', keys: [it.key], idx: 0, results: {}, relearn: [], relearnOf: {} };
   var a = cardFor(it);
-  if (a.check1) { a.check1 = null; a.phase = 'guess'; a.st = cloneState(a.pre); a.lastMove = a.preLast; }
   ui.session.active = a;
   return a;
 }`;

@@ -21,7 +21,7 @@ function saveSession() {
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
-                         progress: ss.progress || {}, attempted: ss.attempted || 0, carried: ss.carried || 0, checks: ss.checks || 0, checksFound: ss.checksFound || 0, notes: ss.notes || {} });
+                         progress: ss.progress || {}, attempted: ss.attempted || 0, carried: ss.carried || 0, notes: ss.notes || {} });
 }
 /* a paused session that is dropped or replaced: a card left after a miss
    is graded a fail, and its tries still count toward the day */
@@ -66,6 +66,19 @@ function cardEaseOf(it) {
   }
   if (fam === 'chances' || fam === 'safety' || fam === 'king') return 2;
   return 1;
+}
+/* a card that will ask for a forcing line (several moves in a row): the
+   rule cardFor uses, read from the stored line without the classifier, so
+   it may say yes to a few cards that turn out to ask for one move */
+function looksForcing(it) {
+  var b = it.b, lu = unpackUci(b.lu);
+  if (playerTier() < 2 || lu.length < 3) return false;
+  if (b.mb != null && b.mb > 0) return true;
+  var pre = stateAtPly(it.g.mv, b.p), m = pre && uciToMove(pre, lu[0]);
+  if (!m) return false;
+  var after = cloneState(pre);
+  applyMove(after, m);
+  return pre.b[m.to] != null || m.ep >= 0 || checkedKingSq(after) != null;
 }
 /* how much a card can teach: a named idea, not played in a scramble, in a
    position that was still alive, with a line that settles */
@@ -143,13 +156,25 @@ function todayPlan() {
   var fresh = buildCandidates(freshAllowed + 6);
   if (firstTime) {
     fresh = fresh.concat(buildCandidates(60).filter(function (x) { return fresh.indexOf(x) === -1; }));
-    fresh.sort(function (x, y) { return cardEase(y) - cardEase(x) || (y.b.d ? 1 : 0) - (x.b.d ? 1 : 0) || y.g.ts - x.g.ts; });
+    /* a first card asks for one move: forcing lines wait (each looked at once) */
+    var forcing = {};
+    fresh.forEach(function (it) { forcing[it.key] = looksForcing(it) ? 1 : 0; });
+    fresh.sort(function (x, y) { return cardEase(y) - cardEase(x) || forcing[x.key] - forcing[y.key] || (y.b.d ? 1 : 0) - (x.b.d ? 1 : 0) || y.g.ts - x.g.ts; });
     /* the first card of all is the move that lost the latest game, when it
-       is not a quiet one */
+       is not a quiet one and asks for one move */
     var lostLast = fresh.filter(function (it) { return it.b.d && it.g.res === 'loss'; })
       .sort(function (x, y) { return y.g.ts - x.g.ts; })[0];
     /* a hard one there: the easiest card leads instead, not an older loss */
-    if (lostLast && cardEase(lostLast) >= 2) fresh = [lostLast].concat(fresh.filter(function (x) { return x !== lostLast; }));
+    if (lostLast && cardEase(lostLast) >= 2 && !forcing[lostLast.key]) fresh = [lostLast].concat(fresh.filter(function (x) { return x !== lostLast; }));
+    /* card 1 is never a forcing line, and at most one of the first three is */
+    var head = [], rest = fresh.slice();
+    while (head.length < 3 && rest.length) {
+      var oneIn = head.some(function (x) { return forcing[x.key]; });
+      var pick = rest.filter(function (x) { return !forcing[x.key] || (head.length && !oneIn); })[0] || rest[0];
+      head.push(pick);
+      rest.splice(rest.indexOf(pick), 1);
+    }
+    fresh = head.concat(rest);
   }
   /* a reserved slot: the best new mistake from games since the last visit */
   var since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
@@ -223,7 +248,7 @@ function resumeSession() {
   if (!s) return false;
   ui.session = { mode: s.mode, label: s.label, keys: s.keys, idx: s.idx, results: s.results || {},
                  relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {},
-                 attempted: s.attempted || 0, carried: s.carried || 0, checks: s.checks || 0, checksFound: s.checksFound || 0, notes: s.notes || {} };
+                 attempted: s.attempted || 0, carried: s.carried || 0, notes: s.notes || {} };
   setView('train', false);
   pushSessionState();
   /* a card answered before the reload is not asked again */

@@ -5366,7 +5366,7 @@ function saveSession() {
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
-                         progress: ss.progress || {}, attempted: ss.attempted || 0, carried: ss.carried || 0, checks: ss.checks || 0, checksFound: ss.checksFound || 0, notes: ss.notes || {} });
+                         progress: ss.progress || {}, attempted: ss.attempted || 0, carried: ss.carried || 0, notes: ss.notes || {} });
 }
 /* a paused session that is dropped or replaced: a card left after a miss
    is graded a fail, and its tries still count toward the day */
@@ -5411,6 +5411,19 @@ function cardEaseOf(it) {
   }
   if (fam === 'chances' || fam === 'safety' || fam === 'king') return 2;
   return 1;
+}
+/* a card that will ask for a forcing line (several moves in a row): the
+   rule cardFor uses, read from the stored line without the classifier, so
+   it may say yes to a few cards that turn out to ask for one move */
+function looksForcing(it) {
+  var b = it.b, lu = unpackUci(b.lu);
+  if (playerTier() < 2 || lu.length < 3) return false;
+  if (b.mb != null && b.mb > 0) return true;
+  var pre = stateAtPly(it.g.mv, b.p), m = pre && uciToMove(pre, lu[0]);
+  if (!m) return false;
+  var after = cloneState(pre);
+  applyMove(after, m);
+  return pre.b[m.to] != null || m.ep >= 0 || checkedKingSq(after) != null;
 }
 /* how much a card can teach: a named idea, not played in a scramble, in a
    position that was still alive, with a line that settles */
@@ -5488,13 +5501,25 @@ function todayPlan() {
   var fresh = buildCandidates(freshAllowed + 6);
   if (firstTime) {
     fresh = fresh.concat(buildCandidates(60).filter(function (x) { return fresh.indexOf(x) === -1; }));
-    fresh.sort(function (x, y) { return cardEase(y) - cardEase(x) || (y.b.d ? 1 : 0) - (x.b.d ? 1 : 0) || y.g.ts - x.g.ts; });
+    /* a first card asks for one move: forcing lines wait (each looked at once) */
+    var forcing = {};
+    fresh.forEach(function (it) { forcing[it.key] = looksForcing(it) ? 1 : 0; });
+    fresh.sort(function (x, y) { return cardEase(y) - cardEase(x) || forcing[x.key] - forcing[y.key] || (y.b.d ? 1 : 0) - (x.b.d ? 1 : 0) || y.g.ts - x.g.ts; });
     /* the first card of all is the move that lost the latest game, when it
-       is not a quiet one */
+       is not a quiet one and asks for one move */
     var lostLast = fresh.filter(function (it) { return it.b.d && it.g.res === 'loss'; })
       .sort(function (x, y) { return y.g.ts - x.g.ts; })[0];
     /* a hard one there: the easiest card leads instead, not an older loss */
-    if (lostLast && cardEase(lostLast) >= 2) fresh = [lostLast].concat(fresh.filter(function (x) { return x !== lostLast; }));
+    if (lostLast && cardEase(lostLast) >= 2 && !forcing[lostLast.key]) fresh = [lostLast].concat(fresh.filter(function (x) { return x !== lostLast; }));
+    /* card 1 is never a forcing line, and at most one of the first three is */
+    var head = [], rest = fresh.slice();
+    while (head.length < 3 && rest.length) {
+      var oneIn = head.some(function (x) { return forcing[x.key]; });
+      var pick = rest.filter(function (x) { return !forcing[x.key] || (head.length && !oneIn); })[0] || rest[0];
+      head.push(pick);
+      rest.splice(rest.indexOf(pick), 1);
+    }
+    fresh = head.concat(rest);
   }
   /* a reserved slot: the best new mistake from games since the last visit */
   var since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
@@ -5568,7 +5593,7 @@ function resumeSession() {
   if (!s) return false;
   ui.session = { mode: s.mode, label: s.label, keys: s.keys, idx: s.idx, results: s.results || {},
                  relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {},
-                 attempted: s.attempted || 0, carried: s.carried || 0, checks: s.checks || 0, checksFound: s.checksFound || 0, notes: s.notes || {} };
+                 attempted: s.attempted || 0, carried: s.carried || 0, notes: s.notes || {} };
   setView('train', false);
   pushSessionState();
   /* a card answered before the reload is not asked again */
@@ -5804,7 +5829,9 @@ function cardFor(it) {
     a.preLast = a.lastMove;
   }
   /* the settled lengths of both lines, and a forcing-line task for players
-     who should see the whole combination, not just its first move */
+     who should see the whole combination, not just its first move
+     (looksForcing, for the first session's order, reads the same rule
+     from the stored line without the classifier) */
   var cls = classifyMistake(pre, playedUci, { pv: unpackUci(b.lu), mate: b.mb }, { pv: unpackUci(b.ru), mate: b.ma }, b.wb, b.wa, b.p);
   a.cls = cls;
   a.settleBest = cls.bSettle;
@@ -5819,27 +5846,6 @@ function cardFor(it) {
     if (a.sol.length < 3) a.sol = null;
   }
   a.solIdx = 0;
-  /* the blunder check: on first sight of a card where the move gave
-     something away or opened the king, and the punishment starts with a
-     capture or a check, the player first plays the opponent's reply */
-  var fam0 = familyOf(patternOf(b)).key, ru0 = unpackUci(b.ru)[0];
-  if (a.firstSight && !kept && ru0 && (fam0 === 'safety' || fam0 === 'king')) {
-    var post = cloneState(pre);
-    applyMove(post, a.played);
-    var r0 = uciToMove(post, ru0);
-    if (r0) {
-      var cap = post.b[r0.to] != null || r0.ep >= 0, afterR = cloneState(post);
-      applyMove(afterR, r0);
-      var chk = checkedKingSq(afterR) != null;
-      if (cap || chk) {
-        a.check1 = { uci: ru0, reply: r0, san: sanOf(post, r0), capture: cap, check: chk };
-        a.phase = 'check';
-        a.st = post;
-        a.lastMove = [a.played.from, a.played.to];
-        a.animMove = null;
-      }
-    }
-  }
   return a;
 }
 function currentItem() {
@@ -5892,7 +5898,7 @@ function prefetchCards(ss) {
 /* ── moves on the board ──────────────────────────────────────────────────── */
 function sessionClick(sq) {
   var ss = ui.session, a = ss && ss.active;
-  if (!a || (a.phase !== 'guess' && a.phase !== 'check') || a.pendingPromo) {
+  if (!a || a.phase !== 'guess' || a.pendingPromo) {
     if (a && a.phase === 'done' && !a.pendingPromo) {
       if (a.explore) exploreClick(sq);
       else {
@@ -5943,7 +5949,6 @@ function gradeMove(m) {
   a.tapAnim = a.tapped ? [m.from, m.to] : null;
   a.animMove = null;
   a.tapped = false;
-  if (a.phase === 'check') { checkStep(m, u); return; }
   /* inside a forcing line: later steps must follow it (or mate) */
   if (a.sol && a.solIdx > 0) {
     var want = a.sol[a.solIdx];
@@ -5960,39 +5965,6 @@ function gradeMove(m) {
   }
   if (u === a.playedUci) { sameAsGame(m); return; }
   checkMove(m, u, false);
-}
-/* the blunder check, graded without the engine: the stored reply, or any
-   capture on the same square, is what the move allowed. One question per
-   showing: found or not, the card is then answered, with the better move as
-   a worked example; the fix is asked when the card comes back */
-function checkStep(m, u) {
-  var a = ui.session.active, c1 = a.check1, ss = ui.session;
-  var found = !!m && (u === c1.uci || (c1.capture && m.to === c1.reply.to && a.st.b[m.to] != null));
-  var san = m ? sanOf(a.st, m) : '';
-  c1.found = found;
-  ss.checks = (ss.checks || 0) + 1;
-  if (found) ss.checksFound = (ss.checksFound || 0) + 1;
-  /* the recap's tally is the day's, across every session */
-  var dy = dayLoad();
-  dy.checks = (dy.checks || 0) + 1;
-  if (found) dy.checksFound = (dy.checksFound || 0) + 1;
-  daySave(dy);
-  if (found) {
-    c1.played = san;
-    a.checkVerdict = '✓ ' + esc(san) + '. That is what your move allowed.';
-    snd('good');
-  } else {
-    a.checkVerdict = '✗ ' + (a.it.g.color === 'white' ? 'Black' : 'White') + ' had ' + esc(c1.san) + '.';
-    snd('bad');
-  }
-  track((found ? 'check_first_t' : 'check_miss_t') + a.tier);
-  /* the answered view starts from the position before the mistake */
-  a.st = cloneState(a.pre);
-  a.lastMove = a.preLast;
-  a.animMove = null;
-  a.check1.done = true;
-  if (!found) a.revealed = true;
-  finishCard(found ? 'first' : 'fail');
 }
 /* the forcing line, move by move: my move, then theirs is played for me */
 function stepLine(m, u) {
@@ -6297,7 +6269,7 @@ function finishCard(result) {
     if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
     a.rec = rec;
     ss.results[a.key] = result;
-    if ((result === 'fail' || result === 'retry') && !a.check1 && (ss.relearn || []).length < 3) {
+    if ((result === 'fail' || result === 'retry') && (ss.relearn || []).length < 3) {
       ss.relearn = ss.relearn || [];
       ss.relearn.push(a.key);
       a.relearnQueued = true;
@@ -6316,7 +6288,6 @@ function finishCard(result) {
   /* the board keeps showing what was just played: the move found, the
      alternative that also works, or the end of the forcing line */
   if (a.revealed || result === 'fail') a.view = { line: 'refute', idx: -1 };
-  else if (a.check1 && a.check1.done) a.view = { line: 'best', idx: -1 };
   else if (a.alt && a.lines.yours && a.lines.yours.states.length) a.view = { line: 'yours', idx: Math.min(a.yours.at || 0, a.lines.yours.states.length - 1) };
   else a.view = { line: 'best', idx: Math.min(a.sol ? a.solIdx - 1 : 0, a.lines.best.states.length - 1) };
   saveSession();
@@ -7345,7 +7316,7 @@ function doneHtml(ss) {
       + boardSvg(pre, { flip: it.g.color === 'black', bad: pm ? [pm.from, pm.to] : null, decor: true }) + '<span>' + esc(patternInfo(patternOf(it.b)).name) + '</span>'
       + '<span class="res' + (r === 'fail' ? ' shown' : '') + '">' + word + '</span></div>';
   }).join('');
-  var habit = ss.checks ? FAMILIES[0].habit : recapHabit(ss);
+  var habit = recapHabit(ss);
   var more = morePracticeKeys().length;
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
@@ -7353,8 +7324,7 @@ function doneHtml(ss) {
     + ladderHtml(ss, uniq)
     + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
-    + (habit ? '<div class="focus recap-habit"><div class="kicker">For your next game</div><div class="plan">' + esc(habit)
-      + (ss.checks ? ' Today you spotted their reply on ' + (dayLoad().checksFound || 0) + ' of ' + Math.max(dayLoad().checks || 0, ss.checks) + '.' : '') + '</div></div>' : '')
+    + (habit ? '<div class="focus recap-habit"><div class="kicker">For your next game</div><div class="plan">' + esc(habit) + '</div></div>' : '')
     + (recap ? '<div class="recap">' + recap + '</div>' : '')
     + '<div class="acts-row recap-acts">'
       + '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>'
@@ -7410,7 +7380,7 @@ function boardOptsFor(a) {
     }
     view = { st: st, last: a.phase === 'checking' ? a.ghostMove : a.lastMove, ev: it.b.eb };
     opts.sel = a.sel;
-    if ((a.phase === 'guess' || a.phase === 'check') && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
+    if (a.phase === 'guess' && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
     opts.shapes = a.shapes;
     if (a.phase === 'guess' && a.solIdx === 0 && !a.explore) opts.bad = [a.played.from, a.played.to];
     if (a.hints >= 2 && a.phase === 'guess') opts.hint = (a.sol && a.solIdx > 0 ? uciToMove(a.st, a.sol[a.solIdx]) || a.best : a.best).from;
@@ -7422,7 +7392,7 @@ function boardOptsFor(a) {
   if (ck != null) opts.check = ck;
   return {
     st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts,
-    live: a.phase === 'guess' || a.phase === 'check' || !!(a.phase === 'done' && a.explore),
+    live: a.phase === 'guess' || !!(a.phase === 'done' && a.explore),
     /* the bar fills only once the card is answered: a tall bar during the
        guess would say "you are winning, find it" */
     pending: a.phase !== 'done' || !!(a.explore && xpSpoil(xpCur(a.explore)))
@@ -7532,8 +7502,7 @@ function cardTaskHtml(a) {
     /* the move is named once: "Qf8+ wins the pawn" becomes "It wins the pawn" */
     if (best && why.indexOf(best + ' ') === 0) why = 'It ' + why.slice(best.length + 1);
     act = ' data-act="lineTab" data-k="best" role="button"';
-    if (a.check1 && a.check1.done) { txt = fitLine([(a.checkVerdict || '') + ' Better: ' + best + '.', a.checkVerdict || '']); cls = a.check1.found ? ' good' : ''; }
-    else if (a.result === 'fail' || a.revealed) {
+    if (a.result === 'fail' || a.revealed) {
       /* the third wrong try keeps its verdict, then the answer */
       var lead = a.thirdMiss && a.lastTry ? '✗ ' + esc(a.lastTry) + ' does not work. ' : '';
       txt = fitLine([lead + 'The answer is ' + best + '. ' + why, lead + 'The answer is ' + best + '.', 'The answer is ' + best + '. ' + why, 'The answer is ' + best + '.']);
@@ -7543,8 +7512,6 @@ function cardTaskHtml(a) {
   }
   else if (a.hints >= 1 && a.hintAfter) { txt = esc(hintText(a)); cls = ' hint'; }
   else if (a.verdict) { txt = strip(a.verdict.html); cls = a.verdict.cls === 'verdict-bad' ? ' bad' : (a.verdict.cls === 'verdict-good' ? ' good' : ''); }
-  else if (a.check1 && !a.check1.done) txt = fitLine(['You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now? Move their piece.',
-    'You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now?']);
   else if (a.hints >= 1) { txt = esc(hintText(a)); cls = ' hint'; }
   else if (a.sol && a.solIdx > 0) txt = 'Move ' + (Math.floor(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
   else {
@@ -7640,15 +7607,6 @@ function stakesWords(a, san) {
 function panelHtml(a, ss) {
   var it = a.it, b = it.b, side = it.g.color === 'white' ? 'White' : 'Black';
   var h = ctxHtml(a);
-  if (a.check1 && !a.check1.done && a.phase !== 'done') {
-    /* step 1: the check the player skipped in the game */
-    var them = side === 'White' ? 'Black' : 'White', san1 = sanOf(a.pre, a.played);
-    h += '<h2 class="task" id="task-h" tabindex="-1">You played ' + esc(san1) + '. What can ' + them + ' do now?</h2>';
-    h += '<p class="stakes">Move ' + them + '\'s piece: find the reply that punishes it.</p>';
-    h += '<div class="feedback" aria-live="polite">' + (a.verdict ? '<p class="verdict ' + a.verdict.cls + '">' + a.verdict.html + '</p>' : '') + '</div>';
-    if (a.phase === 'check') h += '<div class="acts-row sticky-acts guess-acts"><a class="btn-line" data-act="checkShow">Show me</a></div>';
-    return h;
-  }
   if (a.phase !== 'done') {
     var rec0 = srsRec(it), review = rec0 && rec0.box >= 2 && !a.firstSight;
     var san = sanOf(a.pre, a.played);
@@ -7686,12 +7644,7 @@ function panelHtml(a, ss) {
   /* done: the result, then both halves of the lesson, always on screen */
   var best = a.lines.best.san[0] || '', s = a.cls.sentences;
   var disc, head, sub = '';
-  if (a.check1 && a.check1.done) {
-    /* the blunder check: the question was their reply; the fix is the worked example */
-    disc = a.check1.found ? '<span class="disc" aria-hidden="true">✓</span>' : '';
-    head = a.check1.found ? esc(a.check1.played || a.check1.san) + '. You saw it.' : 'They had ' + esc(a.check1.san) + '.';
-    sub = 'The better move was ' + esc(best) + '. You will find it yourself next time.';
-  } else if (a.result === 'fail' || a.revealed) {
+  if (a.result === 'fail' || a.revealed) {
     disc = '';
     head = 'The answer is ' + esc(best) + '.';
     if (a.foundGood) sub = 'Your ' + esc(a.foundGood.san) + ' was close.';
@@ -8526,7 +8479,6 @@ document.addEventListener('click', function (e) {
     case 'sheet': openSheet(k); break;
     case 'closeSheet': if (e.target === t) closeSheet(); break;
     case 'hint': if (!tooSoon(a)) giveHint(); break;
-    case 'checkShow': if (a && a.phase === 'check' && !tooSoon(a)) checkStep(null, null); break;
     case 'reveal': if (!tooSoon(a)) reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
@@ -8696,7 +8648,7 @@ function moveGhost(x, y) {
 }
 function boardState(a) {
   if (a.phase === 'done' && a.explore) return { st: a.explore.st, live: true, explore: true };
-  if (a.phase === 'guess' || a.phase === 'check') return { st: a.st, live: true };
+  if (a.phase === 'guess') return { st: a.st, live: true };
   return { st: a.st, live: false };
 }
 document.addEventListener('pointerdown', function (e) {
@@ -8849,7 +8801,7 @@ window.__nlTest = {
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
              hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
-             sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, check1: a.check1 ? a.check1.uci : null };
+             sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b };
   },
   play: function (uci) {
     var a = ui.session && ui.session.active;
@@ -8857,7 +8809,7 @@ window.__nlTest = {
     var st = a.phase === 'done' && a.explore ? a.explore.st : a.st;
     var m = uciToMove(st, uci);
     if (!m) return 'illegal';
-    if (a.phase === 'guess' || a.phase === 'check') { gradeMove(m); return 'graded'; }
+    if (a.phase === 'guess') { gradeMove(m); return 'graded'; }
     if (a.phase === 'done' && a.explore) { explorePlay(m, false); return 'explored'; }
     return 'not guessing';
   },

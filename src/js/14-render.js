@@ -392,7 +392,7 @@ function doneHtml(ss) {
       + boardSvg(pre, { flip: it.g.color === 'black', bad: pm ? [pm.from, pm.to] : null, decor: true }) + '<span>' + esc(patternInfo(patternOf(it.b)).name) + '</span>'
       + '<span class="res' + (r === 'fail' ? ' shown' : '') + '">' + word + '</span></div>';
   }).join('');
-  var habit = ss.checks ? FAMILIES[0].habit : recapHabit(ss);
+  var habit = recapHabit(ss);
   var more = morePracticeKeys().length;
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
@@ -400,8 +400,7 @@ function doneHtml(ss) {
     + ladderHtml(ss, uniq)
     + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
-    + (habit ? '<div class="focus recap-habit"><div class="kicker">For your next game</div><div class="plan">' + esc(habit)
-      + (ss.checks ? ' Today you spotted their reply on ' + (dayLoad().checksFound || 0) + ' of ' + Math.max(dayLoad().checks || 0, ss.checks) + '.' : '') + '</div></div>' : '')
+    + (habit ? '<div class="focus recap-habit"><div class="kicker">For your next game</div><div class="plan">' + esc(habit) + '</div></div>' : '')
     + (recap ? '<div class="recap">' + recap + '</div>' : '')
     + '<div class="acts-row recap-acts">'
       + '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>'
@@ -457,7 +456,7 @@ function boardOptsFor(a) {
     }
     view = { st: st, last: a.phase === 'checking' ? a.ghostMove : a.lastMove, ev: it.b.eb };
     opts.sel = a.sel;
-    if ((a.phase === 'guess' || a.phase === 'check') && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
+    if (a.phase === 'guess' && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
     opts.shapes = a.shapes;
     if (a.phase === 'guess' && a.solIdx === 0 && !a.explore) opts.bad = [a.played.from, a.played.to];
     if (a.hints >= 2 && a.phase === 'guess') opts.hint = (a.sol && a.solIdx > 0 ? uciToMove(a.st, a.sol[a.solIdx]) || a.best : a.best).from;
@@ -469,7 +468,7 @@ function boardOptsFor(a) {
   if (ck != null) opts.check = ck;
   return {
     st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts,
-    live: a.phase === 'guess' || a.phase === 'check' || !!(a.phase === 'done' && a.explore),
+    live: a.phase === 'guess' || !!(a.phase === 'done' && a.explore),
     /* the bar fills only once the card is answered: a tall bar during the
        guess would say "you are winning, find it" */
     pending: a.phase !== 'done' || !!(a.explore && xpSpoil(xpCur(a.explore)))
@@ -579,8 +578,7 @@ function cardTaskHtml(a) {
     /* the move is named once: "Qf8+ wins the pawn" becomes "It wins the pawn" */
     if (best && why.indexOf(best + ' ') === 0) why = 'It ' + why.slice(best.length + 1);
     act = ' data-act="lineTab" data-k="best" role="button"';
-    if (a.check1 && a.check1.done) { txt = fitLine([(a.checkVerdict || '') + ' Better: ' + best + '.', a.checkVerdict || '']); cls = a.check1.found ? ' good' : ''; }
-    else if (a.result === 'fail' || a.revealed) {
+    if (a.result === 'fail' || a.revealed) {
       /* the third wrong try keeps its verdict, then the answer */
       var lead = a.thirdMiss && a.lastTry ? '✗ ' + esc(a.lastTry) + ' does not work. ' : '';
       txt = fitLine([lead + 'The answer is ' + best + '. ' + why, lead + 'The answer is ' + best + '.', 'The answer is ' + best + '. ' + why, 'The answer is ' + best + '.']);
@@ -590,8 +588,6 @@ function cardTaskHtml(a) {
   }
   else if (a.hints >= 1 && a.hintAfter) { txt = esc(hintText(a)); cls = ' hint'; }
   else if (a.verdict) { txt = strip(a.verdict.html); cls = a.verdict.cls === 'verdict-bad' ? ' bad' : (a.verdict.cls === 'verdict-good' ? ' good' : ''); }
-  else if (a.check1 && !a.check1.done) txt = fitLine(['You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now? Move their piece.',
-    'You played ' + esc(sanOf(a.pre, a.played)) + '. What can ' + (side === 'White' ? 'Black' : 'White') + ' do now?']);
   else if (a.hints >= 1) { txt = esc(hintText(a)); cls = ' hint'; }
   else if (a.sol && a.solIdx > 0) txt = 'Move ' + (Math.floor(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
   else {
@@ -687,15 +683,6 @@ function stakesWords(a, san) {
 function panelHtml(a, ss) {
   var it = a.it, b = it.b, side = it.g.color === 'white' ? 'White' : 'Black';
   var h = ctxHtml(a);
-  if (a.check1 && !a.check1.done && a.phase !== 'done') {
-    /* step 1: the check the player skipped in the game */
-    var them = side === 'White' ? 'Black' : 'White', san1 = sanOf(a.pre, a.played);
-    h += '<h2 class="task" id="task-h" tabindex="-1">You played ' + esc(san1) + '. What can ' + them + ' do now?</h2>';
-    h += '<p class="stakes">Move ' + them + '\'s piece: find the reply that punishes it.</p>';
-    h += '<div class="feedback" aria-live="polite">' + (a.verdict ? '<p class="verdict ' + a.verdict.cls + '">' + a.verdict.html + '</p>' : '') + '</div>';
-    if (a.phase === 'check') h += '<div class="acts-row sticky-acts guess-acts"><a class="btn-line" data-act="checkShow">Show me</a></div>';
-    return h;
-  }
   if (a.phase !== 'done') {
     var rec0 = srsRec(it), review = rec0 && rec0.box >= 2 && !a.firstSight;
     var san = sanOf(a.pre, a.played);
@@ -733,12 +720,7 @@ function panelHtml(a, ss) {
   /* done: the result, then both halves of the lesson, always on screen */
   var best = a.lines.best.san[0] || '', s = a.cls.sentences;
   var disc, head, sub = '';
-  if (a.check1 && a.check1.done) {
-    /* the blunder check: the question was their reply; the fix is the worked example */
-    disc = a.check1.found ? '<span class="disc" aria-hidden="true">✓</span>' : '';
-    head = a.check1.found ? esc(a.check1.played || a.check1.san) + '. You saw it.' : 'They had ' + esc(a.check1.san) + '.';
-    sub = 'The better move was ' + esc(best) + '. You will find it yourself next time.';
-  } else if (a.result === 'fail' || a.revealed) {
+  if (a.result === 'fail' || a.revealed) {
     disc = '';
     head = 'The answer is ' + esc(best) + '.';
     if (a.foundGood) sub = 'Your ' + esc(a.foundGood.san) + ' was close.';

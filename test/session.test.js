@@ -1,6 +1,6 @@
 // The practice bookkeeping, run on the built page in Node (test/app-realm.js) with 50 real, anonymised
 // chess.com games (test/data/fixture-games.json): skips, day credit, the focus, links, erase, a failed
-// engine, the blunder check and spoilers. node test/session.test.js   (exit code 1 on any failure)
+// engine, no blunder check, the first session's order and spoilers. node test/session.test.js   (exit code 1 on any failure)
 const fs = require('fs'), path = require('path');
 const makeApp = require('./app-realm');
 const FIX = fs.readFileSync(path.join(__dirname, 'data', 'fixture-games.json'), 'utf8');
@@ -17,10 +17,9 @@ async function test(name, fn) {
 function eq(a, b, what) { if (a !== b) throw new Error((what || 'value') + ' expected ' + JSON.stringify(b) + ', got ' + JSON.stringify(a)); }
 function ok(c, what) { if (!c) throw new Error(what || 'condition failed'); }
 /* open one card as the active card of a one-card session */
-const OPEN = `function openCard(it, guess) {
+const OPEN = `function openCard(it) {
   ui.session = { mode: 't', label: 't', keys: [it.key], idx: 0, results: {}, relearn: [], relearnOf: {} };
   var a = cardFor(it);
-  if (guess && a.check1) { a.check1 = null; a.phase = 'guess'; a.st = cloneState(a.pre); a.lastMove = a.preLast; }
   ui.session.active = a;
   return a;
 }`;
@@ -35,7 +34,7 @@ const OPEN = `function openCard(it, guess) {
   await test('a card left after a miss counts as missed', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var it = allMistakes().filter(trainable)[0], a = openCard(it, true);
+      var it = allMistakes().filter(trainable)[0], a = openCard(it);
       a.misses = 1; a.attempts = 1; skipCard();
       return JSON.stringify({ res: ui.session ? ui.session.results[it.key] : null, rec: srsLoad()[it.key] }); })()`));
     eq(r.rec.lapses, 1, 'lapses');
@@ -44,7 +43,7 @@ const OPEN = `function openCard(it, guess) {
   await test('a card left untouched is a free skip', () => {
     const A = boot();
     const rec = JSON.parse(A.ev(`(function () { ${OPEN}
-      var it = allMistakes().filter(trainable)[1], a = openCard(it, true);
+      var it = allMistakes().filter(trainable)[1], a = openCard(it);
       skipCard(); return JSON.stringify(srsLoad()[it.key]); })()`));
     eq(rec.skips, 1, 'skips'); eq(rec.lapses || 0, 0, 'lapses');
   });
@@ -52,7 +51,7 @@ const OPEN = `function openCard(it, guess) {
   await test('a card left after a hint counts as solved with help', () => {
     const A = boot();
     const rec = JSON.parse(A.ev(`(function () { ${OPEN}
-      var it = allMistakes().filter(trainable)[2], a = openCard(it, true);
+      var it = allMistakes().filter(trainable)[2], a = openCard(it);
       a.hints = 1; skipCard(); return JSON.stringify(srsLoad()[it.key]); })()`));
     eq(rec.lapses || 0, 0, 'lapses'); ok(rec.due > A.getNow(), 'scheduled');
   });
@@ -60,7 +59,7 @@ const OPEN = `function openCard(it, guess) {
   await test('a finished session of reveal-only taps earns no day', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var it = allMistakes().filter(trainable)[3]; openCard(it, true);
+      var it = allMistakes().filter(trainable)[3]; openCard(it);
       ui.session.attempted = 0; finishSession(); return JSON.stringify({ day: dayLoad(), counts: dayCounts(dayLoad()) }); })()`));
     eq(r.counts, false, 'day counts');
   });
@@ -77,7 +76,7 @@ const OPEN = `function openCard(it, guess) {
   await test('a finished session with three real tries earns the day', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var it = allMistakes().filter(trainable)[3]; openCard(it, true);
+      var it = allMistakes().filter(trainable)[3]; openCard(it);
       ui.session.attempted = 3; finishSession(); return JSON.stringify({ day: dayLoad(), counts: dayCounts(dayLoad()), week: weekDays() }); })()`));
     eq(r.counts, true, 'day counts'); eq(r.day.sessions, 1, 'sessions'); eq(r.week, 1, 'week days');
   });
@@ -197,7 +196,7 @@ const OPEN = `function openCard(it, guess) {
   await test('Start over on a paused card after a miss grades it a fail', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var it = allMistakes().filter(trainable)[0], a = openCard(it, true);
+      var it = allMistakes().filter(trainable)[0], a = openCard(it);
       a.misses = 1; a.attempts = 1; keepProgress(a); ui.session = null;
       settleSaved(savedSession()); store.del(sessKey());
       var rec = srsLoad()[it.key];
@@ -226,7 +225,7 @@ const OPEN = `function openCard(it, guess) {
   await test('a card left after a hint is captioned Skipped and not counted solved', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var it = allMistakes().filter(trainable)[0], a = openCard(it, true);
+      var it = allMistakes().filter(trainable)[0], a = openCard(it);
       a.hints = 1; settleLeft(a); ui.session.finished = true;
       var h = doneHtml(ui.session);
       return JSON.stringify({ skipped: h.indexOf('Skipped') !== -1, solved: /1 of 1 solved/.test(h) }); })()`));
@@ -248,7 +247,7 @@ const OPEN = `function openCard(it, guess) {
   await test('when the engine cannot check a move, no miss is counted', async () => {
     const A = boot();
     A.ev(`(function () { ${OPEN}
-      var it = allMistakes().filter(trainable)[4], a = openCard(it, true);
+      var it = allMistakes().filter(trainable)[4], a = openCard(it);
       var m = legalMoves(a.st).filter(function (x) { var u = moveUci(x); return u !== a.bestUci && u !== a.playedUci; })[0];
       gradeMove(m); return 1; })()`);
     for (let i = 0; i < 6; i++) await tick();
@@ -256,45 +255,61 @@ const OPEN = `function openCard(it, guess) {
     eq(r.misses, 0, 'misses'); ok(/cannot check/i.test(r.v || ''), r.v);
   });
 
-  await test('the blunder check appears only on first-sight safety and king cards with a capture or check reply', () => {
-    const A = boot();
-    const r = JSON.parse(A.ev(`(function () {
-      var out = { eligible: 0, safetyKing: 0, wrongFamily: 0, notForcing: 0 };
-      allMistakes().filter(trainable).forEach(function (it) {
-        var fam = familyOf(patternOf(it.b)).key, a = cardFor(it);
-        if (fam === 'safety' || fam === 'king') out.safetyKing++;
-        if (!a || !a.check1) return;
-        out.eligible++;
-        if (fam !== 'safety' && fam !== 'king') out.wrongFamily++;
-        if (!a.check1.capture && !a.check1.check) out.notForcing++;
-      });
-      return JSON.stringify(out); })()`));
-    ok(r.eligible > 0, 'some eligible'); eq(r.wrongFamily, 0, 'other families'); eq(r.notForcing, 0, 'quiet replies');
-    ok(r.eligible >= 0.5 * r.safetyKing, r.eligible + ' of ' + r.safetyKing);
-  });
-
-  await test('the blunder check is one question, graded with no engine: found is a first try, missed a fail', () => {
+  await test('no card enters a check phase: every card opens on the position before your move, asking for a better one', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var elig = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && a.check1; });
-      var a = openCard(elig[0], false), q0 = SF.queue.length;
-      gradeMove(uciToMove(a.st, a.check1.uci));
-      var found = { result: a.result, phase: a.phase, q: SF.queue.length - q0 };
-      var b = openCard(elig[1], false);
-      var own = b.st.b.map(function (p, i) { return p && isW(p) !== b.st.w ? i : -1; }).filter(function (i) { return i >= 0; })[0];
-      sessionClick(own);
-      var afterOwnTap = b.phase;
-      var wrong = legalMoves(b.st).filter(function (x) { return moveUci(x) !== b.check1.uci && x.to !== b.check1.reply.to; })[0];
-      gradeMove(wrong);
-      var missed = { result: b.result, phase: b.phase, q: SF.queue.length - q0 };
-      srsRecord(elig[1], 'fail', {});
-      var review = cardFor(elig[1]);
-      return JSON.stringify({ found: found, missed: missed, own: afterOwnTap, reviewCheck: !!(review && review.check1),
-        recap: [ui.session.checks, ui.session.checksFound] }); })()`));
-    eq(r.found.result, 'first', 'found result'); eq(r.found.phase, 'done', 'found answered'); eq(r.found.q, 0, 'engine');
-    eq(r.own, 'check', 'own-piece tap spends nothing');
-    eq(r.missed.result, 'fail', 'missed result'); eq(r.missed.phase, 'done', 'missed answered'); eq(r.missed.q, 0, 'engine');
-    eq(r.reviewCheck, false, 'reviews have no check step');
+      var out = [], cards = 0, its = allMistakes().filter(trainable);
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        its.forEach(function (it) {
+          var a = openCard(it);
+          if (!a) return;
+          cards++;
+          var bad = [];
+          if (a.phase !== 'guess') bad.push('phase ' + a.phase);
+          if ('check1' in a) bad.push('a check question');
+          if (stateFen(a.st) !== stateFen(a.pre)) bad.push('not the position before the move');
+          if (!!a.st.w !== myPov(it)) bad.push('the wrong side to move');
+          var tc = window.__nlTest.card();
+          if (tc.phase !== 'guess' || 'check1' in tc) bad.push('the test window reports a check');
+          if (/What can (White|Black) do now|Move their piece/.test(cardTaskHtml(a) + panelHtml(a, ui.session))) bad.push('check wording');
+          if (bad.length) out.push('tier ' + tier + ' ' + it.key + ': ' + bad.join(', '));
+        });
+      });
+      return JSON.stringify({ out: out, cards: cards, trainable: its.length }); })()`));
+    ok(r.cards === 3 * r.trainable, r.cards + ' cards of ' + r.trainable);
+    eq(r.out.length, 0, r.out.length + ' cards, first: ' + r.out.slice(0, 3).join(' | '));
+    /* and nothing in the page can start one, or count one in the recap */
+    const page = fs.readFileSync(process.env.NL_HTML || path.join(__dirname, '..', 'index.html'), 'utf8');
+    const left = page.match(/phase\s*[!=]==?\s*'check'|'check'\s*[!=]==?\s*\w+\.phase|checkShow|checkStep|check1|checksFound|spotted their reply/g);
+    ok(!left, 'still in the page: ' + (left || []).join(', '));
+  });
+
+  await test('an opponent-piece tap never grades and the phase stays guess', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], taps = 0, q0 = SF.queue.length, saved = JSON.stringify(srsLoad());
+      allMistakes().filter(trainable).forEach(function (it) {
+        var a = openCard(it);
+        if (!a) return;
+        var side = function (w) { return a.st.b.map(function (p, i) { return p && isW(p) === w ? i : -1; }).filter(function (i) { return i >= 0; }); };
+        var mine = side(!!a.st.w), legal = legalMoves(a.st);
+        /* with nothing selected, and with a piece of yours selected that cannot take there */
+        side(!a.st.w).forEach(function (sq) {
+          var from = mine.filter(function (f) { return !legal.some(function (m) { return m.from === f && m.to === sq; }); })[0];
+          [-1, from].forEach(function (f) {
+            if (f == null) return;
+            a.sel = f;
+            sessionClick(sq);
+            taps++;
+            if (a.phase !== 'guess' || a.attempts || a.misses || a.result) out.push(it.key + ' ' + (f >= 0 ? sqName(f) : 'none') + ' then ' + sqName(sq) + ': ' + a.phase);
+          });
+        });
+      });
+      return JSON.stringify({ out: out, taps: taps, q: SF.queue.length - q0, srs: JSON.stringify(srsLoad()) === saved }); })()`));
+    ok(r.taps > 1000, 'taps ' + r.taps);
+    eq(r.out.length, 0, r.out.length + ' graded, first: ' + r.out.slice(0, 3).join(' | '));
+    eq(r.q, 0, 'engine jobs'); ok(r.srs, 'a schedule changed');
   });
 
   await test('replaying the game move never names the answer', () => {
@@ -302,7 +317,7 @@ const OPEN = `function openCard(it, guess) {
     const bad = JSON.parse(A.ev(`(function () { ${OPEN}
       var out = [];
       allMistakes().filter(trainable).forEach(function (it) {
-        var a = openCard(it, true);
+        var a = openCard(it);
         if (!a) return;
         var best = sanOf(a.pre, a.best);
         gradeMove(uciToMove(a.st, a.playedUci));
@@ -319,7 +334,7 @@ const OPEN = `function openCard(it, guess) {
       var out = [];
       allMistakes().filter(trainable).forEach(function (it) {
         if (familyOf(patternOf(it.b)).key !== 'chances') return;
-        var a = openCard(it, true);
+        var a = openCard(it);
         if (!a) return;
         var best = sanOf(a.pre, a.best), h1 = hintText(a);
         if (h1.indexOf(best) !== -1) out.push(it.key + ': ' + h1);
@@ -337,16 +352,14 @@ const OPEN = `function openCard(it, guess) {
       [1, 2, 3].forEach(function (tier) {
         playerTier = function () { return tier; };
         allMistakes().filter(trainable).forEach(function (it) {
-          var a = openCard(it, false);
+          var a = openCard(it);
           if (!a) return;
           a.tier = tier;
-          if (a.check1) keep('check prompt', line(a));
-          a = openCard(it, true); a.tier = tier;
           keep('prompt', line(a));
           a.hints = 1; keep('hint 1', strip(hintText(a))); a.hints = 2; keep('hint 2', strip(hintText(a))); a.hints = 0;
           gradeMove(uciToMove(a.st, a.playedUci)); keep('game move again', strip(a.verdict && a.verdict.html));
-          a = openCard(it, true); a.tier = tier; reveal(); keep('answered, shown', line(a));
-          a = openCard(it, true); a.tier = tier;
+          a = openCard(it); a.tier = tier; reveal(); keep('answered, shown', line(a));
+          a = openCard(it); a.tier = tier;
           if (!a.sol) { solved(uciToMove(a.st, a.bestUci), a.bestUci, null); keep('answered, found', line(a)); }
         });
       });
@@ -379,11 +392,50 @@ const OPEN = `function openCard(it, guess) {
     eq(r.firstTime, true, 'first session'); eq(r.first, r.expect, 'card 1');
   });
 
+  await test('first-session card 1 is not forcing, and at most one of the first three is', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var m = model(), out = {}, realEase = cardEase, realLooks = looksForcing, its = allMistakes().filter(trainable);
+      var count = function (keys, fn) { return keys.slice(0, 3).filter(function (k) { return fn(m.byKey[k]); }).length; };
+      var asks = function (it) { var a = cardFor(it); return !!(a && a.sol); };
+      playerTier = function () { return 2; };
+      var keys = todayPlan().keys;
+      out.plain = { n: keys.length, first: asks(m.byKey[keys[0]]), three: count(keys, asks) };
+      /* ease ties put one-move cards first: a forcing card is dealt only when
+         no one-move card as easy is left out (the plan's own candidates) */
+      var pool = buildCandidates(11).concat(buildCandidates(60));
+      out.tieSkips = keys.filter(function (k) { return looksForcing(m.byKey[k]); }).map(function (k) {
+        var e = cardEase(m.byKey[k]);
+        return pool.filter(function (it) { return keys.indexOf(it.key) < 0 && !looksForcing(it) && cardEase(it) >= e; }).length;
+      }).reduce(function (x, y) { return x + y; }, 0);
+      /* the plan's rule never misses a card that asks for a forcing line */
+      out.forcing = its.filter(asks).length;
+      out.missed = its.filter(function (it) { return asks(it) && !looksForcing(it); }).length;
+      /* forcing cards made the easiest of all: card 1 still asks for one move */
+      cardEase = function (it) { return realLooks(it) ? 3 : 2; };
+      keys = todayPlan().keys;
+      out.easiest = { first: looksForcing(m.byKey[keys[0]]), three: count(keys, looksForcing) };
+      cardEase = realEase;
+      /* the latest loss leads, unless it looks forcing: then it keeps its place in the ease order */
+      var lost = its.filter(function (it) { return it.b.d && it.g.res === 'loss'; }).sort(function (x, y) { return y.g.ts - x.g.ts; })[0];
+      out.lostLeads = todayPlan().keys[0] === lost.key;
+      looksForcing = function (it) { return it === lost || realLooks(it); };
+      out.forcingLostAt = todayPlan().keys.indexOf(lost.key);
+      looksForcing = realLooks;
+      return JSON.stringify(out); })()`));
+    ok(r.plain.n >= 3, 'cards ' + r.plain.n);
+    eq(r.plain.first, false, 'card 1 asks for a forcing line'); ok(r.plain.three <= 1, r.plain.three + ' forcing in the first three');
+    ok(r.forcing > 0, 'no forcing cards at tier 2'); eq(r.missed, 0, 'forcing cards the plan cannot see');
+    eq(r.easiest.first, false, 'card 1, forcing cards easiest'); ok(r.easiest.three <= 1, r.easiest.three + ' forcing in the first three, forcing cards easiest');
+    eq(r.tieSkips, 0, 'one-move cards as easy left out for a forcing card');
+    eq(r.lostLeads, true, 'the latest loss leads'); ok(r.forcingLostAt < 0 || r.forcingLostAt >= 2, 'a forcing latest loss pulled forward, card ' + (r.forcingLostAt + 1));
+  });
+
   await test('the coarse events carry no names or ratings', () => {
     const calls = [];
     const A = boot();
     A.ev(`(function () { window.clarity = function () { window.__calls = (window.__calls || []).concat([Array.prototype.slice.call(arguments)]); }; return 1; })()`);
-    A.ev(`(function () { store.set('nl:firstSeen:' + playerId(), Date.now() - 3 * 864e5); returnEvents(); track('check_first_t2'); track('close_shown'); return 1; })()`);
+    A.ev(`(function () { store.set('nl:firstSeen:' + playerId(), Date.now() - 3 * 864e5); returnEvents(); track('solve_first'); track('close_shown'); return 1; })()`);
     const got = JSON.parse(A.ev('JSON.stringify(window.__calls || [])'));
     ok(got.some((c) => c[1] === 'return_d2_7'), JSON.stringify(got));
     ok(got.some((c) => c[1] === 'active_days'), 'active days');

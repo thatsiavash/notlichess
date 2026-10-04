@@ -49,13 +49,11 @@ const ENGINE = `(function () {
   };
   return 1;
 })()`;
-/* one card as the active card of a one-card session, opened in guess: the
-   blunder check's own frame is skipped (the redesign removes it) */
+/* one card as the active card of a one-card session (every card opens in guess) */
 const OPEN = `function openCard(it) {
   ui.session = { mode: 't', label: 't', keys: [it.key], idx: 0, results: {}, relearn: [], relearnOf: {} };
   var a = cardFor(it);
   if (!a) return null;
-  if (a.check1) { a.check1 = null; a.phase = 'guess'; a.st = cloneState(a.pre); a.lastMove = a.preLast; a.animMove = a.lastMove; }
   ui.session.active = a;
   return a;
 }`;

@@ -96,7 +96,9 @@ function cardFor(it) {
     a.preLast = a.lastMove;
   }
   /* the settled lengths of both lines, and a forcing-line task for players
-     who should see the whole combination, not just its first move */
+     who should see the whole combination, not just its first move
+     (looksForcing, for the first session's order, reads the same rule
+     from the stored line without the classifier) */
   var cls = classifyMistake(pre, playedUci, { pv: unpackUci(b.lu), mate: b.mb }, { pv: unpackUci(b.ru), mate: b.ma }, b.wb, b.wa, b.p);
   a.cls = cls;
   a.settleBest = cls.bSettle;
@@ -111,27 +113,6 @@ function cardFor(it) {
     if (a.sol.length < 3) a.sol = null;
   }
   a.solIdx = 0;
-  /* the blunder check: on first sight of a card where the move gave
-     something away or opened the king, and the punishment starts with a
-     capture or a check, the player first plays the opponent's reply */
-  var fam0 = familyOf(patternOf(b)).key, ru0 = unpackUci(b.ru)[0];
-  if (a.firstSight && !kept && ru0 && (fam0 === 'safety' || fam0 === 'king')) {
-    var post = cloneState(pre);
-    applyMove(post, a.played);
-    var r0 = uciToMove(post, ru0);
-    if (r0) {
-      var cap = post.b[r0.to] != null || r0.ep >= 0, afterR = cloneState(post);
-      applyMove(afterR, r0);
-      var chk = checkedKingSq(afterR) != null;
-      if (cap || chk) {
-        a.check1 = { uci: ru0, reply: r0, san: sanOf(post, r0), capture: cap, check: chk };
-        a.phase = 'check';
-        a.st = post;
-        a.lastMove = [a.played.from, a.played.to];
-        a.animMove = null;
-      }
-    }
-  }
   return a;
 }
 function currentItem() {
@@ -184,7 +165,7 @@ function prefetchCards(ss) {
 /* ── moves on the board ──────────────────────────────────────────────────── */
 function sessionClick(sq) {
   var ss = ui.session, a = ss && ss.active;
-  if (!a || (a.phase !== 'guess' && a.phase !== 'check') || a.pendingPromo) {
+  if (!a || a.phase !== 'guess' || a.pendingPromo) {
     if (a && a.phase === 'done' && !a.pendingPromo) {
       if (a.explore) exploreClick(sq);
       else {
@@ -235,7 +216,6 @@ function gradeMove(m) {
   a.tapAnim = a.tapped ? [m.from, m.to] : null;
   a.animMove = null;
   a.tapped = false;
-  if (a.phase === 'check') { checkStep(m, u); return; }
   /* inside a forcing line: later steps must follow it (or mate) */
   if (a.sol && a.solIdx > 0) {
     var want = a.sol[a.solIdx];
@@ -252,39 +232,6 @@ function gradeMove(m) {
   }
   if (u === a.playedUci) { sameAsGame(m); return; }
   checkMove(m, u, false);
-}
-/* the blunder check, graded without the engine: the stored reply, or any
-   capture on the same square, is what the move allowed. One question per
-   showing: found or not, the card is then answered, with the better move as
-   a worked example; the fix is asked when the card comes back */
-function checkStep(m, u) {
-  var a = ui.session.active, c1 = a.check1, ss = ui.session;
-  var found = !!m && (u === c1.uci || (c1.capture && m.to === c1.reply.to && a.st.b[m.to] != null));
-  var san = m ? sanOf(a.st, m) : '';
-  c1.found = found;
-  ss.checks = (ss.checks || 0) + 1;
-  if (found) ss.checksFound = (ss.checksFound || 0) + 1;
-  /* the recap's tally is the day's, across every session */
-  var dy = dayLoad();
-  dy.checks = (dy.checks || 0) + 1;
-  if (found) dy.checksFound = (dy.checksFound || 0) + 1;
-  daySave(dy);
-  if (found) {
-    c1.played = san;
-    a.checkVerdict = '✓ ' + esc(san) + '. That is what your move allowed.';
-    snd('good');
-  } else {
-    a.checkVerdict = '✗ ' + (a.it.g.color === 'white' ? 'Black' : 'White') + ' had ' + esc(c1.san) + '.';
-    snd('bad');
-  }
-  track((found ? 'check_first_t' : 'check_miss_t') + a.tier);
-  /* the answered view starts from the position before the mistake */
-  a.st = cloneState(a.pre);
-  a.lastMove = a.preLast;
-  a.animMove = null;
-  a.check1.done = true;
-  if (!found) a.revealed = true;
-  finishCard(found ? 'first' : 'fail');
 }
 /* the forcing line, move by move: my move, then theirs is played for me */
 function stepLine(m, u) {
@@ -589,7 +536,7 @@ function finishCard(result) {
     if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
     a.rec = rec;
     ss.results[a.key] = result;
-    if ((result === 'fail' || result === 'retry') && !a.check1 && (ss.relearn || []).length < 3) {
+    if ((result === 'fail' || result === 'retry') && (ss.relearn || []).length < 3) {
       ss.relearn = ss.relearn || [];
       ss.relearn.push(a.key);
       a.relearnQueued = true;
@@ -608,7 +555,6 @@ function finishCard(result) {
   /* the board keeps showing what was just played: the move found, the
      alternative that also works, or the end of the forcing line */
   if (a.revealed || result === 'fail') a.view = { line: 'refute', idx: -1 };
-  else if (a.check1 && a.check1.done) a.view = { line: 'best', idx: -1 };
   else if (a.alt && a.lines.yours && a.lines.yours.states.length) a.view = { line: 'yours', idx: Math.min(a.yours.at || 0, a.lines.yours.states.length - 1) };
   else a.view = { line: 'best', idx: Math.min(a.sol ? a.solIdx - 1 : 0, a.lines.best.states.length - 1) };
   saveSession();
