@@ -15,15 +15,33 @@ function sidesOf(a) {
 }
 
 /* the copy table, by the spec's ids: the task (T1, T2), the relearn chip
-   (T3), and the three answers to a tap that is not a move (T4 their piece,
-   T5 a drop where that piece cannot go, N1 any piece after an answer) */
+   (T3), the three answers to a tap that is not a move (T4 their piece, T5
+   a drop where that piece cannot go, N1 any piece after an answer), a move
+   being checked (K1 at 300 ms, K2 at 3 s), a wrong try (M1, M2 for the game
+   move again), a good move that is not the best (C1, C2) and a move the
+   engine could not check (E1, E2) */
 var CARD_COPY = {
   T1: function () { return 'Your turn'; },
   T2: function (a) { return 'Find a better move than ' + gameSan(a) + '.'; },
   T3: function () { return 'One more try'; },
   T4: function (a) { var s = sidesOf(a); return 'You are ' + s.me + '. Move a ' + s.mine + ' piece.'; },
   T5: function () { return 'That piece can\'t go there.'; },
-  N1: function () { return 'To try moves, open Details.'; }
+  N1: function () { return 'To try moves, open Details.'; },
+  K1: function (a) { return 'Checking ' + (a.checking || 'your move') + '…'; },
+  K2: function () { return 'Still checking.'; },
+  M1: function () { return 'Not this one'; },
+  M2: function () { return 'Your game move again'; },
+  C1: function () { return 'Good move'; },
+  C2: function () { return 'There\'s a stronger one.'; },
+  E1: function () { return 'Cannot check this move'; },
+  E2: function () { return 'Not counted. Try again.'; }
+};
+/* a word for a tap that is not a move, as row 2 says it: the full text,
+   then (when the words on screen would go over budget) a shorter one */
+var NOTE_COPY = {
+  T4: function (a) { return [CARD_COPY.T4(a), 'Move a ' + sidesOf(a).mine + ' piece.']; },
+  T5: function (a) { return [CARD_COPY.T5(a)]; },
+  N1: function (a) { return [CARD_COPY.N1(a)]; }
 };
 
 /* the live region leads with the verdict in words, so meaning never rests
@@ -35,8 +53,8 @@ var LIVE_PREFIX = { good: 'Correct.', bad: 'Wrong.', close: 'Good move, not best
    as the next candidate. Then each candidate's first sentence, then the
    fallback. A row that fits nothing stays empty rather than overflow */
 function fitsRow(s, row) {
-  var cap = ROW_CAPS[row] || ROW_CAPS.row2;
-  return !!s && s.length <= cap.ch && s.split(/\s+/).length <= cap.words;
+  var cap = typeof row === 'object' ? row : ROW_CAPS[row] || ROW_CAPS.row2;
+  return !!s && s.length <= cap.ch && wordsIn(s) <= cap.words && s.split(/\s+/).length <= cap.words;
 }
 function firstSentence(s) { var m = /^.*?[.!?…](?=\s|$)/.exec(String(s || '')); return m ? m[0] : String(s || ''); }
 function fitRow(cands, row, fallback) {
@@ -45,35 +63,89 @@ function fitRow(cands, row, fallback) {
   for (var i = 0; i < list.length; i++) if (fitsRow(list[i], row)) return list[i];
   return fitsRow(fallback, row) ? fallback : '';
 }
+/* principle 5: at most 15 words on screen before the next tap, counting
+   the band's rows and chip and the bar's labels (arrows and glyphs such as
+   ‹ › … are not words). Over budget, row 2 runs its ladder again with the
+   words that are left */
+var WORD_BUDGET = 15;
+function wordsIn(s) { return String(s || '').split(/\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w); }).length; }
+function barWords(slots) { return (slots || []).reduce(function (n, b) { return n + wordsIn(b.label); }, 0); }
+function bandWords(b, slots) { return wordsIn(b.row1) + wordsIn(b.row2) + wordsIn(b.chip) + wordsIn(b.cap) + barWords(slots); }
+/* a verdict as the band says it (FINAL-SPEC 3): {kind, row1, row2, html},
+   with row 2's ladder kept (cands, fall) so the band can fit it to the
+   words left beside the bar */
+function verdictOf(kind, row1, cands, fall) {
+  cands = [].concat(cands || []).filter(Boolean);
+  var row2 = fitRow(cands, 'row2', fall || '');
+  return { kind: kind, row1: row1, row2: row2, cands: cands, fall: fall || '', html: row1 + (row2 ? ' ' + row2 : '') };
+}
 /* a classifier sentence without its trailing line of moves: "It loses the
    bishop after Qxd6 Bxd6." reads "It loses the bishop." */
 function noLine(s) { return String(s || '').replace(/[:,]? after [^.]*\.$/, '.').replace(/ and more\.$/, '.'); }
 
+/* the verdict on a try that stays on the board (S4, S5, S11): row 1 in
+   one to four words, row 2 from its ladder. A wrong try says why in the
+   card's own sentence (why, from the classifier; slice 7 gives it its own
+   words), the game move again says so; a good move that is not the best
+   says there is a stronger one, the second time row 1 alone; a move the
+   engine could not check is not counted */
+function triedVerdict(a, t, why, again) {
+  if (t.kind === 'close') return verdictOf('close', CARD_COPY.C1(), again ? [] : [CARD_COPY.C2()], '');
+  if (t.kind === 'unchecked') return verdictOf('unchecked', CARD_COPY.E1(), [CARD_COPY.E2()], '');
+  if (t.uci === a.playedUci) return verdictOf('bad', CARD_COPY.M2(), why ? [why, noLine(why)] : [], 'There is something stronger here.');
+  return verdictOf('bad', CARD_COPY.M1(), why ? [why, noLine(why)] : [], fitRow([t.san + ' does not work.'], 'row2', ''));
+}
 /* the band for the state the card is in: {disc, kind, row1, row2, chip,
-   cap}. disc: king (in the solver's colour), good, bad, close, checking,
-   unchecked or info; kind: neutral, good, bad, close, info, hint or
-   explore; cap: one caption instead of two rows. The task, the relearn
-   chip and the answered heads are the spec's own words; the verdicts,
+   cap, sweep}. disc: king (in the solver's colour), good, bad, close,
+   checking, unchecked or info; kind: neutral, good, bad, close, info, hint
+   or explore; cap: one caption instead of two rows; sweep: the thin line
+   that runs along the band's foot while a move is checked. A word for a
+   tap that is not a move (a.note) takes row 2 for a while, and the chip
+   steps aside for it. Row 2 always fits the word budget (bandFit). The
    hints and forcing steps keep today's sentences inside the row caps until
-   their slices give them their own words (6, 7, 10, 11) */
+   their slices give them their own words (7, 10, 11) */
 function bandFor(a) {
+  var b = bandOf(a), n = a.note && a.note.key === cardStateKey(a) ? a.note : null;
+  if (!b.cap && n) { b.cands = NOTE_COPY[n.id](a); b.fall = ''; b.chip = ''; }
+  return bandFit(a, b);
+}
+/* row 2 from its ladder: the row's own caps, then, over the word budget,
+   the words that are left (and a note that still does not fit is dropped) */
+function bandFit(a, b) {
+  if (b.cands) {
+    b.row2 = fitRow(b.cands, 'row2', b.fall);
+    var slots = ui.session ? barSlots(a, ui.session) : [], room = WORD_BUDGET - bandWords({ row1: b.row1, chip: b.chip }, slots);
+    if (wordsIn(b.row2) > room) b.row2 = fitRow(b.cands, { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
+  }
+  delete b.cands; delete b.fall;
+  return b;
+}
+/* what the card is showing, so a word or an outline meant for one state
+   never outlives it: a move (each one counted, so coming back to the same
+   phase is still a change), a try seen, a hint, a step */
+function cardStateKey(a) {
+  var t = a.tried;
+  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, a.view ? a.view.line + ':' + a.view.idx : '', a.explore ? 'x' : ''].join('|');
+}
+function bandOf(a) {
   var t = a.tried, v = a.verdict, best = a.lines ? a.lines.best.san[0] || '' : '';
-  var say = function (fall) { return fitRow([v && v.say, noLine(v && v.say)], 'row2', fall); };
   if (a.phase === 'done' && a.explore) return { kind: 'explore', cap: sayAt(a, a.explore, a.explore.at) };
   if (a.phase === 'done') {
     if (a.result === 'fail' || a.revealed)
-      return { disc: 'info', kind: 'info', row1: 'The answer: ' + best, row2: a.foundGood ? fitRow(['Your ' + a.foundGood.san + ' was close.'], 'row2', '') : '' };
-    if (a.alt) return { disc: 'good', kind: 'good', row1: 'That works too', row2: fitRow(['The engine prefers ' + altNames(a).theirs + '.'], 'row2', '') };
-    return { disc: 'good', kind: 'good', row1: a.result === 'first' ? 'Found it' : 'You got there', row2: '' };
+      return { disc: 'info', kind: 'info', row1: 'The answer: ' + best, cands: a.foundGood ? ['Your ' + a.foundGood.san + ' was close.'] : [], fall: '' };
+    if (a.alt) return { disc: 'good', kind: 'good', row1: 'That works too', cands: ['The engine prefers ' + altNames(a).theirs + '.'], fall: '' };
+    return { disc: 'good', kind: 'good', row1: a.result === 'first' ? 'Found it' : 'You got there', cands: [], fall: '' };
   }
-  if (a.phase === 'checking') return { disc: 'checking', kind: 'neutral', row1: fitRow(['Checking ' + (a.checking || 'your move') + '…'], 'row1', 'Checking…'), row2: '' };
+  /* S3: the band keeps what it said for 300 ms, then says the move is
+     being checked, and at 3 s that it still is */
+  if (a.phase === 'checking' && a.checkSaid)
+    return { disc: 'checking', kind: 'neutral', sweep: true, row1: fitRow([CARD_COPY.K1(a)], 'row1', 'Checking…'), cands: a.checkSaid >= 2 ? [CARD_COPY.K2()] : [], fall: '' };
   if (a.phase === 'tried' && t) {
-    if (t.kind === 'close') return { disc: 'close', kind: 'close', row1: 'Good move', row2: say('There\'s a stronger one.') };
-    if (t.kind === 'unchecked') return { disc: 'unchecked', kind: 'info', row1: 'Cannot check this move', row2: say('Not counted. Try again.') };
-    if (t.uci === a.playedUci) return { disc: 'bad', kind: 'bad', row1: 'Your game move again', row2: say('There is something stronger here.') };
-    return { disc: 'bad', kind: 'bad', row1: 'Not this one', row2: say(fitRow([t.san + ' does not work.'], 'row2', '')) };
+    var tv = v || triedVerdict(a, t, null, false);
+    return { disc: t.kind === 'miss' ? 'bad' : t.kind, kind: t.kind === 'miss' ? 'bad' : t.kind === 'unchecked' ? 'info' : 'close',
+             row1: tv.row1, cands: tv.cands, fall: tv.fall };
   }
-  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: 'Right', row2: say('') };
+  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: 'Right', cands: v && v.cands ? v.cands : [], fall: '' };
   var mid = a.sol && a.solIdx > 0;
   if (a.hints >= 1 && (a.hintAfter || !mid)) {
     var fam = familyOf(patternOf(a.it.b)).key;
@@ -81,8 +153,8 @@ function bandFor(a) {
     /* a winning position's hint is its advice, not "You are winning." */
     var short_ = !mid && fam === 'conversion' ? 'Keep it simple and safe.' : null;
     return { disc: 'king', kind: 'hint', row1: a.hints >= 2 ? 'Hint 2 of 2' : 'Hint 1 of 2',
-             row2: a.hints >= 2 ? 'Move the circled piece.' : fitRow([hintText(a), short_], 'row2', fall) };
+             cands: a.hints >= 2 ? ['Move the circled piece.'] : [hintText(a), short_], fall: a.hints >= 2 ? '' : fall };
   }
-  if (mid) return { disc: 'king', kind: 'neutral', row1: 'Your move', row2: say('The next move is forcing too.') };
-  return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), row2: CARD_COPY.T2(a), chip: ss_relearn(a) ? CARD_COPY.T3() : '' };
+  if (mid) return { disc: 'king', kind: 'neutral', row1: 'Your move', cands: v && v.cands ? v.cands : [], fall: 'The next move is forcing too.' };
+  return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '' };
 }

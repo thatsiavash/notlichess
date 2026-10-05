@@ -379,6 +379,9 @@ function boardSvg(st, opts) {
 var sndCtx = null;
 function snd(name) {
   if (cfg.sound === false) return;
+  /* where the phone can (Android), a found move buzzes once, short, and a
+     wrong one twice (FINAL-SPEC 2.2) */
+  try { if ((name === 'good' || name === 'bad') && navigator.vibrate) navigator.vibrate(name === 'good' ? 15 : [30, 60, 30]); } catch (e) {}
   try {
     if (!sndCtx) sndCtx = new (window.AudioContext || window.webkitAudioContext)();
     /* browsers hand back a suspended context even mid-gesture, resume or

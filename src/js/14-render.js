@@ -413,14 +413,17 @@ function doneHtml(ss) {
 /* the card's board as data: the position drawn (st), its last move, the
    bar's value from the player's side (ev), the marks for boardSvg (opts),
    whether the board takes moves (live), whether the bar waits (pending:
-   grey and still on the card, live only while exploring) and how long
-   this frame's slide takes (slideMs: 220 for a move you made, 320 for one
-   the app shows you, 0 when nothing slides). It reads the card and writes
-   nothing, so a test can check every frame (the spoiler rule) without a
-   page; what drawing a frame remembers is kept by paintBoard */
+   grey and still on the card, live only while exploring), how long this
+   frame's slide takes (slideMs: 220 for a move you made, 320 for one the
+   app shows you, 0 when nothing slides), whether it is a jump to another
+   position (fadeMs: a 150 ms crossfade) and whether something lands once
+   the slide ends (land: a verdict's badge and tints, held back while the
+   piece moves). It reads the card and writes nothing, so a test can check
+   every frame (the spoiler rule) without a page; what drawing a frame
+   remembers is kept by paintBoard */
 function boardOptsFor(a) {
   var it = a.it, flip = it.g.color === 'black';
-  var view, opts = { flip: flip }, evLive = false, slideMs = 0;
+  var view, opts = { flip: flip }, evLive = false, slideMs = 0, land = false;
   if (a.phase === 'done' && a.explore) {
     var ex = a.explore, xn = xpCur(ex), xr = ex.res[xn.key], quiet = xpSpoil(xn);
     /* the bar follows the explored position, from the learner's side; it
@@ -453,11 +456,8 @@ function boardOptsFor(a) {
     }
   } else {
     var st = a.st, last = a.phase === 'checking' ? a.ghostMove : a.lastMove;
-    if (a.phase === 'checking' && a.ghostMove) {
-      st = cloneState(a.st);
-      var gm = legalMoves(st).filter(function (m) { return m.from === a.ghostMove[0] && m.to === a.ghostMove[1]; })[0];
-      if (gm) applyMove(st, gm);
-    } else if (a.phase === 'tried') {
+    if (a.phase === 'checking' && a.ghostMove) st = checkingFrame(a);
+    else if (a.phase === 'tried') {
       /* the try stays drawn over the position before it */
       var tf = triedFrame(a);
       st = tf.st; last = tf.last;
@@ -471,14 +471,31 @@ function boardOptsFor(a) {
     /* your move slides as you make it; their reply, once See it plays it,
        slides as a move the app shows */
     if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.phase === 'tried' && a.tried.seen ? 320 : 220; }
+    /* the move just made, on its squares: checking (a grey dots badge), a
+       miss (a red cross), a good move that is not the best (a hollow ring
+       with a tick) or one not checked (a question mark). It lands with the
+       piece: a frame that slides it draws it once the slide ends */
+    var vk = null, vm = null;
+    if (a.phase === 'checking' && a.ghostMove) { vk = 'checking'; vm = a.ghostMove; }
+    else if (a.phase === 'tried' && !a.tried.seen) { vk = a.tried.kind === 'miss' ? 'bad' : a.tried.kind; vm = [a.tried.from, a.tried.to]; }
+    if (vk && opts.anim) land = true;
+    else if (vk) {
+      var fx = a.key + ':' + (a.fxn || 0) + vk;
+      opts.fx = fx;
+      opts.tints = [{ sq: vm[0], kind: vk }, { sq: vm[1], kind: vk }];
+      opts.badges = [{ sq: vm[1], kind: vk, fx: fx }];
+    }
   }
+  /* "not a move here": the grey outline on a square just tapped */
+  if (a.nope && a.nope.key === cardStateKey(a)) opts.rings = (opts.rings || []).concat([{ sq: a.nope.sq, kind: 'nope' }]);
   if (slideMs === 320) opts.animMs = 320;
   opts.mark = view.last;
   opts.label = (view.st.w ? 'White' : 'Black') + ' to move. You played ' + sanOf(a.pre, a.played) + ' in the game.';
   var ck = checkedKingSq(view.st);
   if (ck != null) opts.check = ck;
   return {
-    st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts, slideMs: slideMs,
+    st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts, slideMs: slideMs, land: land,
+    fadeMs: a.jump && !slideMs ? XFADE : 0,
     live: a.phase === 'guess' || a.phase === 'tried' || !!(a.phase === 'done' && a.explore),
     /* the bar fills only while exploring: a tall bar during the guess would
        say "you are winning, find it", and a moving one is motion nobody
@@ -488,15 +505,19 @@ function boardOptsFor(a) {
 }
 /* the board beat: the board svg and the marks over it, and the bar beside
    them. A frame that slides a piece sets motionUntil, so nothing else is
-   written until the piece lands; instant (an input flushed the beat) draws
-   the frame with no slide */
+   written until the piece lands, and holds back what lands with it (the
+   land beat draws it); a jump to another position crossfades and sets
+   motionUntil too. instant (an input flushed the beat) draws the frame as
+   it ends: no slide, no crossfade, the verdict on its square */
 function paintBoard(a, instant) {
   var it = a.it, bw = el('bwrap');
   if (!bw) return;
+  /* under reduced motion every slide and fade takes 0 ms: the piece is
+     drawn where it lands */
+  var still = instant || reducedMotion();
+  if (still) a.animMove = null;
   var f = boardOptsFor(a);
-  /* under reduced motion every slide takes 0 ms: the piece is drawn where
-     it lands */
-  if (instant || reducedMotion()) { f.opts.anim = null; f.slideMs = 0; }
+  if (still) { f.opts.anim = null; f.slideMs = 0; f.fadeMs = 0; }
   /* a new board ends the forcing reply's hold (flushStage) */
   motionHold = false;
   /* what drawing this frame remembers: the bar's last live value and a
@@ -505,21 +526,45 @@ function paintBoard(a, instant) {
     if (f.evLive) a.explore.lastEv = f.ev;
     a.explore.anim = null;
   } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx };
-  bw.innerHTML = boardSvg(f.st, f.opts) + (a.pendingPromo ? promoHtml(f.st) : '');
+  var fade = f.fadeMs ? xfadeHtml(bw.innerHTML) : '';
+  bw.innerHTML = boardSvg(f.st, f.opts) + (a.pendingPromo ? promoHtml(f.st) : '') + fade;
   bw.classList.toggle('static', !f.live);
   var ms = f.slideMs || 0;
   releaseAnims(bw, ms);
   a.animMove = null;
+  a.jump = false;
+  /* the badge and tints wait for the piece (the land beat), and the
+     verdict's sound comes with them */
+  a.landing = !!(ms && f.land);
+  if (!ms && a.cue) { snd(a.cue); a.cue = null; }
   /* the bar: the player's view of the position, with no pawn number; still
      while it waits */
   var eb = el('ebar'), fill = el('ebar-fill');
   if (eb) eb.classList.toggle('pending', f.pending);
   if (fill && !f.pending) fill.style.height = winPct(evalWhite(it, f.ev != null ? f.ev : it.b.eb)) + '%';
-  /* the slide starts two frames from now (releaseAnims), and ends ms later */
+  /* the slide starts two frames from now (releaseAnims), and ends ms later;
+     the old board's fade-out starts now */
   if (ms) motionUntil = Date.now() + SLIDE_LEAD + ms;
+  else if (fade) {
+    motionUntil = Date.now() + f.fadeMs;
+    var xf = bw.querySelector('.xfade');
+    if (xf) setTimeout(function () { if (xf.parentNode) xf.parentNode.removeChild(xf); }, f.fadeMs + 50);
+  }
   /* the forcing reply's slide (stepLine marks it): input never cuts it
      short, it is swallowed until the piece lands (S10) */
   if (a.replySlide) { motionHold = !!ms; a.replySlide = false; }
+}
+/* a jump to another position (Try again, Take back, Keep looking) lays the
+   old board over the new one and fades it out in 150 ms, so the change
+   reads as one. The copy is a picture: no square or piece in it answers a
+   query or a tap, and none of its pieces slides */
+var XFADE = 150;
+function xfadeHtml(html) {
+  var i = html.indexOf('</svg>'), j = i < 0 ? -1 : html.indexOf('</svg>', i + 6);
+  if (j < 0) return '';
+  var old = html.slice(0, j + 6).replace(/ data-sq="\d+"/g, '').replace(/ class="anim-piece"/g, '')
+    .replace('<svg class="board"', '<svg class="xf-board"').replace('<svg class="marks"', '<svg class="xf-marks"').replace(/ role="img" aria-label="[^"]*"/, '');
+  return '<div class="xfade" aria-hidden="true">' + old + '</div>';
 }
 /* the marks beat: only the marks svg is rewritten, so no piece is touched */
 function paintMarks(a) {
@@ -561,14 +606,14 @@ function renderCard() {
       + '<div class="panel" id="cpanel"><div class="strip" id="cstrip"></div><div class="acts-row sticky-acts" id="cbar"></div></div>'
       + '</div>';
   }
-  stage(['board', 'text']);
+  stage(['board', 'land', 'text']);
 }
 /* what the card says and offers, as data: the band (bandFor: disc, kind,
    row1, row2, chip, cap), forcing pips (a later slice), the action bar as
    slots, the strip's markup and the live region's words */
 function displayFor(a) {
   var b = bandFor(a), ss = ui.session;
-  return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', pips: null,
+  return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', sweep: !!b.sweep, pips: null,
            buttons: barSlots(a, ss), strip: stripHtml(a, ss), live: liveWords(a, b) };
 }
 /* a node's markup, written only when it changed, so a repaint that changes
@@ -601,6 +646,7 @@ function paintText(a) {
   makeFocusable(fp);
   if (newCard) { var th = el('task-h'); if (th) th.focus({ preventScroll: true }); }
   else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
+  else if (a.focusRight && a.phase === 'tried' && barButton(rightSlot())) { a.focusRight = false; barButton(rightSlot()).focus({ preventScroll: true }); }
   else if (focKey && fp) {
     /* a bar button: the one now in its slot, or the right-hand one (S20)
        when that slot is off or gone */
@@ -663,7 +709,7 @@ function paintLive(d) {
    caption while exploring */
 function bandHtml(a, d) {
   if (d.cap) return '<div class="card-task k-' + d.kind + ' cap" aria-hidden="true"><p class="bd-cap">' + esc(d.cap) + '</p></div>';
-  return '<div class="card-task k-' + d.kind + '">' + discHtml(a, d.disc)
+  return '<div class="card-task k-' + d.kind + (d.sweep ? ' sweep' : '') + '">' + discHtml(a, d.disc)
     + '<div class="bd-rows"><div class="bd-top"><h2 class="bd-r1" id="' + (a.phase === 'done' ? 'result-h' : 'task-h') + '" tabindex="-1">' + esc(d.row1) + '</h2>'
     + (d.chip ? '<span class="bd-chip">' + esc(d.chip) + '</span>' : '') + '</div>'
     + '<p class="bd-r2">' + esc(d.row2) + '</p></div></div>';
@@ -687,8 +733,10 @@ function liveWords(a, b) {
 }
 /* the action bar as slots, left to right: {act, k, label, cls, off, aria}.
    Answered: back, forward, Next; a try on the board: help, Try again;
-   guessing: Hint, Show the answer; checking or a reply playing: the same
-   two, switched off, so the bar keeps its place */
+   guessing: Hint, Show the answer, both outlined, and Hint for everyone
+   until it has nothing left to give; a move being checked: Take back and
+   the answer switched off; a reply playing: Hint and the answer switched
+   off, so the bar keeps its place */
 function barSlots(a, ss) {
   if (a.phase === 'done') {
     var L = a.lines[a.view.line] || a.lines.best, backOff, fwdOff, backLab = 'Back one move', fwdLab = 'Forward one move';
@@ -708,19 +756,20 @@ function barSlots(a, ss) {
   if (a.phase === 'guess') {
     /* Hint is named by the hint it gives next, and switched off when it
        has nothing left to give */
-    var hintOff = a.hints >= 2 || (a.tier === 3 && !a.misses);
-    return [{ act: 'hint', label: a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint'), cls: 'btn-line' + (!hintOff && a.misses ? ' btn-pulse' : ''), off: hintOff },
-            { act: 'reveal', label: 'Show the answer', cls: a.misses >= 2 ? 'btn-big' : 'btn-line' }];
+    return [{ act: 'hint', label: a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint'), cls: 'btn-line', off: a.hints >= 2 },
+            { act: 'reveal', label: 'Show the answer', cls: 'btn-line' }];
   }
+  if (a.phase === 'checking') return [{ act: 'takeBack', label: 'Take back', cls: 'btn-line' }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
   return [{ act: 'hint', label: 'Hint', cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
 }
-/* the bar while a try is on the board: Try again is the gold right-hand
-   button; on the left, See it plays their reply, then help is offered (the
-   next hint, or from the third miss the answer). A close move keeps
-   looking; a move the engine could not check offers the answer */
+/* the bar while a try is on the board: the gold right-hand button takes it
+   back (Try again; Keep looking after a good move that is not the best). On
+   the left, See it plays their reply to a miss, then help is offered (the
+   next hint, or from the third miss the answer); a good move or one the
+   engine could not check offers the answer */
 function triedSlots(a) {
   var t = a.tried, left;
-  if (t.kind === 'close') return [{ act: 'dismissStronger', label: 'Keep looking', cls: 'btn-line' }, { act: 'reveal', label: 'Show the best move', cls: 'btn-line' }];
+  if (t.kind === 'close') return [{ act: 'reveal', label: 'Show the answer', cls: 'btn-line' }, { act: 'dismissStronger', label: 'Keep looking', cls: 'btn-big' }];
   if (t.kind === 'miss' && t.reply && !t.seen) left = { act: 'seeIt', label: 'See it ›', cls: 'btn-line' };
   else if (t.kind === 'unchecked' || a.misses >= 3) left = { act: 'reveal', label: 'Show the answer', cls: 'btn-line' };
   else if (a.hints >= 2) left = { act: 'hint', label: 'No more hints', cls: 'btn-line', off: true };

@@ -488,12 +488,13 @@ document.addEventListener('click', function (e) {
        just changed is ignored above (slotGuarded) */
     case 'dismissStronger': if (!tooSoon(a)) tryAgain(); break;
     case 'tryAgain': if (!tooSoon(a)) tryAgain(); break;
+    case 'takeBack': if (!tooSoon(a)) takeBack(); break;
     case 'seeIt': if (!tooSoon(a)) seeIt(); break;
     case 'promo': promoChoose(k); break;
     case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;
     /* a teaching line opens at its start, with its arrow; › steps it */
-    case 'lineTab': if (a && a.lines && a.lines[k]) { if (a.explore) exploreExit('silent'); a.view = { line: k, idx: -1 }; renderCard(); } break;
+    case 'lineTab': if (a && a.lines && a.lines[k]) { if (a.explore) exploreExit('silent'); a.view = { line: k, idx: -1 }; a.jump = true; renderCard(); } break;
     case 'lineTo': if (a && a.lines) { if (a.explore) exploreExit('silent'); a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
     case 'lineBack': stepView(-1); break;
     case 'lineFwd': stepView(1); break;
@@ -590,6 +591,8 @@ document.addEventListener('keydown', function (e) {
     var ae = ui.session && ui.session.active;
     if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
+    /* a move still being checked: Esc takes it back (S3) */
+    if (ae && ae.phase === 'checking') { e.preventDefault(); takeBack(); return; }
   }
   var a = ui.session && ui.session.active;
   if (!a || ui.sheet) return;
@@ -642,6 +645,11 @@ function makeFocusable(root) {
   }
 }
 new MutationObserver(function () { makeFocusable(document); }).observe(document.documentElement, { childList: true, subtree: true });
+/* the bar's buttons keep the keyboard (a verdict hands it to the right-hand
+   one); after a tap or a click that focus shows no ring, which is for
+   someone who steers with keys */
+document.addEventListener('pointerdown', function () { document.documentElement.classList.add('by-pointer'); }, true);
+document.addEventListener('keydown', function () { document.documentElement.classList.remove('by-pointer'); }, true);
 document.addEventListener('keydown', function (e) {
   if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-act][tabindex]:not(input)')) {
     e.preventDefault();
@@ -682,6 +690,7 @@ function boardState(a) {
   if (a.phase === 'done' && a.explore) return { st: a.explore.st, live: true, explore: true };
   if (a.phase === 'guess') return { st: a.st, live: true };
   if (a.phase === 'tried') return { st: triedFrame(a).st, live: true, tried: true };
+  if (a.phase === 'checking') return { st: checkingFrame(a), live: false, checking: true };
   return { st: a.st, live: false };
 }
 document.addEventListener('pointerdown', function (e) {
@@ -694,40 +703,29 @@ document.addEventListener('pointerdown', function (e) {
      forcing reply slides the press is dropped, and the click it makes too */
   if (flushStage()) { pointerState.held = true; return; }
   if (e.button === 2) { pointerState.rightFrom = sq; return; }
-  var bs = boardState(a);
-  /* a mouse or pen press on a piece of the side to move starts exploring
-     and the drag in one gesture (touch taps go through the click) */
-  if (e.button === 0 && a.phase === 'done' && !a.explore && !a.pendingPromo && e.pointerType !== 'touch') {
-    var vs0 = lineView(a).st, pc0 = vs0.b[sq];
-    if (pc0 && isW(pc0) === vs0.w) {
-      startExplore({ sq: sq, via: 'press' });
-      bs = boardState(a);
-      pointerState.suppressClick = false;
-      pointerState.dragFrom = sq; pointerState.dragPiece = pc0; pointerState.moved = false;
-      pointerState.startX = e.clientX; pointerState.startY = e.clientY;
-      pointerState.justSelected = true;
-      return;
-    }
+  var bs = boardState(a), took = false;
+  /* a move on the board, being checked or tried: a press on the moved piece
+     (on a try, any of yours) takes it back at once, picked up, and the
+     press (a tap or a drag) goes on from the real position. Anything else
+     is answered by the click this press makes (sessionClick) */
+  if (e.button === 0 && !a.pendingPromo && (bs.checking || bs.tried)) {
+    var pick = bs.checking ? checkingPick(a, sq) : triedPick(a, sq);
+    if (pick < 0) return;
+    if (bs.checking) takeBack(pick); else tryAgain(pick);
+    bs = boardState(a);
+    sq = pick;
+    took = true;
   }
   /* a board that takes no moves (the answered card): a sideways swipe
      will step the story (FINAL-SPEC 2.2), so its start is kept when it is
-     clear of both screen edges (iOS Back ends the session) */
+     clear of both screen edges (iOS Back ends the session). A press on a
+     piece there is answered by its click (N1) */
   if (e.button === 0 && !bs.live && !a.pendingPromo) {
     var W = window.innerWidth || 0;
     pointerState.swipe = e.clientX >= 24 && e.clientX <= W - 24 ? { x: e.clientX, y: e.clientY } : null;
     return;
   }
   if (e.button !== 0 || !bs.live || a.pendingPromo) return;
-  /* a try on the board: a press on one of your pieces takes it back at
-     once, and the press (a tap or a drag) goes on from the real position */
-  if (bs.tried) {
-    var pick = triedPick(a, sq);
-    if (pick < 0) return;
-    clearTry(a);
-    renderCard();
-    bs = boardState(a);
-    sq = pick;
-  }
   pointerState.suppressClick = false;
   if (!bs.explore && a.shapes.length) { a.shapes = []; renderCardBoard(); }
   var p = bs.st.b[sq];
@@ -738,9 +736,11 @@ document.addEventListener('pointerdown', function (e) {
     pointerState.startX = e.clientX;
     pointerState.startY = e.clientY;
     var cur = bs.explore ? a.explore.sel : a.sel;
-    pointerState.justSelected = cur !== sq;
-    /* a selection changes the board alone (exploring repaints its words too) */
-    if (cur !== sq) { if (bs.explore) { a.explore.sel = sq; renderCard(); } else { a.sel = sq; renderCardBoard(); } }
+    /* a piece just picked up: the click this press makes must not put it down */
+    pointerState.justSelected = took || cur !== sq;
+    /* a selection changes the board alone (exploring repaints its words too);
+       a press that took a move back drew its selection with that board */
+    if (!took && cur !== sq) { if (bs.explore) { a.explore.sel = sq; renderCard(); } else { a.sel = sq; renderCardBoard(); } }
   }
 });
 document.addEventListener('pointermove', function (e) {
@@ -867,7 +867,8 @@ window.__nlTest = {
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
              hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
-             sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b };
+             sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null,
+             verdict: a.verdict ? { kind: a.verdict.kind, row1: a.verdict.row1, row2: a.verdict.row2 } : null };
   },
   play: function (uci) {
     var a = ui.session && ui.session.active;

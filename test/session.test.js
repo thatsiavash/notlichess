@@ -358,7 +358,7 @@ const OPEN = `function openCard(it) {
     eq(bad.length, 0, 'leaks: ' + bad.slice(0, 2).join(' | '));
   });
 
-  await test('S1, S2 and the answered frame fit 26 / 40 / 60 characters at every tier', () => {
+  await test('S1 to S5, S11 and the answered frame fit 26 / 40 / 60 characters and 15 words at every tier', () => {
     const A = boot();
     /* the fit ladder's own steps: a row that fits stays as it is; a longer
        one falls to its first sentence; then to the fallback; and a fallback
@@ -377,14 +377,22 @@ const OPEN = `function openCard(it) {
         s = String(s || '');
         if (s.length > ch || (s && s.split(/\\s+/).length > words) || /\u2014/.test(s)) out.push(what + ' (' + s.length + '): ' + s);
       };
+      /* principle 5: 15 words before the next tap, the band and the bar
+         together (glyphs such as the arrows are not words) */
+      var words = function (s) { return String(s || '').split(/\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w); }).length; };
       var band = function (what, a) {
         var d = displayFor(a);
         frames++;
         seen[what] = (seen[what] || 0) + 1;
         cap(what + ', row 1', d.row1, 26, 99); cap(what + ', row 2', d.row2, 40, 7); cap(what + ', caption', d.cap, 60, 8); cap(what + ', chip', d.chip, 14, 3);
         if (!d.cap && !d.row1) out.push(what + ': no row 1');
+        var n = [d.row1, d.row2, d.chip, d.cap].concat(d.buttons.map(function (b) { return b.label; })).reduce(function (x, y) { return x + words(y); }, 0);
+        if (n > 15) out.push(what + ': ' + n + ' words, ' + [d.row1, d.row2, d.chip].join(' / ') + ' | ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
         return d;
       };
+      /* a word for a tap that is not a move, shown as the page shows it */
+      var note = function (a, id) { a.note = { id: id, key: cardStateKey(a), seq: 0 }; return a; };
+      var theirs = function (a) { for (var q = 0; q < 64; q++) if (a.st.b[q] && isW(a.st.b[q]) !== !!a.st.w) return q; return -1; };
       [1, 2, 3].forEach(function (tier) {
         playerTier = function () { return tier; };
         allMistakes().filter(trainable).forEach(function (it) {
@@ -405,6 +413,52 @@ const OPEN = `function openCard(it) {
           a.sel = mine.from;
           if (JSON.stringify(band(at + ' selected', a)) !== JSON.stringify((a.sel = -1, displayFor(a)))) out.push(at + ': a selection changed the band');
           ['T4', 'T5', 'N1'].forEach(function (id) { frames++; cap(at + ' ' + id, CARD_COPY[id](a), 40, 7); });
+          /* in the band: T4 in full on the card, and over a relearn card's
+             chip, which steps aside; in its short form beside a hint */
+          var t4 = CARD_COPY.T4(a), t4s = 'Move a ' + sidesOf(a).mine + ' piece.';
+          d = band(at + ' T4', note(a, 'T4'));
+          if (d.row2 !== t4 || d.row1 !== 'Your turn') out.push(at + ' T4 reads ' + d.row1 + ' / ' + d.row2);
+          d = band(at + ' T5', note(a, 'T5'));
+          if (d.row2 !== CARD_COPY.T5(a)) out.push(at + ' T5 reads ' + d.row2);
+          ui.session.keys = [it.key, it.key]; ui.session.relearnOf = {}; ui.session.relearnOf[it.key] = 1; ui.session.idx = 1;
+          d = band(at + ' relearn, T4', note(a, 'T4'));
+          if (d.row2 !== t4 || d.chip) out.push(at + ' relearn T4 reads ' + d.row2 + ' / chip ' + d.chip);
+          a = openCard(it); a.hints = 1;
+          d = band(at + ' hint 1, T4', note(a, 'T4'));
+          if (d.row2 !== t4s) out.push(at + ' hint 1 T4 reads ' + d.row2);
+          a = openCard(it);
+          /* S3: a move being checked says nothing for 300 ms, then K1, then K2 at 3 s */
+          var off0 = legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci && !(a.sol && a.sol.indexOf(u) >= 0); })[0];
+          if (off0) {
+            SF.state = 'ready';
+            gradeMove(off0);
+            d = band(at + ' checking', a);
+            if (d.row1 !== 'Your turn' || d.buttons.map(function (b) { return b.label; }).join(' | ') !== 'Take back | Show the answer') out.push(at + ' checking at once reads ' + d.row1 + ' | ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
+            a.checkSaid = 1; d = band(at + ' checking, 300 ms', a);
+            if (d.row1 !== 'Checking ' + sanOf(a.st, off0) + '…' || d.row2 || !d.sweep) out.push(at + ' K1 reads ' + d.row1 + ' / ' + d.row2);
+            a.checkSaid = 2; d = band(at + ' checking, 3 s', a);
+            if (d.row2 !== 'Still checking.') out.push(at + ' K2 reads ' + d.row2);
+            takeBack();
+            /* S5: a good move that is not the best; the second time row 1 alone */
+            a = openCard(it); showTry(a, off0, 'close', null, null, false); d = band(at + ' close', a);
+            if (d.row1 + ' / ' + d.row2 !== 'Good move / There\\'s a stronger one.' || d.disc !== 'close') out.push(at + ' close reads ' + d.row1 + ' / ' + d.row2);
+            d = band(at + ' close, T4', note(a, 'T4'));
+            a = openCard(it); showTry(a, off0, 'close', null, null, true); d = band(at + ' close again', a);
+            if (d.row1 !== 'Good move' || d.row2) out.push(at + ' close again reads ' + d.row1 + ' / ' + d.row2);
+            /* S11: a move the engine could not check */
+            a = openCard(it); showTry(a, off0, 'unchecked', null); d = band(at + ' not checked', a);
+            if (d.row1 + ' / ' + d.row2 !== 'Cannot check this move / Not counted. Try again.' || d.disc !== 'unchecked' || d.kind !== 'info') out.push(at + ' not checked reads ' + d.row1 + ' / ' + d.row2);
+            d = band(at + ' not checked, T4', note(a, 'T4'));
+            if (d.row2 !== t4s) out.push(at + ' not checked T4 reads ' + d.row2);
+            /* a miss that loses nothing never reads "does not work" */
+            a = openCard(it);
+            miss(off0, moveUci(off0), { cp: it.b.eb, mate: null, pv: [moveUci(off0)], win: winPct(it.b.eb) });
+            d = band(at + ' a miss that loses nothing', a);
+            if (/does not work/.test(d.row2) || d.row1 !== 'Not this one') out.push(at + ' a miss that loses nothing reads ' + d.row1 + ' / ' + d.row2);
+            d = band(at + ' a miss, T4', note(a, 'T4'));
+            if (d.row2 !== t4) out.push(at + ' a miss T4 reads ' + d.row2);
+          }
+          a = openCard(it);
           /* and, until their slices give them their own words, the hints,
              the game move again and a try being checked stay in the caps */
           a.hints = 1; band(at + ' hint 1', a); a.hints = 2; band(at + ' hint 2', a); a.hints = 0;
@@ -416,6 +470,8 @@ const OPEN = `function openCard(it) {
           /* the answered frame: shown, found, found after a miss, close then shown, works too */
           a = openCard(it); reveal(); d = band(at + ' shown', a);
           if (d.row1 !== 'The answer: ' + a.lines.best.san[0]) out.push(at + ' shown reads ' + d.row1);
+          d = band(at + ' shown, N1', note(a, 'N1'));
+          if (d.row2 !== 'To try moves, open Details.') out.push(at + ' N1 reads ' + d.row2);
           a = openCard(it); a.foundGood = { san: sanOf(a.st, mine), win: 60 }; reveal(); band(at + ' shown after a close move', a);
           if (!a.sol) {
             a = openCard(it); solved(uciToMove(a.st, a.bestUci), a.bestUci, null); d = band(at + ' found', a);
@@ -431,8 +487,9 @@ const OPEN = `function openCard(it) {
         });
       });
       return JSON.stringify({ out: out, frames: frames, seen: seen }); })()`));
-    ok(r.frames > 3000, 'frames ' + r.frames);
+    ok(r.frames > 6000, 'frames ' + r.frames);
     eq(r.out.length, 0, r.out.length + ' too long, first: ' + r.out.slice(0, 3).join(' | '));
+    ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss that loses nothing', 'shown, N1'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
   });
 
   await test('one format by default: the most played among those played in the last 90 days', () => {

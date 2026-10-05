@@ -4,7 +4,11 @@
    on the active card:
      'board'  repaints the board svg and the marks over it once no piece is
               sliding; a frame that slides a piece sets motionUntil to the
-              slide's end
+              slide's end, and so does a jump to another position (a 150 ms
+              crossfade)
+     'land'   once the piece has landed, draws what lands with it (a
+              verdict's badge and tints, and its sound), if the board beat
+              before it held them back for the slide
      'marks'  rewrites only the marks svg, once no piece is sliding
      'text'   paints the band, the action bar, the strip and the live
               region 150 ms after the last slide ends; a newer text beat
@@ -16,9 +20,13 @@
    The one exception is the forcing reply (S10), the only move that plays
    by itself: it is always seen moving, so while it slides flushStage
    leaves everything as it is and says so, and the input is dropped.
-   Beats belong to one card and die with it (Next, leaving the card). */
+   Beats belong to one card and die with it (Next, leaving the card). So do
+   timed beats (stageAt): a change due at a set time (K1 at 300 ms, K2 at
+   3 s, the end of a word or an outline for a tap that is not a move), which
+   changes the card then and stages what it shows; input does not hurry
+   them. */
 var TEXT_GAP = 150;
-var motionUntil = 0, stageQ = [], stageTimer = null, stageCard = null, textNotBefore = 0;
+var motionUntil = 0, stageQ = [], stageTimer = null, stageCard = null, textNotBefore = 0, stageTimers = [];
 /* the forcing reply is sliding (paintBoard sets it, the next board clears it) */
 var motionHold = false;
 
@@ -54,7 +62,7 @@ function stageRun() {
   if (!a || a.key !== stageCard) { stageQ = []; return; }
   while (stageQ.length) {
     var b = stageQ[0], now = Date.now(), due = now;
-    if (b === 'board' || b === 'marks') due = motionUntil;
+    if (b === 'board' || b === 'land' || b === 'marks') due = motionUntil;
     else if (b === 'text') due = Math.max(motionUntil + TEXT_GAP, textNotBefore);
     else if (b.wait != null) { if (b.until == null) b.until = now + b.wait; due = b.until; }
     if (due > now) { stageTimer = setTimeout(stageRun, due - now); return; }
@@ -64,8 +72,21 @@ function stageRun() {
 }
 function stageApply(b, a, instant) {
   if (b === 'board') paintBoard(a, instant);
+  else if (b === 'land') { if (a.landing) paintBoard(a, true); }
   else if (b === 'marks') paintMarks(a);
   else if (b === 'text') paintText(a);
+}
+/* a timed beat: run(a) at ms from now, on this card only, if it is still
+   the one on screen. A flush leaves it alone */
+function stageAt(ms, run) {
+  var a = ui.session && ui.session.active;
+  if (!a) return;
+  var t = setTimeout(function () {
+    var i = stageTimers.indexOf(t);
+    if (i >= 0) stageTimers.splice(i, 1);
+    if (ui.session && ui.session.active === a) run(a);
+  }, ms);
+  stageTimers.push(t);
 }
 /* input first: the slide ends, the board catches up, the words wait 150 ms.
    Returns true when the input must be dropped: the forcing reply is
@@ -76,8 +97,10 @@ function flushStage() {
   if (motionHold && motionUntil > now) return true;
   motionHold = false;
   if (motionUntil > now) {
-    var bw = el('bwrap'), ps = bw ? bw.querySelectorAll('.anim-piece') : [];
+    var bw = el('bwrap'), ps = bw ? bw.querySelectorAll('.anim-piece') : [], xf = bw ? bw.querySelectorAll('.xfade') : [];
     for (var i = 0; i < ps.length; i++) { ps[i].style.transition = 'none'; ps[i].style.transform = 'translate(0px,0px)'; }
+    /* a crossfade ends too: the old board goes */
+    for (var k = 0; k < xf.length; k++) if (xf[k].parentNode) xf[k].parentNode.removeChild(xf[k]);
     motionUntil = now;
     moved = true;
   }
@@ -89,7 +112,7 @@ function flushStage() {
     var b = q[j];
     /* once the reply slides, the rest waits for it as usual */
     if (motionHold) stageQ.push(b);
-    else if (b === 'board' || b === 'marks') { stageApply(b, a, !(b === 'board' && a.replySlide)); moved = true; }
+    else if (b === 'board' || b === 'land' || b === 'marks') { stageApply(b, a, !(b === 'board' && a.replySlide)); moved = true; }
     else if (b === 'text') text = true;
   }
   if (motionHold) {
@@ -105,6 +128,8 @@ function flushStage() {
 function stageReset() {
   clearTimeout(stageTimer);
   stageTimer = null;
+  stageTimers.forEach(function (t) { clearTimeout(t); });
+  stageTimers = [];
   stageQ = [];
   stageCard = null;
   motionUntil = 0;

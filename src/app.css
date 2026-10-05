@@ -53,6 +53,7 @@ a{color:var(--link);text-decoration:none;cursor:pointer}
 a:hover{color:var(--link-hover)}
 button{font-family:inherit}
 *:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.by-pointer #cbar [data-act]:focus-visible{outline:none}
 ::selection{background:rgba(182,130,53,.3)}
 [hidden]{display:none !important}
 .tnum{font-variant-numeric:tabular-nums}
@@ -107,10 +108,6 @@ button{font-family:inherit}
 .btn-quiet{color:var(--secondary);font-size:13.5px;padding:9px 4px}
 .btn-quiet:hover{color:var(--link-hover)}
 .btn-off{opacity:.4;pointer-events:none}
-@media (prefers-reduced-motion:no-preference){
-  .btn-pulse{animation:pull 1.8s ease-in-out 2}
-  @keyframes pull{0%,100%{box-shadow:0 0 0 0 rgba(182,130,53,0)}50%{box-shadow:0 0 0 6px rgba(182,130,53,.22)}}
-}
 .chips{display:flex;flex-wrap:wrap;gap:7px}
 .chip{border:1px solid var(--edge);border-radius:4px;padding:6px 11px;font-size:13px;color:var(--body);white-space:nowrap;cursor:pointer}
 .chip:hover{border-color:var(--gold-quiet)}
@@ -274,6 +271,11 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .mk-fade.fx-in{animation:mk-fade .15s ease-out}
 @keyframes mk-pop{from{transform:scale(.4)}to{transform:none}}
 @keyframes mk-fade{from{opacity:0}to{opacity:1}}
+/* a jump to another position: the old board, laid over the new one, fades
+   out in 150 ms; it never takes a tap */
+.xfade{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;animation:xfade-out .15s ease-out forwards}
+.xfade svg{position:absolute;left:0;top:0;width:100%;height:100%;display:block;border-radius:4px;overflow:hidden}
+@keyframes xfade-out{from{opacity:1}to{opacity:0}}
 .drag-ghost{position:fixed;left:0;top:0;z-index:60;pointer-events:none;filter:drop-shadow(0 3px 6px rgba(0,0,0,.45))}
 .drag-ghost svg{width:100%;height:100%}
 .promo-card{
@@ -318,7 +320,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .card{grid-template-columns:1fr;gap:12px}
   .board-col{margin:0 calc(-1 * var(--gutter))}
   .board-row{gap:0}
-  .board,.marks{border-radius:0}
+  .board,.marks,.xfade svg{border-radius:0}
   .evalbar{width:10px;border-radius:0}
   .panel{padding-bottom:84px}
   .sticky-acts{
@@ -411,8 +413,12 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
    exploring; the background and a 3 px left border carry the state. It
    fades in over 150 ms whenever its words change */
 .band-slot{min-width:0}
-.card-task{display:flex;align-items:center;gap:10px;box-sizing:border-box;height:56px;margin:0;padding:0 10px 0 9px;
+.card-task{position:relative;display:flex;align-items:center;gap:10px;box-sizing:border-box;height:56px;margin:0;padding:0 10px 0 9px;
   border-left:3px solid transparent;overflow:hidden;animation:band-in .15s ease-out}
+/* a move being checked: a 1 px line runs along the band's foot (still
+   under reduced motion) */
+.card-task.sweep::after{content:'';position:absolute;bottom:0;left:-40%;width:40%;height:1px;background:var(--text-3);animation:sweep 1s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.card-task.sweep::after{animation:none !important;left:0;width:100%;opacity:.5}}
 @keyframes band-in{from{opacity:0}to{opacity:1}}
 .bd-disc{flex:none;width:28px;height:28px;display:block}
 .bd-disc svg{width:100%;height:100%;display:block}
@@ -503,8 +509,10 @@ body.in-session{padding-bottom:0}
   .card > .board-col{grid-column:1;grid-row:2 / 4;padding-top:24px}
   .card > .band-slot{grid-column:2;grid-row:2;padding-top:24px}
   .card > .panel{grid-column:2;grid-row:3}
-  .card-task{height:auto;min-height:122px;align-items:flex-start;gap:14px;padding:20px 20px 20px 17px;border-radius:10px;background:var(--surface-1)}
-  .bd-r1{font-family:var(--font-display);font-size:28px;line-height:32px;white-space:normal}
+  /* a fixed height (row 1 on one line, row 2 on up to two), so a longer
+     row never moves the strip below it */
+  .card-task{height:126px;align-items:flex-start;gap:14px;padding:20px 20px 20px 17px;border-radius:10px;background:var(--surface-1)}
+  .bd-r1{font-family:var(--font-display);font-size:28px;line-height:32px}
   .bd-r2{margin-top:4px;font-size:17px;line-height:25px;white-space:normal}
   .bd-chip{margin-top:6px}
   .bd-cap{font-size:19px;line-height:27px;-webkit-line-clamp:3}

@@ -59,11 +59,14 @@
      would open a phone's keyboard, and take Enter) */
   const focusInBar = () => { const e = document.activeElement; return !!e && !!e.closest && !!e.closest('#cbar') && e.id !== 'kbmove'; };
   const focusName = () => { const e = document.activeElement; return !e ? 'none' : e.id ? '#' + e.id : e.tagName + '[' + (e.getAttribute('data-act') || '') + '] ' + (e.textContent || '').trim(); };
-  /* the band's words fit its box: no row cut short, nothing below the box (the phone check runs at 360 x 640) */
+  /* the band's words fit its box: no row cut short, nothing below the box (the phone check runs at 360 x 640),
+     and the box keeps the height it had when the card opened, so nothing below it moves */
   const bandFits = (what) => {
     const bx = $('#cband .card-task'), rows = document.querySelectorAll('#cband .bd-r1, #cband .bd-r2, #cband .bd-cap');
     const cut = !bx || bx.scrollHeight > bx.clientHeight || [].some.call(rows, (r) => r.scrollWidth > r.clientWidth + 1 || r.scrollHeight > r.clientHeight + 1);
     if (cut) W.fit.push(what + ': ' + (bx ? bx.innerText.replace(/\n+/g, ' / ') : 'no band'));
+    if (bx && W.h0 == null) W.h0 = bx.offsetHeight;
+    else if (bx && bx.offsetHeight !== W.h0) W.fit.push(what + ': the band is ' + bx.offsetHeight + ' px tall, not ' + W.h0);
   };
   const legalOther = (c) => {
     /* a legal move that is neither the answer nor the game move */
@@ -170,10 +173,22 @@
     ok('Next opens the second card', !!c);
     if (c) {
       await sleep(500);
+      /* a tap on one of their pieces: outlined, the band says which side you are, nothing graded; then the task is back */
+      const opp = T.ev('(function (a) { for (var q = 0; q < 64; q++) if (a.st.b[q] && isW(a.st.b[q]) !== !!a.st.w) return q; return -1; })(ui.session.active)');
+      tapSq(opp);
+      await sleep(300);
+      const t4 = T.ev('CARD_COPY.T4(ui.session.active)');
+      ok('a tap on their piece says which side you are, and grades nothing', text('#cband .bd-r2') === t4 && !!$('#bwrap .marks .nope-box') && T.card().phase === 'guess' && T.card().misses === 0,
+        text('#cband') + ' / ' + T.card().phase + ' ' + T.card().misses);
+      bandFits('T4');
+      await sleep(2600);
+      ok('the task is back after it, and the outline gone', /^Find a better move/.test(text('#cband .bd-r2')) && !$('#bwrap .marks .nope-box'), text('#cband'));
       await tapMove(c.played);
       await until(() => T.card().misses === 1, 4000);
       await sleep(500);
-      ok('replaying the game move is explained as the game move', /game move again/i.test(text('#cband')), text('#cband'));
+      ok('replaying the game move is explained as the game move', text('#cband .bd-r1') === 'Your game move again', text('#cband'));
+      ok('the verdict lands on the square: a cross on where the move went, red tints', !!$('#bwrap .marks .badge-bad') && !!$('#bwrap .board .tint-bad'));
+      ok('the verdict hands the keyboard to Try again', !!document.activeElement && document.activeElement.getAttribute('data-act') === 'tryAgain', focusName());
       ok('the game-move message never names the answer', text('#cband').indexOf(T.ev('sanOf(ui.session.active.pre, ui.session.active.best)')) === -1, text('#cband'));
       bandFits('the game move again');
       /* the try stays on the board until Try again (a button ignores taps in
@@ -205,10 +220,14 @@
       await until(() => T.card().misses === 2 || T.card().phase === 'done', 6000);
       const c2 = T.card();
       if (c2.phase !== 'done') {
-        /* the automatic first hint shows on Try again: after miss 2 at tier 2, miss 1 at tier 1, never at tier 3 */
-        await sleep(500);
+        /* the automatic first hint shows on Try again: after miss 2 at tier 2, miss 1 at tier 1, never at tier 3
+           (the verdict's bar can land up to 300 ms after the miss, when the try before it was taken back by a
+           crossfade, and then ignores taps for 450 ms) */
+        await sleep(900);
         click('[data-act=tryAgain]');
         await until(() => T.card().phase === 'guess', 3000);
+        /* the words come back once the crossfade to the card is over (300 ms) */
+        await sleep(400);
         const tier = T.ev('ui.session.active.tier'), c2b = T.card();
         ok('tier 2: hint 1 is on after the second Try again', tier === 3 ? c2b.hints === 0 : c2b.hints >= 1 && /^Hint 1 of 2/.test(text('#cband .bd-r1')), 'tier ' + tier + ', hints ' + c2b.hints + ', ' + text('#cband'));
         bandFits('a hint');
@@ -221,7 +240,7 @@
           c3 = await until(() => { const x = T.card(); return x.misses >= 3 || x.phase === 'done' ? x : null; }, 12000);
         }
         /* miss 3 reveals nothing: See it, then the left button offers the answer */
-        if (c3 && c3.phase === 'tried') await sleep(500);
+        if (c3 && c3.phase === 'tried') await sleep(900);
         const offered = !!c3 && c3.phase === 'tried' && click('[data-act=seeIt]') && !!(await until(() => $('#cpanel [data-act=reveal]'), 3000));
         ok('miss 3 offers Show the answer; result still null', offered && T.card().result === null, c3 && (c3.phase + ' ' + c3.result));
         if (offered) {
