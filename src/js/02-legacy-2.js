@@ -110,7 +110,7 @@ var HL_MOVE = 'rgba(155,199,0,.41)', HL_SEL = 'rgba(20,85,30,.5)';
 var PIECE_ID = { K:'wK',Q:'wQ',R:'wR',B:'wB',N:'wN',P:'wP',
                  k:'bK',q:'bQ',r:'bR',b:'bB',n:'bN',p:'bP' };
 
-var boardSeq = 0, boardFxShown = null;
+var boardSeq = 0, boardFxSeen = {};
 /* the marks over the board (FINAL-SPEC 2.1): one colour and one shape per
    meaning, never a second one. Arrows by kind: your game move (solid red),
    their threat (dashed red), their expected reply in a forcing line (dashed
@@ -184,10 +184,12 @@ function markRing(x, y, kind) {
    ghosts [{sq, p}], anim [from, to], dots, label, decor; marks: guards
    [{from, to}], arrows [{from, to, kind, key, solid}], tried [{from, to}
    or {sq}], rings [{sq, kind}], tokens [{sq, p, kind: 'lost' | 'won'}],
-   badges [{sq, kind}], shapes; fx, the effect id of this paint. bad, good,
-   ghost and hint are the older names of the game, better and explore arrows
-   and the hint ring. A small board (decor) keeps its marks inside its one
-   svg */
+   badges [{sq, kind}], shapes; fx, the effect id of this paint, scoped to
+   its card by the caller (a.key + ':' + a.fx), so two cards never share
+   one. bad, good, ghost and hint are the older names of the game, better
+   and explore arrows and the hint ring. A small board (decor) keeps its
+   marks inside its one svg. Only the squares and the pieces (data-sq) take
+   a tap: every other shape lets it through */
 function boardSvg(st, opts) {
   opts = opts || {};
   var flip = !!opts.flip;
@@ -199,9 +201,9 @@ function boardSvg(st, opts) {
   var corner = function (sq) { return [(flip ? 7 - sq % 8 : sq % 8) * SZ, (flip ? sq >> 3 : 7 - (sq >> 3)) * SZ]; };
   var ctr = function (sq) { var c = corner(sq); return [c[0] + SZ / 2, c[1] + SZ / 2]; };
   /* effect ids: a pop or a fade runs on the first paint of its id only, so
-     a repaint never replays it */
-  var fresh = opts.fx != null && opts.fx !== boardFxShown;
-  if (opts.fx != null) boardFxShown = opts.fx;
+     a repaint never replays it, even after a newer id */
+  var fresh = opts.fx != null && !boardFxSeen[opts.fx];
+  if (opts.fx != null) boardFxSeen[opts.fx] = 1;
   var fxOpen = function (m, cls) {
     if (m.fx == null) return '<g>';
     return '<g class="' + cls + (fresh && m.fx === opts.fx ? ' fx-in' : '') + '" data-fx="' + String(m.fx).replace(/"/g, '') + '">';
@@ -277,16 +279,18 @@ function boardSvg(st, opts) {
   }
   /* where your game move went: the piece faded, with no data-sq so input
      never finds it, and a cross at its top-right; on an occupied square the
-     cross alone */
-  var ghosts = '';
+     cross alone. Neither takes a tap: a tap on the cross reaches the piece
+     under it */
+  var ghosts = '', crosses = '';
   (opts.ghosts || []).forEach(function (g) {
     var c = corner(g.sq);
     if (!st.b[g.sq] && PIECE_ID[g.p])
       ghosts += fxOpen(g, 'mk-fade') + '<use class="ghost-piece" href="#pc-' + PIECE_ID[g.p] + '" x="' + c[0] + '" y="' + c[1]
         + '" width="' + SZ + '" height="' + SZ + '" opacity=".34"/></g>';
-    top += fxOpen(g, 'mk-fade') + markCross(c[0] + 37.5, c[1] + 7.5, 6) + '</g>';
+    crosses += fxOpen(g, 'mk-fade') + markCross(c[0] + 37.5, c[1] + 7.5, 6) + '</g>';
   });
-  out += sqs + tints + (ghosts ? '<g style="pointer-events:none">' + ghosts + '</g>' : '') + pcs + slide + top + '</svg>';
+  out += sqs + tints + (ghosts ? '<g style="pointer-events:none">' + ghosts + '</g>' : '') + pcs + slide + top
+    + (crosses ? '<g style="pointer-events:none">' + crosses + '</g>' : '') + '</svg>';
 
   /* the marks, z 8 to 12, then the player's own drawn shapes on top */
   var defs = '', marks = '';

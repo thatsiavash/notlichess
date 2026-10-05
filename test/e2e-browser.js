@@ -56,6 +56,14 @@
     const bwk = $('#bwrap').children, bwr = (e) => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(','); };
     ok('the board svg is #bwrap\'s first child, the marks svg over it', bwk[0].matches('svg.board') && !!bwk[1] && bwk[1].matches('svg.marks')
       && bwr(bwk[0]) === bwr(bwk[1]) && !!$('#bwrap .marks .bad-arrow') && getComputedStyle(bwk[1]).pointerEvents === 'none', bwk[1] && bwr(bwk[0]) + ' / ' + bwr(bwk[1]));
+    /* a ghost on one of your pieces: a tap on its cross (top-right) still reaches that square; the board is put back after */
+    const gx = T.ev(`(function () { var a = ui.session.active, f = boardOptsFor(a), w = document.getElementById('bwrap'), keep = w.innerHTML, sq = -1;
+      for (var s = 0; s < 64; s++) if (f.st.b[s] && isW(f.st.b[s]) === myPov(a.it)) { sq = s; break; }
+      w.innerHTML = boardSvg(f.st, Object.assign({}, f.opts, { ghosts: [{ sq: sq, p: f.st.b[sq] }] }));
+      var r = w.querySelector('.board rect[data-sq="' + sq + '"]').getBoundingClientRect(), k = r.width / 45, e = document.elementFromPoint(r.left + 37.5 * k, r.top + 7.5 * k);
+      var on = e && e.closest ? e.closest('#bwrap [data-sq]') : null, out = { sq: sq, hit: on ? +on.getAttribute('data-sq') : -1, tag: e ? e.tagName : '' };
+      w.innerHTML = keep; return out; })()`);
+    ok('a tap on a ghost\'s cross reaches the piece under it', gx.sq >= 0 && gx.hit === gx.sq, JSON.stringify(gx));
     const want = c.sol ? c.sol : [c.best];
     for (let i = 0; i < want.length; i += 2) {
       T.play(want[i]);

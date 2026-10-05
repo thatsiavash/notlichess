@@ -68,18 +68,23 @@ const OPEN = `function openCard(it) {
 /* the spoiler rule (FINAL-SPEC 2.3), on the frame the user sees. Before an
    answer (guess, checking, tried, reply) a frame may not show a green arrow,
    a gold arrow, a gold hint ring other than hint 2's on the answer's
-   from-square, a hint's prize ring on that square, any ring, arrow end,
+   from-square, a hint's prize ring on that square, a threat arrow end or
+   threat ring on that square outside phase tried (only S4 marks may touch
+   it; a hint-1 or worked-example mark never does), any ring, arrow end,
    token, guard line, tried cross, badge or tint on the answer's to-square,
    a slide of the solver's own piece while guessing, a bar that is not
    waiting, or a board name that says the answer. Exempt: the red game-move
-   arrow, last-move tints, selection and legal dots, the nope outline, the
-   player's own drawn shapes, the badge and tints of the move just played,
-   threat marks on the answer's from-square, the forcing reply's own arrow,
-   ring and token, and the slide of the player's own try (or of the move
-   just played in a forcing line). Inside a forcing line the answer is the
-   move due now. Marks are read from both forms boardSvg takes: the older
-   single names (bad, good, ghost, hint) and the lists (arrows, rings,
-   tokens, guards, tried, badges, tints). Returns the faults, [] when clean */
+   arrow, last-move tints, selection and legal dots, the nope outline (it
+   answers the player's own tap), the player's own drawn shapes, the badge
+   and tints of the move just played, threat marks on the answer's
+   from-square in phase tried, the forcing reply's own marks in phase reply
+   (its arrow, its ring on either of its squares, its token where it lands;
+   the reply is the line's next move while the opponent is to move, else the
+   last move), and the slide of the player's own try (or of the move just
+   played in a forcing line). Inside a forcing line the answer is the move
+   due now. Marks are read from both forms boardSvg takes: the older single
+   names (bad, good, ghost, hint) and the lists (arrows, rings, tokens,
+   guards, tried, badges, tints). Returns the faults, [] when clean */
 const SPOILER = `function spoilerFaults(a, f) {
   f = f || boardOptsFor(a);
   var o = f.opts, out = [];
@@ -87,23 +92,32 @@ const SPOILER = `function spoilerFaults(a, f) {
   var due = a.sol && a.solIdx > 0 ? uciToMove(a.st, a.sol[a.solIdx]) : a.best;
   var own = a.phase === 'tried' ? [a.tried.from, a.tried.to] : a.phase === 'checking' ? a.ghostMove : a.phase === 'reply' ? a.lastMove : null;
   var onTo = function (what, sqs) { if (sqs.indexOf(due.to) >= 0) out.push(what + ' on the answer square ' + sqName(due.to)); };
+  var onFrom = function (what, sqs) { if (a.phase !== 'tried' && sqs.indexOf(due.from) >= 0) out.push(what + ' on the answer piece ' + sqName(due.from)); };
+  /* the forcing reply: still to play while the opponent is to move, else just played */
+  var rm = null;
+  if (a.phase === 'reply') {
+    var next = a.sol && a.sol[a.solIdx] && !!a.st.w !== myPov(a.it) ? uciToMove(a.st, a.sol[a.solIdx]) : null;
+    rm = next ? [next.from, next.to] : a.lastMove;
+  }
   var arrows = [], rings = (o.hint != null ? [{ sq: o.hint, kind: 'hint' }] : []).concat(o.rings || []);
   if (o.good) arrows.push({ from: o.good[0], to: o.good[1], kind: 'better' });
   if (o.ghost) arrows.push({ from: o.ghost[0], to: o.ghost[1], kind: 'explore' });
   if (o.bad) arrows.push({ from: o.bad[0], to: o.bad[1], kind: 'game' });
   arrows.concat(o.arrows || []).forEach(function (m) {
-    if (m.kind === 'game' || m.kind === 'reply') return;
+    if (m.kind === 'game' || (m.kind === 'reply' && rm && sameMove(rm, [m.from, m.to]))) return;
     var what = m.kind === 'better' ? 'green arrow' : m.kind === 'explore' ? 'gold arrow' : m.kind + ' arrow';
     if (m.kind === 'better' || m.kind === 'explore') out.push(what + ' on ' + sqName(m.from) + '-' + sqName(m.to));
+    if (m.kind === 'threat') onFrom(what, [m.from, m.to]);
     onTo(what, [m.from, m.to]);
   });
   rings.forEach(function (m) {
-    if (m.kind === 'nope' || m.kind === 'reply') return;
+    if (m.kind === 'nope' || (m.kind === 'reply' && rm && rm.indexOf(m.sq) >= 0)) return;
     if (m.kind === 'hint' && !(a.hints >= 2 && m.sq === due.from)) out.push('gold ring on ' + sqName(m.sq));
     if (m.kind === 'target' && m.sq === due.from) out.push('prize ring on the answer piece ' + sqName(m.sq));
+    if (m.kind === 'threat') onFrom('threat ring', [m.sq]);
     onTo((m.kind === 'hint' ? 'gold' : m.kind) + ' ring', [m.sq]);
   });
-  (o.tokens || []).forEach(function (m) { if (a.phase !== 'reply') onTo('token', [m.sq]); });
+  (o.tokens || []).forEach(function (m) { if (!(rm && m.sq === rm[1])) onTo('token', [m.sq]); });
   (o.guards || []).forEach(function (m) { onTo('guard line', [m.from, m.to]); });
   (o.tried || []).forEach(function (m) { onTo('tried cross', [m.sq != null ? m.sq : m.to]); });
   (o.badges || []).concat(o.tints || []).forEach(function (m) { if (!own || own.indexOf(m.sq) < 0) onTo(m.kind + ' badge or tint', [m.sq]); });
@@ -217,18 +231,67 @@ function offBook(a) {
         tried: doctor(function (g) { g.opts.tried = [{ from: a.played.from, to: b.to }]; }),
         badge: doctor(function (g) { g.opts.badges = [{ sq: b.to, kind: 'good' }]; }),
         tint: doctor(function (g) { g.opts.tints = [{ sq: b.to, kind: 'good' }]; }),
-        /* allowed: threat marks on the answer's piece, the game arrow, a nope
-           outline, the forcing reply's own marks, a tried cross off the square */
-        allowed: doctor(function (g) {
-          g.opts.rings = [{ sq: b.from, kind: 'threat' }, { sq: b.to, kind: 'nope' }, { sq: b.to, kind: 'reply' }];
-          g.opts.arrows = [{ from: a.played.from, to: b.to, kind: 'game' }, { from: a.played.from, to: b.to, kind: 'reply' }];
+        /* threat marks on the answer's piece belong to S4 alone: a hint-1 or
+           worked-example mark (phase guess) never touches it */
+        threatFromOnFrom: doctor(function (g) { g.opts.arrows = [{ from: b.from, to: a.played.to, kind: 'threat' }]; }),
+        threatToOnFrom: doctor(function (g) { g.opts.arrows = [{ from: a.played.to, to: b.from, kind: 'threat' }]; }),
+        threatRingOnFrom: doctor(function (g) { g.opts.rings = [{ sq: b.from, kind: 'threat' }]; }),
+        /* a reply's marks outside phase reply are marks like any other */
+        replyArrowOnTo: doctor(function (g) { g.opts.arrows = [{ from: a.played.from, to: b.to, kind: 'reply' }]; }),
+        replyRingOnTo: doctor(function (g) { g.opts.rings = [{ sq: b.to, kind: 'reply' }]; }),
+        /* allowed after a miss (phase tried): S4's threat marks on the
+           answer's piece, the game arrow, a nope outline, a tried cross off
+           the square */
+        allowed: (a.phase = 'tried', a.tried = { from: a.played.from, to: a.played.to, kind: 'miss' }, doctor(function (g) {
+          g.opts.rings = [{ sq: b.from, kind: 'threat' }, { sq: b.to, kind: 'nope' }];
+          g.opts.arrows = [{ from: a.played.to, to: b.from, kind: 'threat' }, { from: a.played.from, to: b.to, kind: 'game' }];
           g.opts.tried = [{ sq: a.played.from }];
-        })
+        })),
+        /* in phase tried, a hint-1 threat arrow from the answer's piece reads
+           as an S4 mark: the checker cannot tell them apart (slice 10 checks
+           hint marks on their own) */
+        threatInTried: doctor(function (g) { g.opts.arrows = [{ from: b.from, to: a.played.to, kind: 'threat' }]; }),
+        threatOnToInTried: (a.phase = 'tried', doctor(function (g) { g.opts.arrows = [{ from: a.played.to, to: b.to, kind: 'threat' }]; }))
       }); })()`));
     eq(r.clean, 0, 'the real frame');
-    eq(r.allowed, 0, 'marks the rule allows');
+    eq(r.allowed, 0, 'marks the rule allows after a miss');
+    eq(r.threatInTried, 0, 'S4 marks on the answer piece after a miss');
     ['green', 'gold', 'ringEarly', 'ringOnTo', 'slide', 'bar', 'label', 'greenList', 'goldList', 'ringList', 'threatOnTo', 'prizeOnFrom',
-      'ringOnToList', 'token', 'guard', 'tried', 'badge', 'tint'].forEach((k) => ok(r[k] > 0, k + ' not caught'));
+      'ringOnToList', 'token', 'guard', 'tried', 'badge', 'tint', 'threatFromOnFrom', 'threatToOnFrom', 'threatRingOnFrom', 'replyArrowOnTo',
+      'replyRingOnTo', 'threatOnToInTried'].forEach((k) => ok(r[k] > 0, k + ' not caught'));
+    /* the forcing reply's own marks, in phase reply: allowed on the reply's
+       squares (while it is still to play, it is the move due now), and only
+       there */
+    const q = JSON.parse(A.ev(`(function () { ${OPEN} ${SPOILER}
+      playerTier = function () { return 3; };
+      /* a forcing card whose reply does not land on the next answer's square */
+      var a = allMistakes().filter(trainable).map(openCard).filter(function (x) {
+        return x && x.sol && x.sol.length >= 3 && x.sol[2].slice(2, 4) !== x.sol[1].slice(2, 4);
+      })[0];
+      if (!a) return JSON.stringify(null);
+      ui.session.active = a;
+      var f = boardOptsFor(a), mine = uciToMove(a.st, a.sol[0]);
+      var doctor = function (fn) { var g = JSON.parse(JSON.stringify(f)); g.st = f.st; fn(g); return spoilerFaults(a, g); };
+      applyMove(a.st, mine); a.lastMove = [mine.from, mine.to]; a.solIdx = 1; a.phase = 'reply';
+      var rp = uciToMove(a.st, a.sol[1]), other = legalMoves(a.st).filter(function (m) { return m.to !== rp.to && m.from !== rp.from; })[0];
+      var res = {
+        telegraph: doctor(function (g) { g.opts.arrows = [{ from: rp.from, to: rp.to, kind: 'reply' }]; g.opts.rings = [{ sq: rp.from, kind: 'reply' }]; }),
+        threatOnReply: doctor(function (g) { g.opts.arrows = [{ from: other.from, to: rp.to, kind: 'threat' }]; })
+      };
+      applyMove(a.st, rp); a.lastMove = [rp.from, rp.to]; a.solIdx = 2;
+      var due = uciToMove(a.st, a.sol[2]);
+      res.landing = doctor(function (g) {
+        g.opts.arrows = [{ from: rp.from, to: rp.to, kind: 'reply', solid: true }]; g.opts.rings = [{ sq: rp.to, kind: 'reply' }];
+        g.opts.tokens = [{ sq: rp.to, p: 'q', kind: 'lost' }];
+      });
+      res.replyOnAnswer = doctor(function (g) { g.opts.arrows = [{ from: rp.to, to: due.to, kind: 'reply' }]; });
+      res.replyRingOnAnswer = doctor(function (g) { g.opts.rings = [{ sq: due.to, kind: 'reply' }]; });
+      res.tokenOnAnswer = doctor(function (g) { g.opts.tokens = [{ sq: due.to, p: 'q', kind: 'lost' }]; });
+      return JSON.stringify(res); })()`));
+    ok(q, 'a forcing card of three moves or more at tier 3');
+    eq(q.telegraph.length, 0, 'the telegraph: ' + q.telegraph.join(' | '));
+    eq(q.landing.length, 0, 'the landing: ' + q.landing.join(' | '));
+    ['threatOnReply', 'replyOnAnswer', 'replyRingOnAnswer', 'tokenOnAnswer'].forEach((k) => ok(q[k].length > 0, k + ' not caught'));
   });
 
   await test('boardOptsFor writes nothing: the same card gives the same frame twice', () => {
@@ -509,6 +572,25 @@ function offBook(a) {
   const CARDS = `${OPEN} var its = allMistakes().filter(trainable).slice(0, 12).map(function (it) { return openCard(it); }).filter(Boolean);`;
   /* the board svg and the marks svg, each with its own markup */
   const split = (html) => { const i = html.indexOf('</svg>') + 6; return { board: html.slice(0, i), marks: html.slice(i) }; };
+  /* a square's corner and centre as drawn, white at the bottom unless flipped */
+  const cornerOf = (sq, flip) => [(flip ? 7 - sq % 8 : sq % 8) * 45, (flip ? sq >> 3 : 7 - (sq >> 3)) * 45];
+  const ctrOf = (sq, flip) => cornerOf(sq, flip).map((v) => v + 22.5);
+  const at = (got, want) => Math.abs(+got[0] - want[0]) < 1e-6 && Math.abs(+got[1] - want[1]) < 1e-6;
+  /* the shapes that would eat a tap: input finds a square with
+     elementFromPoint, so every drawn shape that is not a square or a piece
+     (data-sq) must let taps through, by pointer-events:none on itself or on
+     a group or svg round it. Shapes inside <defs> are never drawn */
+  const tapEaters = (html) => {
+    const out = [], stack = [];
+    for (const m of html.matchAll(/<(\/?)(\w+)([^>]*?)(\/?)>/g)) {
+      if (m[1]) { stack.pop(); continue; }
+      const up = stack[stack.length - 1] || {};
+      const none = up.none || /pointer-events:\s*none/.test(m[3]), defs = up.defs || m[2] === 'defs';
+      if (/^(rect|circle|ellipse|line|polyline|polygon|path|use|text|image)$/.test(m[2]) && !defs && !none && !/ data-sq="/.test(m[3])) out.push(m[0]);
+      if (!m[4]) stack.push({ none: none, defs: defs });
+    }
+    return out;
+  };
 
   await test('board primitives: distinct marker ids', () => {
     const A = boot();
@@ -535,7 +617,8 @@ function offBook(a) {
   await test('board primitives: no data-sq on a ghost', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${CARDS} ${SHOW}
-      return JSON.stringify(its.map(function (a) { var s = showcase(a, a.it.g.color === 'black'); return { svg: s.svg, pieces: s.pieces, ghostOn: s.o.ghosts[0].sq }; })); })()`));
+      return JSON.stringify(its.map(function (a) { var s = showcase(a, a.it.g.color === 'black');
+        return { svg: s.svg, pieces: s.pieces, ghostOn: s.o.ghosts[0].sq, decor: boardSvg(a.st, Object.assign({}, s.o, { decor: true })) }; })); })()`));
     r.forEach((c, n) => {
       const ghosts = c.svg.match(/<use class="ghost-piece"[^>]*>/g) || [];
       /* the ghost on an empty square is drawn; on an occupied one, its cross alone */
@@ -547,7 +630,14 @@ function offBook(a) {
       eq(tagged.filter((t) => /^<use/.test(t)).length, c.pieces, 'card ' + n + ': pieces');
       eq(tagged.length, 64 + c.pieces, 'card ' + n + ': nothing else carries data-sq');
       ok(split(c.svg).marks.indexOf('data-sq') < 0, 'card ' + n + ': the marks svg has no data-sq');
+      /* and nothing else takes a tap: a tap on a ghost's cross over a piece
+         reaches that piece, not a dead shape */
+      const eaters = tapEaters(c.svg).concat(tapEaters(c.decor));
+      eq(eaters.length, 0, 'card ' + n + ': shapes that take a tap: ' + eaters.slice(0, 2).join(' '));
+      ok(/<g style="pointer-events:none"><g><circle cx="[\d.]+" cy="[\d.]+" r="6" fill="#d04a3a"/.test(split(c.svg).board), 'card ' + n + ': the ghost crosses sit in a group that lets taps through');
     });
+    /* the check itself sees a shape that takes a tap */
+    eq(tapEaters('<svg class="board"><rect data-sq="0"/><g><circle r="6"/></g><g style="pointer-events:none"><path d=""/></g><defs><path d=""/></defs></svg>').length, 1, 'the tap check');
   });
 
   await test('board primitives: a badge lands on its own square on a flipped board, and pops once', () => {
@@ -560,7 +650,13 @@ function offBook(a) {
       /* an effect id pops on its first paint only */
       var b1 = { flip: false, fx: 'k1', badges: [{ sq: 9, kind: 'good', fx: 'k1' }, { sq: 10, kind: 'bad', fx: 'k0' }] };
       var pops = [boardSvg(a.st, b1), boardSvg(a.st, b1), boardSvg(a.st, { flip: false, fx: 'k2', badges: [{ sq: 9, kind: 'good', fx: 'k1' }, { sq: 11, kind: 'close', fx: 'k2' }] })];
-      return JSON.stringify({ out: out, pops: pops }); })()`));
+      /* ids scoped to their card: a new card's first id pops though another
+         card used the same number, and an older id never pops again after a
+         newer one */
+      var seen = ['cardA:1', 'cardB:1', 'cardA:2', 'cardA:1', 'cardB:1'].map(function (id) {
+        return (boardSvg(a.st, { fx: id, badges: [{ sq: 9, kind: 'good', fx: id }], tokens: [{ sq: 10, p: 'q', kind: 'won', fx: id }] }).match(/ fx-in"/g) || []).length;
+      });
+      return JSON.stringify({ out: out, pops: pops, seen: seen }); })()`));
     r.out.forEach((c) => {
       const name = (c.flip ? 'flipped ' : '') + 'sq ' + c.sq;
       const sq = c.svg.match(new RegExp('<rect data-sq="' + c.sq + '" x="([\\d.]+)" y="([\\d.]+)"'));
@@ -578,6 +674,72 @@ function offBook(a) {
     eq(fx[0], 'class="mk-pop fx-in" data-fx="k1" class="mk-pop" data-fx="k0"', 'first paint of k1: the k1 badge pops, the older one does not');
     eq(fx[1], 'class="mk-pop" data-fx="k1" class="mk-pop" data-fx="k0"', 'a repaint of k1 pops nothing');
     eq(fx[2], 'class="mk-pop" data-fx="k1" class="mk-pop fx-in" data-fx="k2"', 'the next effect id pops only its own badge');
+    eq(r.seen.join(' '), '2 2 2 0 0', 'cardA:1, cardB:1, cardA:2 pop their badge and token; cardA:1 and cardB:1 again pop nothing');
+  });
+
+  await test('board primitives: each mark keeps the shape that carries its meaning', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${CARDS} ${SHOW}
+      var out = [];
+      its.forEach(function (a) {
+        [false, true].forEach(function (flip) {
+          var s = showcase(a, flip), rp = s.o.arrows[2];
+          /* the same reply before it lands (dashed), and the last-move tint with no verdict on it */
+          s.dashed = boardSvg(a.st, { flip: flip, arrows: [{ from: rp.from, to: rp.to, kind: 'reply' }] });
+          s.plain = boardSvg(a.st, { flip: flip, mark: s.o.mark });
+          delete s.pieces;
+          out.push(s);
+        });
+      });
+      return JSON.stringify(out); })()`));
+    ok(r.length >= 20, 'boards ' + r.length);
+    const TINT = { bad: 'rgba(214,70,52,.42)', close: 'rgba(125,147,171,.34)' }, HL_MOVE = 'rgba(155,199,0,.41)';
+    const BADGE = { good: '#3d9142', bad: '#d04a3a', checking: '#8f8b83', unchecked: '#6b665d', info: '#6b665d' };
+    r.forEach((s, n) => {
+      const o = s.o, flip = o.flip, name = 'card ' + (n >> 1) + (flip ? ' flipped' : ''), p = split(s.svg);
+      /* verdict tints: one per tinted square, in its kind's colour, in place of the last-move tint */
+      eq((p.board.match(/<rect class="tint /g) || []).length, o.tints.length, name + ': one tint per tinted square');
+      o.tints.forEach((t) => {
+        const c = cornerOf(t.sq, flip);
+        const got = p.board.match(new RegExp('<rect class="tint tint-' + t.kind + '" x="' + c[0] + '" y="' + c[1] + '" width="45" height="45" fill="([^"]+)"'));
+        ok(got && got[1] === TINT[t.kind], name + ': the ' + t.kind + ' tint on ' + t.sq + ', ' + (got && got[1]));
+      });
+      const lm = cornerOf(o.mark[0], flip), hl = '<rect x="' + lm[0] + '" y="' + lm[1] + '" width="45" height="45" fill="' + HL_MOVE + '"';
+      ok(s.plain.indexOf(hl) > 0 && p.board.indexOf(hl) < 0, name + ': the last-move tint shows alone, and gives way to a verdict tint');
+      /* badges: filled discs, but the close one is a hollow ring with a blue-grey tick */
+      const badges = [...p.marks.matchAll(/<g class="badge badge-(\w+)" transform="[^"]+">(?:<g[^>]*>)?<circle r="9\.8"[^>]*\/><circle r="8\.6" ([^>]*?)\/><path d="[^"]+" fill="none" stroke="([^"]+)"/g)];
+      eq(badges.map((b) => b[1]).join(' '), o.badges.map((b) => b.kind).join(' '), name + ': badges');
+      badges.forEach((b) => {
+        if (b[1] === 'close') eq(b[2], 'fill="#161512" stroke="#7d93ab" stroke-width="2.2"', name + ': the close badge is a hollow ring');
+        else eq(b[2], 'fill="' + BADGE[b[1]] + '"', name + ': the ' + b[1] + ' badge is a filled disc');
+        eq(b[3], b[1] === 'close' ? '#7d93ab' : '#fff', name + ': the ' + b[1] + ' glyph colour');
+      });
+      /* arrows: threat and reply dashed with butt caps (halo too), a landed reply solid; game, better and Stockfish solid */
+      const arrows = (h, cls) => [...h.matchAll(new RegExp('<line([^>]*)/><line class="' + cls + '"([^>]*)/>', 'g'))];
+      const dashed = (m) => [m[1], m[2]].every((x) => /stroke-dasharray="7 5\.5"/.test(x) && /stroke-linecap="butt"/.test(x)) && /stroke-width="5"/.test(m[2]);
+      const solid = (m) => [m[1], m[2]].every((x) => !/stroke-dasharray/.test(x) && /stroke-linecap="round"/.test(x));
+      const threat = arrows(p.marks, 'threat-arrow'), reply = arrows(p.marks, 'reply-arrow'), before = arrows(s.dashed, 'reply-arrow');
+      ok(threat.length === 2 && threat.every(dashed), name + ': threat arrows dashed, ' + (threat[0] && threat[0][2]));
+      ok(before.length === 1 && dashed(before[0]), name + ': a reply arrow dashed before it lands');
+      ok(reply.length === 1 && solid(reply[0]), name + ': solid on its landing frame');
+      ['bad-arrow', 'good-arrow', 'ghost-arrow'].forEach((cls) => {
+        const m = arrows(p.marks, cls);
+        ok(m.length >= 1 && m.every(solid) && m.every((x) => /stroke-width="6"/.test(x[2])), name + ': ' + cls + ' solid');
+      });
+      /* tried moves at 55%: a thin line from where it started and a cross where it landed, or the cross alone */
+      const tried = [...p.marks.matchAll(/<g class="tried" opacity="([\d.]+)">(?:<line class="tried-line" x1="([\d.-]+)" y1="([\d.-]+)"[^>]* stroke-width="([\d.]+)"[^>]*\/>)?<circle cx="([\d.-]+)" cy="([\d.-]+)" r="6"/g)];
+      eq(tried.length, 2, name + ': tried moves');
+      ok(tried.every((t) => t[1] === '.55'), name + ': tried moves at 55%');
+      ok(at([tried[0][2], tried[0][3]], ctrOf(o.tried[0].from, flip)) && tried[0][4] === '2', name + ': the tried line starts at the centre of its from-square');
+      ok(at([tried[0][5], tried[0][6]], ctrOf(o.tried[0].to, flip)), name + ': the tried cross where the move landed');
+      ok(tried[1][2] == null && at([tried[1][5], tried[1][6]], ctrOf(o.tried[1].sq, flip)), name + ': {sq} draws the cross alone, on its square');
+      /* ghosts: the faded piece on its square, a cross at the top-right of each ghost square */
+      const gu = p.board.match(/<use class="ghost-piece" href="[^"]+" x="([\d.]+)" y="([\d.]+)"/);
+      ok(gu && at([gu[1], gu[2]], cornerOf(o.ghosts[0].sq, flip)), name + ': the ghost piece on its square');
+      const crosses = [...p.board.matchAll(/<circle cx="([\d.-]+)" cy="([\d.-]+)" r="6" fill="#d04a3a"/g)];
+      eq(crosses.length, o.ghosts.length, name + ': ghost crosses');
+      o.ghosts.forEach((g, i) => { const c = cornerOf(g.sq, flip); ok(at([crosses[i][1], crosses[i][2]], [c[0] + 37.5, c[1] + 7.5]), name + ': ghost cross ' + i + ' at the top-right'); });
+    });
   });
 
   await test('board primitives: a one-square arrow keeps the 4.2 head and stops 0.22 of a square short', () => {
