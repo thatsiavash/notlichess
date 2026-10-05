@@ -21,16 +21,17 @@ export async function launch(o = {}) {
   }
   if (!ws) throw new Error('chrome did not start');
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-  let id = 0; const pend = new Map(), logs = [];
+  let id = 0; const pend = new Map(), logs = [], subs = [];
   ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { const p = pend.get(d.id); pend.delete(d.id); d.error ? p.j(new Error(JSON.stringify(d.error))) : p.r(d.result); }
     else if (d.method === 'Runtime.consoleAPICalled') logs.push(d.params.type + ': ' + d.params.args.map((a) => a.value ?? a.description ?? '').join(' '));
-    else if (d.method === 'Runtime.exceptionThrown') logs.push('EXCEPTION: ' + (d.params.exceptionDetails.exception?.description || d.params.exceptionDetails.text)); };
+    else if (d.method && subs.length) subs.forEach((f) => f(d.method, d.params));
+    if (d.method === 'Runtime.exceptionThrown') logs.push('EXCEPTION: ' + (d.params.exceptionDetails.exception?.description || d.params.exceptionDetails.text)); };
   const send = (method, params = {}) => new Promise((r, j) => { const i = ++id; pend.set(i, { r, j }); ws.send(JSON.stringify({ id: i, method, params })); });
   await send('Page.enable'); await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: o.dpr || (mobile ? 2 : 1), mobile });
   if (mobile) { await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }); await send('Emulation.setUserAgentOverride', { userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36' }); }
   const api = {
-    send, logs,
+    send, logs, on(f) { subs.push(f); },
     async goto(url, wait = 1500) { await send('Page.navigate', { url }); await sleep(wait); },
     async eval(expr) { const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text); return r.result.value; },
     async shot(path, clip) { const r = await send('Page.captureScreenshot', clip ? { format: 'png', clip: { ...clip, scale: 1 } } : { format: 'png' }); writeFileSync(path, Buffer.from(r.data, 'base64')); return path; },
