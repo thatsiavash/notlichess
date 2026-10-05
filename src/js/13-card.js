@@ -199,6 +199,9 @@ function sessionClick(sq) {
   var p = a.st.b[sq];
   /* a selection changes the board alone: the words stay */
   if (p && isW(p) === a.st.w) {
+    /* a piece dragged onto another of yours snaps back and says so (T5);
+       a tap there picks that piece up instead */
+    if (pointerState.suppressClick && a.sel >= 0 && a.sel !== sq) { a.sel = -1; renderCardBoard(); tapNote(a, 'T5', 2000, null); return; }
     a.sel = a.sel === sq ? -1 : sq;
     snd('tap');
     renderCardBoard();
@@ -210,11 +213,13 @@ function sessionClick(sq) {
   var legal = legalMoves(a.st).filter(function (m) { return m.from === a.sel && m.to === sq; });
   if (!legal.length) {
     /* a piece dragged where it cannot go snaps back and says so (T5); a
-       tap there only puts the piece down */
+       tap there puts the piece down, and a tap on a piece of theirs says
+       which side you are too (T4) */
     var dropped = pointerState.suppressClick;
     a.sel = -1;
     renderCardBoard();
     if (dropped) tapNote(a, 'T5', 2000, null);
+    else if (p && isW(p) !== a.st.w) tapNote(a, 'T4', 2500, sq);
     return;
   }
   if (legal.length > 1 && legal[0].promo) { a.pendingPromo = { moves: legal, to: sq }; renderCard(); return; }
@@ -551,7 +556,7 @@ function checkMove(m, u, inLine) {
       showTry(a2, m, 'close', null, null, again);
       return;
     }
-    miss(m, u, { cp: myCp, mate: myMate, pv: r.pv || [], win: wMove });
+    miss(m, u, { cp: myCp, mate: myMate, pv: r.pv || [], win: wMove }, inLine);
   }, function () {
     clearTimeout(timer);
     var a2 = ui.session && ui.session.active;
@@ -559,18 +564,22 @@ function checkMove(m, u, inLine) {
   });
 }
 /* the close rule (S5), the one path for a good move that is not the best:
-   within STRONGER_TOL of the best move in this search, or of the card's own
-   measure of it (a move that loses nothing), and clearly better than the
-   game move; on a missed chance any move that keeps a big edge; on a mate
-   card a move that still wins big. Never inside a forcing line */
+   a move that loses nothing by the card's own measure (within STRONGER_TOL
+   of b.eb; every card's game move lost more than that, so it is always
+   better than the game move); or one within STRONGER_TOL of the best move
+   in this search, or on a missed chance one that keeps a big edge, when it
+   is clearly better than the game move; on a mate card a move that still
+   wins big. Never inside a forcing line */
 function closeTry(b, wMove, wBest, mateCard, chances, inLine) {
   if (inLine) return false;
   if (mateCard) return wMove >= 80;
-  return (wBest - wMove <= STRONGER_TOL || wMove >= winPct(b.eb) - STRONGER_TOL || (chances && wMove >= 70)) && wMove >= b.wa + 10;
+  if (wMove >= winPct(b.eb) - STRONGER_TOL) return true;
+  return (wBest - wMove <= STRONGER_TOL || (chances && wMove >= 70)) && wMove >= b.wa + 10;
 }
 /* a miss explains itself: the try stays on the board with one line of why,
-   and the engine's reply to it is one tap away (See it) */
-function miss(m, u, info) {
+   and the engine's reply to it is one tap away (See it). inLine: the try
+   was a step of a forcing line */
+function miss(m, u, info, inLine) {
   var a = ui.session.active, it = a.it;
   a.misses++;
   if (a.misses === 1) a.runBroke = srsNoteMiss(it) > 0;
@@ -584,10 +593,10 @@ function miss(m, u, info) {
     var c = classifyMistake(a.st, u, { pv: [] }, { pv: reply, mate: info.mate }, winPct(it.b.eb), info.win, it.b.p);
     var concrete = c.mateAgainst || c.matGame <= -1;
     /* a wrong try is told in words at every level. One that loses nothing
-       is a close move outside a forcing line (closeTry); inside one it is
-       still a miss, and says so honestly */
+       is a close move outside a forcing line (closeTry), never a miss;
+       inside one it is still a miss, and says so honestly */
     why = concrete ? c.sentences.short.replace(/ \(\d+% to \d+%\)/g, '')
-      : (info.win >= winPct(it.b.eb) - STRONGER_TOL ? 'Nothing lost, but there\'s a better move.'
+      : (inLine && info.win >= winPct(it.b.eb) - STRONGER_TOL ? 'Nothing lost, but there\'s a better move.'
         : 'After ' + san + ', ' + standingWords(info.win).replace(/^about level$/, 'it is about level') + '. There is something stronger here.');
   }
   a.hintAfter = false;
@@ -604,7 +613,9 @@ function solved(m, u, alt, lineDone) {
 }
 function reveal() {
   var a = ui.session && ui.session.active;
-  if (!a || a.phase === 'done') return;
+  /* not while a move is checked: the bar shows Show the answer switched off
+     then (S3), and a press that came before it repainted does nothing */
+  if (!a || a.phase === 'done' || a.phase === 'checking') return;
   /* pressed while a try is shown: the try goes first */
   if (a.phase === 'tried') clearTry(a);
   engineStop('check');

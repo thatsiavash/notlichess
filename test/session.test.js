@@ -450,13 +450,24 @@ const OPEN = `function openCard(it) {
             if (d.row1 + ' / ' + d.row2 !== 'Cannot check this move / Not counted. Try again.' || d.disc !== 'unchecked' || d.kind !== 'info') out.push(at + ' not checked reads ' + d.row1 + ' / ' + d.row2);
             d = band(at + ' not checked, T4', note(a, 'T4'));
             if (d.row2 !== t4s) out.push(at + ' not checked T4 reads ' + d.row2);
-            /* a miss that loses nothing never reads "does not work" */
+            /* a miss with no concrete loss, outside a forcing line (where a
+               try that loses nothing is close, never a miss): the standing
+               words, never "does not work" and never "Nothing lost" */
             a = openCard(it);
-            miss(off0, moveUci(off0), { cp: it.b.eb, mate: null, pv: [moveUci(off0)], win: winPct(it.b.eb) });
-            d = band(at + ' a miss that loses nothing', a);
-            if (/does not work/.test(d.row2) || d.row1 !== 'Not this one') out.push(at + ' a miss that loses nothing reads ' + d.row1 + ' / ' + d.row2);
+            miss(off0, moveUci(off0), { cp: it.b.eb, mate: null, pv: [moveUci(off0)], win: winPct(it.b.eb) }, false);
+            d = band(at + ' a miss outside a line', a);
+            if (/does not work|Nothing lost/.test(d.row2) || !/^After /.test(d.row2) || d.row1 !== 'Not this one') out.push(at + ' a miss outside a line reads ' + d.row1 + ' / ' + d.row2);
             d = band(at + ' a miss, T4', note(a, 'T4'));
             if (d.row2 !== t4) out.push(at + ' a miss T4 reads ' + d.row2);
+            /* inside a forcing line a try that loses nothing is a miss, and says so honestly */
+            if (a.sol && a.sol.length >= 3) {
+              a = openCard(it);
+              applyMove(a.st, uciToMove(a.st, a.sol[0])); applyMove(a.st, uciToMove(a.st, a.sol[1])); a.solIdx = 2;
+              var offL = legalMoves(a.st).filter(function (m) { return moveUci(m) !== a.sol[2]; })[0];
+              miss(offL, moveUci(offL), { cp: it.b.eb, mate: null, pv: [moveUci(offL)], win: winPct(it.b.eb) }, true);
+              d = band(at + ' a miss that loses nothing, in a line', a);
+              if (d.row1 + ' / ' + d.row2 !== 'Not this one / Nothing lost, but there\\'s a better move.') out.push(at + ' a miss that loses nothing in a line reads ' + d.row1 + ' / ' + d.row2);
+            }
           }
           a = openCard(it);
           /* and, until their slices give them their own words, the hints,
@@ -489,7 +500,7 @@ const OPEN = `function openCard(it) {
       return JSON.stringify({ out: out, frames: frames, seen: seen }); })()`));
     ok(r.frames > 6000, 'frames ' + r.frames);
     eq(r.out.length, 0, r.out.length + ' too long, first: ' + r.out.slice(0, 3).join(' | '));
-    ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss that loses nothing', 'shown, N1'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
+    ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss outside a line', 'a miss that loses nothing, in a line', 'shown, N1'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
   });
 
   await test('one format by default: the most played among those played in the last 90 days', () => {

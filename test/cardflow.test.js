@@ -719,18 +719,67 @@ const BAR = `(function () {
       eq(lastBoard().t, t, key + ': the board waited behind words');
       run(1000);
       ok(firstText(t) >= t + 150, key + ': words ' + (firstText(t) - t) + ' ms after a board change');
-      /* reduced motion: the same move is drawn where it lands, and nothing waits for a slide */
+      /* reduced motion: the same move is drawn where it lands, and nothing
+         waits for a slide; the words still come 150 ms after the board
+         changed, never with it (principle 2) */
       A.ev('(tryAgain(), 1)');
       run(1000);
       A.ev('(ui.reducedTest = true, 1)');
-      const t2 = A.getNow(), mu2 = A.ev('motionUntil');
+      const t2 = A.getNow();
       A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.to); return 1; })()`);
       const b2 = lastBoard();
       eq(b2.t, t2, key + ': reduced motion, the move drawn at the tap');
       ok(!b2.slides, key + ': reduced motion, a piece drawn sliding');
-      eq(A.ev('motionUntil'), mu2, key + ': reduced motion, motionUntil moved');
+      eq(A.ev('motionUntil'), t2, key + ': reduced motion, motionUntil in the future');
+      run(1000);
+      ok(firstText(t2) >= t2 + 150, key + ': reduced motion, words ' + (firstText(t2) - t2) + ' ms after the move');
     }
     A.ev('(ui.reducedTest = false, 1)');
+  });
+
+  await test('a dragged move: the board at the drop, its words 150 ms after it, never in the same task', () => {
+    const A = boot();
+    A.ev(DOM);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    /* the first write of each node at or after t, in ms from t */
+    const firsts = (t) => JSON.parse(A.ev(`JSON.stringify((function () { var o = {}; window.__writes.forEach(function (w) {
+      if (w.t >= ${t} && o[w.id] == null && (w.id === 'bwrap' || w.id === 'cband' || w.id === 'cbar')) o[w.id] = w.t - ${t}; }); return o; })())`));
+    const band = () => A.ev('window.__els.cband.innerHTML.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").trim()');
+    const drag = (from, to) => A.ev(`(function () { var a = ui.session.active; a.sel = ${from}; pointerState.suppressClick = true; sessionClick(${to}); pointerState.suppressClick = false; return 1; })()`);
+    const cards = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol && unpackUci(it.b.ru).length; }).slice(0, 5).map(function (it) { return it.key; }))`));
+    ok(cards.length === 5, 'cards ' + cards.length);
+    for (const key of cards) {
+      A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      /* the game move again, dragged: the move and its cross at the drop, the band and the bar 150 ms later */
+      const p = JSON.parse(A.ev('JSON.stringify(ui.session.active.played)'));
+      let t = A.getNow();
+      drag(p.from, p.to);
+      let f = firsts(t);
+      eq(f.bwrap, 0, key + ': the dragged game move drawn at the drop');
+      ok(/badge badge-bad/.test(A.ev('window.__els.bwrap.innerHTML')), key + ': its cross with it');
+      ok(f.cband == null && f.cbar == null, key + ': no words with the board: ' + JSON.stringify(f));
+      run(1000);
+      f = firsts(t);
+      ok(f.cband >= 150 && f.cbar >= 150, key + ': the band and the bar 150 ms after the board: ' + JSON.stringify(f));
+      ok(/^Your game move again/.test(band()), key + ': the verdict: ' + band());
+      /* a move off the card's lines, dragged: the checking frame at the drop, the checking bar 150 ms later */
+      A.ev('(tryAgain(), 1)');
+      run(1000);
+      A.ev(`(function () { ${AFTER} window.readyEngine(); window.__holdTry = true; window.__m = offBook(ui.session.active); return 1; })()`);
+      t = A.getNow();
+      drag(A.ev('window.__m.from'), A.ev('window.__m.to'));
+      f = firsts(t);
+      eq(A.ev('ui.session.active.phase'), 'checking', key + ': the move is checked');
+      eq(f.bwrap, 0, key + ': the dragged move drawn at the drop');
+      ok(f.cbar == null, key + ': no bar with the board: ' + JSON.stringify(f));
+      run(1000);
+      ok(firsts(t).cbar >= 150, key + ': the checking bar 150 ms after the board: ' + JSON.stringify(firsts(t)));
+      A.ev('(window.__holdTry = false, takeBack(), 1)');
+      run(1000);
+    }
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
   });
 
   await test('the forcing reply is never jumped: input during its slide is dropped', () => {
@@ -1076,6 +1125,30 @@ const BAR = `(function () {
       return JSON.stringify({ out: out, n: n }); })()`));
     ok(r.n >= 8, 'castling tries ' + r.n);
     eq(r.out.length, 0, r.out.join(' | '));
+    /* the same while a castling move is being checked: a tap on the king or
+       the rook takes it back, that piece picked up from where it came */
+    const c = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = 0;
+      window.readyEngine(); window.__holdTry = true;
+      allMistakes().filter(trainable).forEach(function (it) {
+        var a0 = openCard(it);
+        if (!a0) return;
+        legalMoves(a0.st).filter(function (m) { var u = moveUci(m); return m.castle && u !== a0.bestUci && u !== a0.playedUci && !(a0.sol && a0.sol.indexOf(u) >= 0); }).forEach(function (m) {
+          var short_ = m.castle === 'O-O', rookTo = m.to + (short_ ? -1 : 1), rookFrom = m.to + (short_ ? 1 : -2);
+          [[m.to, m.from], [rookTo, rookFrom]].forEach(function (p) {
+            var a = openCard(it);
+            gradeMove(uciToMove(a.st, moveUci(m)));
+            if (a.phase !== 'checking') { out.push(it.key + ' ' + m.castle + ': not checked but ' + a.phase); return; }
+            sessionClick(p[0]);
+            n++;
+            if (a.phase !== 'guess' || a.sel !== p[1] || a.attempts !== 0) out.push(it.key + ' ' + m.castle + ' being checked, a tap on ' + sqName(p[0]) + ': phase ' + a.phase + ', selected ' + (a.sel >= 0 ? sqName(a.sel) : 'none') + ', attempts ' + a.attempts);
+          });
+        });
+      });
+      window.__holdTry = false;
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(c.n >= 4, 'castling moves checked ' + c.n);
+    eq(c.out.length, 0, c.out.join(' | '));
   });
 
   await test('the automatic first hint comes at miss 1 at tier 1, at miss 2 at tier 2, never at tier 3', () => {
@@ -1114,9 +1187,18 @@ const BAR = `(function () {
     await tick(); await tick();
     eq(A.ev('ui.session.active.tried && ui.session.active.tried.kind'), 'miss', 'the miss is on the board');
     has(stops('tryAgain()'), 'Try again');
-    /* Show the answer while a check is still running */
+    /* Show the answer is switched off while a check runs (S3): a press
+       there does nothing; Take back stops the search, and Show the answer
+       over a try stops it too */
     eq(A.ev('(function () { window.readyEngine(); gradeMove(window.__t.offBook(ui.session.active)); return ui.session.active.phase; })()'), 'checking', 'a second try');
-    has(stops('reveal()'), 'Show the answer');
+    eq(stops('reveal()').length, 0, 'Show the answer while a move is checked');
+    eq(A.ev('ui.session.active.phase + " " + (ui.session.active.result || null)'), 'checking null', 'Show the answer does nothing while a move is checked');
+    has(stops('takeBack()'), 'Take back');
+    eq(A.ev('(function () { window.readyEngine(); gradeMove(window.__t.offBook(ui.session.active)); return ui.session.active.phase; })()'), 'checking', 'a third try');
+    await tick(); await tick();
+    eq(A.ev('ui.session.active.phase'), 'tried', 'the third try is on the board');
+    has(stops('reveal()'), 'Show the answer over a try');
+    eq(A.ev('(function () { window.readyEngine(); var a = window.__t.open(allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[0]); gradeMove(window.__t.offBook(a)); return a.phase; })()'), 'checking', 'a try on a fresh card');
     has(stops('nextCard()'), 'Next');
     A.ev('(function () { window.__t.open(allMistakes().filter(trainable)[1]); return 1; })()');
     has(stops('endSession()'), 'Ending the session');
@@ -1183,11 +1265,83 @@ const BAR = `(function () {
       var mine = uciToMove(a.st, a.sol[0]); applyMove(a.st, mine); var rp = uciToMove(a.st, a.sol[1]); applyMove(a.st, rp); a.solIdx = 2;
       var off = legalMoves(a.st).filter(function (m) { return moveUci(m) !== a.sol[2]; })[0];
       window.__tryCp = a.it.b.eb; window.__bestCp = null;
-      miss(off, moveUci(off), { cp: a.it.b.eb, mate: null, pv: [moveUci(off)], win: winPct(a.it.b.eb) });
+      miss(off, moveUci(off), { cp: a.it.b.eb, mate: null, pv: [moveUci(off)], win: winPct(a.it.b.eb) }, true);
       var d = displayFor(a);
       return JSON.stringify({ kind: a.tried.kind, misses: a.misses, row1: d.row1, row2: d.row2 }); })()`));
     eq(f.kind + ' ' + f.misses, 'miss 1', 'mid-line, a move that loses nothing is a miss');
     eq(f.row1 + ' / ' + f.row2, 'Not this one / Nothing lost, but there\'s a better move.', 'said honestly');
+    /* and through the page's own path (checkMove): a mid-line move the
+       close rule would pass outside a line (6 points under the card's best,
+       8 under the line's next move, never a safe win) is a miss */
+    const lineCards = JSON.parse(A.ev(`(function () { ${OPEN}
+      playerTier = function () { return 2; };
+      return JSON.stringify(allMistakes().filter(trainable).filter(function (it) {
+        var a = openCard(it), b = it.b, w = winPct(b.eb) - 6;
+        return a && a.sol && a.sol.length >= 3 && !(b.mb != null && b.mb > 0) && (w < 70 || w < b.wa + 15 || familyOf(patternOf(b)).key === 'chances');
+      }).map(function (it) { return it.key; })); })()`));
+    ok(lineCards.length >= 3, 'forcing cards ' + lineCards.length);
+    let honest = 0;
+    for (const key of lineCards) {
+      A.ev(`(function () { ${OPEN} window.__srs0 = JSON.stringify(srsLoad()); var a = openCard(model().byKey['${key}']), b = a.it.b;
+        var mine = uciToMove(a.st, a.sol[0]); applyMove(a.st, mine); var rp = uciToMove(a.st, a.sol[1]); applyMove(a.st, rp); a.solIdx = 2;
+        var off = legalMoves(a.st).filter(function (m) { var after = cloneState(a.st); applyMove(after, m); return moveUci(m) !== a.sol[2] && !(checkedKingSq(after) != null && !legalMoves(after).length); })[0];
+        window.__tryCp = cpFromWin(winPct(b.eb) - 6); window.__bestCp = cpFromWin(winPct(b.eb) + 2);
+        window.readyEngine(); gradeMove(off); return 1; })()`);
+      await tick(); await tick();
+      eq(A.ev('(function (a) { return a.phase + " " + (a.tried && a.tried.kind) + " " + a.misses + " " + displayFor(a).row1; })(ui.session.active)'), 'tried miss 1 Not this one', key + ': mid-line, no close verdict');
+      const row2 = A.ev('displayFor(ui.session.active).row2');
+      ok(!/^After /.test(row2), key + ': a mid-line try that loses nothing never gets the standing words: ' + row2);
+      if (row2 === 'Nothing lost, but there\'s a better move.') honest++;
+    }
+    ok(honest >= 5, 'mid-line tries that say they lost nothing ' + honest);
+    A.ev('(window.__tryCp = window.__bestCp = null, 1)');
+  });
+
+  await test('a try that loses nothing is never a miss outside a forcing line', async () => {
+    const A = boot();
+    const S = () => JSON.parse(A.ev(`(function (a) { var d = displayFor(a);
+      return JSON.stringify({ phase: a.phase, kind: a.tried && a.tried.kind, misses: a.misses, row1: d.row1, row2: d.row2, good: !!a.foundGood, srs: JSON.stringify(srsLoad()) === window.__srs0 }); })(ui.session.active)`));
+    /* the band the old rule missed: cards whose game move lost under 17
+       points, so a try 7 under the best (losing nothing by the card's own
+       measure) is not 10 above the game move */
+    const band = JSON.parse(A.ev(`(function () { ${OPEN}
+      return JSON.stringify(allMistakes().filter(trainable).filter(function (it) {
+        var a = openCard(it), b = it.b;
+        return a && !a.sol && !(b.mb != null && b.mb > 0) && winPct(b.eb) - b.wa < 17;
+      }).map(function (it) { return it.key; })); })()`));
+    ok(band.length >= 4 && band.indexOf('184455333378:64') >= 0, 'cards in the band ' + band.length);
+    for (const key of band) {
+      A.ev(`(function () { ${OPEN} ${AFTER} window.__srs0 = JSON.stringify(srsLoad()); var a = openCard(model().byKey['${key}']);
+        window.__tryCp = cpFromWin(winPct(a.it.b.eb) - 7); window.__bestCp = null; window.readyEngine(); gradeMove(offBook(a)); return 1; })()`);
+      await tick(); await tick();
+      const r = S();
+      eq(r.phase + ' ' + r.kind + ' ' + r.misses, 'tried close 0', key + ': a try that loses nothing is close');
+      eq(r.row1 + ' / ' + r.row2, 'Good move / There\'s a stronger one.', key + ': the band');
+      ok(r.good && r.srs, key + ': remembered as close, the schedule unchanged');
+    }
+    /* every card, at tiers 1 (no forcing lines) and 2 (one-move cards):
+       tries scored from just under the best to below the game move. Within
+       STRONGER_TOL of the card's best a try is never a miss; and no miss
+       outside a line says it lost nothing */
+    let misses = 0, close = 0;
+    for (const tier of [1, 2]) {
+      const keys = JSON.parse(A.ev(`(function () { ${OPEN} playerTier = function () { return ${tier}; };
+        return JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var a = openCard(it); return a && !a.sol; }).map(function (it) { return it.key; })); })()`));
+      for (const key of keys) {
+        const ws = JSON.parse(A.ev(`(function (b) { var e = winPct(b.eb); return JSON.stringify([e - 7, e - 9.5, e - 11, e - 16, b.wa + 3, b.wa - 5]); })(model().byKey['${key}'].b)`));
+        for (const w of ws) {
+          A.ev(`(function () { ${OPEN} ${AFTER} window.__srs0 = JSON.stringify(srsLoad()); var a = openCard(model().byKey['${key}']);
+            window.__tryCp = cpFromWin(${w}); window.__bestCp = null; window.readyEngine(); gradeMove(offBook(a)); return 1; })()`);
+          await tick(); await tick();
+          const r = S(), at = 'tier ' + tier + ' ' + key + ' at ' + Math.round(w);
+          const lossless = JSON.parse(A.ev(`(function (b) { return JSON.stringify(!(b.mb != null && b.mb > 0) && winPct(cpFromWin(${w})) >= winPct(b.eb) - STRONGER_TOL); })(model().byKey['${key}'].b)`));
+          if (lossless) ok(r.kind !== 'miss' && r.misses === 0, at + ': a try that loses nothing graded ' + r.phase + ' ' + r.kind + ' ' + r.misses);
+          if (r.kind === 'miss') { misses++; ok(!/Nothing lost/.test(r.row2), at + ': a miss outside a line reads ' + r.row2); }
+          if (r.kind === 'close') close++;
+        }
+      }
+    }
+    ok(misses >= 200 && close >= 100, 'misses ' + misses + ', close ' + close);
     A.ev('(window.__tryCp = window.__bestCp = null, 1)');
   });
 
@@ -1236,6 +1390,21 @@ const BAR = `(function () {
       const txt = A.ev(`window.__writes.filter(function (w) { return w.kind === 'text' && w.t > ${tap}; }).map(function (w) { return w.t - ${tap}; })[0]`);
       ok(txt >= 300, at + ': words ' + txt + ' ms after the take back');
     }
+    /* Show the answer is switched off while a move is checked (S3): pressed
+       100 ms after a tapped move, while the guess bar is still painted, it
+       does nothing */
+    for (const key of cards) {
+      A.ev(`(function () { ${AFTER} window.readyEngine(); window.__holdTry = true; var a = window.__show(model().byKey['${key}']); window.__m = offBook(a); return 1; })()`);
+      run(1000);
+      A.ev('(function (m) { sessionClick(m.from); sessionClick(m.to); return 1; })(window.__m)');
+      run(100);
+      ok(/data-act="reveal"/.test(A.ev('window.__els.cbar.innerHTML')) && !/data-act="takeBack"/.test(A.ev('window.__els.cbar.innerHTML')), key + ': the guess bar is still painted');
+      A.click('reveal', null, 1);
+      const s = S();
+      eq(s.phase + ' ' + s.result, 'checking null', key + ': Show the answer during the check');
+      A.ev('(window.__holdTry = false, takeBack(), 1)');
+      run(1000);
+    }
     const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
     eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
   });
@@ -1262,7 +1431,12 @@ const BAR = `(function () {
           for (var f = 0; f < 64 && to < 0; f++) { var pf = a.st.b[f]; if (!pf || isW(pf) !== !!a.st.w) continue;
             var reach = legalMoves(a.st).filter(function (m) { return m.from === f; }).map(function (m) { return m.to; });
             for (var e = 0; e < 64; e++) if (!a.st.b[e] && reach.indexOf(e) < 0) { mine = f; to = e; break; } }
-          return JSON.stringify({ theirs: theirs, mine: mine, to: to, t2: CARD_COPY.T2(a), t4: CARD_COPY.T4(a), jobs: window.__evals.length }); })(ui.session.active)`));
+          /* a piece of theirs that piece cannot take, and another of yours */
+          var hits = legalMoves(a.st).filter(function (m) { return m.from === mine; }).map(function (m) { return m.to; }), free = -1, mine2 = -1;
+          for (var q2 = 0; q2 < 64; q2++) { var p2 = a.st.b[q2]; if (!p2) continue;
+            if (isW(p2) !== !!a.st.w && hits.indexOf(q2) < 0 && free < 0) free = q2;
+            if (isW(p2) === !!a.st.w && q2 !== mine && mine2 < 0) mine2 = q2; }
+          return JSON.stringify({ theirs: theirs, mine: mine, to: to, free: free, mine2: mine2, t2: CARD_COPY.T2(a), t4: CARD_COPY.T4(a), jobs: window.__evals.length }); })(ui.session.active)`));
         /* their piece, nothing picked up: the outline at once, the words 150 ms later, nothing graded */
         const tap = A.getNow();
         A.ev(`(sessionClick(${c.theirs}), 1)`);
@@ -1293,6 +1467,29 @@ const BAR = `(function () {
         A.ev(`(function () { var a = ui.session.active; a.sel = ${c.mine}; sessionClick(${c.to}); return 1; })()`);
         run(200);
         ok(band().indexOf(c.t2) >= 0 && A.ev('ui.session.active.sel') === -1, at + ': a tap there only puts the piece down');
+        /* a piece of theirs tapped while one of yours is picked up (and cannot
+           take it): yours is put down, theirs outlined, and T4 says which side you are */
+        ok(c.free >= 0 && c.mine2 >= 0, at + ': a piece of theirs out of reach, and another of yours');
+        A.ev(`(function () { var a = ui.session.active; a.sel = ${c.mine}; sessionClick(${c.free}); return 1; })()`);
+        s = S();
+        eq(A.ev('ui.session.active.sel') + ' ' + s.phase + ' ' + s.attempts, '-1 guess 0', at + ': put down, nothing graded');
+        eq(JSON.stringify(s.nope), JSON.stringify([c.free]), at + ': their piece outlined with one of yours picked up');
+        run(200);
+        ok(band().indexOf(c.t4) >= 0, at + ': T4 with one of yours picked up: ' + band());
+        run(2600);
+        ok(band().indexOf(c.t2) >= 0, at + ': the task is back after it');
+        /* a piece dragged onto another of yours snaps back and says so; a tap there picks that one up */
+        A.ev(`(function () { var a = ui.session.active; a.sel = ${c.mine}; pointerState.suppressClick = true; sessionClick(${c.mine2}); pointerState.suppressClick = false; return 1; })()`);
+        eq(A.ev('ui.session.active.sel'), -1, at + ': a drop on your own piece snaps back');
+        run(200);
+        ok(band().indexOf('That piece can\'t go there.') >= 0, at + ': T5 after a drop on your own piece: ' + band());
+        run(2100);
+        ok(band().indexOf(c.t2) >= 0, at + ': the task is back after T5');
+        A.ev(`(function () { var a = ui.session.active; a.sel = ${c.mine}; sessionClick(${c.mine2}); return 1; })()`);
+        eq(A.ev('ui.session.active.sel'), c.mine2, at + ': a tap on another of yours picks it up');
+        A.ev(`(sessionClick(${c.mine2}), 1)`);
+        run(200);
+        ok(band().indexOf(c.t2) >= 0, at + ': and says nothing');
         /* a word and an outline belong to what the card shows: a move made
            while they show ends both at once */
         A.ev(`(sessionClick(${c.theirs}), 1)`);
@@ -1410,6 +1607,8 @@ const BAR = `(function () {
       let t0 = A.getNow();
       A.ev('(function (a) { sessionClick(a.played.to); return 1; })(ui.session.active)');
       ok(/anim-piece/.test(html()) && !/badge-bad|tint-bad/.test(html()), key + ': the slide carries no verdict');
+      /* nor the last-move tint: the squares change colour once, to the verdict's, when it lands */
+      ok(html().indexOf('fill="' + A.ev('HL_MOVE') + '"') < 0, key + ': no last-move tint while the try slides');
       eq(sounds(t0).filter((x) => /^bad/.test(x)).length, 0, key + ': no sound while the piece slides');
       const mu = A.ev('motionUntil') - t0;
       run(1000);
@@ -1426,6 +1625,7 @@ const BAR = `(function () {
       run(1000);
       A.ev(`(function () { ${AFTER} var a = ui.session.active; window.readyEngine(); window.__holdTry = true; window.__m = offBook(a); sessionClick(window.__m.from); sessionClick(window.__m.to); return 1; })()`);
       t0 = A.getNow();
+      ok(/anim-piece/.test(html()) && html().indexOf('fill="' + A.ev('HL_MOVE') + '"') < 0 && !/tint-checking/.test(html()), key + ': the checked move slides with no tint');
       const land = A.ev('motionUntil') - t0;
       run(land + 200);
       ok(/badge badge-checking/.test(html()) && /tint-checking/.test(html()), key + ': the move lands with the grey dots');

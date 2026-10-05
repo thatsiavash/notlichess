@@ -489,7 +489,10 @@ function boardOptsFor(a) {
   /* "not a move here": the grey outline on a square just tapped */
   if (a.nope && a.nope.key === cardStateKey(a)) opts.rings = (opts.rings || []).concat([{ sq: a.nope.sq, kind: 'nope' }]);
   if (slideMs === 320) opts.animMs = 320;
-  opts.mark = view.last;
+  /* the last-move tint marks a move that has landed: a piece sliding in
+     with a verdict to come gets no tint until the verdict's own, so its
+     squares change colour once */
+  opts.mark = land ? null : view.last;
   opts.label = (view.st.w ? 'White' : 'Black') + ' to move. You played ' + sanOf(a.pre, a.played) + ' in the game.';
   var ck = checkedKingSq(view.st);
   if (ck != null) opts.check = ck;
@@ -527,6 +530,11 @@ function paintBoard(a, instant) {
     a.explore.anim = null;
   } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx };
   var fade = f.fadeMs ? xfadeHtml(bw.innerHTML) : '';
+  /* the position this card last drew, to tell a board change from a
+     repaint of the same position (a selection, a mark, a verdict on a move
+     already drawn); a card's first board is no change */
+  var pos = stateFen(f.st), moved = a.drawnPos != null && a.drawnPos !== pos;
+  a.drawnPos = pos;
   bw.innerHTML = boardSvg(f.st, f.opts) + (a.pendingPromo ? promoHtml(f.st) : '') + fade;
   bw.classList.toggle('static', !f.live);
   var ms = f.slideMs || 0;
@@ -549,6 +557,11 @@ function paintBoard(a, instant) {
     motionUntil = Date.now() + f.fadeMs;
     var xf = bw.querySelector('.xfade');
     if (xf) setTimeout(function () { if (xf.parentNode) xf.parentNode.removeChild(xf); }, f.fadeMs + 50);
+  } else if (moved && !(a.phase === 'done' && a.explore)) {
+    /* a move drawn where it landed (dragged, or under reduced motion) is a
+       board change too: the words follow 150 ms after it, never with it
+       (principles 1 and 2). Exploring repaints both together (S14) */
+    motionUntil = Math.max(motionUntil, Date.now());
   }
   /* the forcing reply's slide (stepLine marks it): input never cuts it
      short, it is swallowed until the piece lands (S10) */
