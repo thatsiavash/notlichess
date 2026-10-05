@@ -763,7 +763,8 @@ const BAR = `(function () {
       f = firsts(t);
       ok(f.cband >= 150 && f.cbar >= 150, key + ': the band and the bar 150 ms after the board: ' + JSON.stringify(f));
       ok(/^Your game move again/.test(band()), key + ': the verdict: ' + band());
-      /* a move off the card's lines, dragged: the checking frame at the drop, the checking bar 150 ms later */
+      /* a move off the card's lines, dragged: the checking frame at the drop; the guess bar stays, and the
+         checking bar comes with K1, 300 ms after it */
       A.ev('(tryAgain(), 1)');
       run(1000);
       A.ev(`(function () { ${AFTER} window.readyEngine(); window.__holdTry = true; window.__m = offBook(ui.session.active); return 1; })()`);
@@ -774,7 +775,7 @@ const BAR = `(function () {
       eq(f.bwrap, 0, key + ': the dragged move drawn at the drop');
       ok(f.cbar == null, key + ': no bar with the board: ' + JSON.stringify(f));
       run(1000);
-      ok(firsts(t).cbar >= 150, key + ': the checking bar 150 ms after the board: ' + JSON.stringify(firsts(t)));
+      eq(firsts(t).cbar, 300, key + ': the checking bar with K1, 300 ms after the board: ' + JSON.stringify(firsts(t)));
       A.ev('(window.__holdTry = false, takeBack(), 1)');
       run(1000);
     }
@@ -1364,7 +1365,9 @@ const BAR = `(function () {
       let s = S();
       eq(s.phase, 'checking', at + ': the move is being checked'); eq(s.attempts, 1, at + ': one attempt while it is checked');
       const tok = s.tok;
-      run(1000);
+      /* the guess bar until K1 (300 ms after the move lands), then Take back,
+         which ignores taps for 450 ms like any slot that just changed */
+      run(1200);
       eq(S().bar, 'Take back | Show the answer (off)', at + ': the bar while checking');
       /* a tap on another piece only outlines it */
       A.ev(`(function (a, m) { for (var q = 0; q < 64; q++) if (a.st.b[q] && q !== m.from) { sessionClick(q); break; } return 1; })(ui.session.active, window.__m)`);
@@ -1512,6 +1515,21 @@ const BAR = `(function () {
         eq(S().phase + ' ' + S().misses, 'tried ' + m0, at + ': T4 over a try graded nothing');
         run(2600);
         eq(band(), v, at + ': the verdict is back');
+        /* a move being checked: their piece says it too, under the check's own row 1, and the check goes on */
+        A.ev(`(function () { ${AFTER} tryAgain(); window.readyEngine(); window.__holdTry = true; return 1; })()`);
+        run(1000);
+        A.ev(`(function () { ${AFTER} var a = ui.session.active; window.__m = offBook(a); sessionClick(window.__m.from); sessionClick(window.__m.to); return 1; })()`);
+        run(800);
+        const ck = JSON.parse(A.ev(`(function (a) { var f = checkingFrame(a); for (var q = 0; q < 64; q++) if (f.b[q] && isW(f.b[q]) !== !!a.st.w) return JSON.stringify({ q: q, s: a.attempts + ' ' + a.misses }); })(ui.session.active)`));
+        A.ev(`(sessionClick(${ck.q}), 1)`);
+        eq(JSON.stringify(S().nope), JSON.stringify([ck.q]), at + ': their piece outlined during a check');
+        run(200);
+        ok(/^Checking \S+… /.test(band()) && band().slice(-c.t4.length) === c.t4, at + ': T4 under the check\'s row 1: ' + band());
+        eq(A.ev('(function (a) { return a.phase + " " + a.attempts + " " + a.misses; })(ui.session.active)'), 'checking ' + ck.s, at + ': T4 during a check graded nothing');
+        run(2600);
+        ok(/^Checking \S+…( Still checking\.)?$/.test(band()), at + ': the check\'s words are back: ' + band());
+        A.ev('(window.__holdTry = false, takeBack(), 1)');
+        run(1000);
         /* after an answer: any piece answers with N1, and nothing changes (no exploring, no step) */
         A.ev('(function () { var a = ui.session.active; tryAgain(); reveal(); return 1; })()');
         run(1000);
@@ -1529,6 +1547,80 @@ const BAR = `(function () {
       }
     }
     eq(n, 12, 'cards');
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('the first tap after a dragged move answers: a drop never eats the next tap (touch and mouse)', async () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const band = () => A.ev('window.__els.cband.innerHTML.replace(/<[^>]+>/g, " ").replace(/&#39;/g, "\'").replace(/\\s+/g, " ").trim()');
+    const nope = () => JSON.stringify((JSON.parse(A.ev('JSON.stringify(boardOptsFor(ui.session.active).opts.rings || [])'))).filter((r) => r.kind === 'nope').map((r) => r.sq));
+    const S = () => JSON.parse(A.ev('JSON.stringify((function (a) { return { phase: a.phase, attempts: a.attempts, misses: a.misses, sel: a.sel, flag: pointerState.suppressClick }; })(ui.session.active))'));
+    const cards = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol && unpackUci(it.b.ru).length; }).slice(0, 4).map(function (it) { return it.key; }))`));
+    ok(cards.length === 4, 'cards ' + cards.length);
+    /* a square on the board as it is drawn now: one of theirs, one of yours that is not on sq */
+    const pick = (frame, notSq) => JSON.parse(A.ev(`(function (a) { var st = ${frame}, theirs = -1, mine = -1;
+      for (var q = 0; q < 64; q++) { var p = st.b[q]; if (!p || q === ${notSq}) continue; if (isW(p) !== !!a.st.w) { if (theirs < 0) theirs = q; } else if (mine < 0) mine = q; }
+      return JSON.stringify({ theirs: theirs, mine: mine, t4: NOTE_COPY.T4(a) }); })(ui.session.active)`));
+    let n = 0;
+    for (const key of cards) for (const mouse of [false, true]) {
+      const at = key + (mouse ? ' mouse' : ' touch');
+      A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      const c = JSON.parse(A.ev('JSON.stringify((function (a) { return { pf: a.played.from, pt: a.played.to, bf: a.best.from, bt: a.best.to }; })(ui.session.active))'));
+      /* the game move dragged: a try, and the drop's flag is still up (no click came on a square) */
+      A.drag(c.pf, c.pt, mouse);
+      let s = S();
+      eq(s.phase + ' ' + s.misses, 'tried 1', at + ': the dragged game move is a try');
+      ok(s.flag, at + ': the flag is still up after the drag');
+      run(1000);
+      /* one tap on their piece: the outline and T4 at once (the words 150 ms later) */
+      let q = pick('triedFrame(a).st', c.pt);
+      A.tap(q.theirs);
+      eq(S().flag, false, at + ': the press cleared the flag');
+      eq(nope(), JSON.stringify([q.theirs]), at + ': the first tap after the drag outlines their piece');
+      run(200);
+      ok(q.t4.some((t) => band().indexOf(t) >= 0), at + ': and T4 says which side you are: ' + band());
+      eq(S().phase + ' ' + S().misses, 'tried 1', at + ': graded nothing');
+      run(2600);
+      /* Try again, then the answer dragged: the card is solved, and the first tap on any piece says N1 */
+      A.ev('(tryAgain(), 1)');
+      run(1000);
+      A.drag(c.bf, c.bt, mouse);
+      eq(S().phase, 'done', at + ': the dragged answer solves the card');
+      run(1500);
+      q = pick('lineView(a).st', -1);
+      A.tap(q.mine);
+      eq(nope(), JSON.stringify([q.mine]), at + ': the first tap after a dragged solve outlines the piece');
+      run(200);
+      ok(band().indexOf('To try moves, open Details.') >= 0, at + ': and N1 says where to try moves: ' + band());
+      run(2600);
+      /* a move off the card's lines dragged, held in the check: a tap on one of yours outlines it, one of theirs says T4 */
+      A.ev(`(function () { ${AFTER} window.readyEngine(); window.__holdTry = true; var a = window.__show(model().byKey['${key}']); window.__m = offBook(a); return 1; })()`);
+      run(1000);
+      const m = JSON.parse(A.ev('JSON.stringify({ f: window.__m.from, t: window.__m.to })'));
+      A.drag(m.f, m.t, mouse);
+      eq(S().phase, 'checking', at + ': the dragged move is checked');
+      run(100);
+      q = pick('checkingFrame(a)', m.t);
+      if (A.ev(`checkingPick(ui.session.active, ${q.mine})`) < 0) {
+        A.tap(q.mine);
+        eq(nope(), JSON.stringify([q.mine]), at + ': the first tap after the drag outlines your piece during the check');
+        eq(S().phase + ' ' + S().attempts, 'checking 1', at + ': and leaves the check alone');
+      }
+      A.tap(q.theirs);
+      eq(nope(), JSON.stringify([q.theirs]), at + ': their piece outlined during the check');
+      run(200);
+      ok(q.t4.some((t) => band().indexOf(t) >= 0), at + ': T4 during the check: ' + band());
+      eq(S().phase + ' ' + S().attempts + ' ' + S().misses, 'checking 1 0', at + ': graded nothing during the check');
+      A.ev('(window.__holdTry = false, takeBack(), 1)');
+      run(1000);
+      n++;
+    }
+    eq(n, 8, 'cards');
     const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
     eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
   });
@@ -1627,11 +1719,16 @@ const BAR = `(function () {
       t0 = A.getNow();
       ok(/anim-piece/.test(html()) && html().indexOf('fill="' + A.ev('HL_MOVE') + '"') < 0 && !/tint-checking/.test(html()), key + ': the checked move slides with no tint');
       const land = A.ev('motionUntil') - t0;
+      const bar = () => A.ev('window.__els.cbar.innerHTML.match(/data-act="[a-zA-Z]+"/g).join(" ")');
       run(land + 200);
       ok(/badge badge-checking/.test(html()) && /tint-checking/.test(html()), key + ': the move lands with the grey dots');
       ok(/^Your turn Find a better move/.test(band()), key + ': the band keeps the task: ' + band());
+      /* the bar too: it changes with K1, in the same text beat, never at the landing */
+      eq(bar(), 'data-act="hint" data-act="reveal"', key + ': the guess bar 200 ms after the move landed');
       run(150);
       ok(/^Checking \S+…$/.test(band()) && /card-task k-neutral sweep/.test(A.ev('window.__els.cband.innerHTML')), key + ': K1 with the sweep, 300 ms after the move landed: ' + band());
+      eq(bar(), 'data-act="takeBack"', key + ': Take back with K1 (Show the answer switched off)');
+      eq(A.ev(`window.__writes.filter(function (w) { return w.id === 'cbar' && w.t > ${t0}; }).map(function (w) { return w.t; }).filter(function (t, i, l) { return l.indexOf(t) === i; }).length`), 1, key + ': the bar written once since the move');
       run(2700);
       ok(/^Checking \S+… Still checking\.$/.test(band()), key + ': K2 at 3 s: ' + band());
       t0 = A.getNow();

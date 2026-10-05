@@ -3,6 +3,7 @@
 // Usage: const A = require('./app-realm')({ now, storage: {...}, session: {...} });
 //        A.ev('todayPlan()'); A.setNow(ms); A.storage; A.click('tryAgain') (a button click, through the page's handler)
 //        A.key('Enter', repeat, on): a key through the page's keydown handlers (on a focused button when on = { act, k, slot })
+//        A.tap(sq), A.drag(from, to, mouse): the board by hand, through the page's pointer and click handlers
 //        A.advance(ms): the clock moves on, and each timer runs when it falls due (A.flush runs them all, whatever their delay)
 // Nothing reaches the network (fetch never resolves) and no engine runs (Worker throws), so everything
 // tested here is the app's own bookkeeping.
@@ -85,11 +86,42 @@ module.exports = function makeApp(opts) {
   };
   /* stubbed nodes inside the page (a bar button's click()) reach the click handler through this */
   window.__realmClick = click;
+  /* the board under a finger or a mouse: square sq is drawn at a point of
+     its own (white at the bottom), and elementFromPoint finds it there, as
+     the page's pointer handlers look it up. sq -1 is on the board but on no
+     square, where a mouse drag that ends on another square sends its click */
+  const SQ0 = 200, SQW = 45;
+  const ptOf = (sq) => (sq < 0 ? [SQ0 - 10, SQ0 - 10] : [SQ0 + (sq & 7) * SQW + 22, SQ0 + (7 - (sq >> 3)) * SQW + 22]);
+  const onBoard = (sq) => {
+    const t = { tagName: 'rect', getAttribute: (n) => (n === 'data-sq' && sq >= 0 ? String(sq) : null) };
+    t.closest = (sel) => (sel === '#bwrap' ? t : (sel === '#bwrap [data-sq]' || sel === '[data-sq]') && sq >= 0 ? t : null);
+    return t;
+  };
+  document.elementFromPoint = (x, y) => {
+    const c = Math.floor((x - SQ0) / SQW), r = Math.floor((y - SQ0) / SQW);
+    return c >= 0 && c < 8 && r >= 0 && r < 8 ? onBoard(c + (7 - r) * 8) : null;
+  };
+  /* one pointer event (or the click) on square sq, given to the page's own handlers */
+  const pointer = (type, sq, o) => {
+    const p = ptOf(sq), e = Object.assign({ type, target: onBoard(sq), clientX: p[0], clientY: p[1], button: 0, pointerType: 'touch', preventDefault() {} }, o || {});
+    (listeners[type] || []).forEach((fn) => fn(e));
+  };
   return {
     ev, storage: local.data, session: session.data, timers, loc,
     setNow: (t) => { now = t; }, getNow: () => now,
     /* a click on a button, given to the page's own document click handler */
     click,
+    /* the board by hand: pointer(type, sq) sends one event; tap(sq) presses,
+       lifts and clicks there; drag(from, to, mouse) presses on from, moves
+       and lifts on to, with no click on a square (a touch drag makes none, a
+       mouse drag clicks the board round both squares when mouse is set) */
+    pointer,
+    tap: (sq) => { pointer('pointerdown', sq); pointer('pointerup', sq); pointer('click', sq); },
+    drag: (from, to, mouse) => {
+      const o = mouse ? { pointerType: 'mouse' } : {};
+      pointer('pointerdown', from, o); pointer('pointermove', to, o); pointer('pointerup', to, o);
+      if (mouse) pointer('click', -1, o);
+    },
     /* a key pressed on the page, given to its keydown handlers: on no
        control, with on = { act, k, slot } on that focused button, or with
        on = { id, value } in that text field; repeat marks the keyboard's

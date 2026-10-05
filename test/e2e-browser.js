@@ -27,6 +27,21 @@
   const tapSq = (sq) => { const r = $('#bwrap .board rect[data-sq="' + sq + '"]'); if (r) r.dispatchEvent(new MouseEvent('click', { bubbles: true })); return !!r; };
   const sqOf = (s) => (s.charCodeAt(0) - 97) + (parseInt(s[1], 10) - 1) * 8;
   const tapMove = async (uci) => { tapSq(sqOf(uci.slice(0, 2))); await sleep(120); tapSq(sqOf(uci.slice(2, 4))); };
+  /* the board by hand, through the page's pointer handlers: a square's centre on screen, one event
+     there (on whatever is drawn on top, as the browser picks it), a full tap (press, lift, click) and a
+     mouse drag (press, moves, lift, then the click a mouse sends to the board round both squares) */
+  const ptOf = (sq) => { const r = $('#bwrap .board rect[data-sq="' + sq + '"]').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+  const fire = (type, p, Ctor) => {
+    const el = document.elementFromPoint(p[0], p[1]) || document.body;
+    el.dispatchEvent(new (Ctor || PointerEvent)(type, { bubbles: true, cancelable: true, clientX: p[0], clientY: p[1], button: 0, buttons: /down|move/.test(type) ? 1 : 0, pointerId: 7, pointerType: 'mouse', isPrimary: true }));
+  };
+  const fingerTap = (sq) => { const p = ptOf(sq); fire('pointerdown', p); fire('pointerup', p); fire('click', p, MouseEvent); };
+  const dragMove = (uci) => {
+    const a = ptOf(sqOf(uci.slice(0, 2))), b = ptOf(sqOf(uci.slice(2, 4)));
+    fire('pointerdown', a); fire('pointermove', [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]); fire('pointermove', b); fire('pointerup', b);
+    const bd = $('#bwrap .board');
+    if (bd) bd.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: b[0], clientY: b[1] }));
+  };
   /* text never changes while a piece moves: every write to the band, the action bar, the strip, the
      session bar or the live region is timed, and so is every slide of a piece (transitionrun to
      transitionend) */
@@ -255,6 +270,9 @@
         ok('a revealed card says what the answer is', /^The answer: \S+/.test(text('#cband .bd-r1')), text('#cband'));
         bandFits('the answer shown');
       } else ok('a close alternative was accepted as solved', c2.result !== 'fail');
+      /* Next ignores taps for 450 ms after the bar changed to it (the reveal above), which left the
+         skip and drag lines below waiting 30 s for a card that never came */
+      await sleep(500);
       click('[data-act=next]');
     }
 
@@ -269,6 +287,23 @@
 
     /* ── skip, reload-resume and the recap ───────────────────────────── */
     c = await until(() => { const x = T.card(); return x.phase === 'guess' ? x : null; }, 30000);
+    if (c) {
+      /* the game move dragged with the mouse, then one tap on their piece: it answers at once (T4,
+         full or short), since a drop's flag is only for the click its own gesture makes */
+      await sleep(600);
+      dragMove(c.played);
+      await until(() => T.card().phase === 'tried', 4000);
+      await sleep(500);
+      const opp2 = T.ev('(function (a) { var st = triedFrame(a).st; for (var q = 0; q < 64; q++) if (st.b[q] && isW(st.b[q]) !== !!a.st.w) return q; return -1; })(ui.session.active)');
+      fingerTap(opp2);
+      await sleep(300);
+      ok('after a dragged move, the first tap on their piece says which side you are', T.ev('NOTE_COPY.T4(ui.session.active)').indexOf(text('#cband .bd-r2')) !== -1 && !!$('#bwrap .marks .nope-box') && T.card().phase === 'tried',
+        T.card().phase + ': ' + text('#cband'));
+      await sleep(400);
+      press('#cbar [data-act=tryAgain]');
+      await until(() => T.card().phase === 'guess', 3000);
+      await sleep(400);
+    }
     if (c) {
       const before = c.idx;
       click('[data-act=menu]');
@@ -287,6 +322,24 @@
     click('[data-act=resume]');
     c = await until(() => { const x = T.card(); return x.phase === 'guess' ? x : null; }, 30000);
     ok('resume reopens an unanswered card', !!c && c.result === null);
+    if (c) {
+      /* the answer dragged, then one tap on a piece: N1 at once */
+      const want2 = c.sol ? c.sol : [c.best];
+      await sleep(600);
+      for (let i = 0; i < want2.length; i += 2) {
+        await until(() => T.card().phase === 'guess', 8000);
+        dragMove(want2[i]);
+        await until(() => T.card().phase === 'done' || T.card().solIdx > i, 6000);
+      }
+      const dn = await until(() => T.card().phase === 'done', 8000);
+      await sleep(1200);
+      const any = dn ? T.ev('(function (a) { var st = lineView(a).st; for (var q = 0; q < 64; q++) if (st.b[q]) return q; return -1; })(ui.session.active)') : -1;
+      if (any >= 0) fingerTap(any);
+      await sleep(300);
+      ok('after a dragged solve, the first tap on a piece says where to try moves', !!dn && text('#cband .bd-r2') === T.ev('CARD_COPY.N1(ui.session.active)') && !!$('#bwrap .marks .nope-box'),
+        T.card().phase + ': ' + text('#cband'));
+      await sleep(2600);
+    }
     /* finish quickly: reveal the rest */
     for (let guard = 0; guard < 40; guard++) {
       const x = T.card();

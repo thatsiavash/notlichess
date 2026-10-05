@@ -766,7 +766,11 @@ function barSlots(a, ss) {
             { act: 'next', label: last ? 'Finish' : 'Next', cls: 'btn-big' }];
   }
   if (a.phase === 'tried') return triedSlots(a);
-  if (a.phase === 'guess') {
+  /* a move being checked keeps the guess bar until the band says so (K1,
+     300 ms after it lands), so a quick answer changes the bar once: Hint
+     and Show the answer do nothing meanwhile, Esc or a tap on the moved
+     piece still takes it back */
+  if (a.phase === 'guess' || (a.phase === 'checking' && !a.checkSaid)) {
     /* Hint is named by the hint it gives next, and switched off when it
        has nothing left to give */
     return [{ act: 'hint', label: a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint'), cls: 'btn-line', off: a.hints >= 2 },

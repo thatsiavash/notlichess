@@ -173,11 +173,13 @@ function sessionClick(sq) {
   var ss = ui.session, a = ss && ss.active;
   if (!a || a.pendingPromo) return;
   if (a.phase === 'checking') {
-    /* a move being checked: a tap on it takes it back (S3); any other piece
-       only says this is not a move here */
-    var back = checkingPick(a, sq);
+    /* a move being checked: a tap on it takes it back (S3); a piece of
+       theirs says which side you are (T4, under the check's own row 1); any
+       other piece of yours only says this is not a move here */
+    var back = checkingPick(a, sq), cp = checkingFrame(a).b[sq];
     if (back >= 0) takeBack(back);
-    else if (checkingFrame(a).b[sq]) nopeAt(a, sq);
+    else if (cp && isW(cp) !== a.st.w) tapNote(a, 'T4', 2500, sq);
+    else if (cp) nopeAt(a, sq);
     return;
   }
   if (a.phase === 'tried') {

@@ -6054,11 +6054,13 @@ function sessionClick(sq) {
   var ss = ui.session, a = ss && ss.active;
   if (!a || a.pendingPromo) return;
   if (a.phase === 'checking') {
-    /* a move being checked: a tap on it takes it back (S3); any other piece
-       only says this is not a move here */
-    var back = checkingPick(a, sq);
+    /* a move being checked: a tap on it takes it back (S3); a piece of
+       theirs says which side you are (T4, under the check's own row 1); any
+       other piece of yours only says this is not a move here */
+    var back = checkingPick(a, sq), cp = checkingFrame(a).b[sq];
     if (back >= 0) takeBack(back);
-    else if (checkingFrame(a).b[sq]) nopeAt(a, sq);
+    else if (cp && isW(cp) !== a.st.w) tapNote(a, 'T4', 2500, sq);
+    else if (cp) nopeAt(a, sq);
     return;
   }
   if (a.phase === 'tried') {
@@ -8125,7 +8127,11 @@ function barSlots(a, ss) {
             { act: 'next', label: last ? 'Finish' : 'Next', cls: 'btn-big' }];
   }
   if (a.phase === 'tried') return triedSlots(a);
-  if (a.phase === 'guess') {
+  /* a move being checked keeps the guess bar until the band says so (K1,
+     300 ms after it lands), so a quick answer changes the bar once: Hint
+     and Show the answer do nothing meanwhile, Esc or a tap on the moved
+     piece still takes it back */
+  if (a.phase === 'guess' || (a.phase === 'checking' && !a.checkSaid)) {
     /* Hint is named by the hint it gives next, and switched off when it
        has nothing left to give */
     return [{ act: 'hint', label: a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint'), cls: 'btn-line', off: a.hints >= 2 },
@@ -9448,6 +9454,10 @@ document.addEventListener('pointerdown', function (e) {
   if (!a || !e.target.closest || !e.target.closest('#bwrap')) return;
   var sq = sqFromEvent(e);
   if (sq < 0) return;
+  /* a drop's flag is for the click its own gesture makes; a touch drag (or a
+     mouse drag that ends on another square) makes none on a square, so the
+     flag would eat this press's click. Cleared before every early return */
+  pointerState.suppressClick = false;
   /* input first: a running slide ends and the board catches up. While the
      forcing reply slides the press is dropped, and the click it makes too */
   if (flushStage()) { pointerState.held = true; return; }
@@ -9475,7 +9485,6 @@ document.addEventListener('pointerdown', function (e) {
     return;
   }
   if (e.button !== 0 || !bs.live || a.pendingPromo) return;
-  pointerState.suppressClick = false;
   if (!bs.explore && a.shapes.length) { a.shapes = []; renderCardBoard(); }
   var p = bs.st.b[sq];
   if (p && isW(p) === bs.st.w) {

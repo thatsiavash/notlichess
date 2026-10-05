@@ -699,6 +699,10 @@ document.addEventListener('pointerdown', function (e) {
   if (!a || !e.target.closest || !e.target.closest('#bwrap')) return;
   var sq = sqFromEvent(e);
   if (sq < 0) return;
+  /* a drop's flag is for the click its own gesture makes; a touch drag (or a
+     mouse drag that ends on another square) makes none on a square, so the
+     flag would eat this press's click. Cleared before every early return */
+  pointerState.suppressClick = false;
   /* input first: a running slide ends and the board catches up. While the
      forcing reply slides the press is dropped, and the click it makes too */
   if (flushStage()) { pointerState.held = true; return; }
@@ -726,7 +730,6 @@ document.addEventListener('pointerdown', function (e) {
     return;
   }
   if (e.button !== 0 || !bs.live || a.pendingPromo) return;
-  pointerState.suppressClick = false;
   if (!bs.explore && a.shapes.length) { a.shapes = []; renderCardBoard(); }
   var p = bs.st.b[sq];
   if (p && isW(p) === bs.st.w) {

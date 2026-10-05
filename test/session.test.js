@@ -433,9 +433,17 @@ const OPEN = `function openCard(it) {
             SF.state = 'ready';
             gradeMove(off0);
             d = band(at + ' checking', a);
-            if (d.row1 !== 'Your turn' || d.buttons.map(function (b) { return b.label; }).join(' | ') !== 'Take back | Show the answer') out.push(at + ' checking at once reads ' + d.row1 + ' | ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
+            /* the bar too: the guess bar until K1, then [Take back] [Show the answer] */
+            var labs = function (d) { return d.buttons.map(function (b) { return b.label; }).join(' | '); };
+            if (d.row1 !== 'Your turn' || labs(d) !== 'Hint | Show the answer') out.push(at + ' checking at once reads ' + d.row1 + ' | ' + labs(d));
+            d = band(at + ' checking at once, T4', note(a, 'T4'));
+            if (d.row1 !== 'Your turn' || d.row2 !== t4) out.push(at + ' T4 while checking at once reads ' + d.row1 + ' / ' + d.row2);
+            a.note = null;
             a.checkSaid = 1; d = band(at + ' checking, 300 ms', a);
-            if (d.row1 !== 'Checking ' + sanOf(a.st, off0) + '…' || d.row2 || !d.sweep) out.push(at + ' K1 reads ' + d.row1 + ' / ' + d.row2);
+            if (d.row1 !== 'Checking ' + sanOf(a.st, off0) + '…' || d.row2 || !d.sweep || labs(d) !== 'Take back | Show the answer') out.push(at + ' K1 reads ' + d.row1 + ' / ' + d.row2 + ' | ' + labs(d));
+            d = band(at + ' checking, 300 ms, T4', note(a, 'T4'));
+            if (!/^Checking /.test(d.row1) || d.row2 !== t4 || !d.sweep) out.push(at + ' T4 while checking reads ' + d.row1 + ' / ' + d.row2);
+            a.note = null;
             a.checkSaid = 2; d = band(at + ' checking, 3 s', a);
             if (d.row2 !== 'Still checking.') out.push(at + ' K2 reads ' + d.row2);
             takeBack();
