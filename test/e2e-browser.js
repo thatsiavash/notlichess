@@ -53,6 +53,9 @@
     ok('the session bar has an end button and progress', !!$('.sb-end') && !!$('.dots'));
     ok('the card shows a board, a task and the game context', !!$('#bwrap svg') && /to move|better move/i.test(text('#main')) && !!$('.ctx'));
     ok('the move played in the game is marked', !!$('#bwrap svg') && !!c.played);
+    const bwk = $('#bwrap').children, bwr = (e) => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(','); };
+    ok('the board svg is #bwrap\'s first child, the marks svg over it', bwk[0].matches('svg.board') && !!bwk[1] && bwk[1].matches('svg.marks')
+      && bwr(bwk[0]) === bwr(bwk[1]) && !!$('#bwrap .marks .bad-arrow') && getComputedStyle(bwk[1]).pointerEvents === 'none', bwk[1] && bwr(bwk[0]) + ' / ' + bwr(bwk[1]));
     const want = c.sol ? c.sol : [c.best];
     for (let i = 0; i < want.length; i += 2) {
       T.play(want[i]);

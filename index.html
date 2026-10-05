@@ -313,6 +313,14 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 #bwrap.static .board rect[data-sq],#bwrap.static .board use[data-sq]{cursor:default}
 .board use.drag-src{opacity:.35}
 .anim-piece{transition:transform .22s ease;will-change:transform}
+/* the marks lie over the board in their own svg and never take a tap; a
+   badge pops and a token or ghost fades in once, on its first paint */
+.marks{position:absolute;left:0;top:0;width:100%;height:100%;display:block;pointer-events:none;border-radius:4px;overflow:hidden}
+.mk-pop{transform-box:fill-box;transform-origin:center}
+.mk-pop.fx-in{animation:mk-pop .12s ease-out}
+.mk-fade.fx-in{animation:mk-fade .15s ease-out}
+@keyframes mk-pop{from{transform:scale(.4)}to{transform:none}}
+@keyframes mk-fade{from{opacity:0}to{opacity:1}}
 .drag-ghost{position:fixed;left:0;top:0;z-index:60;pointer-events:none;filter:drop-shadow(0 3px 6px rgba(0,0,0,.45))}
 .drag-ghost svg{width:100%;height:100%}
 .promo-card{
@@ -365,7 +373,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .card{grid-template-columns:1fr;gap:12px}
   .board-col{margin:0 calc(-1 * var(--gutter))}
   .board-row{gap:0}
-  .board{border-radius:0}
+  .board,.marks{border-radius:0}
   .evalbar{width:10px;border-radius:0}
   .panel{padding-bottom:84px}
   .sticky-acts{
@@ -2016,7 +2024,84 @@ var HL_MOVE = 'rgba(155,199,0,.41)', HL_SEL = 'rgba(20,85,30,.5)';
 var PIECE_ID = { K:'wK',Q:'wQ',R:'wR',B:'wB',N:'wN',P:'wP',
                  k:'bK',q:'bQ',r:'bR',b:'bB',n:'bN',p:'bP' };
 
-var boardSeq = 0;
+var boardSeq = 0, boardFxShown = null;
+/* the marks over the board (FINAL-SPEC 2.1): one colour and one shape per
+   meaning, never a second one. Arrows by kind: your game move (solid red),
+   their threat (dashed red), their expected reply in a forcing line (dashed
+   blue-grey), the better move (green), Stockfish's pick (gold) */
+var MARK_ARROW = {
+  game: { color: 'rgba(201,80,60,.9)', w: 6, cls: 'bad-arrow' },
+  better: { color: 'rgba(61,139,58,.92)', w: 6, cls: 'good-arrow' },
+  explore: { color: 'rgba(182,130,53,.85)', w: 6, cls: 'ghost-arrow' },
+  threat: { color: 'rgba(201,80,60,.9)', w: 5, cls: 'threat-arrow', dash: '7 5.5' },
+  reply: { color: 'rgba(122,150,184,.95)', w: 5, cls: 'reply-arrow', dash: '7 5.5' }
+};
+/* a verdict, by kind: the tint under both squares of the move just made,
+   and the badge on its landing square (the close badge is hollow, so it
+   differs from the found one by shape and not only by colour) */
+var MARK_TINT = {
+  good: 'rgba(61,150,66,.42)', bad: 'rgba(214,70,52,.42)', close: 'rgba(125,147,171,.34)',
+  checking: 'rgba(160,150,130,.30)', unchecked: 'rgba(120,114,104,.40)', info: 'rgba(120,114,104,.40)'
+};
+var MARK_BADGE = { good: '#3d9142', bad: '#d04a3a', close: '#7d93ab', checking: '#8f8b83', unchecked: '#6b665d', info: '#6b665d' };
+var BADGE_GLYPH = {
+  good: 'M-3.7 .3 L-1.2 2.8 L3.9 -2.6', close: 'M-3.7 .3 L-1.2 2.8 L3.9 -2.6',
+  bad: 'M-2.9 -2.9 L2.9 2.9 M2.9 -2.9 L-2.9 2.9',
+  checking: 'M-3.3 0 h.01 M0 0 h.01 M3.3 0 h.01',
+  unchecked: 'M-2.4 -2.4 C-2.4 -5.3 2.6 -5.3 2.6 -2.4 C2.6 -.7 0 -.5 0 1.4 M0 4.3 h.01',
+  info: 'M0 -4.1 h.01 M0 -1 V4.3'
+};
+/* an arrow from square centre to square centre (board units), with a dark
+   halo so it reads on light and dark squares alike. Its head is a marker of
+   its own (the id is unique on the page). A short arrow, under 1.6 squares,
+   stops nearer the centre with the same head, so a one-square move shows */
+function markArrow(x1, y1, x2, y2, kind, id, key, solid) {
+  var k = MARK_ARROW[kind] || MARK_ARROW.game, dash = solid ? '' : k.dash || '';
+  var dx = x2 - x1, dy = y2 - y1, len = Math.sqrt(dx * dx + dy * dy) || 1;
+  var inset = 45 * (len < 45 * 1.6 ? 0.22 : 0.34);
+  var tx = x2 - dx / len * inset, ty = y2 - dy / len * inset;
+  var at = ' x1="' + x1 + '" y1="' + y1 + '" x2="' + tx + '" y2="' + ty + '" stroke-linecap="' + (dash ? 'butt' : 'round') + '"'
+    + (dash ? ' stroke-dasharray="' + dash + '"' : '');
+  return {
+    def: '<marker id="' + id + '" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto">'
+      + '<path d="M0 0 L10 5 L0 10 z" fill="' + k.color + '" stroke="rgba(0,0,0,.28)" stroke-width=".6"/></marker>',
+    body: '<line' + at + ' stroke="rgba(0,0,0,.28)" stroke-width="' + (k.w + 2.4) + '"/>'
+      + '<line class="' + k.cls + '"' + (key != null ? ' data-key="' + String(key).replace(/"/g, '') + '"' : '') + at
+      + ' stroke="' + k.color + '" stroke-width="' + k.w + '" marker-end="url(#' + id + ')"/>'
+  };
+}
+/* a red disc with a white cross: where a move went wrong */
+function markCross(cx, cy, r) {
+  var c = r * 0.38;
+  return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="#d04a3a" stroke="rgba(0,0,0,.28)" stroke-width="1"/>'
+    + '<path d="M' + (cx - c) + ' ' + (cy - c) + ' L' + (cx + c) + ' ' + (cy + c) + ' M' + (cx + c) + ' ' + (cy - c) + ' L' + (cx - c) + ' ' + (cy + c)
+    + '" stroke="#fff" stroke-width="' + (r * 0.3) + '" stroke-linecap="round"/>';
+}
+/* a ring round a square (x, y its corner): the piece that punishes (red),
+   the piece about to reply (dashed blue-grey), a hint's prize (dashed
+   gold), hint 2's piece to move (gold), or "not a move here" (a grey
+   outline, the only square one) */
+function markRing(x, y, kind) {
+  var cx = x + 22.5, cy = y + 22.5, c = ' cx="' + cx + '" cy="' + cy + '" r="20" fill="none"';
+  if (kind === 'nope') return '<rect class="nope-box" x="' + (x + 2) + '" y="' + (y + 2) + '" width="41" height="41" fill="none" stroke="rgba(160,154,144,.9)" stroke-width="2"/>';
+  if (kind === 'threat') return '<circle' + c + ' stroke="rgba(0,0,0,.35)" stroke-width="6.5"/><circle class="ring-threat"' + c + ' stroke="#e0503e" stroke-width="3.6"/>';
+  if (kind === 'reply') return '<circle class="reply-ring"' + c + ' stroke="rgba(122,150,184,.95)" stroke-width="3" stroke-dasharray="6 4"/>';
+  if (kind === 'target') return '<circle class="ring-target"' + c + ' stroke="rgba(182,130,53,.95)" stroke-width="3" stroke-dasharray="4 3"/>';
+  /* the hint ring paints after pieces and arrows: a hint buried under a red
+     arrow is no hint at all */
+  return '<circle' + c + ' stroke="rgba(20,14,8,.55)" stroke-width="6"/><circle class="hint-ring"' + c + ' stroke="rgba(182,130,53,.95)" stroke-width="3.5"/>';
+}
+/* the board: squares, tints and pieces in one svg, and the marks (FINAL-SPEC
+   2.1, z 8 to 12) in a second one laid over it, so marks can change without
+   touching a piece. Both are drawn bottom to top in the spec's z order.
+   opts: flip, mark (last-move squares), tints [{sq, kind}], sel, check,
+   ghosts [{sq, p}], anim [from, to], dots, label, decor; marks: guards
+   [{from, to}], arrows [{from, to, kind, key, solid}], tried [{from, to}
+   or {sq}], rings [{sq, kind}], tokens [{sq, p, kind: 'lost' | 'won'}],
+   badges [{sq, kind}], shapes; fx, the effect id of this paint. bad, good,
+   ghost and hint are the older names of the game, better and explore arrows
+   and the hint ring. A small board (decor) keeps its marks inside its one
+   svg */
 function boardSvg(st, opts) {
   opts = opts || {};
   var flip = !!opts.flip;
@@ -2024,28 +2109,49 @@ function boardSvg(st, opts) {
   /* every board has its own ids: with shared ids, an arrow loses its head
      when the first copy of a marker sits in a hidden view */
   var uid = 'b' + (++boardSeq);
+  /* the corner and the centre of a square, as drawn */
+  var corner = function (sq) { return [(flip ? 7 - sq % 8 : sq % 8) * SZ, (flip ? sq >> 3 : 7 - (sq >> 3)) * SZ]; };
+  var ctr = function (sq) { var c = corner(sq); return [c[0] + SZ / 2, c[1] + SZ / 2]; };
+  /* effect ids: a pop or a fade runs on the first paint of its id only, so
+     a repaint never replays it */
+  var fresh = opts.fx != null && opts.fx !== boardFxShown;
+  if (opts.fx != null) boardFxShown = opts.fx;
+  var fxOpen = function (m, cls) {
+    if (m.fx == null) return '<g>';
+    return '<g class="' + cls + (fresh && m.fx === opts.fx ? ' fx-in' : '') + '" data-fx="' + String(m.fx).replace(/"/g, '') + '">';
+  };
+  var tintOf = {};
+  (opts.tints || []).forEach(function (t) { tintOf[t.sq] = t.kind; });
   /* the card's board names what is on it; small boards are decoration */
   var out = '<svg class="board" viewBox="0 0 ' + W + ' ' + W + '"'
     + (opts.decor ? ' aria-hidden="true"' : ' role="img" aria-label="' + (opts.label || 'chess position').replace(/"/g, '') + '"') + '>'
     + '<defs><radialGradient id="checkglow' + uid + '"><stop offset="0%" stop-color="rgba(230,60,50,.85)"/>'
     + '<stop offset="70%" stop-color="rgba(230,60,50,.35)"/>'
     + '<stop offset="100%" stop-color="rgba(230,60,50,0)"/></radialGradient></defs>';
+  /* layers, bottom to top: squares; tints, selection and check glow; ghost
+     pieces; pieces (a sliding one last, so it passes over the rest); legal
+     dots and coordinates; the crosses on ghosts */
+  var sqs = '', tints = '', pcs = '', slide = '', top = '';
   for (var r = 0; r < 8; r++) {
     for (var f = 0; f < 8; f++) {
       var sq = r * 8 + f;
       var col = flip ? 7 - f : f, row = flip ? r : 7 - r;
       var x = col * SZ, y = row * SZ;
       var light = (r + f) % 2 === 1;
-      out += '<rect data-sq="' + sq + '" x="' + x + '" y="' + y + '" width="' + SZ
+      sqs += '<rect data-sq="' + sq + '" x="' + x + '" y="' + y + '" width="' + SZ
         + '" height="' + SZ + '" fill="' + (light ? SQ_LIGHT : SQ_DARK) + '"/>';
-      if (opts.mark && opts.mark.indexOf(sq) >= 0)
-        out += '<rect x="' + x + '" y="' + y + '" width="' + SZ + '" height="' + SZ
+      /* a verdict's tint takes the place of the last-move tint on its square */
+      if (tintOf[sq])
+        tints += '<rect class="tint tint-' + tintOf[sq] + '" x="' + x + '" y="' + y + '" width="' + SZ + '" height="' + SZ
+          + '" fill="' + (MARK_TINT[tintOf[sq]] || MARK_TINT.info) + '" style="pointer-events:none"/>';
+      else if (opts.mark && opts.mark.indexOf(sq) >= 0)
+        tints += '<rect x="' + x + '" y="' + y + '" width="' + SZ + '" height="' + SZ
           + '" fill="' + HL_MOVE + '" style="pointer-events:none"/>';
       if (opts.sel === sq)
-        out += '<rect x="' + x + '" y="' + y + '" width="' + SZ + '" height="' + SZ
+        tints += '<rect x="' + x + '" y="' + y + '" width="' + SZ + '" height="' + SZ
           + '" fill="' + HL_SEL + '" style="pointer-events:none"/>';
       if (opts.check === sq) {
-        out += '<circle cx="' + (x + SZ / 2) + '" cy="' + (y + SZ / 2) + '" r="' + (SZ * 0.52)
+        tints += '<circle cx="' + (x + SZ / 2) + '" cy="' + (y + SZ / 2) + '" r="' + (SZ * 0.52)
           + '" fill="url(#checkglow' + uid + ')" style="pointer-events:none"/>';
       }
       var p = st.b[sq];
@@ -2057,93 +2163,124 @@ function boardSvg(st, opts) {
           animAttr = ' class="anim-piece" style="transform:translate('
             + (acol * SZ - x) + 'px,' + (arow * SZ - y) + 'px)"';
         }
-        out += '<use href="#pc-' + PIECE_ID[p] + '" x="' + x + '" y="' + y
+        var use = '<use href="#pc-' + PIECE_ID[p] + '" x="' + x + '" y="' + y
           + '" width="' + SZ + '" height="' + SZ + '" data-sq="' + sq + '"' + animAttr + '/>';
+        if (animAttr) slide = use; else pcs += use;
       }
       if (opts.dots && opts.dots.indexOf(sq) >= 0) {
         if (p) /* capture: ring around the square, lichess-style */
-          out += '<circle cx="' + (x + SZ / 2) + '" cy="' + (y + SZ / 2) + '" r="' + (SZ / 2 - 3)
+          top += '<circle cx="' + (x + SZ / 2) + '" cy="' + (y + SZ / 2) + '" r="' + (SZ / 2 - 3)
             + '" fill="none" stroke="' + HL_SEL + '" stroke-width="4" style="pointer-events:none"/>';
         else
-          out += '<circle cx="' + (x + SZ / 2) + '" cy="' + (y + SZ / 2) + '" r="5.5"'
+          top += '<circle cx="' + (x + SZ / 2) + '" cy="' + (y + SZ / 2) + '" r="5.5"'
             + ' fill="' + HL_SEL + '" style="pointer-events:none"/>';
       }
       /* coordinates live inside the edge squares, tinted with the opposite
          square colour, exactly where a Lichess eye expects them */
       if (row === 7)
-        out += '<text x="' + (x + SZ - 3.2) + '" y="' + (y + SZ - 3) + '" text-anchor="end"'
+        top += '<text x="' + (x + SZ - 3.2) + '" y="' + (y + SZ - 3) + '" text-anchor="end"'
           + ' font-size="7.5" font-weight="600" font-family="sans-serif" fill="'
           + (light ? SQ_DARK : SQ_LIGHT) + '" style="pointer-events:none">'
           + String.fromCharCode(97 + sq % 8) + '</text>';
       if (col === 0)
-        out += '<text x="' + (x + 2.8) + '" y="' + (y + 9.5) + '"'
+        top += '<text x="' + (x + 2.8) + '" y="' + (y + 9.5) + '"'
           + ' font-size="7.5" font-weight="600" font-family="sans-serif" fill="'
           + (light ? SQ_DARK : SQ_LIGHT) + '" style="pointer-events:none">'
           + (1 + (sq >> 3)) + '</text>';
     }
   }
-  /* an arrow from square to square, with a thin dark halo so it reads on
-     light and dark squares alike; a one-square arrow gets a smaller head */
-  var arrow = function (from, to, color, key, cls) {
-    var fc = flip ? 7 - from % 8 : from % 8, fr = flip ? (from >> 3) : 7 - (from >> 3);
-    var tc = flip ? 7 - to % 8 : to % 8, tr = flip ? (to >> 3) : 7 - (to >> 3);
-    var x1 = fc * SZ + SZ / 2, y1 = fr * SZ + SZ / 2, x2 = tc * SZ + SZ / 2, y2 = tr * SZ + SZ / 2;
-    var dx = x2 - x1, dy = y2 - y1, len = Math.sqrt(dx * dx + dy * dy) || 1;
-    var head = len < SZ * 1.6 ? 3.4 : 4.2;
-    var tx = x2 - dx / len * (SZ * 0.34), ty = y2 - dy / len * (SZ * 0.34);
-    var id = 'ah' + key + uid;
-    return '<defs><marker id="' + id + '" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="' + head + '" markerHeight="' + head + '" orient="auto">'
-      + '<path d="M0 0 L10 5 L0 10 z" fill="' + color + '" stroke="rgba(0,0,0,.28)" stroke-width=".6"/></marker></defs>'
-      + '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + tx + '" y2="' + ty
-      + '" stroke="rgba(0,0,0,.28)" stroke-width="8.4" stroke-linecap="round" style="pointer-events:none"/>'
-      + '<line' + (cls ? ' class="' + cls + '"' : '') + ' x1="' + x1 + '" y1="' + y1 + '" x2="' + tx + '" y2="' + ty
-      + '" stroke="' + color + '" stroke-width="6" stroke-linecap="round"'
-      + ' marker-end="url(#' + id + ')" style="pointer-events:none"/>';
-  };
-  /* the advice: a gold arrow tracing the move the text is talking about */
-  if (opts.ghost) out += arrow(opts.ghost[0], opts.ghost[1], 'rgba(182,130,53,.85)', 'gold', 'ghost-arrow');
-  /* the better move, green; never on the board together with the red one */
-  if (opts.good) out += arrow(opts.good[0], opts.good[1], 'rgba(61,139,58,.92)', 'good', 'good-arrow');
-  /* the mistake itself: a red arrow tracing the move that was played */
-  if (opts.bad) out += arrow(opts.bad[0], opts.bad[1], 'rgba(201,80,60,.9)', 'bad', 'bad-arrow');
-  /* the hint ring paints AFTER pieces and the mistake arrow, SVG stacks
-     by order, and a hint buried under a red arrow is no hint at all */
-  if (opts.hint != null) {
-    var hf = flip ? 7 - opts.hint % 8 : opts.hint % 8;
-    var hr = flip ? (opts.hint >> 3) : 7 - (opts.hint >> 3);
-    var hx = hf * SZ + SZ / 2, hy = hr * SZ + SZ / 2;
-    out += '<circle cx="' + hx + '" cy="' + hy + '" r="' + (SZ / 2 - 2.5)
-      + '" fill="none" stroke="rgba(20,14,8,.55)" stroke-width="6"'
-      + ' style="pointer-events:none"/>'
-      + '<circle cx="' + hx + '" cy="' + hy + '" r="' + (SZ / 2 - 2.5)
-      + '" fill="none" stroke="rgba(182,130,53,.95)" stroke-width="3.5"'
-      + ' style="pointer-events:none" class="hint-ring"/>';
-  }
+  /* where your game move went: the piece faded, with no data-sq so input
+     never finds it, and a cross at its top-right; on an occupied square the
+     cross alone */
+  var ghosts = '';
+  (opts.ghosts || []).forEach(function (g) {
+    var c = corner(g.sq);
+    if (!st.b[g.sq] && PIECE_ID[g.p])
+      ghosts += fxOpen(g, 'mk-fade') + '<use class="ghost-piece" href="#pc-' + PIECE_ID[g.p] + '" x="' + c[0] + '" y="' + c[1]
+        + '" width="' + SZ + '" height="' + SZ + '" opacity=".34"/></g>';
+    top += fxOpen(g, 'mk-fade') + markCross(c[0] + 37.5, c[1] + 7.5, 6) + '</g>';
+  });
+  out += sqs + tints + (ghosts ? '<g style="pointer-events:none">' + ghosts + '</g>' : '') + pcs + slide + top + '</svg>';
+
+  /* the marks, z 8 to 12, then the player's own drawn shapes on top */
+  var defs = '', marks = '';
+  /* z 8: guard dots, from a defender to the square it guards */
+  (opts.guards || []).forEach(function (g) {
+    var a = ctr(g.from), b = ctr(g.to), dx = b[0] - a[0], dy = b[1] - a[1], len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var x1 = a[0] + dx / len * 13, y1 = a[1] + dy / len * 13, x2 = b[0] - dx / len * 13, y2 = b[1] - dy / len * 13;
+    var ln = ' x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" stroke-dasharray="0.1 7" stroke-linecap="round"';
+    marks += '<line' + ln + ' stroke="rgba(0,0,0,.35)" stroke-width="7"/><line class="guard-line"' + ln + ' stroke="#4fae55" stroke-width="3.6"/>'
+      + '<circle cx="' + x2 + '" cy="' + y2 + '" r="5.1" fill="rgba(0,0,0,.35)"/><circle cx="' + x2 + '" cy="' + y2 + '" r="3.4" fill="#4fae55"/>';
+  });
+  /* z 9: arrows, the older single ones first (Stockfish's, the better
+     move, the game move: the order they always had) */
+  var arrows = [];
+  if (opts.ghost) arrows.push({ from: opts.ghost[0], to: opts.ghost[1], kind: 'explore', key: 'gold' });
+  if (opts.good) arrows.push({ from: opts.good[0], to: opts.good[1], kind: 'better', key: 'good' });
+  if (opts.bad) arrows.push({ from: opts.bad[0], to: opts.bad[1], kind: 'game', key: 'bad' });
+  arrows = arrows.concat(opts.arrows || []);
+  arrows.forEach(function (ar, i) {
+    var a = ctr(ar.from), b = ctr(ar.to), m = markArrow(a[0], a[1], b[0], b[1], ar.kind, 'ah' + uid + '-' + i, ar.key, ar.solid);
+    defs += m.def;
+    marks += m.body;
+  });
+  /* z 9: a move already tried, faint: a thin line and a cross where it
+     landed, or the cross alone ({sq}) */
+  (opts.tried || []).forEach(function (t) {
+    var b = ctr(t.sq != null ? t.sq : t.to), line = '';
+    if (t.sq == null) {
+      var a = ctr(t.from), dx = b[0] - a[0], dy = b[1] - a[1], len = Math.sqrt(dx * dx + dy * dy) || 1;
+      line = '<line class="tried-line" x1="' + a[0] + '" y1="' + a[1] + '" x2="' + (b[0] - dx / len * 6) + '" y2="' + (b[1] - dy / len * 6)
+        + '" stroke="#c9503c" stroke-width="2" stroke-linecap="round"/>';
+    }
+    marks += '<g class="tried" opacity=".55">' + line + markCross(b[0], b[1], 6) + '</g>';
+  });
+  /* z 10: rings; the older hint ring is hint 2's */
+  var rings = (opts.hint != null ? [{ sq: opts.hint, kind: 'hint' }] : []).concat(opts.rings || []);
+  rings.forEach(function (rg) { var c = corner(rg.sq); marks += markRing(c[0], c[1], rg.kind); });
+  /* z 11: a piece captured here, as a token at the square's bottom-left:
+     a red ring and a slash for one you lost, a green ring for one you won */
+  (opts.tokens || []).forEach(function (t) {
+    var c = corner(t.sq), cx = c[0] + 12.5, cy = c[1] + 32.5, lost = t.kind !== 'won';
+    marks += '<g class="token token-' + (lost ? 'lost' : 'won') + '">' + fxOpen(t, 'mk-fade')
+      + '<circle cx="' + cx + '" cy="' + cy + '" r="12.5" fill="rgba(244,236,222,.94)" stroke="' + (lost ? '#d6452f' : '#3d9142') + '" stroke-width="2.4"/>'
+      + (PIECE_ID[t.p] ? '<use href="#pc-' + PIECE_ID[t.p] + '" x="' + (cx - 10.8) + '" y="' + (cy - 10.8) + '" width="21.6" height="21.6" opacity=".82"/>' : '')
+      + (lost ? '<line x1="' + (cx - 8.8) + '" y1="' + (cy + 8.8) + '" x2="' + (cx + 8.8) + '" y2="' + (cy - 8.8) + '" stroke="#d6452f" stroke-width="2.4" stroke-linecap="round"/>' : '')
+      + '</g></g>';
+  });
+  /* z 12: the verdict badge, at the landing square's top-right; it pops
+     once per effect id */
+  (opts.badges || []).forEach(function (bd) {
+    var c = corner(bd.sq), col = MARK_BADGE[bd.kind] || MARK_BADGE.info, hollow = bd.kind === 'close';
+    marks += '<g class="badge badge-' + bd.kind + '" transform="translate(' + (c[0] + 36) + ' ' + (c[1] + 9) + ')">' + fxOpen(bd, 'mk-pop')
+      + '<circle r="9.8" fill="rgba(0,0,0,.28)"/>'
+      + '<circle r="8.6" fill="' + (hollow ? '#161512' : col) + '"' + (hollow ? ' stroke="' + col + '" stroke-width="2.2"' : '') + '/>'
+      + '<path d="' + (BADGE_GLYPH[bd.kind] || BADGE_GLYPH.info) + '" fill="none" stroke="' + (hollow ? col : '#fff')
+      + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g></g>';
+  });
   /* drawn shapes: the calculation scaffolding, lichess-green */
   if (opts.shapes && opts.shapes.length) {
-    var ctr = function (sq) {
-      var c = flip ? 7 - sq % 8 : sq % 8, rw = flip ? (sq >> 3) : 7 - (sq >> 3);
-      return [c * SZ + SZ / 2, rw * SZ + SZ / 2];
-    };
-    out += '<defs><marker id="ah' + uid + '" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto">'
-      + '<path d="M0 0 L10 5 L0 10 z" fill="rgba(21,120,27,.8)"/></marker></defs>';
+    defs += '<marker id="ah' + uid + '" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4.2" markerHeight="4.2" orient="auto">'
+      + '<path d="M0 0 L10 5 L0 10 z" fill="rgba(21,120,27,.8)"/></marker>';
     opts.shapes.forEach(function (sh) {
       if (sh.at != null) {
         var c0 = ctr(sh.at);
-        out += '<circle cx="' + c0[0] + '" cy="' + c0[1] + '" r="' + (SZ / 2 - 2.5)
-          + '" fill="none" stroke="rgba(21,120,27,.8)" stroke-width="4" style="pointer-events:none"/>';
+        marks += '<circle cx="' + c0[0] + '" cy="' + c0[1] + '" r="' + (SZ / 2 - 2.5)
+          + '" fill="none" stroke="rgba(21,120,27,.8)" stroke-width="4"/>';
       } else {
         var f0 = ctr(sh.from), t0 = ctr(sh.to);
         var dx = t0[0] - f0[0], dy = t0[1] - f0[1];
         var len = Math.sqrt(dx * dx + dy * dy) || 1;
         var tx = t0[0] - dx / len * (SZ * 0.34), ty = t0[1] - dy / len * (SZ * 0.34);
-        out += '<line x1="' + f0[0] + '" y1="' + f0[1] + '" x2="' + tx + '" y2="' + ty
+        marks += '<line x1="' + f0[0] + '" y1="' + f0[1] + '" x2="' + tx + '" y2="' + ty
           + '" stroke="rgba(21,120,27,.8)" stroke-width="7" stroke-linecap="round"'
-          + ' marker-end="url(#ah' + uid + ')" style="pointer-events:none"/>';
+          + ' marker-end="url(#ah' + uid + ')"/>';
       }
     });
   }
-  return out + '</svg>';
+  marks = (defs ? '<defs>' + defs + '</defs>' : '') + marks;
+  if (opts.decor) return marks ? out.slice(0, -6) + '<g style="pointer-events:none">' + marks + '</g></svg>' : out;
+  return out + '<svg class="marks" viewBox="0 0 ' + W + ' ' + W + '" aria-hidden="true" style="pointer-events:none">' + marks + '</svg>';
 }
 
 /* ── Sounds, a whisper of feedback, synthesized, no files. Off in

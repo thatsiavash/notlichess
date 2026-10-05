@@ -266,6 +266,14 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 #bwrap.static .board rect[data-sq],#bwrap.static .board use[data-sq]{cursor:default}
 .board use.drag-src{opacity:.35}
 .anim-piece{transition:transform .22s ease;will-change:transform}
+/* the marks lie over the board in their own svg and never take a tap; a
+   badge pops and a token or ghost fades in once, on its first paint */
+.marks{position:absolute;left:0;top:0;width:100%;height:100%;display:block;pointer-events:none;border-radius:4px;overflow:hidden}
+.mk-pop{transform-box:fill-box;transform-origin:center}
+.mk-pop.fx-in{animation:mk-pop .12s ease-out}
+.mk-fade.fx-in{animation:mk-fade .15s ease-out}
+@keyframes mk-pop{from{transform:scale(.4)}to{transform:none}}
+@keyframes mk-fade{from{opacity:0}to{opacity:1}}
 .drag-ghost{position:fixed;left:0;top:0;z-index:60;pointer-events:none;filter:drop-shadow(0 3px 6px rgba(0,0,0,.45))}
 .drag-ghost svg{width:100%;height:100%}
 .promo-card{
@@ -318,7 +326,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .card{grid-template-columns:1fr;gap:12px}
   .board-col{margin:0 calc(-1 * var(--gutter))}
   .board-row{gap:0}
-  .board{border-radius:0}
+  .board,.marks{border-radius:0}
   .evalbar{width:10px;border-radius:0}
   .panel{padding-bottom:84px}
   .sticky-acts{

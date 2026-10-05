@@ -67,30 +67,47 @@ const OPEN = `function openCard(it) {
 }`;
 /* the spoiler rule (FINAL-SPEC 2.3), on the frame the user sees. Before an
    answer (guess, checking, tried, reply) a frame may not show a green arrow,
-   a gold arrow, a gold ring other than hint 2's on the answer's from-square,
-   any of those on the answer's to-square, a slide of the solver's own piece
-   while guessing, a bar that is not waiting, or a board name that says the
-   answer. Exempt: the red game-move arrow, last-move tints, selection and
-   legal dots, the player's own drawn shapes, and the slide of the player's
-   own try (or of the move just played in a forcing line). Inside a forcing
-   line the answer is the move due now. Returns the faults, [] when clean */
+   a gold arrow, a gold hint ring other than hint 2's on the answer's
+   from-square, a hint's prize ring on that square, any ring, arrow end,
+   token, guard line, tried cross, badge or tint on the answer's to-square,
+   a slide of the solver's own piece while guessing, a bar that is not
+   waiting, or a board name that says the answer. Exempt: the red game-move
+   arrow, last-move tints, selection and legal dots, the nope outline, the
+   player's own drawn shapes, the badge and tints of the move just played,
+   threat marks on the answer's from-square, the forcing reply's own arrow,
+   ring and token, and the slide of the player's own try (or of the move
+   just played in a forcing line). Inside a forcing line the answer is the
+   move due now. Marks are read from both forms boardSvg takes: the older
+   single names (bad, good, ghost, hint) and the lists (arrows, rings,
+   tokens, guards, tried, badges, tints). Returns the faults, [] when clean */
 const SPOILER = `function spoilerFaults(a, f) {
   f = f || boardOptsFor(a);
   var o = f.opts, out = [];
   if (['guess', 'checking', 'tried', 'reply'].indexOf(a.phase) < 0) return out;
   var due = a.sol && a.solIdx > 0 ? uciToMove(a.st, a.sol[a.solIdx]) : a.best;
-  var marks = [
-    { what: 'green arrow', sqs: o.good, ok: false },
-    { what: 'gold arrow', sqs: o.ghost, ok: false },
-    { what: 'gold ring', sqs: o.hint != null ? [o.hint] : null, ok: a.hints >= 2 && o.hint === due.from }
-  ];
-  marks.forEach(function (m) {
-    if (!m.sqs) return;
-    if (!m.ok) out.push(m.what + ' on ' + m.sqs.map(sqName).join('-'));
-    if (m.sqs.indexOf(due.to) >= 0) out.push(m.what + ' on the answer square ' + sqName(due.to));
-  });
-  var mover = o.anim && f.st.b[o.anim[1]];
   var own = a.phase === 'tried' ? [a.tried.from, a.tried.to] : a.phase === 'checking' ? a.ghostMove : a.phase === 'reply' ? a.lastMove : null;
+  var onTo = function (what, sqs) { if (sqs.indexOf(due.to) >= 0) out.push(what + ' on the answer square ' + sqName(due.to)); };
+  var arrows = [], rings = (o.hint != null ? [{ sq: o.hint, kind: 'hint' }] : []).concat(o.rings || []);
+  if (o.good) arrows.push({ from: o.good[0], to: o.good[1], kind: 'better' });
+  if (o.ghost) arrows.push({ from: o.ghost[0], to: o.ghost[1], kind: 'explore' });
+  if (o.bad) arrows.push({ from: o.bad[0], to: o.bad[1], kind: 'game' });
+  arrows.concat(o.arrows || []).forEach(function (m) {
+    if (m.kind === 'game' || m.kind === 'reply') return;
+    var what = m.kind === 'better' ? 'green arrow' : m.kind === 'explore' ? 'gold arrow' : m.kind + ' arrow';
+    if (m.kind === 'better' || m.kind === 'explore') out.push(what + ' on ' + sqName(m.from) + '-' + sqName(m.to));
+    onTo(what, [m.from, m.to]);
+  });
+  rings.forEach(function (m) {
+    if (m.kind === 'nope' || m.kind === 'reply') return;
+    if (m.kind === 'hint' && !(a.hints >= 2 && m.sq === due.from)) out.push('gold ring on ' + sqName(m.sq));
+    if (m.kind === 'target' && m.sq === due.from) out.push('prize ring on the answer piece ' + sqName(m.sq));
+    onTo((m.kind === 'hint' ? 'gold' : m.kind) + ' ring', [m.sq]);
+  });
+  (o.tokens || []).forEach(function (m) { if (a.phase !== 'reply') onTo('token', [m.sq]); });
+  (o.guards || []).forEach(function (m) { onTo('guard line', [m.from, m.to]); });
+  (o.tried || []).forEach(function (m) { onTo('tried cross', [m.sq != null ? m.sq : m.to]); });
+  (o.badges || []).concat(o.tints || []).forEach(function (m) { if (!own || own.indexOf(m.sq) < 0) onTo(m.kind + ' badge or tint', [m.sq]); });
+  var mover = o.anim && f.st.b[o.anim[1]];
   if (mover && isW(mover) === myPov(a.it) && !sameMove(own, o.anim)) out.push('replays a move of yours, ' + o.anim.map(sqName).join('-'));
   if (!f.pending) out.push('the bar shows the score');
   if (String(o.label || '').split(/[\\s.]+/).indexOf(sanOf(a.st, due)) >= 0) out.push('the board name says ' + sanOf(a.st, due));
@@ -187,10 +204,31 @@ function offBook(a) {
         ringOnTo: (a.hints = 2, doctor(function (g) { g.opts.hint = b.to; })),
         slide: (a.hints = 0, doctor(function (g) { g.opts.anim = [a.played.from, a.played.from]; g.st = cloneState(a.pre); })),
         bar: doctor(function (g) { g.pending = false; }),
-        label: doctor(function (g) { g.opts.label = 'Play ' + sanOf(a.st, b) + '.'; })
+        label: doctor(function (g) { g.opts.label = 'Play ' + sanOf(a.st, b) + '.'; }),
+        /* the same marks in the lists boardSvg also takes, and the new ones */
+        greenList: doctor(function (g) { g.opts.arrows = [{ from: b.from, to: b.to, kind: 'better' }]; }),
+        goldList: doctor(function (g) { g.opts.arrows = [{ from: b.from, to: b.to, kind: 'explore' }]; }),
+        ringList: doctor(function (g) { g.opts.rings = [{ sq: b.from, kind: 'hint' }]; }),
+        threatOnTo: doctor(function (g) { g.opts.arrows = [{ from: a.played.from, to: b.to, kind: 'threat' }]; }),
+        prizeOnFrom: doctor(function (g) { g.opts.rings = [{ sq: b.from, kind: 'target' }]; }),
+        ringOnToList: doctor(function (g) { g.opts.rings = [{ sq: b.to, kind: 'threat' }]; }),
+        token: doctor(function (g) { g.opts.tokens = [{ sq: b.to, p: 'q', kind: 'won' }]; }),
+        guard: doctor(function (g) { g.opts.guards = [{ from: a.played.from, to: b.to }]; }),
+        tried: doctor(function (g) { g.opts.tried = [{ from: a.played.from, to: b.to }]; }),
+        badge: doctor(function (g) { g.opts.badges = [{ sq: b.to, kind: 'good' }]; }),
+        tint: doctor(function (g) { g.opts.tints = [{ sq: b.to, kind: 'good' }]; }),
+        /* allowed: threat marks on the answer's piece, the game arrow, a nope
+           outline, the forcing reply's own marks, a tried cross off the square */
+        allowed: doctor(function (g) {
+          g.opts.rings = [{ sq: b.from, kind: 'threat' }, { sq: b.to, kind: 'nope' }, { sq: b.to, kind: 'reply' }];
+          g.opts.arrows = [{ from: a.played.from, to: b.to, kind: 'game' }, { from: a.played.from, to: b.to, kind: 'reply' }];
+          g.opts.tried = [{ sq: a.played.from }];
+        })
       }); })()`));
     eq(r.clean, 0, 'the real frame');
-    ['green', 'gold', 'ringEarly', 'ringOnTo', 'slide', 'bar', 'label'].forEach((k) => ok(r[k] > 0, k + ' not caught'));
+    eq(r.allowed, 0, 'marks the rule allows');
+    ['green', 'gold', 'ringEarly', 'ringOnTo', 'slide', 'bar', 'label', 'greenList', 'goldList', 'ringList', 'threatOnTo', 'prizeOnFrom',
+      'ringOnToList', 'token', 'guard', 'tried', 'badge', 'tint'].forEach((k) => ok(r[k] > 0, k + ' not caught'));
   });
 
   await test('boardOptsFor writes nothing: the same card gives the same frame twice', () => {
@@ -446,6 +484,153 @@ function offBook(a) {
     has(stops('nextCard()'), 'Next');
     A.ev('(function () { window.__t.open(allMistakes().filter(trainable)[1]); return 1; })()');
     has(stops('endSession()'), 'Ending the session');
+  });
+
+  /* the board primitives (FINAL-SPEC 2.1), drawn by boardSvg as markup and
+     read back here: SHOW draws every kind of mark at once on a card's own
+     position, older single names and lists alike */
+  const SHOW = `function showcase(a, flip) {
+    var st = a.st, mine = [], theirs = [], empty = [];
+    for (var s = 0; s < 64; s++) { var p = st.b[s]; if (!p) empty.push(s); else if (isW(p) === myPov(a.it)) mine.push(s); else theirs.push(s); }
+    var o = { flip: flip, label: 'x', mark: [a.played.from], bad: [a.played.from, a.played.to], good: [a.best.from, a.best.to],
+      ghost: [mine[1], empty[0]], hint: mine[2], shapes: [{ at: mine[0] }, { from: mine[0], to: empty[1] }],
+      tints: [{ sq: a.played.from, kind: 'bad' }, { sq: empty[2], kind: 'close' }],
+      ghosts: [{ sq: empty[3], p: 'B' }, { sq: theirs[0], p: 'n' }],
+      guards: [{ from: mine[0], to: mine[1] }],
+      arrows: [{ from: theirs[0], to: mine[0], kind: 'threat', key: 'x' }, { from: theirs[1], to: mine[1], kind: 'threat', key: 'x' },
+               { from: theirs[1], to: empty[4], kind: 'reply', key: 'r', solid: true }, { from: mine[1], to: empty[5], kind: 'game' }],
+      tried: [{ from: mine[2], to: empty[6] }, { sq: mine[3] }],
+      rings: [{ sq: theirs[0], kind: 'threat' }, { sq: theirs[1], kind: 'reply' }, { sq: theirs[2] || theirs[0], kind: 'target' }, { sq: mine[0], kind: 'nope' }],
+      tokens: [{ sq: empty[7], p: 'r', kind: 'lost' }, { sq: empty[8], p: 'N', kind: 'won', fx: 7 }],
+      badges: [{ sq: a.played.to, kind: 'bad', fx: 7 }, { sq: empty[9], kind: 'good' }, { sq: empty[10], kind: 'close' }, { sq: empty[11], kind: 'checking' },
+               { sq: empty[12], kind: 'unchecked' }, { sq: empty[13], kind: 'info' }] };
+    return { o: o, svg: boardSvg(st, o), pieces: mine.length + theirs.length };
+  }`;
+  const CARDS = `${OPEN} var its = allMistakes().filter(trainable).slice(0, 12).map(function (it) { return openCard(it); }).filter(Boolean);`;
+  /* the board svg and the marks svg, each with its own markup */
+  const split = (html) => { const i = html.indexOf('</svg>') + 6; return { board: html.slice(0, i), marks: html.slice(i) }; };
+
+  await test('board primitives: distinct marker ids', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${CARDS} ${SHOW}
+      return JSON.stringify(its.map(function (a) { return [showcase(a, false).svg, showcase(a, true).svg]; })); })()`));
+    r.forEach((pair, n) => {
+      const ids = pair.map((h) => (h.match(/ id="[^"]+"/g) || []).map((x) => x.slice(5, -1)));
+      ids.forEach((list, k) => {
+        eq(new Set(list).size, list.length, 'card ' + n + ' board ' + k + ': ids ' + list.join(' '));
+        /* seven arrows (three by the older names, two threats with one key, a
+           reply, a game move) and the drawn shape's head: each its own id */
+        eq(list.filter((x) => /^ah/.test(x)).length, 8, 'card ' + n + ' board ' + k + ': arrowheads');
+        const refs = (pair[k].match(/url\(#[^)]+\)/g) || []).map((x) => x.slice(5, -1));
+        refs.forEach((x) => ok(list.indexOf(x) >= 0, 'card ' + n + ': ' + x + ' points at no element'));
+        const heads = [...pair[k].matchAll(/<line class="[a-z-]+-arrow"[^>]*marker-end="url\(#([^)]+)\)"/g)].map((x) => x[1]);
+        eq(new Set(heads).size, 7, 'card ' + n + ': seven arrows, seven heads');
+        ok(split(pair[k]).board.indexOf('<marker') < 0 && split(pair[k]).marks.indexOf('bad-arrow') > 0, 'card ' + n + ': the arrows live in the marks svg');
+      });
+      eq(ids[0].filter((x) => ids[1].indexOf(x) >= 0).length, 0, 'card ' + n + ': two boards on one page share no id');
+    });
+    ok(r.length >= 10, 'cards ' + r.length);
+  });
+
+  await test('board primitives: no data-sq on a ghost', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${CARDS} ${SHOW}
+      return JSON.stringify(its.map(function (a) { var s = showcase(a, a.it.g.color === 'black'); return { svg: s.svg, pieces: s.pieces, ghostOn: s.o.ghosts[0].sq }; })); })()`));
+    r.forEach((c, n) => {
+      const ghosts = c.svg.match(/<use class="ghost-piece"[^>]*>/g) || [];
+      /* the ghost on an empty square is drawn; on an occupied one, its cross alone */
+      eq(ghosts.length, 1, 'card ' + n + ': ghost pieces');
+      ok(!/data-sq/.test(ghosts[0]) && /opacity="\.34"/.test(ghosts[0]), 'card ' + n + ': ' + ghosts[0]);
+      /* only the 64 squares and the real pieces answer a tap */
+      const tagged = c.svg.match(/<(\w+)[^>]* data-sq="\d+"/g) || [];
+      eq(tagged.filter((t) => /^<rect/.test(t)).length, 64, 'card ' + n + ': squares');
+      eq(tagged.filter((t) => /^<use/.test(t)).length, c.pieces, 'card ' + n + ': pieces');
+      eq(tagged.length, 64 + c.pieces, 'card ' + n + ': nothing else carries data-sq');
+      ok(split(c.svg).marks.indexOf('data-sq') < 0, 'card ' + n + ': the marks svg has no data-sq');
+    });
+  });
+
+  await test('board primitives: a badge lands on its own square on a flipped board, and pops once', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${CARDS}
+      var a = its[0], out = [];
+      [false, true].forEach(function (flip) {
+        for (var sq = 0; sq < 64; sq++) out.push({ flip: flip, sq: sq, svg: boardSvg(a.st, { flip: flip, badges: [{ sq: sq, kind: 'bad' }], tokens: [{ sq: sq, p: 'q', kind: 'won' }] }) });
+      });
+      /* an effect id pops on its first paint only */
+      var b1 = { flip: false, fx: 'k1', badges: [{ sq: 9, kind: 'good', fx: 'k1' }, { sq: 10, kind: 'bad', fx: 'k0' }] };
+      var pops = [boardSvg(a.st, b1), boardSvg(a.st, b1), boardSvg(a.st, { flip: false, fx: 'k2', badges: [{ sq: 9, kind: 'good', fx: 'k1' }, { sq: 11, kind: 'close', fx: 'k2' }] })];
+      return JSON.stringify({ out: out, pops: pops }); })()`));
+    r.out.forEach((c) => {
+      const name = (c.flip ? 'flipped ' : '') + 'sq ' + c.sq;
+      const sq = c.svg.match(new RegExp('<rect data-sq="' + c.sq + '" x="([\\d.]+)" y="([\\d.]+)"'));
+      const bd = c.svg.match(/<g class="badge badge-bad" transform="translate\(([\d.]+) ([\d.]+)\)"/);
+      const tk = c.svg.match(/<g class="token token-won">(?:<g>)?<circle cx="([\d.]+)" cy="([\d.]+)"/);
+      ok(sq && bd && tk, name + ': drawn');
+      const x = +sq[1], y = +sq[2];
+      /* the square drawn where the file and rank say, white at the bottom unless flipped */
+      eq(x, (c.flip ? 7 - c.sq % 8 : c.sq % 8) * 45, name + ': square x');
+      eq(y, (c.flip ? c.sq >> 3 : 7 - (c.sq >> 3)) * 45, name + ': square y');
+      eq(+bd[1], x + 36, name + ': badge x'); eq(+bd[2], y + 9, name + ': badge y');
+      eq(+tk[1], x + 12.5, name + ': token x'); eq(+tk[2], y + 32.5, name + ': token y');
+    });
+    const fx = r.pops.map((h) => (h.match(/class="mk-pop( fx-in)?" data-fx="(\w+)"/g) || []).join(' '));
+    eq(fx[0], 'class="mk-pop fx-in" data-fx="k1" class="mk-pop" data-fx="k0"', 'first paint of k1: the k1 badge pops, the older one does not');
+    eq(fx[1], 'class="mk-pop" data-fx="k1" class="mk-pop" data-fx="k0"', 'a repaint of k1 pops nothing');
+    eq(fx[2], 'class="mk-pop" data-fx="k1" class="mk-pop fx-in" data-fx="k2"', 'the next effect id pops only its own badge');
+  });
+
+  await test('board primitives: a one-square arrow keeps the 4.2 head and stops 0.22 of a square short', () => {
+    const A = boot();
+    const sq = (s) => (s.charCodeAt(0) - 97) + (parseInt(s[1], 10) - 1) * 8;
+    const cases = [['e4', 'e5', 0.22], ['e4', 'f5', 0.22], ['e4', 'd3', 0.22], ['e4', 'e6', 0.34], ['e4', 'f6', 0.34], ['a1', 'h8', 0.34]];
+    const r = JSON.parse(A.ev(`(function () { var st = stateFromFen('8/8/8/8/4K3/8/8/k7 w - - 0 1'), out = [];
+      ${JSON.stringify(cases.map((c) => [sq(c[0]), sq(c[1])]))}.forEach(function (c) {
+        [false, true].forEach(function (flip) {
+          ['game', 'threat', 'reply', 'better', 'explore'].forEach(function (kind) { out.push(boardSvg(st, { flip: flip, arrows: [{ from: c[0], to: c[1], kind: kind }] })); });
+          out.push(boardSvg(st, { flip: flip, bad: c }));
+        });
+      });
+      return JSON.stringify(out); })()`));
+    let i = 0;
+    cases.forEach((c) => [false, true].forEach((flip) => ['game', 'threat', 'reply', 'better', 'explore', 'bad (older name)'].forEach((kind) => {
+      const h = r[i++], name = c[0] + '-' + c[1] + (flip ? ' flipped ' : ' ') + kind;
+      const mk = h.match(/<marker [^>]*markerWidth="([\d.]+)" markerHeight="([\d.]+)"/);
+      ok(mk && mk[1] === '4.2' && mk[2] === '4.2', name + ': head ' + (mk && mk[1]));
+      const ln = h.match(/<line class="[a-z-]+-arrow"[^>]* x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"/);
+      const ctr = (s) => { const n = sq(s), col = flip ? 7 - n % 8 : n % 8, row = flip ? n >> 3 : 7 - (n >> 3); return [col * 45 + 22.5, row * 45 + 22.5]; };
+      const f = ctr(c[0]), t = ctr(c[1]);
+      ok(Math.abs(+ln[1] - f[0]) < 1e-6 && Math.abs(+ln[2] - f[1]) < 1e-6, name + ': starts at the centre of ' + c[0]);
+      const short = Math.hypot(t[0] - +ln[3], t[1] - +ln[4]);
+      ok(Math.abs(short - c[2] * 45) < 1e-6, name + ': stops ' + (short / 45).toFixed(3) + ' of a square short, not ' + c[2]);
+    })));
+  });
+
+  await test('the board svg is #bwrap\'s first child, the marks svg over it', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var stub = function () { return { innerHTML: '', textContent: '', style: {}, classList: { toggle: function () {} }, querySelectorAll: function () { return []; } }; };
+      var els = { bwrap: stub(), ebar: stub(), 'ebar-fill': stub(), 'ebar-lab': stub() }, get0 = document.getElementById;
+      document.getElementById = function (id) { return els[id] || get0(id); };
+      var out = [], its = allMistakes().filter(trainable).slice(0, 8);
+      its.forEach(function (it) {
+        var a = openCard(it);
+        renderCardBoard(a); out.push({ what: 'open', html: els.bwrap.innerHTML });
+        a.hints = 2; renderCardBoard(a); out.push({ what: 'hint 2', html: els.bwrap.innerHTML }); a.hints = 0;
+        a.pendingPromo = { from: 0, to: 0 }; renderCardBoard(a); out.push({ what: 'promotion', html: els.bwrap.innerHTML }); a.pendingPromo = null;
+        reveal(); renderCardBoard(a); out.push({ what: 'answered', html: els.bwrap.innerHTML });
+      });
+      document.getElementById = get0;
+      return JSON.stringify(out); })()`));
+    ok(r.length >= 32, 'frames ' + r.length);
+    r.forEach((f, n) => {
+      const p = split(f.html), name = 'frame ' + n + ' (' + f.what + ')';
+      ok(/^<svg class="board" /.test(p.board), name + ': the board svg comes first');
+      ok(/^<svg class="marks" viewBox="0 0 360 360" aria-hidden="true" style="pointer-events:none">/.test(p.marks), name + ': the marks svg comes next, ' + p.marks.slice(0, 60));
+      ok(/<use [^>]*data-sq=/.test(p.board) && !/<line|<marker/.test(p.board), name + ': pieces in the board, no arrows');
+      if (f.what === 'promotion') ok(p.marks.indexOf('</svg><div class="promo-card">') > 0, name + ': the promotion card after both');
+      if (f.what === 'hint 2') ok(/class="hint-ring"/.test(p.marks), name + ': the hint ring in the marks');
+    });
   });
 
   results.forEach((l) => console.log(l));
