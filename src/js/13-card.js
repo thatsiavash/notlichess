@@ -167,7 +167,8 @@ function prefetchCards(ss) {
 
 /* ── moves on the board ──────────────────────────────────────────────────── */
 function sessionClick(sq) {
-  flushStage();
+  /* input first; dropped while the forcing reply slides */
+  if (flushStage()) return;
   var ss = ui.session, a = ss && ss.active;
   if (a && a.phase === 'tried' && !a.pendingPromo) {
     /* a try on the board: a tap on one of your pieces takes it back and
@@ -268,6 +269,9 @@ function stepLine(m, u) {
     applyMove(a2.st, reply);
     a2.lastMove = [reply.from, reply.to];
     a2.animMove = [reply.from, reply.to];
+    /* the one move that plays by itself: paintBoard holds its slide so no
+       input jumps it (flushStage) */
+    a2.replySlide = true;
     a2.solIdx++;
     snd('move');
     if (a2.solIdx >= a2.sol.length) { solved(null, null, null, true); return; }

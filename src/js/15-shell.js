@@ -411,6 +411,8 @@ function parseSpec(t) {
 document.addEventListener('click', function (e) {
   var t = e.target.closest ? e.target.closest('[data-act]') : null;
   if (e.target.closest && e.target.closest('#bwrap [data-sq]')) {
+    /* the press of this tap came while the forcing reply slid: dropped */
+    if (pointerState.held) { pointerState.held = false; return; }
     if (pointerState.suppressClick) { pointerState.suppressClick = false; return; }
     var sqEl = e.target.closest('[data-sq]');
     sessionClick(parseInt(sqEl.getAttribute('data-sq'), 10));
@@ -424,10 +426,10 @@ document.addEventListener('click', function (e) {
   var act = t.getAttribute('data-act'), k = t.getAttribute('data-k');
   if (t.tagName === 'INPUT') return;
   if (act !== 'closeSheet' || e.target === t) e.preventDefault();
-  /* input first: a running slide ends and whatever was staged catches up;
-     then a bar slot that just changed ignores the tap (a double tap's
-     second half) */
-  flushStage();
+  /* input first: a running slide ends and whatever was staged catches up
+     (while the forcing reply slides, the tap is dropped); then a bar slot
+     that just changed ignores the tap (a double tap's second half) */
+  if (flushStage()) return;
   var slot = t.getAttribute('data-slot');
   if (slot != null && slotGuarded(parseInt(slot, 10))) return;
   var a = ui.session && ui.session.active;
@@ -482,8 +484,8 @@ document.addEventListener('click', function (e) {
     case 'reveal': if (!tooSoon(a)) reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
-    /* like Hint and Show the answer, these wait out tooSoon: a second tap of
-       a double tap lands on whatever button just took this one's place */
+    /* these wait out a card's first half second (tooSoon); a slot that
+       just changed is ignored above (slotGuarded) */
     case 'dismissStronger': if (!tooSoon(a)) tryAgain(); break;
     case 'tryAgain': if (!tooSoon(a)) tryAgain(); break;
     case 'seeIt': if (!tooSoon(a)) seeIt(); break;
@@ -576,15 +578,16 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Escape') {
     if (ui.sheet) { closeSheet(); return; }
-    flushStage();
+    if (flushStage()) return;
     var ae = ui.session && ui.session.active;
     if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
   }
   var a = ui.session && ui.session.active;
   if (!a || ui.sheet) return;
-  /* a handled key is input: whatever was staged catches up first */
-  if (/^(ArrowLeft|ArrowRight|Enter| |\?)$/.test(e.key)) flushStage();
+  /* a handled key is input: whatever was staged catches up first (while
+     the forcing reply slides, the key is dropped) */
+  if (/^(ArrowLeft|ArrowRight|Enter| |\?)$/.test(e.key) && flushStage()) { e.preventDefault(); return; }
   var onAct = !!(e.target && e.target.closest && e.target.closest('[data-act]'));
   if (a.phase === 'done') {
     if (e.key === 'ArrowLeft') { e.preventDefault(); stepView(-1); }
@@ -609,7 +612,7 @@ function pressRight() {
 function reducedMotion() { return !!(ui.reducedTest || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)); }
 /* a move typed as SAN (Nf3, exd5, O-O, e8=Q) or as squares (g1f3) */
 function typedMove(txt) {
-  flushStage();
+  if (flushStage()) return;
   var a = ui.session && ui.session.active;
   var xp = a && a.phase === 'done' && a.explore;
   if (!a || (a.phase !== 'guess' && a.phase !== 'tried' && !xp)) return;
@@ -639,7 +642,7 @@ document.addEventListener('keydown', function (e) {
 });
 
 /* ── board input: tap-tap and drag, on the card's own board only ─────────── */
-var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null };
+var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null, held: false };
 function sqFromEvent(e) {
   var el2 = document.elementFromPoint(e.clientX, e.clientY);
   var sqEl = el2 && el2.closest ? el2.closest('#bwrap [data-sq]') : null;
@@ -673,11 +676,13 @@ function boardState(a) {
 }
 document.addEventListener('pointerdown', function (e) {
   var a = ui.session && ui.session.active;
+  pointerState.held = false;
   if (!a || !e.target.closest || !e.target.closest('#bwrap')) return;
   var sq = sqFromEvent(e);
   if (sq < 0) return;
-  /* input first: a running slide ends and the board catches up */
-  flushStage();
+  /* input first: a running slide ends and the board catches up. While the
+     forcing reply slides the press is dropped, and the click it makes too */
+  if (flushStage()) { pointerState.held = true; return; }
   if (e.button === 2) { pointerState.rightFrom = sq; return; }
   var bs = boardState(a);
   /* a mouse or pen press on a piece of the side to move starts exploring

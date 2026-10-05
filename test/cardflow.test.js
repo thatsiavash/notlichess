@@ -489,6 +489,9 @@ const early = (ws) => ws.filter((w) => (w.kind === 'text' ? w.t < w.mu + 150 : w
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
     const band = () => A.ev('window.__els.cband.innerHTML.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").trim()');
     const textWrites = () => A.ev('window.__writes.filter(function (w) { return w.kind === "text"; }).length');
+    /* the latest board write, and the words written less than 150 ms after t */
+    const lastBoard = () => A.ev('(window.__writes.filter(function (w) { return w.id === "bwrap" && w.what === "innerHTML"; }).pop() || {}).t');
+    const soon = (t) => A.ev(`window.__writes.filter(function (w) { return w.kind === "text" && w.t >= ${t} && w.t < ${t} + 150; }).map(function (w) { return w.id + ' +' + (w.t - ${t}); }).join(', ')`);
     const cards = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol && unpackUci(it.b.ru).length; }).slice(0, 10).map(function (it) { return it.key; }))`));
     ok(cards.length === 10, 'cards ' + cards.length);
     let slides = 0, landed = 0;
@@ -522,15 +525,60 @@ const early = (ws) => ws.filter((w) => (w.kind === 'text' ? w.t < w.mu + 150 : w
         run(1000);
         A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.to); stage(['marks', 'text']); return 1; })()`);
         run(100);
-        /* input mid-slide: the slide ends, the board catches up, the words wait 150 ms */
+        /* input mid-slide, through each handler that takes it (a button, a
+           tap on your piece, Enter): the slide ends, the board catches up at
+           the tap, the words wait 150 ms */
+        let tap = A.getNow();
+        ok(A.ev('motionUntil') > tap, at + ': a slide runs before the button');
         A.click('tryAgain', null, 1);
+        eq(lastBoard(), tap, at + ': the board after a button mid-slide');
         run(1000);
-        /* input after the slide, while its words still wait: the new board is drawn at once */
+        eq(soon(tap), '', at + ': words after a button mid-slide');
+        A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.to); return 1; })()`);
+        run(100);
+        tap = A.getNow();
+        ok(A.ev('motionUntil') > tap, at + ': a slide runs before the tap');
+        eq(A.ev('(function () { var a = ui.session.active; sessionClick(a.played.to); return a.phase + " " + a.sel; })()'), 'guess ' + A.ev('ui.session.active.played.from'), at + ': a tap on the tried piece picks it up');
+        eq(lastBoard(), tap, at + ': the board after a tap mid-slide');
+        run(1000);
+        eq(soon(tap), '', at + ': words after a tap mid-slide');
+        A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.to); return 1; })()`);
+        run(100);
+        tap = A.getNow();
+        ok(A.ev('motionUntil') > tap, at + ': a slide runs before Enter');
+        A.key('Enter');
+        eq(A.ev('motionUntil'), tap, at + ': Enter mid-slide ends the slide');
+        run(1000);
+        eq(soon(tap), '', at + ': words after Enter mid-slide');
+        /* words due in 20 ms when input comes still wait 150 ms from it */
+        A.ev('(tryAgain(), 1)');
+        run(1000);
+        A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.to); return 1; })()`);
+        run(400);
+        tap = A.getNow();
+        A.ev('(flushStage(), 1)');
+        run(1000);
+        eq(soon(tap), '', at + ': words after a flush just before they were due');
+        /* a piece picked up 30 ms after a slide ends, while its words wait
+           (the press that takes a try back, as pointerdown does it): drawn
+           at once, never with the words */
+        A.ev('(tryAgain(), 1)');
+        run(1000);
         A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.to); return 1; })()`);
         run(300);
-        const tap = A.getNow();
+        tap = A.getNow();
+        A.ev(`(function () { var a = ui.session.active, pick = triedPick(a, a.played.to); flushStage(); clearTry(a); renderCard(); a.sel = pick; renderCardBoard(); return 1; })()`);
+        const atTap = JSON.parse(A.ev(`JSON.stringify(window.__writes.filter(function (w) { return w.t === ${tap}; }).map(function (w) { return w.kind + ' ' + w.id + ' ' + w.what; }))`));
+        eq(atTap.filter((w) => w === 'board bwrap innerHTML').length, 2, at + ': the try-back and the selection drawn at the press, ' + atTap.join(', '));
+        eq(atTap.filter((w) => /^text/.test(w)).length, 0, at + ': words written with the selection');
+        run(1000);
+        eq(soon(tap), '', at + ': words after the selection');
+        /* input after the slide, while its words still wait: the new board is drawn at once */
+        A.ev(`(function () { var a = ui.session.active; if (a.sel !== a.played.from) sessionClick(a.played.from); sessionClick(a.played.to); return a.phase; })()`);
+        run(300);
+        tap = A.getNow();
         A.click('tryAgain', null, 1);
-        ok(JSON.parse(A.ev('JSON.stringify(window.__writes.filter(function (w) { return w.id === "bwrap" && w.what === "innerHTML"; }).pop())')).t === tap, at + ': the board waited behind words');
+        eq(lastBoard(), tap, at + ': the board waited behind words');
         run(1000);
         /* the answered frame: the answer, tapped, slides, then the result */
         A.ev(`(function () { var a = ui.session.active; if (a.phase === 'tried') tryAgain(); sessionClick(a.best.from); sessionClick(a.best.to); return a.phase; })()`);
@@ -551,6 +599,211 @@ const early = (ws) => ws.filter((w) => (w.kind === 'text' ? w.t < w.mu + 150 : w
     /* the bar beside the board stays grey and still on a card: it fills only while exploring */
     eq(ws.filter((w) => w.id === 'ebar-fill').length, 0, 'the bar moved on a card');
     ok(ws.some((w) => w.id === 'ebar' && w.what === 'class pending'), 'the bar is told it waits');
+  });
+
+  await test('a board beat never waits behind words, and under reduced motion nothing slides', () => {
+    const A = boot();
+    A.ev(DOM);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const lastBoard = () => JSON.parse(A.ev('JSON.stringify((function (w) { return w ? { t: w.t, slides: /anim-piece/.test(window.__els.bwrap.innerHTML) } : null; })(window.__writes.filter(function (w) { return w.id === "bwrap" && w.what === "innerHTML"; }).pop()))'));
+    const firstText = (t) => A.ev(`(window.__writes.filter(function (w) { return w.kind === "text" && w.t >= ${t}; })[0] || {}).t`);
+    const cards = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol && unpackUci(it.b.ru).length; }).slice(0, 5).map(function (it) { return it.key; }))`));
+    ok(cards.length === 5, 'cards ' + cards.length);
+    for (const key of cards) {
+      A.ev('(ui.reducedTest = false, 1)');
+      A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      /* the game move tapped: it slides, its words wait for the slide plus 150 ms */
+      A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.to); return 1; })()`);
+      const mu = A.ev('motionUntil');
+      ok(mu > A.getNow() && lastBoard().slides, key + ': the game move slides');
+      /* 30 ms after the slide, while its words wait: a board beat with no
+         input before it (a drawn shape, a hover) is drawn at once, and the
+         words still come 150 ms after it */
+      run(mu - A.getNow() + 30);
+      const t = A.getNow();
+      ok(A.ev('stageQ.indexOf("text") >= 0'), key + ': the words still wait');
+      A.ev('(renderCardBoard(), 1)');
+      eq(lastBoard().t, t, key + ': the board waited behind words');
+      run(1000);
+      ok(firstText(t) >= t + 150, key + ': words ' + (firstText(t) - t) + ' ms after a board change');
+      /* reduced motion: the same move is drawn where it lands, and nothing waits for a slide */
+      A.ev('(tryAgain(), 1)');
+      run(1000);
+      A.ev('(ui.reducedTest = true, 1)');
+      const t2 = A.getNow(), mu2 = A.ev('motionUntil');
+      A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.to); return 1; })()`);
+      const b2 = lastBoard();
+      eq(b2.t, t2, key + ': reduced motion, the move drawn at the tap');
+      ok(!b2.slides, key + ': reduced motion, a piece drawn sliding');
+      eq(A.ev('motionUntil'), mu2, key + ': reduced motion, motionUntil moved');
+    }
+    A.ev('(ui.reducedTest = false, 1)');
+  });
+
+  await test('the forcing reply is never jumped: input during its slide is dropped', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const boardAt = () => A.ev('(window.__writes.filter(function (w) { return w.id === "bwrap" && w.what === "innerHTML"; }).pop() || {}).t');
+    const cards = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && c.sol && c.sol.length >= 3; }).slice(0, 6).map(function (it) { return it.key; }))`));
+    ok(cards.length >= 3, 'forcing cards ' + cards.length);
+    /* every input the page takes, each through its own handler: a tap on
+       one of your pieces, a button (one with no bar slot, so no slot guard
+       stands in for the drop), ?, Enter, an arrow, Esc on the open menu, a
+       typed move */
+    const inputs = (key) => {
+      A.ev(`(function () { var a = ui.session.active; for (var s = 0; s < 64; s++) if (a.st.b[s] && isW(a.st.b[s]) === !!a.st.w) { sessionClick(s); break; } return 1; })()`);
+      A.click('hint', null, 0); A.click('reveal');
+      A.key('?'); A.key('Enter'); A.key('ArrowRight');
+      A.ev('(ui.session.active.menuOpen = true, 1)');
+      A.key('Escape');
+      A.ev(`(typedMove(ui.session.active.sol[${key}] || 'a1a2'), 1)`);
+    };
+    let held = 0;
+    for (const key of cards) {
+      /* the first move of the line, tapped; their reply slides 650 ms later */
+      A.ev(`(function () { var a = window.__show(model().byKey['${key}']); return 1; })()`);
+      run(1000);
+      A.ev(`(function () { var a = ui.session.active, m = uciToMove(a.st, a.sol[0]); sessionClick(m.from); sessionClick(m.to); return a.phase; })()`);
+      let n = 0;
+      while (!A.ev('motionHold') && n++ < 200) A.advance(10);
+      ok(A.ev('motionHold'), key + ': the reply never slid');
+      const t0 = A.getNow(), mu = A.ev('motionUntil'), w0 = boardAt();
+      ok(mu > t0, key + ': the reply slide is running');
+      eq(A.ev('ui.session.active.phase'), 'guess', key + ': phase');
+      A.advance(40);
+      inputs(2);
+      const s = JSON.parse(A.ev('JSON.stringify({ mu: motionUntil, sel: ui.session.active.sel, hints: ui.session.active.hints, phase: ui.session.active.phase, solIdx: ui.session.active.solIdx, result: ui.session.active.result || null, menu: !!ui.session.active.menuOpen })'));
+      ok(s.menu, key + ': Esc closed the menu during the reply');
+      A.ev('(ui.session.active.menuOpen = false, 1)');
+      eq(s.mu, mu, key + ': motionUntil moved');
+      eq(boardAt(), w0, key + ': the board was written during the reply');
+      eq(s.sel, -1, key + ': a piece was picked up during the reply'); eq(s.hints, 0, key + ': a hint during the reply');
+      eq(s.phase, 'guess', key + ': phase after the inputs'); eq(s.solIdx, 2, key + ': a move was played during the reply'); eq(s.result, null, key + ': answered during the reply');
+      /* once it lands, input is taken again */
+      A.setNow(mu + 10);
+      eq(A.ev('flushStage()'), false, key + ': input after the reply lands');
+      A.ev(`(function () { var a = ui.session.active; for (var s = 0; s < 64; s++) if (a.st.b[s] && isW(a.st.b[s]) === !!a.st.w) { sessionClick(s); break; } return 1; })()`);
+      ok(A.ev('ui.session.active.sel') >= 0, key + ': a piece is picked up after the reply');
+      run(1000);
+      held++;
+    }
+    eq(held, cards.length, 'cards held');
+    /* a reply still waiting to be drawn (a slow frame kept the clock busy):
+       a tap starts its slide, never skips it, and is dropped */
+    A.ev(`(function () { var a = window.__show(model().byKey['${cards[0]}']); return 1; })()`);
+    run(1000);
+    A.ev(`(function () { var a = ui.session.active, m = uciToMove(a.st, a.sol[0]); sessionClick(m.from); sessionClick(m.to); motionUntil = Date.now() + 5000; return 1; })()`);
+    run(700);
+    ok(A.ev('ui.session.active.replySlide === true && stageQ.indexOf("board") >= 0'), 'the reply waits to be drawn');
+    const tap = A.getNow();
+    A.key('?');
+    eq(boardAt(), tap, 'the reply is drawn at the tap');
+    eq(A.ev('motionUntil') - tap, A.ev('SLIDE_LEAD') + 220, 'the reply slides in full');
+    ok(A.ev('motionHold'), 'and is held');
+    eq(A.ev('ui.session.active.hints'), 0, 'the tap that started it is dropped');
+    const mu2 = A.ev('motionUntil');
+    A.advance(30);
+    A.click('hint', null, 0);
+    eq(A.ev('motionUntil'), mu2, 'a second tap leaves the slide alone');
+    run(1000);
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('focus stays on the action bar when its buttons change, never in the typed-move box', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    /* focus as the page keeps it: the bar's buttons are read from its
+       markup, the typed-move box sits in the strip (before the bar, as on
+       the page) and the band holds the task heading; a node that takes focus
+       becomes document.activeElement */
+    A.ev(`(function () {
+      var els = window.__els, memo = { html: null, list: [] };
+      var node = function (host, attrs) {
+        return { host: host, id: attrs.id || '', tagName: attrs.tag || 'A', classList: { contains: function () { return false; }, toggle: function () {} },
+          getAttribute: function (n) { return attrs[n] == null ? null : attrs[n]; }, focus: function () { document.activeElement = this; } };
+      };
+      var kb = node('cstrip', { id: 'kbmove', tag: 'INPUT' }), heads = { 'task-h': node('cband', { id: 'task-h', tag: 'H2' }), 'result-h': node('cband', { id: 'result-h', tag: 'H2' }) };
+      var buttons = function () {
+        var h = els.cbar.innerHTML;
+        if (memo.html !== h) {
+          memo = { html: h, list: [] };
+          h.replace(/<a ([^>]*)>/g, function (m, at) { var o = {}; at.replace(/([\\w-]+)="([^"]*)"/g, function (x, k, v) { o[k] = v; return x; }); memo.list.push(node('cbar', o)); return m; });
+        }
+        return memo.list;
+      };
+      var hasKb = function () { return /id="kbmove"/.test(els.cstrip.innerHTML); };
+      /* one simple selector: #id or [attr] / [attr="v"] conditions */
+      var matches = function (n, sel) {
+        sel = sel.trim();
+        if (/^#[\\w-]+$/.test(sel)) return n.id === sel.slice(1);
+        if (/[\\s>]/.test(sel)) return false;
+        var conds = sel.match(/\\[[^\\]]+\\]/g) || [];
+        return conds.length > 0 && conds.join('') === sel && conds.every(function (c) {
+          var m = /^\\[([\\w-]+)(?:="([^"]*)")?\\]$/.exec(c);
+          return m && n.getAttribute(m[1]) != null && (m[2] == null || n.getAttribute(m[1]) === m[2]);
+        });
+      };
+      /* the first node in page order that matches any of the selectors */
+      var first = function (list, sel) {
+        var alts = sel.split(',');
+        for (var i = 0; i < list.length; i++) if (alts.some(function (x) { return matches(list[i], x); })) return list[i];
+        return null;
+      };
+      var inBar = function (n) { return !!n && buttons().indexOf(n) >= 0; };
+      els.cbar.querySelector = function (sel) { return first(buttons(), sel); };
+      els.cbar.contains = inBar;
+      els.cpanel.querySelector = function (sel) { return first((hasKb() ? [kb] : []).concat(buttons()), sel); };
+      els.cpanel.querySelectorAll = function () { return []; };
+      els.cpanel.contains = function (n) { return inBar(n) || (n === kb && hasKb()); };
+      els.cband.contains = function (n) { return !!n && n.host === 'cband'; };
+      var get1 = document.getElementById;
+      document.getElementById = function (id) {
+        if (id === 'kbmove') return hasKb() ? kb : null;
+        if (heads[id]) return new RegExp('id="' + id + '"').test(els.cband.innerHTML) ? heads[id] : null;
+        return get1(id);
+      };
+      return 1; })()`);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const foc = () => A.ev(`(function () { var e = document.activeElement; return !e ? 'none' : e.host + ' ' + (e.id || (e.getAttribute('data-act') + '@' + e.getAttribute('data-slot'))); })()`);
+    /* a button pressed as a finger presses it: it takes focus, then the click */
+    const press = (act) => {
+      const slot = A.ev(`(function () { var b = window.__els.cbar.querySelector('[data-act="${act}"]'); if (!b) return -1; b.focus(); return +b.getAttribute('data-slot'); })()`);
+      ok(slot >= 0, act + ' is on the bar: ' + foc());
+      A.click(act, null, slot);
+    };
+    A.ev(`(function () { var it = allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[0]; window.__show(it); return 1; })()`);
+    run(1000);
+    eq(foc(), 'cband task-h', 'a new card focuses the task');
+    ok(A.ev('!!document.getElementById("kbmove")'), 'the typed-move box is on the card');
+    /* the game move again, then See it: the left button changes under the focus */
+    A.ev('(function () { var a = ui.session.active; gradeMove(uciToMove(a.st, a.playedUci)); return a.phase; })()');
+    run(1000);
+    press('seeIt');
+    run(1500);
+    eq(foc(), 'cbar hint@0', 'after See it, the button now in its slot');
+    /* Try again: both buttons change; the focus keeps its slot */
+    press('tryAgain');
+    run(1500);
+    eq(A.ev('ui.session.active.phase'), 'guess', 'Try again took the try back');
+    eq(foc(), 'cbar reveal@1', 'after Try again, the button now in its slot');
+    /* a slot that goes off (No more hints) hands the focus to the right-hand button */
+    press('hint');
+    run(1000);
+    eq(foc(), 'cbar hint@0', 'after hint 1, Hint 2 keeps the focus');
+    press('hint');
+    run(1000);
+    eq(A.ev('ui.session.active.hints'), 2, 'hint 2 given');
+    eq(foc(), 'cbar reveal@1', 'after hint 2 the focus is on the right-hand button');
+    /* Enter on the right-hand button now presses it, never an empty typed move */
+    press('reveal');
+    run(1000);
+    eq(A.ev('ui.session.active.phase'), 'done', 'Show the answer pressed');
+    eq(foc(), 'cband result-h', 'the answered card focuses its result');
   });
 
   await test('a slot ignores clicks for 450 ms after its label changes', () => {

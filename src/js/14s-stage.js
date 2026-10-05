@@ -13,14 +13,28 @@
    Beats paint the card as it is when they run. Any input calls
    flushStage() first: a running slide jumps to its end, waiting board and
    marks beats apply at once, and waiting text moves to 150 ms from now.
+   The one exception is the forcing reply (S10), the only move that plays
+   by itself: it is always seen moving, so while it slides flushStage
+   leaves everything as it is and says so, and the input is dropped.
    Beats belong to one card and die with it (Next, leaving the card). */
 var TEXT_GAP = 150;
 var motionUntil = 0, stageQ = [], stageTimer = null, stageCard = null, textNotBefore = 0;
+/* the forcing reply is sliding (paintBoard sets it, the next board clears it) */
+var motionHold = false;
 
 function stage(beats) {
   var a = ui.session && ui.session.active;
   if (!a) return;
   if (stageCard !== a.key) { stageReset(); stageCard = a.key; }
+  /* the board alone (a selection, a drawn shape) never waits behind words
+     still waiting: it goes before them, and they keep their 150 ms after it */
+  var ti = beats.length === 1 && (beats[0] === 'board' || beats[0] === 'marks') ? stageQ.indexOf('text') : -1;
+  if (ti >= 0) {
+    if (stageQ[ti - 1] !== beats[0]) stageQ.splice(ti, 0, beats[0]);
+    textNotBefore = Math.max(textNotBefore, Date.now() + TEXT_GAP);
+    stageRun();
+    return;
+  }
   if (beats.indexOf('text') >= 0) {
     stageQ = stageQ.filter(function (b) { return b !== 'text'; });
     textNotBefore = 0;
@@ -53,9 +67,14 @@ function stageApply(b, a, instant) {
   else if (b === 'marks') paintMarks(a);
   else if (b === 'text') paintText(a);
 }
-/* input first: the slide ends, the board catches up, the words wait 150 ms */
+/* input first: the slide ends, the board catches up, the words wait 150 ms.
+   Returns true when the input must be dropped: the forcing reply is
+   sliding, or a waiting reply was just started (a tap starts it early,
+   never skips it) */
 function flushStage() {
   var now = Date.now(), a = ui.session && ui.session.active, moved = false;
+  if (motionHold && motionUntil > now) return true;
+  motionHold = false;
   if (motionUntil > now) {
     var bw = el('bwrap'), ps = bw ? bw.querySelectorAll('.anim-piece') : [];
     for (var i = 0; i < ps.length; i++) { ps[i].style.transition = 'none'; ps[i].style.transform = 'translate(0px,0px)'; }
@@ -66,13 +85,22 @@ function flushStage() {
   stageQ = [];
   clearTimeout(stageTimer);
   stageTimer = null;
-  if (a && a.key === stageCard) q.forEach(function (b) {
-    if (b === 'board' || b === 'marks') { stageApply(b, a, true); moved = true; }
+  for (var j = 0; j < q.length && a && a.key === stageCard; j++) {
+    var b = q[j];
+    /* once the reply slides, the rest waits for it as usual */
+    if (motionHold) stageQ.push(b);
+    else if (b === 'board' || b === 'marks') { stageApply(b, a, !(b === 'board' && a.replySlide)); moved = true; }
     else if (b === 'text') text = true;
-  });
+  }
+  if (motionHold) {
+    if (text && stageQ.indexOf('text') < 0) stageQ.push('text');
+    stageRun();
+    return true;
+  }
   /* a board that just changed counts as a slide that ended now */
   if (moved) motionUntil = now;
   if (text) { stageQ.push('text'); textNotBefore = now + TEXT_GAP; stageRun(); }
+  return false;
 }
 function stageReset() {
   clearTimeout(stageTimer);
@@ -80,6 +108,7 @@ function stageReset() {
   stageQ = [];
   stageCard = null;
   motionUntil = 0;
+  motionHold = false;
   textNotBefore = 0;
 }
 

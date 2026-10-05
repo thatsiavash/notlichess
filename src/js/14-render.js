@@ -494,7 +494,11 @@ function paintBoard(a, instant) {
   var it = a.it, bw = el('bwrap');
   if (!bw) return;
   var f = boardOptsFor(a);
-  if (instant) { f.opts.anim = null; f.slideMs = 0; }
+  /* under reduced motion every slide takes 0 ms: the piece is drawn where
+     it lands */
+  if (instant || reducedMotion()) { f.opts.anim = null; f.slideMs = 0; }
+  /* a new board ends the forcing reply's hold (flushStage) */
+  motionHold = false;
   /* what drawing this frame remembers: the bar's last live value and a
      slide already shown while exploring, the line frame on screen after */
   if (a.phase === 'done' && a.explore) {
@@ -503,7 +507,7 @@ function paintBoard(a, instant) {
   } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx };
   bw.innerHTML = boardSvg(f.st, f.opts) + (a.pendingPromo ? promoHtml(f.st) : '');
   bw.classList.toggle('static', !f.live);
-  var ms = f.slideMs && !reducedMotion() ? f.slideMs : 0;
+  var ms = f.slideMs || 0;
   releaseAnims(bw, ms);
   a.animMove = null;
   /* the bar: the player's view of the position, with no pawn number; still
@@ -513,6 +517,9 @@ function paintBoard(a, instant) {
   if (fill && !f.pending) fill.style.height = winPct(evalWhite(it, f.ev != null ? f.ev : it.b.eb)) + '%';
   /* the slide starts two frames from now (releaseAnims), and ends ms later */
   if (ms) motionUntil = Date.now() + SLIDE_LEAD + ms;
+  /* the forcing reply's slide (stepLine marks it): input never cuts it
+     short, it is swallowed until the piece lands (S10) */
+  if (a.replySlide) { motionHold = !!ms; a.replySlide = false; }
 }
 /* the marks beat: only the marks svg is rewritten, so no piece is touched */
 function paintMarks(a) {
@@ -579,9 +586,11 @@ function paintText(a) {
   if (!band) return;
   var d = displayFor(a), newCard = !a.shown;
   a.shown = true;
-  var foc = document.activeElement, fp = el('cpanel');
+  var foc = document.activeElement, fp = el('cpanel'), bar = el('cbar');
   var inCard = foc && ((fp && fp.contains(foc)) || band.contains(foc));
   var focKey = inCard ? (foc.id || ((foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || ''))) : null;
+  /* a button of the bar is kept by its place: the bar repaints under it */
+  var focSlot = inCard && bar && bar.contains(foc) ? foc.getAttribute('data-slot') : null;
   paintTop(a, ss);
   paintBand(a, d);
   paintBar(d);
@@ -593,7 +602,10 @@ function paintText(a) {
   if (newCard) { var th = el('task-h'); if (th) th.focus({ preventScroll: true }); }
   else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
   else if (focKey && fp) {
-    var back = focKey.indexOf('|') < 0 ? el(focKey) : fp.querySelector('[data-act="' + focKey.split('|')[0] + '"]' + (focKey.split('|')[1] ? '[data-k="' + focKey.split('|')[1] + '"]' : ''));
+    /* a bar button: the one now in its slot, or the right-hand one (S20)
+       when that slot is off or gone */
+    var back = focSlot != null ? barButton(focSlot) || barButton(rightSlot())
+      : focKey.indexOf('|') < 0 ? el(focKey) : fp.querySelector('[data-act="' + focKey.split('|')[0] + '"]' + (focKey.split('|')[1] ? '[data-k="' + focKey.split('|')[1] + '"]' : ''));
     /* the band's head is the task before an answer and the result after */
     if (!back && /^(task|result)-h$/.test(focKey)) back = el('task-h') || el('result-h');
     if (!back && /^xpRow\|/.test(focKey)) { var rws = fp.querySelectorAll('#xp [data-act="xpRow"]'); back = rws[rws.length - 1] || null; }
@@ -601,9 +613,16 @@ function paintText(a) {
       var wr = fp.querySelector('#xp [data-act="xpRow"][data-k="' + xe.wantRow + '"]');
       if (wr) { back = wr; xe.wantRow = null; }
     }
-    (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : fp.querySelector(a.phase === 'done' ? '[data-act="next"]' : '#kbmove, [data-act]')) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
+    /* never the typed-move box, which would pop up a phone's keyboard: a
+       control that went falls back to the bar's right-hand button */
+    (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : barButton(rightSlot()) || (bar && bar.querySelector('[data-act]'))) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
   paintLive(d);
+}
+/* the bar's button in slot i, if it holds an action now (an off slot has none) */
+function barButton(i) {
+  var bar = el('cbar');
+  return bar && i != null && i >= 0 ? bar.querySelector('[data-slot="' + i + '"][data-act]') : null;
 }
 /* the session bar: a focused control in it keeps focus across the repaint */
 function paintTop(a, ss) {
@@ -728,7 +747,9 @@ function releaseAnims(root, ms) {
   if (!ps.length) return;
   requestAnimationFrame(function () { requestAnimationFrame(function () {
     for (var i = 0; i < ps.length; i++) ps[i].style.transform = 'translate(0px,0px)';
-    if (ms) motionUntil = Math.max(motionUntil, Date.now() + ms);
+    /* only for a slide still on screen: one an input already ended
+       (flushStage) leaves the clock alone */
+    if (ms && ps[0].isConnected && ps[0].style.transition !== 'none') motionUntil = Math.max(motionUntil, Date.now() + ms);
   }); });
 }
 function promoHtml(st) {

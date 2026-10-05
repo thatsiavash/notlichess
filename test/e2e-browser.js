@@ -31,12 +31,34 @@
      session bar or the live region is timed, and so is every slide of a piece (transitionrun to
      transitionend) */
   const W = { writes: [], slides: [], fit: [] };
-  const mo = new MutationObserver((l) => { const t = performance.now(); l.forEach((m) => {
+  const onMut = (l) => { const t = performance.now(); l.forEach((m) => {
     const n = m.target.nodeType === 1 ? m.target : m.target.parentNode;
     const host = n && n.closest && n.closest('#cband, #cbar, #cstrip, #ctop, #sr-live');
-    if (host) W.writes.push([t, host.id]); }); });
+    if (host) W.writes.push([t, host.id]); }); };
+  const mo = new MutationObserver(onMut);
   const onRun = (e) => { if (e.target.classList && e.target.classList.contains('anim-piece')) W.slides.push([performance.now(), null]); };
   const onEnd = (e) => { if (e.target.classList && e.target.classList.contains('anim-piece')) { const x = W.slides[W.slides.length - 1]; if (x && x[1] == null) x[1] = performance.now(); } };
+  /* the recorder runs on the lesson only: exploring moves both sides and repaints board and words
+     together by design (S14), so it is switched off while exploring */
+  const recOn = () => {
+    const o = { childList: true, subtree: true, characterData: true };
+    mo.observe($('#trainbox'), o);
+    if ($('#sr-live')) mo.observe($('#sr-live'), o);
+    document.addEventListener('transitionrun', onRun, true);
+    document.addEventListener('transitionend', onEnd, true);
+  };
+  const recOff = () => {
+    onMut(mo.takeRecords());
+    mo.disconnect();
+    document.removeEventListener('transitionrun', onRun, true);
+    document.removeEventListener('transitionend', onEnd, true);
+  };
+  /* a button pressed as a finger or a mouse presses it: it takes focus, then the click */
+  const press = (sel) => { const e = $(sel); if (e) { e.focus(); e.click(); } return !!e; };
+  /* focus stays on the action bar after its buttons change, never in the typed-move field (which
+     would open a phone's keyboard, and take Enter) */
+  const focusInBar = () => { const e = document.activeElement; return !!e && !!e.closest && !!e.closest('#cbar') && e.id !== 'kbmove'; };
+  const focusName = () => { const e = document.activeElement; return !e ? 'none' : e.id ? '#' + e.id : e.tagName + '[' + (e.getAttribute('data-act') || '') + '] ' + (e.textContent || '').trim(); };
   /* the band's words fit its box: no row cut short, nothing below the box (the phone check runs at 360 x 640) */
   const bandFits = (what) => {
     const bx = $('#cband .card-task'), rows = document.querySelectorAll('#cband .bd-r1, #cband .bd-r2, #cband .bd-cap');
@@ -72,10 +94,7 @@
     const san0 = T.ev('sanOf(ui.session.active.pre, ui.session.active.played)');
     ok('the band reads Your turn / Find a better move than the game move', text('#cband .bd-r1') === 'Your turn' && text('#cband .bd-r2') === 'Find a better move than ' + san0 + '.', text('#cband'));
     bandFits('the card opens');
-    mo.observe($('#trainbox'), { childList: true, subtree: true, characterData: true });
-    if ($('#sr-live')) mo.observe($('#sr-live'), { childList: true, subtree: true, characterData: true });
-    document.addEventListener('transitionrun', onRun, true);
-    document.addEventListener('transitionend', onEnd, true);
+    recOn();
     ok('session mode hides the site chrome', document.body.classList.contains('in-session'));
     ok('the session bar has an end button and progress', !!$('.sb-end') && !!$('.dots'));
     ok('the card shows a board, a task and the game context', !!$('#bwrap svg') && /to move|better move/i.test(text('#main')) && !!$('.ctx'));
@@ -119,7 +138,7 @@
     const inv = $('#cpanel [data-act=explore]');
     ok('the answered card invites you to test a move', !!inv && /^(Why .+\? Try another (white|black) move and Stockfish answers\.|Move a piece to test an idea\. Stockfish answers\.)$/.test(inv.textContent.trim()), inv && inv.textContent);
     ok('the answered board is still static before exploring', $('#bwrap').classList.contains('static'));
-    if (inv) inv.click();
+    if (inv) { recOff(); inv.click(); }
     const xr = await until(() => { const x = T.explore(); return x && x.lines && x.lines.length ? x : null; }, 10000);
     ok('exploring shows Stockfish\'s best moves', !!xr && document.querySelectorAll('#xp .xp-row:not(.skel)').length >= 2);
     ok('exploring makes the board live', !$('#bwrap').classList.contains('static'));
@@ -128,6 +147,8 @@
     if (xr) {
       const legal = T.ev(`(function () { var ex = ui.session.active.explore; return legalMoves(ex.st).map(moveUci); })()`);
       const tryU = legal.filter((u) => xr.lines.map((l) => l.pv[0]).indexOf(u) === -1)[0] || legal[0];
+      /* not in the same frame as the result that just arrived */
+      await sleep(300);
       T.play(tryU);
       const said = await until(() => { const x = T.explore(); return x && x.at === 1 && !/thinking/.test(x.say) ? x.say : null; }, 15000);
       ok('a tried move gets one sentence', !!said && said.length <= 80 && !/\u2014/.test(said), said);
@@ -140,6 +161,7 @@
       await sleep(200);
       ok('Esc returns to the lesson', !T.explore() && !!$('.tline.tl-good'));
     }
+    if (inv) { await sleep(300); recOn(); }
 
     /* ── the next card: the game move again, then misses and escalation ─ */
     const at = T.card().idx;
@@ -157,8 +179,17 @@
       /* the try stays on the board until Try again (a button ignores taps in
          a card's first 450 ms and for 450 ms after the bar changes) */
       await sleep(500);
-      click('[data-act=tryAgain]');
+      if (press('#cbar [data-act=seeIt]')) {
+        /* See it: their reply slides, then the left button changes under the focus */
+        await until(() => !$('#cbar [data-act=seeIt]'), 3000);
+        await sleep(300);
+        ok('after See it the focus stays on the action bar, not the typed-move field', focusInBar(), focusName());
+        await sleep(300);
+      }
+      press('#cbar [data-act=tryAgain]');
       await until(() => T.card().phase === 'guess', 3000);
+      await sleep(400);
+      ok('after Try again the focus stays on the action bar, not the typed-move field', focusInBar(), focusName());
       const others = legalOther(c);
       ok('there are other legal moves to try', others.length >= 2, String(others.length));
       /* a try that is nearly as good counts as close, not as a miss: try another */
@@ -210,9 +241,7 @@
 
     /* the slides so far: the answer tapped, the game move tapped, See it */
     await sleep(600);
-    mo.disconnect();
-    document.removeEventListener('transitionrun', onRun, true);
-    document.removeEventListener('transitionend', onEnd, true);
+    recOff();
     const inSlide = [];
     /* a slide starts two frames after its board is drawn: words written with that board count too */
     W.writes.forEach((w) => W.slides.forEach((x) => { if (w[0] > x[0] - 60 && w[0] < (x[1] == null ? x[0] + 400 : x[1])) inSlide.push(w[1] + ' at ' + Math.round(w[0] - x[0]) + ' ms'); }));

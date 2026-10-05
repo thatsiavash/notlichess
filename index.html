@@ -6037,7 +6037,8 @@ function prefetchCards(ss) {
 
 /* ── moves on the board ──────────────────────────────────────────────────── */
 function sessionClick(sq) {
-  flushStage();
+  /* input first; dropped while the forcing reply slides */
+  if (flushStage()) return;
   var ss = ui.session, a = ss && ss.active;
   if (a && a.phase === 'tried' && !a.pendingPromo) {
     /* a try on the board: a tap on one of your pieces takes it back and
@@ -6138,6 +6139,9 @@ function stepLine(m, u) {
     applyMove(a2.st, reply);
     a2.lastMove = [reply.from, reply.to];
     a2.animMove = [reply.from, reply.to];
+    /* the one move that plays by itself: paintBoard holds its slide so no
+       input jumps it (flushStage) */
+    a2.replySlide = true;
     a2.solIdx++;
     snd('move');
     if (a2.solIdx >= a2.sol.length) { solved(null, null, null, true); return; }
@@ -7651,7 +7655,11 @@ function paintBoard(a, instant) {
   var it = a.it, bw = el('bwrap');
   if (!bw) return;
   var f = boardOptsFor(a);
-  if (instant) { f.opts.anim = null; f.slideMs = 0; }
+  /* under reduced motion every slide takes 0 ms: the piece is drawn where
+     it lands */
+  if (instant || reducedMotion()) { f.opts.anim = null; f.slideMs = 0; }
+  /* a new board ends the forcing reply's hold (flushStage) */
+  motionHold = false;
   /* what drawing this frame remembers: the bar's last live value and a
      slide already shown while exploring, the line frame on screen after */
   if (a.phase === 'done' && a.explore) {
@@ -7660,7 +7668,7 @@ function paintBoard(a, instant) {
   } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx };
   bw.innerHTML = boardSvg(f.st, f.opts) + (a.pendingPromo ? promoHtml(f.st) : '');
   bw.classList.toggle('static', !f.live);
-  var ms = f.slideMs && !reducedMotion() ? f.slideMs : 0;
+  var ms = f.slideMs || 0;
   releaseAnims(bw, ms);
   a.animMove = null;
   /* the bar: the player's view of the position, with no pawn number; still
@@ -7670,6 +7678,9 @@ function paintBoard(a, instant) {
   if (fill && !f.pending) fill.style.height = winPct(evalWhite(it, f.ev != null ? f.ev : it.b.eb)) + '%';
   /* the slide starts two frames from now (releaseAnims), and ends ms later */
   if (ms) motionUntil = Date.now() + SLIDE_LEAD + ms;
+  /* the forcing reply's slide (stepLine marks it): input never cuts it
+     short, it is swallowed until the piece lands (S10) */
+  if (a.replySlide) { motionHold = !!ms; a.replySlide = false; }
 }
 /* the marks beat: only the marks svg is rewritten, so no piece is touched */
 function paintMarks(a) {
@@ -7736,9 +7747,11 @@ function paintText(a) {
   if (!band) return;
   var d = displayFor(a), newCard = !a.shown;
   a.shown = true;
-  var foc = document.activeElement, fp = el('cpanel');
+  var foc = document.activeElement, fp = el('cpanel'), bar = el('cbar');
   var inCard = foc && ((fp && fp.contains(foc)) || band.contains(foc));
   var focKey = inCard ? (foc.id || ((foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || ''))) : null;
+  /* a button of the bar is kept by its place: the bar repaints under it */
+  var focSlot = inCard && bar && bar.contains(foc) ? foc.getAttribute('data-slot') : null;
   paintTop(a, ss);
   paintBand(a, d);
   paintBar(d);
@@ -7750,7 +7763,10 @@ function paintText(a) {
   if (newCard) { var th = el('task-h'); if (th) th.focus({ preventScroll: true }); }
   else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
   else if (focKey && fp) {
-    var back = focKey.indexOf('|') < 0 ? el(focKey) : fp.querySelector('[data-act="' + focKey.split('|')[0] + '"]' + (focKey.split('|')[1] ? '[data-k="' + focKey.split('|')[1] + '"]' : ''));
+    /* a bar button: the one now in its slot, or the right-hand one (S20)
+       when that slot is off or gone */
+    var back = focSlot != null ? barButton(focSlot) || barButton(rightSlot())
+      : focKey.indexOf('|') < 0 ? el(focKey) : fp.querySelector('[data-act="' + focKey.split('|')[0] + '"]' + (focKey.split('|')[1] ? '[data-k="' + focKey.split('|')[1] + '"]' : ''));
     /* the band's head is the task before an answer and the result after */
     if (!back && /^(task|result)-h$/.test(focKey)) back = el('task-h') || el('result-h');
     if (!back && /^xpRow\|/.test(focKey)) { var rws = fp.querySelectorAll('#xp [data-act="xpRow"]'); back = rws[rws.length - 1] || null; }
@@ -7758,9 +7774,16 @@ function paintText(a) {
       var wr = fp.querySelector('#xp [data-act="xpRow"][data-k="' + xe.wantRow + '"]');
       if (wr) { back = wr; xe.wantRow = null; }
     }
-    (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : fp.querySelector(a.phase === 'done' ? '[data-act="next"]' : '#kbmove, [data-act]')) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
+    /* never the typed-move box, which would pop up a phone's keyboard: a
+       control that went falls back to the bar's right-hand button */
+    (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : barButton(rightSlot()) || (bar && bar.querySelector('[data-act]'))) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
   paintLive(d);
+}
+/* the bar's button in slot i, if it holds an action now (an off slot has none) */
+function barButton(i) {
+  var bar = el('cbar');
+  return bar && i != null && i >= 0 ? bar.querySelector('[data-slot="' + i + '"][data-act]') : null;
 }
 /* the session bar: a focused control in it keeps focus across the repaint */
 function paintTop(a, ss) {
@@ -7885,7 +7908,9 @@ function releaseAnims(root, ms) {
   if (!ps.length) return;
   requestAnimationFrame(function () { requestAnimationFrame(function () {
     for (var i = 0; i < ps.length; i++) ps[i].style.transform = 'translate(0px,0px)';
-    if (ms) motionUntil = Math.max(motionUntil, Date.now() + ms);
+    /* only for a slide still on screen: one an input already ended
+       (flushStage) leaves the clock alone */
+    if (ms && ps[0].isConnected && ps[0].style.transition !== 'none') motionUntil = Math.max(motionUntil, Date.now() + ms);
   }); });
 }
 function promoHtml(st) {
@@ -8319,14 +8344,28 @@ function renderFoot() {
    Beats paint the card as it is when they run. Any input calls
    flushStage() first: a running slide jumps to its end, waiting board and
    marks beats apply at once, and waiting text moves to 150 ms from now.
+   The one exception is the forcing reply (S10), the only move that plays
+   by itself: it is always seen moving, so while it slides flushStage
+   leaves everything as it is and says so, and the input is dropped.
    Beats belong to one card and die with it (Next, leaving the card). */
 var TEXT_GAP = 150;
 var motionUntil = 0, stageQ = [], stageTimer = null, stageCard = null, textNotBefore = 0;
+/* the forcing reply is sliding (paintBoard sets it, the next board clears it) */
+var motionHold = false;
 
 function stage(beats) {
   var a = ui.session && ui.session.active;
   if (!a) return;
   if (stageCard !== a.key) { stageReset(); stageCard = a.key; }
+  /* the board alone (a selection, a drawn shape) never waits behind words
+     still waiting: it goes before them, and they keep their 150 ms after it */
+  var ti = beats.length === 1 && (beats[0] === 'board' || beats[0] === 'marks') ? stageQ.indexOf('text') : -1;
+  if (ti >= 0) {
+    if (stageQ[ti - 1] !== beats[0]) stageQ.splice(ti, 0, beats[0]);
+    textNotBefore = Math.max(textNotBefore, Date.now() + TEXT_GAP);
+    stageRun();
+    return;
+  }
   if (beats.indexOf('text') >= 0) {
     stageQ = stageQ.filter(function (b) { return b !== 'text'; });
     textNotBefore = 0;
@@ -8359,9 +8398,14 @@ function stageApply(b, a, instant) {
   else if (b === 'marks') paintMarks(a);
   else if (b === 'text') paintText(a);
 }
-/* input first: the slide ends, the board catches up, the words wait 150 ms */
+/* input first: the slide ends, the board catches up, the words wait 150 ms.
+   Returns true when the input must be dropped: the forcing reply is
+   sliding, or a waiting reply was just started (a tap starts it early,
+   never skips it) */
 function flushStage() {
   var now = Date.now(), a = ui.session && ui.session.active, moved = false;
+  if (motionHold && motionUntil > now) return true;
+  motionHold = false;
   if (motionUntil > now) {
     var bw = el('bwrap'), ps = bw ? bw.querySelectorAll('.anim-piece') : [];
     for (var i = 0; i < ps.length; i++) { ps[i].style.transition = 'none'; ps[i].style.transform = 'translate(0px,0px)'; }
@@ -8372,13 +8416,22 @@ function flushStage() {
   stageQ = [];
   clearTimeout(stageTimer);
   stageTimer = null;
-  if (a && a.key === stageCard) q.forEach(function (b) {
-    if (b === 'board' || b === 'marks') { stageApply(b, a, true); moved = true; }
+  for (var j = 0; j < q.length && a && a.key === stageCard; j++) {
+    var b = q[j];
+    /* once the reply slides, the rest waits for it as usual */
+    if (motionHold) stageQ.push(b);
+    else if (b === 'board' || b === 'marks') { stageApply(b, a, !(b === 'board' && a.replySlide)); moved = true; }
     else if (b === 'text') text = true;
-  });
+  }
+  if (motionHold) {
+    if (text && stageQ.indexOf('text') < 0) stageQ.push('text');
+    stageRun();
+    return true;
+  }
   /* a board that just changed counts as a slide that ended now */
   if (moved) motionUntil = now;
   if (text) { stageQ.push('text'); textNotBefore = now + TEXT_GAP; stageRun(); }
+  return false;
 }
 function stageReset() {
   clearTimeout(stageTimer);
@@ -8386,6 +8439,7 @@ function stageReset() {
   stageQ = [];
   stageCard = null;
   motionUntil = 0;
+  motionHold = false;
   textNotBefore = 0;
 }
 
@@ -8821,6 +8875,8 @@ function parseSpec(t) {
 document.addEventListener('click', function (e) {
   var t = e.target.closest ? e.target.closest('[data-act]') : null;
   if (e.target.closest && e.target.closest('#bwrap [data-sq]')) {
+    /* the press of this tap came while the forcing reply slid: dropped */
+    if (pointerState.held) { pointerState.held = false; return; }
     if (pointerState.suppressClick) { pointerState.suppressClick = false; return; }
     var sqEl = e.target.closest('[data-sq]');
     sessionClick(parseInt(sqEl.getAttribute('data-sq'), 10));
@@ -8834,10 +8890,10 @@ document.addEventListener('click', function (e) {
   var act = t.getAttribute('data-act'), k = t.getAttribute('data-k');
   if (t.tagName === 'INPUT') return;
   if (act !== 'closeSheet' || e.target === t) e.preventDefault();
-  /* input first: a running slide ends and whatever was staged catches up;
-     then a bar slot that just changed ignores the tap (a double tap's
-     second half) */
-  flushStage();
+  /* input first: a running slide ends and whatever was staged catches up
+     (while the forcing reply slides, the tap is dropped); then a bar slot
+     that just changed ignores the tap (a double tap's second half) */
+  if (flushStage()) return;
   var slot = t.getAttribute('data-slot');
   if (slot != null && slotGuarded(parseInt(slot, 10))) return;
   var a = ui.session && ui.session.active;
@@ -8892,8 +8948,8 @@ document.addEventListener('click', function (e) {
     case 'reveal': if (!tooSoon(a)) reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
-    /* like Hint and Show the answer, these wait out tooSoon: a second tap of
-       a double tap lands on whatever button just took this one's place */
+    /* these wait out a card's first half second (tooSoon); a slot that
+       just changed is ignored above (slotGuarded) */
     case 'dismissStronger': if (!tooSoon(a)) tryAgain(); break;
     case 'tryAgain': if (!tooSoon(a)) tryAgain(); break;
     case 'seeIt': if (!tooSoon(a)) seeIt(); break;
@@ -8986,15 +9042,16 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Escape') {
     if (ui.sheet) { closeSheet(); return; }
-    flushStage();
+    if (flushStage()) return;
     var ae = ui.session && ui.session.active;
     if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
   }
   var a = ui.session && ui.session.active;
   if (!a || ui.sheet) return;
-  /* a handled key is input: whatever was staged catches up first */
-  if (/^(ArrowLeft|ArrowRight|Enter| |\?)$/.test(e.key)) flushStage();
+  /* a handled key is input: whatever was staged catches up first (while
+     the forcing reply slides, the key is dropped) */
+  if (/^(ArrowLeft|ArrowRight|Enter| |\?)$/.test(e.key) && flushStage()) { e.preventDefault(); return; }
   var onAct = !!(e.target && e.target.closest && e.target.closest('[data-act]'));
   if (a.phase === 'done') {
     if (e.key === 'ArrowLeft') { e.preventDefault(); stepView(-1); }
@@ -9019,7 +9076,7 @@ function pressRight() {
 function reducedMotion() { return !!(ui.reducedTest || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)); }
 /* a move typed as SAN (Nf3, exd5, O-O, e8=Q) or as squares (g1f3) */
 function typedMove(txt) {
-  flushStage();
+  if (flushStage()) return;
   var a = ui.session && ui.session.active;
   var xp = a && a.phase === 'done' && a.explore;
   if (!a || (a.phase !== 'guess' && a.phase !== 'tried' && !xp)) return;
@@ -9049,7 +9106,7 @@ document.addEventListener('keydown', function (e) {
 });
 
 /* ── board input: tap-tap and drag, on the card's own board only ─────────── */
-var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null };
+var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null, held: false };
 function sqFromEvent(e) {
   var el2 = document.elementFromPoint(e.clientX, e.clientY);
   var sqEl = el2 && el2.closest ? el2.closest('#bwrap [data-sq]') : null;
@@ -9083,11 +9140,13 @@ function boardState(a) {
 }
 document.addEventListener('pointerdown', function (e) {
   var a = ui.session && ui.session.active;
+  pointerState.held = false;
   if (!a || !e.target.closest || !e.target.closest('#bwrap')) return;
   var sq = sqFromEvent(e);
   if (sq < 0) return;
-  /* input first: a running slide ends and the board catches up */
-  flushStage();
+  /* input first: a running slide ends and the board catches up. While the
+     forcing reply slides the press is dropped, and the click it makes too */
+  if (flushStage()) { pointerState.held = true; return; }
   if (e.button === 2) { pointerState.rightFrom = sq; return; }
   var bs = boardState(a);
   /* a mouse or pen press on a piece of the side to move starts exploring

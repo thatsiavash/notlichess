@@ -360,6 +360,15 @@ const OPEN = `function openCard(it) {
 
   await test('S1, S2 and the answered frame fit 26 / 40 / 60 characters at every tier', () => {
     const A = boot();
+    /* the fit ladder's own steps: a row that fits stays as it is; a longer
+       one falls to its first sentence; then to the fallback; and a fallback
+       over the cap leaves the row empty */
+    const fit = (cands, row, fb) => A.ev(`fitRow(${JSON.stringify(cands)}, '${row}', ${JSON.stringify(fb)})`);
+    eq(fit(['Rook takes on d6. Then the knight forks your king and queen.'], 'row2', 'F'), 'Rook takes on d6.', 'the first sentence when the whole row is too long');
+    eq(fit(['It loses the bishop.'], 'row2', 'F'), 'It loses the bishop.', 'a row that fits is kept');
+    eq(fit(['One two three four five six seven eight.'], 'row2', 'F'), 'F', 'eight words fall to the fallback');
+    eq(fit(['This sentence is far too long to fit in row two at all.'], 'row2', 'A fallback that is also far too long for row two.'), '', 'a fallback over the cap leaves the row empty');
+    eq(fit(['Too long a first sentence for the twenty-six.', 'Found it'], 'row1', 'F'), 'Found it', 'the first candidate that fits wins');
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       /* the band's caps (FINAL-SPEC 3): row 1 26 characters, row 2 40 and 7
          words, a caption 60 and 8; the chip one short label */
