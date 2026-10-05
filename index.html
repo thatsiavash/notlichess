@@ -9025,10 +9025,18 @@ document.addEventListener('change', function (e) {
   if (act === 'sound') { cfg.sound = !!t.checked; saveCfg('sound'); }
 });
 document.addEventListener('keydown', function (e) {
-  if (e.target && e.target.id === 'kbmove' && e.key === 'Enter') { e.preventDefault(); typedMove(e.target.value); return; }
+  /* a held Enter sends the typed move once (its auto-repeat would send it
+     again, or an empty box, as soon as the board takes moves again) */
+  if (e.target && e.target.id === 'kbmove' && e.key === 'Enter') { e.preventDefault(); if (!e.repeat) typedMove(e.target.value); return; }
   /* typing belongs to the field, but Esc from the move field leaves exploring */
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !(e.target.id === 'kbmove' && e.key === 'Escape')) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  /* a held key acts once: the keyboard's auto-repeat never reaches the
+     button that took the pressed one's place (a held Enter would go through
+     Next and show the next card's answer, a held ? would give hint 2).
+     Arrows keep repeating, to step through a line. Space repeats freely off
+     a card, where it scrolls the page */
+  if (e.repeat && (/^(Enter|\?|Escape)$/.test(e.key) || (e.key === ' ' && ui.session && ui.session.active))) { e.preventDefault(); return; }
   if (e.key === 'Tab' && ui.sheet) {
     /* focus stays inside the open sheet */
     var sh = document.querySelector('#overlay .sheet');
@@ -9101,7 +9109,9 @@ new MutationObserver(function () { makeFocusable(document); }).observe(document.
 document.addEventListener('keydown', function (e) {
   if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-act][tabindex]:not(input)')) {
     e.preventDefault();
-    e.target.click();
+    /* once per press: focus keeps its slot, so a repeat would press the
+       button that just took this one's place */
+    if (!e.repeat) e.target.click();
   }
 });
 

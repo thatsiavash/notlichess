@@ -2,6 +2,7 @@
 // internals through window.__nlTest.ev (enabled because location.hostname is 'localhost').
 // Usage: const A = require('./app-realm')({ now, storage: {...}, session: {...} });
 //        A.ev('todayPlan()'); A.setNow(ms); A.storage; A.click('tryAgain') (a button click, through the page's handler)
+//        A.key('Enter', repeat, on): a key through the page's keydown handlers (on a focused button when on = { act, k, slot })
 //        A.advance(ms): the clock moves on, and each timer runs when it falls due (A.flush runs them all, whatever their delay)
 // Nothing reaches the network (fetch never resolves) and no engine runs (Worker throws), so everything
 // tested here is the app's own bookkeeping.
@@ -68,20 +69,35 @@ module.exports = function makeApp(opts) {
   const fn = new Function(...names, src);
   fn(...names.map((k) => ctx[k]));
   const ev = (code) => window.__nlTest.ev(code);
+  /* a button with this data-act (and data-k, and the bar slot it sits in),
+     as an event target: focusable, and its click goes to the page's own
+     document click handler */
+  const button = (act, k, slot) => {
+    const t = { tagName: 'A', getAttribute: (n) => (n === 'data-act' ? act : n === 'data-k' ? (k == null ? null : String(k)) : n === 'data-slot' ? (slot == null ? null : String(slot)) : null) };
+    t.closest = (sel) => (sel === '[data-act]' ? t : null);
+    t.matches = (sel) => /^\[data-act\]/.test(sel);
+    t.click = () => click(act, k, slot);
+    return t;
+  };
+  const click = (act, k, slot) => {
+    const t = button(act, k, slot);
+    (listeners.click || []).forEach((fn) => fn({ target: t, preventDefault() {} }));
+  };
+  /* stubbed nodes inside the page (a bar button's click()) reach the click handler through this */
+  window.__realmClick = click;
   return {
     ev, storage: local.data, session: session.data, timers, loc,
     setNow: (t) => { now = t; }, getNow: () => now,
-    /* a click on a button with this data-act (and data-k, and the bar slot
-       it sits in), given to the page's own document click handler */
-    click: (act, k, slot) => {
-      const t = { tagName: 'A', getAttribute: (n) => (n === 'data-act' ? act : n === 'data-k' ? (k == null ? null : String(k)) : n === 'data-slot' ? (slot == null ? null : String(slot)) : null) };
-      t.closest = (sel) => (sel === '[data-act]' ? t : null);
-      (listeners.click || []).forEach((fn) => fn({ target: t, preventDefault() {} }));
-    },
-    /* a key pressed on the page (on no control), given to its keydown handlers */
-    key: (key) => {
-      const t = { tagName: 'BODY', closest: () => null, matches: () => false };
-      (listeners.keydown || []).forEach((fn) => fn({ key, target: t, preventDefault() {} }));
+    /* a click on a button, given to the page's own document click handler */
+    click,
+    /* a key pressed on the page, given to its keydown handlers: on no
+       control, with on = { act, k, slot } on that focused button, or with
+       on = { id, value } in that text field; repeat marks the keyboard's
+       auto-repeat of a held key */
+    key: (key, repeat, on) => {
+      const t = !on ? { tagName: 'BODY', closest: () => null, matches: () => false }
+        : on.id ? { tagName: 'INPUT', id: on.id, value: on.value || '', closest: () => null, matches: () => false } : button(on.act, on.k, on.slot);
+      (listeners.keydown || []).forEach((fn) => fn({ key, repeat: !!repeat, target: t, preventDefault() {} }));
     },
     /* the clock moves on by ms; each timer runs when it falls due, in order,
        with the clock at its due time (a timer it queues runs too, if due) */

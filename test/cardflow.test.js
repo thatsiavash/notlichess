@@ -182,6 +182,61 @@ const DOM = `(function () {
    after the last slide ended */
 const early = (ws) => ws.filter((w) => (w.kind === 'text' ? w.t < w.mu + 150 : w.t < w.mu));
 
+/* the card's bar and focus as the page keeps them, on top of DOM: the
+   bar's buttons are read from its markup, the typed-move box sits in the
+   strip (before the bar, as on the page) and the band holds the task
+   heading; a node that takes focus becomes document.activeElement, and a
+   bar button's click() goes to the page's click handler, as a real one
+   does (pressRight clicks it) */
+const BAR = `(function () {
+  var els = window.__els, memo = { html: null, list: [] };
+  var node = function (host, attrs) {
+    return { host: host, id: attrs.id || '', tagName: attrs.tag || 'A', classList: { contains: function () { return false; }, toggle: function () {} },
+      getAttribute: function (n) { return attrs[n] == null ? null : attrs[n]; }, focus: function () { document.activeElement = this; },
+      click: function () { window.__realmClick(attrs['data-act'], attrs['data-k'], attrs['data-slot']); } };
+  };
+  var kb = node('cstrip', { id: 'kbmove', tag: 'INPUT' }), heads = { 'task-h': node('cband', { id: 'task-h', tag: 'H2' }), 'result-h': node('cband', { id: 'result-h', tag: 'H2' }) };
+  var buttons = function () {
+    var h = els.cbar.innerHTML;
+    if (memo.html !== h) {
+      memo = { html: h, list: [] };
+      h.replace(/<a ([^>]*)>/g, function (m, at) { var o = {}; at.replace(/([\\w-]+)="([^"]*)"/g, function (x, k, v) { o[k] = v; return x; }); memo.list.push(node('cbar', o)); return m; });
+    }
+    return memo.list;
+  };
+  var hasKb = function () { return /id="kbmove"/.test(els.cstrip.innerHTML); };
+  /* one simple selector: #id or [attr] / [attr="v"] conditions */
+  var matches = function (n, sel) {
+    sel = sel.trim();
+    if (/^#[\\w-]+$/.test(sel)) return n.id === sel.slice(1);
+    if (/[\\s>]/.test(sel)) return false;
+    var conds = sel.match(/\\[[^\\]]+\\]/g) || [];
+    return conds.length > 0 && conds.join('') === sel && conds.every(function (c) {
+      var m = /^\\[([\\w-]+)(?:="([^"]*)")?\\]$/.exec(c);
+      return m && n.getAttribute(m[1]) != null && (m[2] == null || n.getAttribute(m[1]) === m[2]);
+    });
+  };
+  /* the first node in page order that matches any of the selectors */
+  var first = function (list, sel) {
+    var alts = sel.split(',');
+    for (var i = 0; i < list.length; i++) if (alts.some(function (x) { return matches(list[i], x); })) return list[i];
+    return null;
+  };
+  var inBar = function (n) { return !!n && buttons().indexOf(n) >= 0; };
+  els.cbar.querySelector = function (sel) { return first(buttons(), sel); };
+  els.cbar.contains = inBar;
+  els.cpanel.querySelector = function (sel) { return first((hasKb() ? [kb] : []).concat(buttons()), sel); };
+  els.cpanel.querySelectorAll = function () { return []; };
+  els.cpanel.contains = function (n) { return inBar(n) || (n === kb && hasKb()); };
+  els.cband.contains = function (n) { return !!n && n.host === 'cband'; };
+  var get1 = document.getElementById;
+  document.getElementById = function (id) {
+    if (id === 'kbmove') return hasKb() ? kb : null;
+    if (heads[id]) return new RegExp('id="' + id + '"').test(els.cband.innerHTML) ? heads[id] : null;
+    return get1(id);
+  };
+  return 1; })()`;
+
 (async () => {
   await test('the spoiler rule holds on every card before an answer, tiers 1 to 3 (open, hints 0 to 2, after a miss)', async () => {
     const A = boot();
@@ -386,9 +441,23 @@ const early = (ws) => ws.filter((w) => (w.kind === 'text' ? w.t < w.mu + 150 : w
     await tick(); await tick();
     const r2 = JSON.parse(A.ev(`(function () { var a = ui.session.active, ex = a.explore;
       window.__sameFrame('exploring, with a result', a);
-      return JSON.stringify({ out: window.__same, live: boardOptsFor(a).evLive, has: !!ex.res[xpCur(ex).key] }); })()`));
+      var f = boardOptsFor(a);
+      return JSON.stringify({ out: window.__same, live: f.evLive, pending: f.pending, has: !!ex.res[xpCur(ex).key] }); })()`));
     ok(r2.has && r2.live, 'the result is in and the bar is live: ' + JSON.stringify(r2));
+    eq(r2.pending, false, 'while exploring the bar no longer waits');
     eq(r2.out.length, 0, r2.out.join(' | '));
+    /* and it waits, grey and still, on every frame of a card: open, tried, answered */
+    const r3 = JSON.parse(A.ev(`(function () { ${OPEN}
+      var it = allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[0], b = openCard(it), wait = [], out = [];
+      wait.push(['open', boardOptsFor(b)]);
+      gradeMove(uciToMove(b.st, b.playedUci)); wait.push(['tried', boardOptsFor(b)]);
+      seeIt(); wait.push(['tried, See it', boardOptsFor(b)]);
+      reveal(); wait.push(['answered', boardOptsFor(b)]);
+      b.lastView = { line: 'best', idx: -1 }; b.view = { line: 'best', idx: 0 }; wait.push(['answered, a line stepped', boardOptsFor(b)]);
+      if (b.phase !== 'done') out.push('the card was not answered');
+      wait.forEach(function (w) { if (w[1].pending !== true || w[1].evLive) out.push(w[0] + ': the bar does not wait'); });
+      return JSON.stringify(out); })()`));
+    eq(r3.length, 0, r3.join(' | '));
   });
 
   await test('the engine stub answers a try with the stored refutation, and the try is a miss', async () => {
@@ -717,57 +786,7 @@ const early = (ws) => ws.filter((w) => (w.kind === 'text' ? w.t < w.mu + 150 : w
     const A = boot();
     A.ev(DOM);
     A.ev('(playerTier = function () { return 2; }, 1)');
-    /* focus as the page keeps it: the bar's buttons are read from its
-       markup, the typed-move box sits in the strip (before the bar, as on
-       the page) and the band holds the task heading; a node that takes focus
-       becomes document.activeElement */
-    A.ev(`(function () {
-      var els = window.__els, memo = { html: null, list: [] };
-      var node = function (host, attrs) {
-        return { host: host, id: attrs.id || '', tagName: attrs.tag || 'A', classList: { contains: function () { return false; }, toggle: function () {} },
-          getAttribute: function (n) { return attrs[n] == null ? null : attrs[n]; }, focus: function () { document.activeElement = this; } };
-      };
-      var kb = node('cstrip', { id: 'kbmove', tag: 'INPUT' }), heads = { 'task-h': node('cband', { id: 'task-h', tag: 'H2' }), 'result-h': node('cband', { id: 'result-h', tag: 'H2' }) };
-      var buttons = function () {
-        var h = els.cbar.innerHTML;
-        if (memo.html !== h) {
-          memo = { html: h, list: [] };
-          h.replace(/<a ([^>]*)>/g, function (m, at) { var o = {}; at.replace(/([\\w-]+)="([^"]*)"/g, function (x, k, v) { o[k] = v; return x; }); memo.list.push(node('cbar', o)); return m; });
-        }
-        return memo.list;
-      };
-      var hasKb = function () { return /id="kbmove"/.test(els.cstrip.innerHTML); };
-      /* one simple selector: #id or [attr] / [attr="v"] conditions */
-      var matches = function (n, sel) {
-        sel = sel.trim();
-        if (/^#[\\w-]+$/.test(sel)) return n.id === sel.slice(1);
-        if (/[\\s>]/.test(sel)) return false;
-        var conds = sel.match(/\\[[^\\]]+\\]/g) || [];
-        return conds.length > 0 && conds.join('') === sel && conds.every(function (c) {
-          var m = /^\\[([\\w-]+)(?:="([^"]*)")?\\]$/.exec(c);
-          return m && n.getAttribute(m[1]) != null && (m[2] == null || n.getAttribute(m[1]) === m[2]);
-        });
-      };
-      /* the first node in page order that matches any of the selectors */
-      var first = function (list, sel) {
-        var alts = sel.split(',');
-        for (var i = 0; i < list.length; i++) if (alts.some(function (x) { return matches(list[i], x); })) return list[i];
-        return null;
-      };
-      var inBar = function (n) { return !!n && buttons().indexOf(n) >= 0; };
-      els.cbar.querySelector = function (sel) { return first(buttons(), sel); };
-      els.cbar.contains = inBar;
-      els.cpanel.querySelector = function (sel) { return first((hasKb() ? [kb] : []).concat(buttons()), sel); };
-      els.cpanel.querySelectorAll = function () { return []; };
-      els.cpanel.contains = function (n) { return inBar(n) || (n === kb && hasKb()); };
-      els.cband.contains = function (n) { return !!n && n.host === 'cband'; };
-      var get1 = document.getElementById;
-      document.getElementById = function (id) {
-        if (id === 'kbmove') return hasKb() ? kb : null;
-        if (heads[id]) return new RegExp('id="' + id + '"').test(els.cband.innerHTML) ? heads[id] : null;
-        return get1(id);
-      };
-      return 1; })()`);
+    A.ev(BAR);
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
     const foc = () => A.ev(`(function () { var e = document.activeElement; return !e ? 'none' : e.host + ' ' + (e.id || (e.getAttribute('data-act') + '@' + e.getAttribute('data-slot'))); })()`);
     /* a button pressed as a finger presses it: it takes focus, then the click */
@@ -804,6 +823,104 @@ const early = (ws) => ws.filter((w) => (w.kind === 'text' ? w.t < w.mu + 150 : w
     run(1000);
     eq(A.ev('ui.session.active.phase'), 'done', 'Show the answer pressed');
     eq(foc(), 'cband result-h', 'the answered card focuses its result');
+  });
+
+  await test('Enter presses the right-hand button in guess and tried, and waits out its slot', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    A.ev(BAR);
+    const S = () => JSON.parse(A.ev('JSON.stringify((function (a) { return { phase: a.phase, result: a.result || null, misses: a.misses }; })(ui.session.active))'));
+    const show = (n) => A.ev(`(function () { window.__show(allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[${n}]); return 1; })()`);
+    /* guess: [Hint] [Show the answer]; Enter shows the answer */
+    show(0);
+    A.advance(1000);
+    A.key('Enter');
+    eq(S().result, 'fail', 'Enter in guess shows the answer');
+    /* tried, the game move again: [See it] [Try again]; Enter takes the try back */
+    show(1);
+    A.advance(1000);
+    A.ev('(function () { var a = ui.session.active; gradeMove(uciToMove(a.st, a.playedUci)); return 1; })()');
+    A.advance(1000);
+    eq(S().phase, 'tried', 'the game move stays');
+    A.key('Enter');
+    let s = S();
+    eq(s.phase, 'guess', 'Enter in tried takes the try back'); eq(s.result, null, 'and shows no answer');
+    /* Try again changed both slots: Enter 150 ms later is ignored, 500 ms later shows the answer */
+    A.advance(150);
+    A.key('Enter');
+    s = S();
+    eq(s.phase, 'guess', 'Enter 150 ms after the bar changed'); eq(s.result, null, 'no answer 150 ms after the bar changed');
+    A.advance(350);
+    A.key('Enter');
+    eq(S().result, 'fail', 'Enter 500 ms after the bar changed shows the answer');
+  });
+
+  await test('a held key presses once: its auto-repeat never reaches the button that took its place', async () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    A.ev(BAR);
+    const S = () => JSON.parse(A.ev(`JSON.stringify((function (ss, a) { return { idx: ss.idx, phase: a && a.phase, result: (a && a.result) || null,
+      hints: a && a.hints, misses: a && a.misses, results: Object.keys(ss.results).length }; })(ui.session, ui.session.active))`));
+    /* the button in a bar slot now, as focus finds it there */
+    const inSlot = (i) => JSON.parse(A.ev(`(function () { var b = window.__els.cbar.querySelector('[data-slot="${i}"][data-act]'); return JSON.stringify(b ? { act: b.getAttribute('data-act'), slot: ${i} } : null); })()`));
+    /* a key held after its press: the keyboard's auto-repeat starts after
+       a delay (500 ms, or as given) and repeats every 30 ms, for 1.5 s; on()
+       gives the focused target at each repeat (none, a button, the
+       typed-move box) */
+    const hold = (key, on, delay) => { A.advance(delay || 500); for (let t = 0; t < 1500; t += 30) { A.key(key, true, on ? on() : null); A.advance(30); } };
+    /* a four-card session, each card already looked at deeply, so Next opens the next one at once */
+    A.ev(`(function () { var its = allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; }).slice(0, 4);
+      its.forEach(function (x) { x.b.v = Math.max(x.b.v || 0, 2); });
+      window.__show(its[0]); ui.session.keys = its.map(function (x) { return x.key; }); return 1; })()`);
+    A.advance(1000);
+    A.click('reveal', null, 1);
+    A.advance(1000);
+    eq(S().phase, 'done', 'card 1 answered');
+    /* Enter goes to the next card; held, it shows nothing there */
+    A.key('Enter');
+    await tick();
+    let s = S();
+    eq(s.idx, 1, 'Enter pressed Next'); eq(s.phase, 'guess', 'card 2 open');
+    hold('Enter');
+    s = S();
+    eq(s.idx, 1, 'a held Enter stays on card 2'); eq(s.phase, 'guess', 'card 2 still asks for a move'); eq(s.result, null, 'no answer on card 2');
+    eq(s.results, 1, 'nothing recorded for card 2');
+    /* a held ?: hint 1, never hint 2 */
+    A.advance(500);
+    A.key('?');
+    eq(S().hints, 1, '? gives hint 1');
+    hold('?');
+    s = S();
+    eq(s.hints, 1, 'a held ? gives no hint 2'); eq(s.result, null, 'and no answer');
+    /* Enter held on a focused See it at miss 3: the focus keeps slot 0,
+       where Show the answer comes once their reply has landed (a 700 ms
+       repeat delay, so it is there before the first repeat) */
+    A.ev(`(function () { var ss = ui.session; ss.idx = 2; ss.active = null; loadCard(); var a = ss.active;
+      a.misses = 2; gradeMove(uciToMove(a.st, a.playedUci)); return 1; })()`);
+    A.advance(1000);
+    s = S();
+    eq(s.misses, 3, 'miss 3'); eq(s.phase, 'tried', 'the game move stays');
+    eq(JSON.stringify(inSlot(0)), JSON.stringify({ act: 'seeIt', slot: 0 }), 'See it in slot 0');
+    A.key('Enter', false, inSlot(0));
+    hold('Enter', () => inSlot(0), 700);
+    s = S();
+    eq(s.phase, 'tried', 'a held Enter on See it shows no answer'); eq(s.result, null, 'no result');
+    eq(JSON.stringify(inSlot(0)), JSON.stringify({ act: 'reveal', slot: 0 }), 'Show the answer took slot 0');
+    /* a fresh press is a press */
+    A.key('Enter', false, inSlot(0));
+    eq(S().result, 'fail', 'a new Enter on Show the answer');
+    /* Enter held in the typed-move box sends the move once */
+    A.ev(`(function () { var ss = ui.session; ss.idx = 3; ss.active = null; loadCard(); return 1; })()`);
+    A.advance(1000);
+    const san = A.ev('(function (a) { return sanOf(a.st, uciToMove(a.st, a.playedUci)); })(ui.session.active)');
+    A.key('Enter', false, { id: 'kbmove', value: san });
+    s = S();
+    eq(s.phase, 'tried', 'the typed game move is a try'); eq(s.misses, 1, 'one miss');
+    hold('Enter', () => ({ id: 'kbmove', value: san }));
+    s = S();
+    eq(s.misses, 1, 'a held Enter sent the move once'); eq(s.phase, 'tried', 'the try stays');
   });
 
   await test('a slot ignores clicks for 450 ms after its label changes', () => {
