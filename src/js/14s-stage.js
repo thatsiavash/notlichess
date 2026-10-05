@@ -28,6 +28,9 @@
    changes the card then and stages what it shows; input does not hurry
    them. */
 var TEXT_GAP = 150, TEXT_OUT = 100;
+/* a change that draws marks on a board that stays (a hint, the answer's
+   arrow): the marks, then the words 150 ms after them, never in one frame */
+var MARKS_THEN_WORDS = ['board', 'land', TEXT_GAP, 'text'];
 var motionUntil = 0, stageQ = [], stageTimer = null, stageCard = null, textNotBefore = 0, stageTimers = [];
 /* the forcing reply is sliding (paintBoard sets it, the next board clears it) */
 var motionHold = false;
@@ -78,12 +81,6 @@ function stageApply(b, a, instant) {
   else if (b === 'marks') paintMarks(a);
   else if (b === 'fade') fadeOut(a);
   else if (b === 'text') paintText(a);
-}
-/* how long until the waiting text beat paints (0 when none waits): a beat
-   timed from when the words are read (a miss's reason) starts from there */
-function textDue() {
-  if (stageQ.indexOf('text') < 0) return 0;
-  return Math.max(0, Math.max(motionUntil + TEXT_GAP, textNotBefore) - Date.now());
 }
 /* a timed beat: run(a) at ms from now, on this card only, if it is still
    the one on screen. A flush leaves it alone */

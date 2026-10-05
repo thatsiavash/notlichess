@@ -400,6 +400,13 @@ const OPEN = `function openCard(it) {
     eq(fit(['One two three four five six seven eight.'], 'row2', 'F'), 'F', 'eight words fall to the fallback');
     eq(fit(['This sentence is far too long to fit in row two at all.'], 'row2', 'A fallback that is also far too long for row two.'), '', 'a fallback over the cap leaves the row empty');
     eq(fit(['Too long a first sentence for the twenty-six.', 'Found it'], 'row1', 'F'), 'Found it', 'the first candidate that fits wins');
+    /* M3 (c): when what changed hands is three kinds of piece, captureWord
+       says "material", which names nothing: the ladder's material word comes
+       next ("You'd lose the queen."), never "You'd lose material." */
+    eq(A.ev(`(function () { ${OPEN} var it = allMistakes().filter(trainable)[0], a = openCard(it), cw = captureWord;
+      captureWord = function () { return 'material'; };
+      try { return plainCapture({ nodes: [] }, 1, 0) + ' / ' + missWhy(a, { lossG: 9, lossAt: 1, gameLine: { nodes: [] } }, 30, null, false).cands[0]; } finally { captureWord = cw; } })()`),
+    "null / You'd lose the queen.", 'three kinds of piece: the material word');
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       /* the band's caps (FINAL-SPEC 3): row 1 26 characters, row 2 40 and 7
          words, a caption 60 and 8; the chip one short label */
@@ -426,7 +433,15 @@ const OPEN = `function openCard(it) {
       /* a miss's reason (M3), in one of its forms or its fallbacks, in plain
          words ("the exchange" is spelled out as the rook and what it went for) */
       var plain = function (what, s) { if (/exchange/.test(s)) out.push(what + ' says ' + s); };
-      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose .+\\.|Most of your advantage is gone\\.|After \\S+, (the game is even|(White|Black) is on top)\\.|That helps (White|Black)\\.|There's a stronger move here\\.)$/;
+      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (a|an|the|two|three) [a-z ]+\\.|You'd lose material\\.|Most of your advantage is gone\\.|After \\S+, (the game is even|(White|Black) is on top)\\.|That helps (White|Black)\\.|There's a stronger move here\\.)$/;
+      /* "You'd lose material." only as the fallback: when the ladder's
+         material word ("a rook", "the queen") does not fit beside row 1 and
+         the widest bar this miss shows */
+      var lossFall = function (what, a, row2) {
+        if (row2 !== 'You\\'d lose material.') return;
+        var room = rowRoom(a, { row1: a.verdict.row1, chip: '' }), fit = a.verdict.cands.filter(function (c) { return fitsRow(c, { ch: 40, words: room }); });
+        if (fit.length) out.push(what + ' says ' + row2 + ' where ' + fit[0] + ' fits');
+      };
       var theirs = function (a) { for (var q = 0; q < 64; q++) if (a.st.b[q] && isW(a.st.b[q]) !== !!a.st.w) return q; return -1; };
       [1, 2, 3].forEach(function (tier) {
         playerTier = function () { return tier; };
@@ -515,8 +530,16 @@ const OPEN = `function openCard(it) {
               miss(off0, moveUci(off0), { cp: it.b.ea != null ? it.b.ea : cpFromWin(it.b.wa), mate: it.b.ma, pv: [moveUci(off0)].concat(ru0), win: it.b.wa }, false);
               a.reason = 2; d = band(at + ' a miss with a reply', a);
               if (!M3.test(d.row2)) out.push(at + ' a miss with a reply reads ' + d.row1 + ' / ' + d.row2);
+              lossFall(at + ' a miss with a reply', a, d.row2);
               plain(at + ' a miss with a reply', a.verdict.cands.join(' | '));
-              if (a.tried.reply) { seeIt(); band(at + ' a miss with a reply, seen', a); }
+              if (a.tried.reply) { seeIt(); if (band(at + ' a miss with a reply, seen', a).row2 !== d.row2) out.push(at + ' a miss with a reply: row 2 changed with See it'); }
+              /* at miss 3 See it gives way to Show the answer, a word more:
+                 the reason was fitted for that bar from the start */
+              a = openCard(it); a.misses = 2;
+              miss(off0, moveUci(off0), { cp: it.b.ea != null ? it.b.ea : cpFromWin(it.b.wa), mate: it.b.ma, pv: [moveUci(off0)].concat(ru0), win: it.b.wa }, false);
+              a.reason = 2; d = band(at + ' miss 3 with a reply', a);
+              lossFall(at + ' miss 3 with a reply', a, d.row2);
+              if (a.tried.reply) { seeIt(); var d3 = band(at + ' miss 3 with a reply, seen', a); if (d3.row2 !== d.row2) out.push(at + ' miss 3: row 2 rewrote itself with See it, ' + d.row2 + ' -> ' + d3.row2); }
             }
             /* inside a forcing line a try that loses nothing is a miss, and says so honestly */
             if (a.sol && a.sol.length >= 3) {
@@ -539,8 +562,13 @@ const OPEN = `function openCard(it) {
           a.reason = 2; d = band(at + ' game move again, its reason', a);
           plain(at + ' game move again', a.verdict.cands.join(' | '));
           if (!M3.test(d.row2) && !(d.row2 === '' && !M3.test(a.verdict.row2))) out.push(at + ' game move again, its reason reads ' + d.row2 + ' (' + a.verdict.row2 + ')');
+          lossFall(at + ' game move again', a, d.row2);
           if (familyOf(patternOf(it.b)).key === 'chances' && a.verdict.row2 !== 'There\\'s a stronger move here.') out.push(at + ' a missed chance\\'s game move reads ' + a.verdict.row2);
-          if (a.tried && a.tried.reply) { seeIt(); band(at + ' game move again, seen', a); }
+          if (a.tried && a.tried.reply) { seeIt(); if (band(at + ' game move again, seen', a).row2 !== d.row2) out.push(at + ' game move again: row 2 changed with See it'); }
+          /* the game move again at miss 3: its reason stays as See it goes */
+          a = openCard(it); a.misses = 2; gradeMove(uciToMove(a.st, a.playedUci)); a.reason = 2; d = band(at + ' game move again, miss 3', a);
+          lossFall(at + ' game move again, miss 3', a, d.row2);
+          if (a.tried && a.tried.reply) { seeIt(); var g3 = band(at + ' game move again, miss 3, seen', a); if (g3.row2 !== d.row2) out.push(at + ' game move again at miss 3: row 2 rewrote itself with See it, ' + d.row2 + ' -> ' + g3.row2); }
           a = openCard(it);
           var off = legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci && !(a.sol && a.sol.indexOf(u) >= 0); })[0];
           if (off) { gradeMove(off); band(at + ' a try ' + a.phase, a); }

@@ -369,7 +369,8 @@ function escalate() {
    gives it, when it is marked); again, a second close move. The verdict
    lands on the square (badge and tints), the band and the bar together, and
    the keyboard goes to the bar's right-hand button (S20); a miss's reason
-   follows in two beats of its own (missReason) */
+   follows in two beats of its own, timed from when the verdict's words
+   paint (a.reasonFor: paintText starts missReason) */
 function showTry(a, m, kind, reply, why, again) {
   var after = cloneState(a.st);
   applyMove(after, m);
@@ -389,22 +390,25 @@ function showTry(a, m, kind, reply, why, again) {
     a.wrong = (a.wrong || []).filter(function (w) { return !(w.uci === a.tried.uci && w.at === a.solIdx); });
     a.wrong.push({ from: m.from, to: m.to, uci: a.tried.uci, at: a.solIdx, fx: a.key + ':' + (a.fxn || 0) + 'tl' });
   }
+  a.reasonFor = kind === 'miss' ? a.tried : null;
   renderCard();
-  if (kind === 'miss') missReason(a);
 }
 /* a miss gives its reason in two more beats once its verdict is read (S4,
-   principle 1): 600 ms later the piece that punishes the try, ringed, with
-   a dashed arrow to what it takes; 150 ms after that the words (300 and 400
-   under reduced motion). a.reason counts them. See it before then plays
-   that move instead of marking it; the words still come */
+   principle 1): 600 ms after the verdict's words paint (paintText calls
+   this then, so an input that moved those words moves the beats too) the
+   piece that punishes the try, ringed, with a dashed arrow to what it
+   takes; 150 ms after that the words (300 and 400 under reduced motion).
+   a.reason counts them. See it before then plays that move instead of
+   marking it; the words still come */
 function missReason(a) {
-  var t = a.tried, v = textDue(), rm = reducedMotion();
-  stageAt(v + (rm ? 300 : 600), function (a2) {
+  var t = a.tried, rm = reducedMotion();
+  a.reasonFor = null;
+  stageAt(rm ? 300 : 600, function (a2) {
     if (a2.tried !== t || a2.reason >= 1) return;
     a2.reason = 1;
     if (t.threat && !t.seen) stage(['marks']);
   });
-  stageAt(v + (rm ? 400 : 750), function (a2) {
+  stageAt(rm ? 400 : 750, function (a2) {
     if (a2.tried !== t) return;
     a2.reason = 2;
     stage(['text']);
@@ -489,6 +493,7 @@ function clearTry(a) {
   a.ghostMove = null;
   a.verdict = null;
   a.reason = 0;
+  a.reasonFor = null;
   a.sel = -1;
   /* back to another position: the board crossfades (2.2) */
   a.jump = true;
@@ -503,6 +508,15 @@ function clearTry(a) {
 function takeBack(sel) {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'checking') return;
+  dropCheck(a);
+  a.sel = sel != null && sel >= 0 ? sel : -1;
+  if (a.sel >= 0) snd('tap');
+  renderCard();
+}
+/* the model part of Take back, also run first by Hint and Show the answer
+   pressed while the guess bar still shows them over a move being checked
+   (before K1): the board crossfades back to the position before it */
+function dropCheck(a) {
   engineStop('check');
   a.checkTok = ++checkSeq;
   if (a.attempts > 0) a.attempts--;
@@ -511,9 +525,7 @@ function takeBack(sel) {
   a.checking = null;
   a.checkSaid = 0;
   a.jump = true;
-  a.sel = sel != null && sel >= 0 ? sel : -1;
-  if (a.sel >= 0) snd('tap');
-  renderCard();
+  a.sel = -1;
 }
 function tryAgain(sel) {
   var a = ui.session && ui.session.active;
@@ -528,6 +540,8 @@ function seeIt() {
   var a = ui.session && ui.session.active, t = a && a.tried;
   if (!t || a.phase !== 'tried' || !t.reply || t.seen) return;
   t.seen = true;
+  /* the reason's ring and arrow ride the slide only if already drawn */
+  t.ringed = a.reason >= 1;
   /* the words about to change (the bar's See it) fade out first (2.2), then
      it slides as a move the app shows, its sound as it starts, along the
      reason's arrow; as it lands the ring and arrow go and what it took
@@ -677,17 +691,22 @@ function solved(m, u, alt, lineDone) {
 }
 function reveal() {
   var a = ui.session && ui.session.active;
-  /* not while a move is checked: the bar shows Show the answer switched off
-     then (S3), and a press that came before it repainted does nothing */
-  if (!a || a.phase === 'done' || a.phase === 'checking') return;
-  /* pressed while a try is shown: the try goes first */
+  /* not while a move is checked once the band says so: the bar shows Show
+     the answer switched off then (S3). Before that (K1, 300 ms after it
+     lands) the guess bar still offers it: the move is taken back first */
+  if (!a || a.phase === 'done' || (a.phase === 'checking' && a.checkSaid)) return;
+  /* pressed while a try is shown (or a move is checked): it goes first, the
+     board crossfading back; from the card itself the green arrow is drawn
+     and the words follow 150 ms after it (principle 2) */
+  var still = a.phase === 'guess';
+  if (a.phase === 'checking') dropCheck(a);
   if (a.phase === 'tried') clearTry(a);
   engineStop('check');
   a.revealed = true;
   a.st = cloneState(a.pre);
   /* found a close move and then asked for the best one: a hint, not a miss */
   if (a.foundGood && !a.misses && !ss_relearn(a)) (ui.session.notes = ui.session.notes || {})[a.key] = 'close';
-  finishCard(a.foundGood && !a.misses ? 'hint' : 'fail');
+  finishCard(a.foundGood && !a.misses ? 'hint' : 'fail', still && !a.jump ? MARKS_THEN_WORDS : null);
 }
 /* a second tap on Next lands where Show the answer now sits: taps in the
    first half second of a card are the old card's. After that, each bar
@@ -696,14 +715,19 @@ function tooSoon(a) { return !!a && Date.now() - (a.shownAt || 0) < 450; }
 function giveHint() {
   var a = ui.session && ui.session.active;
   if (!a) return;
-  /* pressed while a try is shown: the try goes first */
-  var cleared = a.phase === 'tried';
-  if (cleared) clearTry(a);
+  /* pressed while a try is shown, or over a move being checked while the
+     guess bar still offers Hint (before K1): it goes first, the board
+     crossfading back, the words after it */
+  var cleared = a.phase === 'tried' || (a.phase === 'checking' && !a.checkSaid);
+  if (a.phase === 'tried') clearTry(a);
+  else if (cleared) dropCheck(a);
   if (a.phase !== 'guess' || a.hints >= 2) { if (cleared) renderCard(); return; }
   a.hints = a.hints + 1;
   a.hintAfter = true;
   keepProgress(a);
-  renderCard();
+  /* from the card itself only its marks change: they are drawn, then the
+     words 150 ms later, never in the same frame (principles 1 and 2) */
+  renderCard(cleared ? null : MARKS_THEN_WORDS);
 }
 function hintText(a) {
   var t = patternOf(a.it.b), info = patternInfo(t), fam = familyOf(t), c = a.cls;
@@ -746,7 +770,7 @@ function hintText(a) {
   if (hit(r1) || hit(key)) said = 'Your move allowed a strong reply' + word + '.';
   return fitLine([said + ' Find a move that stops it.', said]);
 }
-function finishCard(result) {
+function finishCard(result, beats) {
   var ss = ui.session, a = ss.active;
   a.phase = 'done';
   a.result = result;
@@ -782,7 +806,7 @@ function finishCard(result) {
   else a.view = { line: 'best', idx: Math.min(a.sol ? a.solIdx - 1 : 0, a.lines.best.states.length - 1) };
   saveSession();
   modelDirty();
-  renderCard();
+  renderCard(beats);
   renderHeader();
   track(result === 'first' ? 'solve_first' : 'solve_' + result);
 }

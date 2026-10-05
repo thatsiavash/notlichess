@@ -777,5 +777,9 @@ a.lg-row{color:inherit}
   .xp-back-ph{display:flex;align-items:center;min-height:44px;font-size:14px;color:var(--text-2);padding:0 var(--gutter);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
 }
 /* text out (2.2): words about to change fade out in 100 ms before the board
-   moves, and take no tap meanwhile; the next words take the class off */
-.band-slot.stale,#cbar.stale,#cbar .stale{opacity:0;transition:opacity .1s ease-out;pointer-events:none}
+   moves, and take no tap meanwhile; the next words take the class off. The
+   band keeps its colour, border and disc: only its words go */
+.band-slot.stale .bd-rows,.band-slot.stale .bd-cap,#cbar.stale,#cbar .stale{opacity:0;transition:opacity .1s ease-out;pointer-events:none}
+/* a phone's tap highlight is drawn over a button whatever its opacity: on
+   a button fading out it showed as a grey block */
+#cbar a{-webkit-tap-highlight-color:transparent}

@@ -83,9 +83,12 @@ function verdictOf(kind, row1, cands, fall) {
    classifier's captureWord, with "the exchange" spelled out as the rook
    and the piece it went for. Game lines count from 0 (node 0 is your own
    move, and the line's side is the opponent), best and alternative lines
-   from 1 (node 0 is a null move) */
+   from 1 (node 0 is a null move). Three kinds of piece or more come back
+   as "material", which names nothing: null, so the caller's own words
+   (materialWord) come next */
 function plainCapture(line, k, from) {
   var w = line ? captureWord(line, k, from) : null;
+  if (w === 'material') return null;
   if (w !== 'the exchange') return w;
   var minors = {};
   for (var i = from == null ? 1 : from; i <= k && i < line.nodes.length; i++) {
@@ -156,11 +159,20 @@ function bandFor(a) {
 function bandFit(a, b) {
   if (b.cands) {
     b.row2 = fitRow(b.cands, 'row2', b.fall);
-    var slots = ui.session ? barSlots(a, ui.session) : [], room = WORD_BUDGET - bandWords({ row1: b.row1, chip: b.chip }, slots);
+    var room = rowRoom(a, b);
     if (wordsIn(b.row2) > room) b.row2 = fitRow(b.cands, { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
   }
   delete b.cands; delete b.fall;
   return b;
+}
+/* the words row 2 has left beside row 1, the chip and the bar. A miss's
+   bar changes while its words stay (See it gives way to Hint or Show the
+   answer), so its row 2 is fitted once, beside the wider of its two bars:
+   the reason never rewrites itself when only a button changes */
+function rowRoom(a, b) {
+  var ss = ui.session, slots = ss ? barSlots(a, ss) : [], bw = barWords(slots);
+  if (ss && a.phase === 'tried' && a.tried && a.tried.kind === 'miss') bw = Math.max(barWords(triedSlots(a, false)), barWords(triedSlots(a, true)));
+  return WORD_BUDGET - bandWords({ row1: b.row1, chip: b.chip }, []) - bw;
 }
 /* what the card is showing, so a word or an outline meant for one state
    never outlives it: a move (each one counted, so coming back to the same

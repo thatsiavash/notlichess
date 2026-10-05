@@ -483,6 +483,14 @@ function boardOptsFor(a) {
     if (vk) {
       fx = a.key + ':' + (a.fxn || 0) + vk;
       lands = { tints: [{ sq: vm[0], kind: vk }, { sq: vm[1], kind: vk }], badges: [{ sq: vm[1], kind: vk, fx: fx }] };
+      /* the reason's arrow will point at the piece just moved (their reply
+         takes it): the badge yields its corner when the arrow's head would
+         run under it, from the start, so it never hops (2.1) */
+      var tt = vk === 'bad' ? t.threat : null;
+      if (tt && tt.to === vm[1] && tt.from !== due.to && tt.to !== due.to) {
+        var at = badgeCorner(tt.from, tt.to, flip);
+        if (at[0] !== 36 || at[1] !== 9) lands.badges[0].at = at;
+      }
     } else if (a.phase === 'tried' && t.seen && t.lost && t.lost.sq !== due.to) {
       fx = a.key + ':' + (a.fxn || 0) + 'lost';
       lands = { tokens: [{ sq: t.lost.sq, p: t.lost.p, kind: 'lost', fx: fx }] };
@@ -492,10 +500,11 @@ function boardOptsFor(a) {
     /* a miss explains itself (S4), once its verdict has been read
        (a.reason): the piece that punishes it ringed, a dashed arrow to what
        it takes; when See it plays that move they stay while it slides and
-       go as it lands (marks wait for the piece). Never on the answer's
-       square (2.3): an attacker standing there draws nothing, a target
-       there keeps the ring alone */
-    var th = a.phase === 'tried' && a.reason >= 1 && (!t.seen || opts.anim) ? t.threat : null;
+       go as it lands (marks wait for the piece), if they were drawn before
+       See it was pressed (t.ringed): marks never first appear on a slide.
+       Never on the answer's square (2.3): an attacker standing there draws
+       nothing, a target there keeps the ring alone */
+    var th = a.phase === 'tried' && a.reason >= 1 && (!t.seen || (opts.anim && t.ringed)) ? t.threat : null;
     if (th && th.from !== due.to) {
       opts.rings = [{ sq: th.from, kind: 'threat' }];
       if (th.to !== due.to) opts.arrows = [{ from: th.from, to: th.to, kind: 'threat', key: 'threat' }];
@@ -527,6 +536,28 @@ function boardOptsFor(a) {
        asked for */
     pending: !(a.phase === 'done' && a.explore) || !!xpSpoil(xpCur(a.explore))
   };
+}
+/* the corner of square to that the verdict badge takes, as [x, y] from
+   the square's corner: the top-right (36, 9) of 2.1, unless an arrow from
+   square from would run its head under the disc there, then the first
+   corner clear of it (top-left, bottom-right, bottom-left). The head as
+   markArrow draws it: its tip 6.3 units past the line's end (inset 0.34 of
+   a square, 0.22 under 1.6 squares), 21 long and 21 wide at its base, then
+   the shaft with its halo (7.4 wide) */
+function badgeCorner(from, to, flip) {
+  var xy = function (sq) { return [(flip ? 7 - sq % 8 : sq % 8) * 45 + 22.5, (flip ? sq >> 3 : 7 - (sq >> 3)) * 45 + 22.5]; };
+  var p = xy(from), q = xy(to), dx = p[0] - q[0], dy = p[1] - q[1], len = Math.sqrt(dx * dx + dy * dy) || 1;
+  var ux = dx / len, uy = dy / len, tip = 45 * (len < 45 * 1.6 ? 0.22 : 0.34) - 6.3;
+  var spots = [[36, 9], [9, 9], [36, 36], [9, 36]];
+  for (var i = 0; i < spots.length; i++) {
+    var bx = spots[i][0] - 22.5, by = spots[i][1] - 22.5, clear = true;
+    for (var s = 0; s <= 40 && clear; s++) {
+      var px = ux * (tip + s) - bx, py = uy * (tip + s) - by, half = s < 21 ? 10.5 * s / 21 : 3.7;
+      if (Math.sqrt(px * px + py * py) < 8.6 + half) clear = false;
+    }
+    if (clear) return spots[i];
+  }
+  return spots[0];
 }
 /* the board beat: the board svg and the marks over it, and the bar beside
    them. A frame that slides a piece sets motionUntil, so nothing else is
@@ -725,6 +756,8 @@ function paintText(a) {
     (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : barButton(rightSlot()) || (bar && bar.querySelector('[data-act]'))) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
   paintLive(d);
+  /* a miss's verdict is on screen now: its reason's beats run from here */
+  if (a.reasonFor && a.reasonFor === a.tried && a.phase === 'tried') missReason(a);
 }
 /* the bar's button in slot i, if it holds an action now (an off slot has none) */
 function barButton(i) {
@@ -831,11 +864,13 @@ function barSlots(a, ss) {
    back (Try again; Keep looking after a good move that is not the best). On
    the left, See it plays their reply to a miss, then help is offered (the
    next hint, or from the third miss the answer); a good move or one the
-   engine could not check offers the answer */
-function triedSlots(a) {
+   engine could not check offers the answer. seen: the bar as it is before
+   (false) or after (true) See it, for a word count */
+function triedSlots(a, seen) {
   var t = a.tried, left;
+  if (seen == null) seen = t.seen;
   if (t.kind === 'close') return [{ act: 'reveal', label: 'Show the answer', cls: 'btn-line' }, { act: 'dismissStronger', label: 'Keep looking', cls: 'btn-big' }];
-  if (t.kind === 'miss' && t.reply && !t.seen) left = { act: 'seeIt', label: 'See it ›', cls: 'btn-line' };
+  if (t.kind === 'miss' && t.reply && !seen) left = { act: 'seeIt', label: 'See it ›', cls: 'btn-line' };
   else if (t.kind === 'unchecked' || a.misses >= 3) left = { act: 'reveal', label: 'Show the answer', cls: 'btn-line' };
   else if (a.hints >= 2) left = { act: 'hint', label: 'No more hints', cls: 'btn-line', off: true };
   else left = { act: 'hint', label: a.hints ? 'Hint 2' : 'Hint', cls: 'btn-line' };

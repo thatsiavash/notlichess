@@ -184,7 +184,7 @@ function markRing(x, y, kind) {
    ghosts [{sq, p}], anim [from, to], dots, label, decor; marks: guards
    [{from, to}], arrows [{from, to, kind, key, solid}], tried [{from, to}
    or {sq}], rings [{sq, kind}], tokens [{sq, p, kind: 'lost' | 'won'}],
-   badges [{sq, kind}], shapes; fx, the effect id of this paint, scoped to
+   badges [{sq, kind, at}], shapes; fx, the effect id of this paint, scoped to
    its card by the caller (a.key + ':' + a.fx), so two cards never share
    one. bad, good, ghost and hint are the older names of the game, better
    and explore arrows and the hint ring. A small board (decor) keeps its
@@ -338,11 +338,12 @@ function boardSvg(st, opts) {
       + (lost ? '<line x1="' + (cx - 8.8) + '" y1="' + (cy + 8.8) + '" x2="' + (cx + 8.8) + '" y2="' + (cy - 8.8) + '" stroke="#d6452f" stroke-width="2.4" stroke-linecap="round"/>' : '')
       + '</g></g>';
   });
-  /* z 12: the verdict badge, at the landing square's top-right; it pops
-     once per effect id */
+  /* z 12: the verdict badge, at the landing square's top-right (or the
+     corner at, [x, y] from the square's corner, when an arrow's head needs
+     that one); it pops once per effect id */
   (opts.badges || []).forEach(function (bd) {
-    var c = corner(bd.sq), col = MARK_BADGE[bd.kind] || MARK_BADGE.info, hollow = bd.kind === 'close';
-    marks += '<g class="badge badge-' + bd.kind + '" transform="translate(' + (c[0] + 36) + ' ' + (c[1] + 9) + ')">' + fxOpen(bd, 'mk-pop')
+    var c = corner(bd.sq), col = MARK_BADGE[bd.kind] || MARK_BADGE.info, hollow = bd.kind === 'close', at = bd.at || [36, 9];
+    marks += '<g class="badge badge-' + bd.kind + '" transform="translate(' + (c[0] + at[0]) + ' ' + (c[1] + at[1]) + ')">' + fxOpen(bd, 'mk-pop')
       + '<circle r="9.8" fill="rgba(0,0,0,.28)"/>'
       + '<circle r="8.6" fill="' + (hollow ? '#161512' : col) + '"' + (hollow ? ' stroke="' + col + '" stroke-width="2.2"' : '') + '/>'
       + '<path d="' + (BADGE_GLYPH[bd.kind] || BADGE_GLYPH.info) + '" fill="none" stroke="' + (hollow ? col : '#fff')
@@ -377,6 +378,16 @@ function boardSvg(st, opts) {
    settings, and respectful of the first-gesture rule (the context is
    created inside a click). ── */
 var sndCtx = null;
+/* the context, made (or woken) inside a user gesture and playing nothing:
+   iOS keeps a context made or resumed outside one silent, and making it
+   costs a long task that must not land inside a timed beat (a verdict) */
+function sndWarm() {
+  if (cfg.sound === false) return;
+  try {
+    if (!sndCtx) sndCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (sndCtx.state === 'suspended') sndCtx.resume();
+  } catch (e) {}
+}
 function snd(name) {
   if (cfg.sound === false) return;
   /* where the phone can (Android), a found move buzzes once, short, and a

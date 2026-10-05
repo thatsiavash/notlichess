@@ -649,6 +649,10 @@ new MutationObserver(function () { makeFocusable(document); }).observe(document.
    one); after a tap or a click that focus shows no ring, which is for
    someone who steers with keys */
 document.addEventListener('pointerdown', function () { document.documentElement.classList.add('by-pointer'); }, true);
+/* the sound context is unlocked by the player's own gestures (pointerup
+   and keydown count as one everywhere; a touch's pointerdown does not) */
+document.addEventListener('pointerup', sndWarm, true);
+document.addEventListener('keydown', sndWarm, true);
 document.addEventListener('keydown', function () { document.documentElement.classList.remove('by-pointer'); }, true);
 document.addEventListener('keydown', function (e) {
   if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-act][tabindex]:not(input)')) {
@@ -743,7 +747,7 @@ document.addEventListener('pointerdown', function (e) {
     pointerState.justSelected = took || cur !== sq;
     /* a selection changes the board alone (exploring repaints its words too);
        a press that took a move back drew its selection with that board */
-    if (!took && cur !== sq) { if (bs.explore) { a.explore.sel = sq; renderCard(); } else { a.sel = sq; renderCardBoard(); } }
+    if (!took && cur !== sq) { if (bs.explore) { a.explore.sel = sq; renderCard(); } else { a.sel = sq; snd('tap'); renderCardBoard(); } }
   }
 });
 document.addEventListener('pointermove', function (e) {

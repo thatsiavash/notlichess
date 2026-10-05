@@ -1072,8 +1072,9 @@ const BAR = `(function () {
     A.click('reveal', null, 1);
     s = S();
     eq(s.phase, 'done', 'Show the answer, unchanged by the hint, is taken at once'); eq(s.result, 'fail', 'result');
-    /* a double tap on Show the answer: the second half lands on the answered bar and is ignored */
-    wait(100);
+    /* a double tap on Show the answer: the second half lands on the answered
+       bar and is ignored (the bar comes 150 ms after the answer's arrow) */
+    wait(250);
     A.click('lineFwd', null, 1); A.click('next', null, 2);
     eq(A.ev('ui.session.active.view.idx'), -1, 'the forward button 100 ms after the answered bar appeared');
     eq(A.ev('ui.session.idx'), 0, 'Next 100 ms after the answered bar appeared');
@@ -1219,13 +1220,18 @@ const BAR = `(function () {
     await tick(); await tick();
     eq(A.ev('ui.session.active.tried && ui.session.active.tried.kind'), 'miss', 'the miss is on the board');
     has(stops('tryAgain()'), 'Try again');
-    /* Show the answer is switched off while a check runs (S3): a press
-       there does nothing; Take back stops the search, and Show the answer
-       over a try stops it too */
-    eq(A.ev('(function () { window.readyEngine(); gradeMove(window.__t.offBook(ui.session.active)); return ui.session.active.phase; })()'), 'checking', 'a second try');
+    /* Show the answer is switched off once the band says a move is checked
+       (S3, K1): a press there does nothing; Take back stops the search, and
+       Show the answer over a try stops it too, and so does Show the answer
+       before K1, while the guess bar still offers it (it takes the move back) */
+    eq(A.ev('(function () { window.readyEngine(); gradeMove(window.__t.offBook(ui.session.active)); ui.session.active.checkSaid = 1; return ui.session.active.phase; })()'), 'checking', 'a second try');
     eq(stops('reveal()').length, 0, 'Show the answer while a move is checked');
     eq(A.ev('ui.session.active.phase + " " + (ui.session.active.result || null)'), 'checking null', 'Show the answer does nothing while a move is checked');
     has(stops('takeBack()'), 'Take back');
+    eq(A.ev('(function () { window.readyEngine(); var a = window.__t.open(allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[0]); gradeMove(window.__t.offBook(a)); return a.phase; })()'), 'checking', 'a try before K1');
+    has(stops('reveal()'), 'Show the answer before K1');
+    eq(A.ev('ui.session.active.phase + " " + ui.session.active.result + " " + ui.session.active.attempts'), 'done fail 0', 'Show the answer before K1 takes the move back and shows the answer');
+    A.ev('(window.__t.open(allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[0]), 1)');
     eq(A.ev('(function () { window.readyEngine(); gradeMove(window.__t.offBook(ui.session.active)); return ui.session.active.phase; })()'), 'checking', 'a third try');
     await tick(); await tick();
     eq(A.ev('ui.session.active.phase'), 'tried', 'the third try is on the board');
@@ -1428,20 +1434,29 @@ const BAR = `(function () {
       const txt = A.ev(`window.__writes.filter(function (w) { return w.kind === 'text' && w.t > ${tap}; }).map(function (w) { return w.t - ${tap}; })[0]`);
       ok(txt >= 300, at + ': words ' + txt + ' ms after the take back');
     }
-    /* Show the answer is switched off while a move is checked (S3): pressed
-       100 ms after a tapped move, while the guess bar is still painted, it
-       does nothing */
-    for (const key of cards) {
-      A.ev(`(function () { ${AFTER} window.readyEngine(); window.__holdTry = true; var a = window.__show(model().byKey['${key}']); window.__m = offBook(a); return 1; })()`);
+    /* until K1 (300 ms after the move lands) the guess bar stays, and its
+       buttons work: Hint or Show the answer pressed 100 ms after a tapped
+       move takes the move back (no attempt, no miss, the check job
+       stopped), the board crossfades back, then the hint or the answer, the
+       words after the board */
+    for (const key of cards) for (const act of ['reveal', 'hint']) {
+      const at = key + ' ' + act;
+      A.ev(`(function () { ${AFTER} window.readyEngine(); window.__holdTry = true; window.__stops = []; var a = window.__show(model().byKey['${key}']); window.__m = offBook(a); return 1; })()`);
       run(1000);
       A.ev('(function (m) { sessionClick(m.from); sessionClick(m.to); return 1; })(window.__m)');
       run(100);
-      ok(/data-act="reveal"/.test(A.ev('window.__els.cbar.innerHTML')) && !/data-act="takeBack"/.test(A.ev('window.__els.cbar.innerHTML')), key + ': the guess bar is still painted');
-      A.click('reveal', null, 1);
+      ok(/data-act="reveal"/.test(A.ev('window.__els.cbar.innerHTML')) && !/data-act="takeBack"/.test(A.ev('window.__els.cbar.innerHTML')), at + ': the guess bar is still painted');
+      const tap = A.getNow();
+      A.click(act, null, act === 'reveal' ? 1 : 0);
       const s = S();
-      eq(s.phase + ' ' + s.result, 'checking null', key + ': Show the answer during the check');
-      A.ev('(window.__holdTry = false, takeBack(), 1)');
+      if (act === 'reveal') eq(s.phase + ' ' + s.result, 'done fail', at + ': Show the answer during the check shows it');
+      else { eq(s.phase, 'guess', at + ': Hint during the check takes the move back'); eq(A.ev('ui.session.active.hints'), 1, at + ': and gives the hint'); }
+      eq(s.attempts, 0, at + ': no attempt'); eq(s.misses, 0, at + ': no miss'); ok(s.stops >= 1, at + ': the check job is stopped');
+      ok(/class="xfade"/.test(A.ev('window.__els.bwrap.innerHTML')), at + ': the board crossfades back');
+      A.ev('(window.__holdTry = false, 1)');
       run(1000);
+      const txt = A.ev(`window.__writes.filter(function (w) { return w.kind === 'text' && w.t >= ${tap}; }).map(function (w) { return w.t - ${tap}; })[0]`);
+      ok(txt >= 150, at + ': words ' + txt + ' ms after the press');
     }
     const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
     eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
@@ -1852,6 +1867,54 @@ const BAR = `(function () {
     eq(r.forced.triedOnTo, JSON.stringify([{ sq: r.forced.other, fx: 'x' }]), 'a tried move onto the answer square: the cross on the square it left');
   });
 
+  await test('a threat arrow into the square of the move just tried keeps its head clear of the badge, which yields its corner', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MISSES}
+      var out = [], seen = { fixture: 0, moved: 0, forced: 0 };
+      /* on the drawn marks: the threat line, its head's tip 6.3 units past
+         its end, the head 21 long and 21 wide at its base, then the shaft
+         and its halo (7.4 wide); the badge's disc, r 8.6, where it is drawn */
+      var clear = function (html, what) {
+        var ln = /<line class="threat-arrow"[^>]*? x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"/.exec(html), bd = /<g class="badge badge-bad" transform="translate\\(([^ ]+) ([^)]+)\\)"/.exec(html);
+        if (!ln || !bd) { out.push(what + ': ' + (ln ? 'no badge' : 'no arrow')); return null; }
+        var x1 = +ln[1], y1 = +ln[2], x2 = +ln[3], y2 = +ln[4], bx = +bd[1], by = +bd[2], len = Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)), ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+        for (var s = 0; s <= 40; s++) {
+          var px = x2 + ux * (6.3 - s), py = y2 + uy * (6.3 - s), half = s < 21 ? 10.5 * s / 21 : 3.7;
+          if (Math.sqrt((px - bx) * (px - bx) + (py - by) * (py - by)) < 8.6 + half - 0.01) { out.push(what + ': the badge over the arrow ' + s + ' units from its tip'); break; }
+        }
+        return [bx, by];
+      };
+      var drawn = function (a) { var f = boardOptsFor(a); return boardSvg(f.st, f.opts); };
+      eachMiss([1, 2], function (a, what) {
+        var t = a.tried, due = dueMove(a), th = t && t.threat;
+        if (!th || th.to !== t.to || th.from === due.to || th.to === due.to) return;
+        var b0 = /<g class="badge badge-bad" transform="translate\\(([^ ]+) ([^)]+)\\)"/.exec(drawn(a));
+        a.reason = 1;
+        var at = clear(drawn(a), what);
+        if (at && b0 && (+b0[1] !== at[0] || +b0[2] !== at[1])) out.push(what + ': the badge moved when the arrow came');
+        seen.fixture++;
+        if (at && boardOptsFor(a).opts.badges[0].at) seen.moved++;
+      });
+      /* every direction an arrow can come from, on a white and a black card */
+      playerTier = function () { return 2; };
+      ['white', 'black'].forEach(function (col) {
+        var it = allMistakes().filter(trainable).filter(function (x) { var c = cardFor(x); return c && !c.sol && x.g.color === col; })[0], a = openCard(it);
+        gradeMove(uciToMove(a.st, a.playedUci));
+        var due = dueMove(a);
+        if (a.tried.to === due.to) return;
+        a.reason = 1;
+        for (var q = 0; q < 64; q++) {
+          if (q === a.tried.to || q === due.to) continue;
+          a.tried.threat = { from: q, to: a.tried.to, captured: 'P' };
+          clear(drawn(a), col + ' card, an arrow from ' + sqName(q) + ' to ' + sqName(a.tried.to));
+          seen.forced++;
+        }
+      });
+      return JSON.stringify({ out: out, seen: seen }); })()`));
+    eq(r.out.length, 0, r.out.length + ', first: ' + r.out.slice(0, 3).join(' | '));
+    ok(r.seen.fixture >= 10 && r.seen.moved >= 1 && r.seen.forced >= 120, 'checked: ' + JSON.stringify(r.seen));
+  });
+
   await test('a miss gives its reason in two beats: the ring and arrow 600 ms after the verdict is read, the words 150 ms later', async () => {
     const A = boot();
     A.ev(DOM);
@@ -1859,7 +1922,8 @@ const BAR = `(function () {
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
     /* the writes since t0: the marks drawn, the band's row 2 */
     const writes = (t0) => JSON.parse(A.ev(`JSON.stringify(window.__writes.filter(function (w) { return w.t >= ${t0} && w.v != null; }).map(function (w) {
-      return { id: w.id, kind: w.kind, dt: w.t - ${t0}, ring: /ring/.test(w.v), arrow: /arrow/.test(w.v), r2: w.id === 'cband' ? (/<p class="bd-r2">([^<]*)<\\/p>/.exec(w.v) || [])[1] || '' : null };
+      return { id: w.id, kind: w.kind, dt: w.t - ${t0}, ring: /ring/.test(w.v), arrow: /arrow/.test(w.v), r2: w.id === 'cband' ? (/<p class="bd-r2">([^<]*)<\\/p>/.exec(w.v) || [])[1] || '' : null,
+        r1: w.id === 'cband' ? (/<h2 class="bd-r1"[^>]*>([^<]*)<\\/h2>/.exec(w.v) || [])[1] || '' : null };
     }))`));
     const keys = JSON.parse(A.ev(`(function () { ${OPEN} playerTier = function () { return 2; };
       return JSON.stringify(allMistakes().filter(trainable).filter(function (it) {
@@ -1881,13 +1945,30 @@ const BAR = `(function () {
         const t0 = A.getNow();
         A.ev(`(function (a) { a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); return 1; })(ui.session.active)`);
         run(1600);
-        const ws = writes(t0), v = ws.filter((w) => w.id === 'cband')[0];
-        ok(v && /^Your game move again/.test(A.ev('ui.session.active.verdict.row1')) && v.r2 === '', at + ': the verdict alone first, ' + JSON.stringify(v));
+        /* the verdict's write, picked by what it wrote */
+        const ws = writes(t0), v = ws.filter((w) => w.id === 'cband' && w.r1 === 'Your game move again')[0];
+        ok(v && v.r2 === '' && !ws.some((w) => w.id === 'cband' && w.dt < v.dt), at + ': the verdict alone first, ' + JSON.stringify(v));
         const mk = ws.filter((w) => w.id === 'marks' && w.ring)[0], said = ws.filter((w) => w.id === 'cband' && w.r2)[0];
         ok(mk && mk.arrow && mk.dt === v.dt + MARK, at + ': the ring and arrow ' + MARK + ' ms after the verdict, ' + (mk && mk.dt) + ' vs ' + v.dt);
         ok(said && said.dt === v.dt + WORDS && said.r2 === A.ev('esc(ui.session.active.verdict.row2)'), at + ': the words ' + WORDS + ' ms after the verdict, ' + JSON.stringify(said));
         ok(!ws.some((w) => w.kind === 'board' && w.dt > v.dt), at + ': the board stays still while the reason comes');
         eq(A.ev('ui.session.active.reason'), 2, at + ': both beats counted');
+        /* the beats run from when the verdict's words really paint: an input
+           that ends the slide early (a flush) brings them forward, a board
+           beat while they wait puts them back, and the reason keeps its
+           600 and 750 ms after them */
+        for (const [how, ms, code] of [['a flush mid-slide', reduced ? 50 : 100, 'flushStage()'], ['a board beat while the words wait', reduced ? 100 : 380, "stage(['board'])"]]) {
+          A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+          run(1000);
+          const t2 = A.getNow();
+          A.ev(`(function (a) { a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); return 1; })(ui.session.active)`);
+          run(ms);
+          A.ev(`(${code}, 1)`);
+          run(1600);
+          const w2 = writes(t2), v2 = w2.filter((w) => w.id === 'cband' && w.r1 === 'Your game move again')[0];
+          const m2 = w2.filter((w) => w.id === 'marks' && w.ring)[0], s2 = w2.filter((w) => w.id === 'cband' && w.r2)[0];
+          ok(v2 && m2 && s2 && m2.dt - v2.dt === MARK && s2.dt - v2.dt === WORDS, at + ', ' + how + ': the reason ' + (v2 && m2 && s2 ? (m2.dt - v2.dt) + ' and ' + (s2.dt - v2.dt) : '?') + ' ms after the verdict, ' + JSON.stringify([v2, m2, s2]));
+        }
         /* an engine miss: the verdict when the answer comes, the reason after it */
         A.ev(`(window.__show(model().byKey['${key}']), 1)`);
         run(1000);
@@ -1896,9 +1977,9 @@ const BAR = `(function () {
         await tick(); await tick();
         run(1600);
         if (A.ev('ui.session.active.phase') === 'tried' && A.ev('ui.session.active.tried.kind') === 'miss') {
-          const w1 = writes(t1), v1 = w1.filter((w) => w.id === 'cband' && /Not this one/.test(A.ev('ui.session.active.verdict.row1')))[0];
-          const s1 = w1.filter((w) => w.id === 'cband' && w.r2)[0];
-          ok(v1 && s1 && s1.dt - v1.dt >= WORDS, at + ': an engine miss, its words ' + (s1 && v1 ? s1.dt - v1.dt : '?') + ' ms after the verdict');
+          const w1 = writes(t1), v1 = w1.filter((w) => w.id === 'cband' && w.r1 === 'Not this one')[0];
+          const s1 = w1.filter((w) => w.id === 'cband' && w.r1 === 'Not this one' && w.r2)[0];
+          ok(v1 && v1.r2 === '' && s1 && s1.dt - v1.dt === WORDS, at + ': an engine miss, its words ' + (s1 && v1 ? s1.dt - v1.dt : '?') + ' ms after the verdict, ' + JSON.stringify([v1, s1]));
           n++;
         }
       }
@@ -1960,6 +2041,23 @@ const BAR = `(function () {
         }
         s = S();
         ok(/^hint tryAgain$/.test(s.acts) && !s.s0 && !s.s1 && !s.band, at + ': the new bar, nothing faded: ' + JSON.stringify(s));
+        /* See it pressed before the reason is drawn (after the slot's 450 ms,
+           before V + 600, so the reason's beat comes during the fade or the
+           slide): the ring and arrow never first appear on the slide, nor
+           after it */
+        for (const after of reduced ? [] : [460, 510]) {
+          A.ev(`(function () { var a = window.__show(model().byKey['${key}']); gradeMove(uciToMove(a.st, a.playedUci)); return 1; })()`);
+          const t0 = A.getNow();
+          run(10);
+          while (!/data-act="seeIt"/.test(A.ev('window.__els.cbar.innerHTML')) && A.getNow() - t0 < 1000) run(10);
+          run(after);
+          const tap = A.getNow();
+          A.click('seeIt', null, 0);
+          run(1500);
+          const late = A.ev(`window.__writes.filter(function (w) { return w.t >= ${tap} && (w.id === 'marks' || (w.id === 'bwrap' && w.what === 'innerHTML')) && /ring|arrow/.test(w.v); }).length`);
+          eq(late, 0, at + ': See it at V + ' + after + ', the reason marks drawn after it ' + late + ' times');
+          ok(S().token, at + ': See it at V + ' + after + ', what it took lands');
+        }
       }
     }
     A.ev('(ui.reducedTest = false, 1)');
@@ -2008,6 +2106,66 @@ const BAR = `(function () {
     ok(n >= 6, 'misses ' + n);
     const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
     eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('a hint or the answer from the card: its marks are drawn, then the words 150 ms later, never in one task', () => {
+    const A = boot();
+    A.ev(DOM);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).slice(0, 4).map(function (it) { return it.key; }))`));
+    for (const key of keys) for (const reduced of [false, true]) for (const act of ['hint', 'hint 2', 'reveal']) {
+      const at = key + ' ' + act + (reduced ? ' (reduced motion)' : '');
+      A.ev(`(ui.reducedTest = ${reduced}, window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      if (act === 'hint 2') { A.click('hint', null, 0); run(1000); }
+      const t0 = A.getNow();
+      A.click(act === 'reveal' ? 'reveal' : 'hint', null, act === 'reveal' ? 1 : 0);
+      run(600);
+      const ws = JSON.parse(A.ev(`JSON.stringify(window.__writes.filter(function (w) { return w.t >= ${t0} && (w.v != null || w.kind === 'text'); }).map(function (w) { return { k: w.kind, dt: w.t - ${t0} }; }))`));
+      const board = ws.filter((w) => w.k === 'board'), text = ws.filter((w) => w.k === 'text');
+      ok(board.length && board[0].dt === 0, at + ': the board at the press: ' + JSON.stringify(ws));
+      ok(text.length && Math.min.apply(null, text.map((w) => w.dt)) >= 150, at + ': the words 150 ms after it: ' + JSON.stringify(ws));
+    }
+    A.ev('(ui.reducedTest = false, 1)');
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('the sound context is made inside the player\'s gesture, never inside a timed beat; a piece picked up taps', () => {
+    const A = boot();
+    A.ev(DOM);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    /* a Web Audio stand-in that notes when a context is made */
+    A.ev(`(function () {
+      window.__ctx = []; window.__tones = 0; sndCtx = null; cfg.sound = true;
+      var node = function () { return { frequency: {}, gain: { setValueAtTime: function () {}, linearRampToValueAtTime: function () {}, exponentialRampToValueAtTime: function () {} },
+        connect: function () {}, start: function () { window.__tones++; }, stop: function () {} }; };
+      window.AudioContext = function () { window.__ctx.push(Date.now()); this.state = 'running'; this.currentTime = 0; this.destination = {}; this.createOscillator = node; this.createGain = node; this.resume = function () {}; };
+      var s0 = snd; window.__snd = []; snd = function (n) { window.__snd.push(n); return s0.apply(this, arguments); };
+      return 1; })()`);
+    const key = A.ev(`allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol; })[0].key`);
+    A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+    run(1000);
+    const c = JSON.parse(A.ev('JSON.stringify({ f: ui.session.active.played.from, t: ui.session.active.played.to })'));
+    eq(A.ev('window.__ctx.length'), 0, 'no context before the first gesture');
+    const t0 = A.getNow();
+    /* a lift that plays nothing still makes it, and so does a key */
+    A.pointer('pointerup', c.t);
+    eq(A.ev('JSON.stringify(window.__ctx) + " " + window.__snd.length'), JSON.stringify([t0]) + ' 0', 'the context is made by the first lift, inside the gesture, with no sound');
+    A.ev('(sndCtx = null, 1)');
+    A.key('Escape');
+    eq(A.ev('window.__ctx.length + " " + window.__snd.length'), '2 0', 'a key makes it too');
+    A.pointer('pointerdown', c.f);
+    eq(A.ev('window.__snd.join(" ")'), 'tap', 'a piece picked up by a press taps');
+    A.pointer('pointerup', c.f); A.pointer('click', c.f);
+    A.tap(c.t);
+    run(1500);
+    eq(A.ev('window.__ctx.length'), 2, 'the verdict plays on the context made in the gesture');
+    ok(/bad/.test(A.ev('window.__snd.join(" ")')) && A.ev('window.__tones') > 0, 'the verdict sounds: ' + A.ev('window.__snd.join(" ")'));
+    A.ev('(cfg.sound = false, sndCtx = null, window.__ctx = [], 1)');
+    A.key('Escape');
+    eq(A.ev('window.__ctx.length'), 0, 'with the sound off no context is made');
+    A.ev('(cfg.sound = true, 1)');
   });
 
   await test('a verdict lands on its square once the piece has landed, with its sound; a check speaks after 300 ms', async () => {
