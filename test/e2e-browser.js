@@ -23,6 +23,26 @@
   const onErr = (e) => errors.push(String(e.message || e.reason || e));
   window.addEventListener('error', onErr);
   window.addEventListener('unhandledrejection', onErr);
+  /* a square tapped as a finger taps it: a click on the board's own square, so a tapped move slides */
+  const tapSq = (sq) => { const r = $('#bwrap .board rect[data-sq="' + sq + '"]'); if (r) r.dispatchEvent(new MouseEvent('click', { bubbles: true })); return !!r; };
+  const sqOf = (s) => (s.charCodeAt(0) - 97) + (parseInt(s[1], 10) - 1) * 8;
+  const tapMove = async (uci) => { tapSq(sqOf(uci.slice(0, 2))); await sleep(120); tapSq(sqOf(uci.slice(2, 4))); };
+  /* text never changes while a piece moves: every write to the band, the action bar, the strip, the
+     session bar or the live region is timed, and so is every slide of a piece (transitionrun to
+     transitionend) */
+  const W = { writes: [], slides: [], fit: [] };
+  const mo = new MutationObserver((l) => { const t = performance.now(); l.forEach((m) => {
+    const n = m.target.nodeType === 1 ? m.target : m.target.parentNode;
+    const host = n && n.closest && n.closest('#cband, #cbar, #cstrip, #ctop, #sr-live');
+    if (host) W.writes.push([t, host.id]); }); });
+  const onRun = (e) => { if (e.target.classList && e.target.classList.contains('anim-piece')) W.slides.push([performance.now(), null]); };
+  const onEnd = (e) => { if (e.target.classList && e.target.classList.contains('anim-piece')) { const x = W.slides[W.slides.length - 1]; if (x && x[1] == null) x[1] = performance.now(); } };
+  /* the band's words fit its box: no row cut short, nothing below the box (the phone check runs at 360 x 640) */
+  const bandFits = (what) => {
+    const bx = $('#cband .card-task'), rows = document.querySelectorAll('#cband .bd-r1, #cband .bd-r2, #cband .bd-cap');
+    const cut = !bx || bx.scrollHeight > bx.clientHeight || [].some.call(rows, (r) => r.scrollWidth > r.clientWidth + 1 || r.scrollHeight > r.clientHeight + 1);
+    if (cut) W.fit.push(what + ': ' + (bx ? bx.innerText.replace(/\n+/g, ' / ') : 'no band'));
+  };
   const legalOther = (c) => {
     /* a legal move that is neither the answer nor the game move */
     return T.ev(`(function () { var a = ui.session.active, ms = legalMoves(a.st).map(moveUci);
@@ -49,6 +69,13 @@
     ok('first card opens', !!c);
     if (!c) throw new Error('no card');
     ok('the first card asks for a better move, with your side to move', /Find a better move/.test(text('#main')) && T.ev('myPov(ui.session.active.it) === !!ui.session.active.st.w'), text('.card-task'));
+    const san0 = T.ev('sanOf(ui.session.active.pre, ui.session.active.played)');
+    ok('the band reads Your turn / Find a better move than the game move', text('#cband .bd-r1') === 'Your turn' && text('#cband .bd-r2') === 'Find a better move than ' + san0 + '.', text('#cband'));
+    bandFits('the card opens');
+    mo.observe($('#trainbox'), { childList: true, subtree: true, characterData: true });
+    if ($('#sr-live')) mo.observe($('#sr-live'), { childList: true, subtree: true, characterData: true });
+    document.addEventListener('transitionrun', onRun, true);
+    document.addEventListener('transitionend', onEnd, true);
     ok('session mode hides the site chrome', document.body.classList.contains('in-session'));
     ok('the session bar has an end button and progress', !!$('.sb-end') && !!$('.dots'));
     ok('the card shows a board, a task and the game context', !!$('#bwrap svg') && /to move|better move/i.test(text('#main')) && !!$('.ctx'));
@@ -66,11 +93,14 @@
     ok('a tap on a ghost\'s cross reaches the piece under it', gx.sq >= 0 && gx.hit === gx.sq, JSON.stringify(gx));
     const want = c.sol ? c.sol : [c.best];
     for (let i = 0; i < want.length; i += 2) {
-      T.play(want[i]);
+      await until(() => T.card().phase === 'guess', 6000);
+      await tapMove(want[i]);
       await until(() => ['done', 'guess'].indexOf(T.card().phase) !== -1 && (T.card().phase === 'done' || T.card().solIdx > i), 6000);
     }
     c = await until(() => { const x = T.card(); return x.phase === 'done' ? x : null; }, 15000);
     ok('playing the answer solves the card', !!c && (c.result === 'first' || c.result === 'hint'), c && c.result);
+    await sleep(600);
+    bandFits('the card solved');
     ok('the solved card shows the best line', !!c && !!c.lines && c.lines.best.length >= 1);
     ok('both halves of the lesson are on screen', /\S/.test(text('.tline.tl-bad')) && /\S/.test(text('.tline.tl-good')), text('.result'));
     ok('no pawn number on the board', !/[+-]\d+\.\d/.test(text('#ebar-lab')));
@@ -117,10 +147,13 @@
     c = await until(() => { const x = T.card(); return x.phase === 'guess' && x.idx === at + 1 ? x : null; }, 30000);
     ok('Next opens the second card', !!c);
     if (c) {
-      T.play(c.played);
+      await sleep(500);
+      await tapMove(c.played);
       await until(() => T.card().misses === 1, 4000);
-      ok('replaying the game move is explained as the game move', /game move again/i.test(text('#cpanel')), text('.verdict'));
-      ok('the game-move message never names the answer', text('.verdict').indexOf(T.ev('sanOf(ui.session.active.pre, ui.session.active.best)')) === -1, text('.verdict'));
+      await sleep(500);
+      ok('replaying the game move is explained as the game move', /game move again/i.test(text('#cband')), text('#cband'));
+      ok('the game-move message never names the answer', text('#cband').indexOf(T.ev('sanOf(ui.session.active.pre, ui.session.active.best)')) === -1, text('#cband'));
+      bandFits('the game move again');
       /* the try stays on the board until Try again (a button ignores taps in
          a card's first 450 ms and for 450 ms after the bar changes) */
       await sleep(500);
@@ -146,7 +179,8 @@
         click('[data-act=tryAgain]');
         await until(() => T.card().phase === 'guess', 3000);
         const tier = T.ev('ui.session.active.tier'), c2b = T.card();
-        ok('tier 2: hint 1 is on after the second Try again', tier === 3 ? c2b.hints === 0 : c2b.hints >= 1 && !!$('.hint-note'), 'tier ' + tier + ', hints ' + c2b.hints);
+        ok('tier 2: hint 1 is on after the second Try again', tier === 3 ? c2b.hints === 0 : c2b.hints >= 1 && /^Hint 1 of 2/.test(text('#cband .bd-r1')), 'tier ' + tier + ', hints ' + c2b.hints + ', ' + text('#cband'));
+        bandFits('a hint');
         const more = legalOther(c).filter((u) => tried.indexOf(u) === -1);
         let c3 = null;
         for (let mi = 0; mi < Math.min(4, more.length) && !c3; mi++) {
@@ -167,10 +201,23 @@
         }
         click('#cpanel [data-act=reveal]');
         await until(() => T.card().phase === 'done', 3000);
-        ok('a revealed card says what the answer is', /answer is/i.test(text('#cpanel')));
+        await sleep(300);
+        ok('a revealed card says what the answer is', /^The answer: \S+/.test(text('#cband .bd-r1')), text('#cband'));
+        bandFits('the answer shown');
       } else ok('a close alternative was accepted as solved', c2.result !== 'fail');
       click('[data-act=next]');
     }
+
+    /* the slides so far: the answer tapped, the game move tapped, See it */
+    await sleep(600);
+    mo.disconnect();
+    document.removeEventListener('transitionrun', onRun, true);
+    document.removeEventListener('transitionend', onEnd, true);
+    const inSlide = [];
+    /* a slide starts two frames after its board is drawn: words written with that board count too */
+    W.writes.forEach((w) => W.slides.forEach((x) => { if (w[0] > x[0] - 60 && w[0] < (x[1] == null ? x[0] + 400 : x[1])) inSlide.push(w[1] + ' at ' + Math.round(w[0] - x[0]) + ' ms'); }));
+    ok('no text is written while a piece slides', W.slides.length >= 2 && inSlide.length === 0, W.slides.length + ' slides, ' + inSlide.length + ' writes inside one: ' + inSlide.slice(0, 4).join(', '));
+    ok('the band\'s words fit its box', W.fit.length === 0, W.fit.slice(0, 3).join(' | '));
 
     /* ── skip, reload-resume and the recap ───────────────────────────── */
     c = await until(() => { const x = T.card(); return x.phase === 'guess' ? x : null; }, 30000);

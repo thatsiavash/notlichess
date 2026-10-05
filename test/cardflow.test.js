@@ -1,7 +1,8 @@
 // The card flow, run on the built page in Node (test/app-realm.js) with the fixture games: what each
 // frame of a card draws, checked as data (boardOptsFor) against the spoiler rule of the redesign spec
 // (projects/lichess-launcher/ux-2026-10-03/FINAL-SPEC.md, 2.3). Node has no engine, so a try is answered
-// by a stub with the card's stored refutation; timers run on the realm's fake clock (setNow, flush).
+// by a stub with the card's stored refutation; timers run on the realm's fake clock (setNow, flush, or
+// advance, which runs each timer when it falls due).
 // Each slice of the redesign adds the frames it builds to these loops. node test/cardflow.test.js
 const fs = require('fs'), path = require('path');
 const makeApp = require('./app-realm');
@@ -138,6 +139,48 @@ const AFTER = `function afterMiss(a, check, what) {
 function offBook(a) {
   return legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci && !(a.sol && a.sol.indexOf(u) >= 0); })[0] || null;
 }`;
+/* the card's page as recording stubs, so renderCard and the staged beats
+   (14s-stage.js) really paint: every write is kept in window.__writes with
+   the clock and motionUntil at that moment. #bwrap and the bar beside it
+   take board writes, the marks svg marks writes, #trainbox the card's
+   frame; the session bar, the band, the action bar, the strip and the live
+   region take text writes. window.__els holds the nodes */
+const DOM = `(function () {
+  var log = window.__writes = [], els = window.__els = {};
+  var kind = { bwrap: 'board', ebar: 'board', 'ebar-fill': 'board', marks: 'marks', trainbox: 'frame' };
+  var note = function (id, what) { log.push({ id: id, what: what, kind: kind[id] || 'text', t: Date.now(), mu: motionUntil }); };
+  var mk = function (id) {
+    var n = { id: id, dataset: {}, focus: function () {}, setAttribute: function () {}, getAttribute: function () { return null; },
+      contains: function () { return false; }, appendChild: function () {}, querySelectorAll: function () { return []; },
+      querySelector: function (sel) { return id === 'bwrap' && sel === '.marks' ? els.marks : null; },
+      classList: { toggle: function (c) { note(id, 'class ' + c); }, add: function () {}, remove: function () {}, contains: function () { return false; } } };
+    ['innerHTML', 'textContent', 'className', 'outerHTML'].forEach(function (name) {
+      var v = '';
+      Object.defineProperty(n, name, { get: function () { return v; }, set: function (x) { v = x; note(id, name); } });
+    });
+    var h = '';
+    n.style = {};
+    Object.defineProperty(n.style, 'height', { get: function () { return h; }, set: function (x) { h = x; note(id, 'height'); } });
+    return n;
+  };
+  ['trainbox', 'ctop', 'cband', 'bwrap', 'ebar', 'ebar-fill', 'ebar-lab', 'cpanel', 'cstrip', 'cbar', 'sr-live', 'marks'].forEach(function (id) { els[id] = mk(id); });
+  var get0 = document.getElementById;
+  document.getElementById = function (id) { return els[id] || get0(id); };
+  /* a card opened as the page opens one: shown now, painted through renderCard */
+  window.__show = function (it) {
+    ui.session = { mode: 't', label: 't', keys: [it.key], idx: 0, results: {}, relearn: [], relearnOf: {} };
+    var a = cardFor(it);
+    ui.session.active = a;
+    a.shownAt = Date.now();
+    renderCard();
+    return a;
+  };
+  return 1;
+})()`;
+/* the writes that broke the sequencer's rule: a board, marks or frame
+   write while a piece was sliding, or a text write sooner than 150 ms
+   after the last slide ended */
+const early = (ws) => ws.filter((w) => (w.kind === 'text' ? w.t < w.mu + 150 : w.t < w.mu));
 
 (async () => {
   await test('the spoiler rule holds on every card before an answer, tiers 1 to 3 (open, hints 0 to 2, after a miss)', async () => {
@@ -294,17 +337,19 @@ function offBook(a) {
     ['threatOnReply', 'replyOnAnswer', 'replyRingOnAnswer', 'tokenOnAnswer'].forEach((k) => ok(q[k].length > 0, k + ' not caught'));
   });
 
-  await test('boardOptsFor writes nothing: the same card gives the same frame twice', () => {
+  await test('boardOptsFor writes nothing: the same card gives the same frame twice', async () => {
     const A = boot();
-    const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var out = [], it = allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.lu).length >= 2; })[0];
-      var snap = function (a) { return JSON.stringify(a, function (k, v) { return k === 'preKey' ? undefined : v; }); };
-      var same = function (what, a) {
+    A.ev(`(function () {
+      var out = window.__same = [], snap = function (a) { return JSON.stringify(a); };
+      window.__sameFrame = function (what, a) {
         var s0 = snap(a), f1 = JSON.stringify(boardOptsFor(a)), s1 = snap(a), f2 = JSON.stringify(boardOptsFor(a));
         if (s0 !== s1) out.push(what + ': the card changed');
         if (f1 !== f2) out.push(what + ': the frame changed');
         if (snap(a) !== s1) out.push(what + ': the card changed on the second call');
       };
+      return 1; })()`);
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = window.__same, same = window.__sameFrame, it = allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.lu).length >= 2; })[0];
       var a = openCard(it);
       same('open', a);
       a.sel = a.played.from; same('a piece selected', a); a.sel = -1;
@@ -316,8 +361,34 @@ function offBook(a) {
       a.lastView = { line: 'best', idx: -1 }; a.view = { line: 'best', idx: 0 }; same('a line stepped forward', a);
       startExplore({}); same('exploring', a);
       explorePlay(legalMoves(a.explore.st)[0], false); same('exploring, a move sliding', a);
+      /* the card's own position, which the spoiler index knows: Stockfish keeps quiet there, and reading that writes nothing */
+      exploreExit('silent'); a.view = { line: 'best', idx: -1 }; startExplore({});
+      if (!ui.session.xpSpoil[xpCur(a.explore).key]) out.push('the position of the card is not in the spoiler index');
+      same('exploring the position of the card', a);
+      /* the spoiler check only reads, even with no key kept on the card */
+      delete a.preKey; same('exploring the position of the card, no key kept', a); a.preKey = posKey(a.pre);
+      exploreExit('silent'); a.view = { line: 'best', idx: 0 }; startExplore({});
       return JSON.stringify(out); })()`));
     eq(r.length, 0, r.join(' | '));
+    /* Stockfish answers the explored position: the frame with a fresh
+       result (the bar's live value) writes nothing either */
+    await tick(); await tick();
+    const job = A.ev(`(function () {
+      var a = ui.session.active, ex = a.explore, n = xpCur(ex), j = window.__evals.filter(function (x) { return !x.opts.searchmoves && x.res && x.fen === n.fen; }).pop();
+      if (!j) return 'no job';
+      var st = stateFromFen(j.fen), lines = legalMoves(st).slice(0, 3).map(function (m, i) {
+        var after = cloneState(st); applyMove(after, m); var rep = legalMoves(after)[0];
+        return { cp: (st.w ? 1 : -1) * (60 - 40 * i), mate: null, pv: [moveUci(m)].concat(rep ? [moveUci(rep)] : []) };
+      });
+      j.res({ cp: lines[0].cp, mate: null, bestUci: lines[0].pv[0], pv: lines[0].pv, lines: lines, depth: 18, stopped: false });
+      return 'answered'; })()`);
+    eq(job, 'answered', 'the explore search');
+    await tick(); await tick();
+    const r2 = JSON.parse(A.ev(`(function () { var a = ui.session.active, ex = a.explore;
+      window.__sameFrame('exploring, with a result', a);
+      return JSON.stringify({ out: window.__same, live: boardOptsFor(a).evLive, has: !!ex.res[xpCur(ex).key] }); })()`));
+    ok(r2.has && r2.live, 'the result is in and the bar is live: ' + JSON.stringify(r2));
+    eq(r2.out.length, 0, r2.out.join(' | '));
   });
 
   await test('the engine stub answers a try with the stored refutation, and the try is a miss', async () => {
@@ -411,74 +482,164 @@ function offBook(a) {
     eq(f.phase, 'done', 'revealed over a try'); eq(f.tried, null, 'the try is gone'); eq(f.result, 'fail', 'result');
   });
 
-  await test('a reveal or hint click within 450 ms of Try again or See it does nothing', () => {
+  await test('no board, marks or text write while motionUntil is in the future', () => {
     const A = boot();
+    A.ev(DOM);
+    /* the clock in 10 ms steps, so every timer runs close to when it falls due */
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const band = () => A.ev('window.__els.cband.innerHTML.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").trim()');
+    const textWrites = () => A.ev('window.__writes.filter(function (w) { return w.kind === "text"; }).length');
+    const cards = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol && unpackUci(it.b.ru).length; }).slice(0, 10).map(function (it) { return it.key; }))`));
+    ok(cards.length === 10, 'cards ' + cards.length);
+    let slides = 0, landed = 0;
+    for (const tier of [1, 2, 3]) {
+      A.ev(`(playerTier = function () { return ${tier}; }, 1)`);
+      for (const key of cards) {
+        const at = 'tier ' + tier + ' ' + key;
+        /* S1: the card opens, board and band at once (nothing slides) */
+        A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+        ok(/Your turn Find a better move than \S+\.$/.test(band()), at + ': the open band reads ' + band());
+        run(1000);
+        /* S2: a piece picked up and put down repaints the board alone */
+        const t0 = textWrites();
+        A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.from); return 1; })()`);
+        eq(textWrites(), t0, at + ': text written for a selection');
+        run(200);
+        /* the game move again, tapped: it slides 220 ms, then the verdict */
+        A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.to); return 1; })()`);
+        const mu = A.ev('motionUntil - Date.now()');
+        if (mu > 0) slides++;
+        ok(/Find a better move/.test(band()), at + ': the verdict landed with the slide: ' + band());
+        run(1000);
+        if (/Your game move again/.test(band())) landed++;
+        else ok(false, at + ': no verdict after the slide: ' + band());
+        /* See it: their reply slides 320 ms; the bar changes after it */
+        A.ev('(seeIt(), 1)');
+        if (A.ev('motionUntil - Date.now()') >= 300) slides++;
+        run(1000);
+        /* a marks beat staged during a slide waits for it */
+        A.ev(`(function () { var a = ui.session.active; tryAgain(); return 1; })()`);
+        run(1000);
+        A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.to); stage(['marks', 'text']); return 1; })()`);
+        run(100);
+        /* input mid-slide: the slide ends, the board catches up, the words wait 150 ms */
+        A.click('tryAgain', null, 1);
+        run(1000);
+        /* input after the slide, while its words still wait: the new board is drawn at once */
+        A.ev(`(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.to); return 1; })()`);
+        run(300);
+        const tap = A.getNow();
+        A.click('tryAgain', null, 1);
+        ok(JSON.parse(A.ev('JSON.stringify(window.__writes.filter(function (w) { return w.id === "bwrap" && w.what === "innerHTML"; }).pop())')).t === tap, at + ': the board waited behind words');
+        run(1000);
+        /* the answered frame: the answer, tapped, slides, then the result */
+        A.ev(`(function () { var a = ui.session.active; if (a.phase === 'tried') tryAgain(); sessionClick(a.best.from); sessionClick(a.best.to); return a.phase; })()`);
+        if (A.ev('motionUntil - Date.now()') > 0) slides++;
+        run(1000);
+        ok(/^(Found it|You got there)/.test(band()), at + ': the answered band reads ' + band());
+        /* a line stepped forward slides 320 ms */
+        A.ev('(stepView(1), 1)');
+        run(1000);
+      }
+    }
+    const ws = JSON.parse(A.ev('JSON.stringify(window.__writes)'));
+    const bad = early(ws);
+    ok(slides >= 60, 'slides ' + slides);
+    ok(landed === 30, 'verdicts after their slide ' + landed);
+    ok(ws.filter((w) => w.kind === 'marks').length >= 30, 'marks writes ' + ws.filter((w) => w.kind === 'marks').length);
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+    /* the bar beside the board stays grey and still on a card: it fills only while exploring */
+    eq(ws.filter((w) => w.id === 'ebar-fill').length, 0, 'the bar moved on a card');
+    ok(ws.some((w) => w.id === 'ebar' && w.what === 'class pending'), 'the bar is told it waits');
+  });
+
+  await test('a slot ignores clicks for 450 ms after its label changes', () => {
+    const A = boot();
+    A.ev(DOM);
     A.ev('(playerTier = function () { return 2; }, 1)');
-    const S = () => JSON.parse(A.ev(`JSON.stringify((function (a) { return { phase: a.phase, result: a.result || null, hints: a.hints,
-      misses: a.misses, seen: !!(a.tried && a.tried.seen) }; })(ui.session.active))`));
-    const wait = (ms) => A.setNow(A.getNow() + ms);
-    /* card n, after its game move again with this many misses before it */
-    const gameMove = (n, before) => A.ev(`(function () { ${OPEN}
-      var it = allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[${n}], a = openCard(it);
+    const S = () => JSON.parse(A.ev(`JSON.stringify((function (a, ss) { return { phase: a.phase, result: a.result || null, hints: a.hints,
+      misses: a.misses, seen: !!(a.tried && a.tried.seen), idx: ss.idx, bar: displayFor(a).buttons.map(function (b) { return b.label; }).join(' | ') }; })(ui.session.active, ui.session))`));
+    const wait = (ms) => A.advance(ms);
+    /* card n painted as the page paints it, then its game move again (not
+       slid: a pressed button lands at once) with this many misses before it */
+    const gameMove = (n, before) => A.ev(`(function () {
+      var it = allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[${n}], a = window.__show(it);
       a.misses = ${before}; gradeMove(uciToMove(a.st, a.playedUci)); return a.phase; })()`);
-    /* Try again at miss 1: the bar becomes [Hint] [Show the answer] under the thumb */
+    /* Try again at miss 1: both slots change, [See it] [Try again] becomes [Hint] [Show the answer] */
     eq(gameMove(0, 0), 'tried', 'the game move stays');
     wait(1000);
-    A.click('tryAgain');
+    A.click('tryAgain', null, 1);
     eq(S().phase, 'guess', 'Try again takes the try back');
     wait(150);
-    A.click('reveal'); A.click('hint');
+    A.click('reveal', null, 1); A.click('hint', null, 0); A.key('?');
     let s = S();
-    eq(s.result, null, 'a reveal 150 ms after Try again'); eq(s.hints, 0, 'a hint 150 ms after Try again'); eq(s.phase, 'guess', 'phase');
-    wait(400);
-    A.click('hint');
-    eq(S().hints, 1, 'a hint 550 ms after Try again');
+    eq(s.result, null, 'Show the answer 150 ms after Try again'); eq(s.hints, 0, 'Hint and ? 150 ms after Try again'); eq(s.phase, 'guess', 'phase');
+    wait(350);
+    A.key('?');
+    eq(S().hints, 1, '? 500 ms after Try again');
+    /* the hint renamed the left slot (Hint 2) and left the right one alone */
     wait(150);
-    A.click('reveal');
-    eq(S().result, null, 'a reveal 150 ms after a hint');
-    wait(500);
-    A.click('reveal');
+    A.click('hint', null, 0);
+    eq(S().hints, 1, 'Hint 2, 150 ms after it took its name');
+    A.click('reveal', null, 1);
     s = S();
-    eq(s.phase, 'done', 'a reveal later shows the answer'); eq(s.result, 'fail', 'result');
-    /* See it at miss 1: the left button becomes Hint */
+    eq(s.phase, 'done', 'Show the answer, unchanged by the hint, is taken at once'); eq(s.result, 'fail', 'result');
+    /* a double tap on Show the answer: the second half lands on the answered bar and is ignored */
+    wait(100);
+    A.click('lineFwd', null, 1); A.click('next', null, 2);
+    eq(A.ev('ui.session.active.view.idx'), -1, 'the forward button 100 ms after the answered bar appeared');
+    eq(A.ev('ui.session.idx'), 0, 'Next 100 ms after the answered bar appeared');
+    wait(400);
+    A.click('next', null, 2);
+    eq(A.ev('ui.session.idx'), 1, 'Next 500 ms after');
+    /* See it: only the left slot changes, once their reply has landed; Try
+       again is taken all the while */
     gameMove(1, 0);
     wait(1000);
-    A.click('seeIt');
+    A.click('seeIt', null, 0);
     ok(S().seen, 'See it plays their reply');
     wait(150);
-    A.click('hint'); A.click('reveal');
-    s = S();
-    eq(s.phase, 'tried', 'the try stays'); eq(s.hints, 0, 'a hint 150 ms after See it'); eq(s.result, null, 'a reveal 150 ms after See it');
-    wait(500);
-    A.click('hint');
-    s = S();
-    eq(s.phase, 'guess', 'a hint later takes the try back'); eq(s.hints, 1, 'and gives hint 1');
-    /* See it at miss 3: the left button becomes Show the answer */
-    gameMove(2, 2);
+    A.click('tryAgain', null, 1);
+    eq(S().phase, 'guess', 'Try again 150 ms after See it is taken');
+    gameMove(2, 0);
     wait(1000);
-    A.click('seeIt');
-    wait(150);
-    A.click('reveal');
+    A.click('seeIt', null, 0);
+    wait(600);
+    ok(/^Hint \| Try again$/.test(S().bar), 'the bar after their reply: ' + S().bar);
+    A.click('hint', null, 0);
     s = S();
-    eq(s.misses, 3, 'misses'); eq(s.phase, 'tried', 'miss 3, the try stays'); eq(s.result, null, 'a reveal 150 ms after See it at miss 3');
+    eq(s.phase, 'tried', 'Hint 130 ms after its slot changed'); eq(s.hints, 0, 'no hint');
+    A.click('tryAgain', null, 1);
+    eq(S().phase, 'guess', 'Try again, unchanged, is taken');
+    /* See it at miss 3: the left slot becomes Show the answer */
+    gameMove(3, 2);
+    wait(1000);
+    A.click('seeIt', null, 0);
+    wait(600);
+    A.click('reveal', null, 0);
+    s = S();
+    eq(s.misses, 3, 'misses'); eq(s.phase, 'tried', 'miss 3, Show the answer 130 ms after it appeared'); eq(s.result, null, 'no result');
+    wait(400);
+    A.click('reveal', null, 0);
+    eq(S().result, 'fail', 'Show the answer later');
     /* Keep looking after a close move, and Try again after a move that was not checked */
-    A.ev(`(function () { ${OPEN} ${AFTER}
-      var a = openCard(allMistakes().filter(trainable)[3]); a.attempts++; showTry(a, offBook(a), 'close', null); return 1; })()`);
+    A.ev(`(function () { ${AFTER}
+      var a = window.__show(allMistakes().filter(trainable)[3]); a.attempts++; showTry(a, offBook(a), 'close', null); return 1; })()`);
     wait(1000);
-    A.click('dismissStronger');
+    A.click('dismissStronger', null, 0);
     eq(S().phase, 'guess', 'Keep looking takes the try back');
     wait(150);
-    A.click('hint'); A.click('reveal');
+    A.click('hint', null, 0); A.click('reveal', null, 1);
     s = S();
-    eq(s.hints, 0, 'a hint 150 ms after Keep looking'); eq(s.result, null, 'a reveal 150 ms after Keep looking');
-    A.ev(`(function () { ${OPEN} ${AFTER}
-      var a = openCard(allMistakes().filter(trainable)[4]); SF.state = 'failed'; gradeMove(offBook(a)); return a.tried && a.tried.kind; })()`);
+    eq(s.hints, 0, 'Hint 150 ms after Keep looking'); eq(s.result, null, 'Show the answer 150 ms after Keep looking');
+    A.ev(`(function () { ${AFTER}
+      var a = window.__show(allMistakes().filter(trainable)[4]); SF.state = 'failed'; gradeMove(offBook(a)); return a.tried && a.tried.kind; })()`);
     wait(1000);
-    A.click('tryAgain');
+    A.click('tryAgain', null, 1);
     wait(150);
-    A.click('reveal');
+    A.click('reveal', null, 1);
     s = S();
-    eq(s.phase, 'guess', 'Try again after a move not checked'); eq(s.result, null, 'a reveal 150 ms after it');
+    eq(s.phase, 'guess', 'Try again after a move not checked'); eq(s.result, null, 'Show the answer 150 ms after it');
   });
 
   await test('a tap on any of your pieces takes a try back, the castled rook included', () => {

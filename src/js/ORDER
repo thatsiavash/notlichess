@@ -12,7 +12,9 @@
 12-session.js
 13-card.js
 13x-explore.js
+13y-story.js
 14-render.js
+14s-stage.js
 15-shell.js
 16-extras.js
 17-boot.js

@@ -141,12 +141,12 @@ function xpSpoilIndex() {
   ss.xpSpoil = idx;
 }
 /* another card's position, never the position of the card on screen (a
-   twin card from another game at the same position included) */
+   twin card from another game at the same position included). It reads
+   only: cardFor keys the card's position once */
 function xpSpoil(n) {
   var ss = ui.session, a = ss && ss.active;
   if (!ss || !ss.xpSpoil || !ss.xpSpoil[n.key]) return false;
-  if (a && !a.preKey) a.preKey = posKey(a.pre);
-  return !(a && n.key === a.preKey);
+  return !(a && n.key === (a.preKey || posKey(a.pre)));
 }
 function xpRun(a, ex, n, step) {
   return engineEval(n.fen, { nodes: XP_NODES[step] }, true,

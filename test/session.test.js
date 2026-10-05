@@ -286,7 +286,8 @@ const OPEN = `function openCard(it) {
           if (!!a.st.w !== myPov(it)) bad.push('the wrong side to move');
           var tc = window.__nlTest.card();
           if (tc.phase !== 'guess' || 'check1' in tc) bad.push('the test window reports a check');
-          if (/What can (White|Black) do now|Move their piece/.test(cardTaskHtml(a) + panelHtml(a, ui.session))) bad.push('check wording');
+          var d = displayFor(a);
+          if (/What can (White|Black) do now|Move their piece/.test(bandHtml(a, d) + d.strip)) bad.push('check wording');
           if (bad.length) out.push('tier ' + tier + ' ' + it.key + ': ' + bad.join(', '));
         });
       });
@@ -357,28 +358,72 @@ const OPEN = `function openCard(it) {
     eq(bad.length, 0, 'leaks: ' + bad.slice(0, 2).join(' | '));
   });
 
-  await test('every message on the phone line is 80 characters or fewer, at every level', () => {
+  await test('S1, S2 and the answered frame fit 26 / 40 / 60 characters at every tier', () => {
     const A = boot();
-    const bad = JSON.parse(A.ev(`(function () { ${OPEN}
-      var out = [], strip = function (h) { return String(h || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"'); };
-      var line = function (a) { var m = /<div class="card-task[^"]*"[^>]*>([\\s\\S]*?)<\\/div>/.exec(cardTaskHtml(a)); return strip(m ? m[1] : ''); };
-      var keep = function (what, t) { if (t.length > 80 || /\u2014/.test(t)) out.push(what + ' (' + t.length + '): ' + t); };
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      /* the band's caps (FINAL-SPEC 3): row 1 26 characters, row 2 40 and 7
+         words, a caption 60 and 8; the chip one short label */
+      var out = [], frames = 0, seen = {};
+      var cap = function (what, s, ch, words) {
+        s = String(s || '');
+        if (s.length > ch || (s && s.split(/\\s+/).length > words) || /\u2014/.test(s)) out.push(what + ' (' + s.length + '): ' + s);
+      };
+      var band = function (what, a) {
+        var d = displayFor(a);
+        frames++;
+        seen[what] = (seen[what] || 0) + 1;
+        cap(what + ', row 1', d.row1, 26, 99); cap(what + ', row 2', d.row2, 40, 7); cap(what + ', caption', d.cap, 60, 8); cap(what + ', chip', d.chip, 14, 3);
+        if (!d.cap && !d.row1) out.push(what + ': no row 1');
+        return d;
+      };
       [1, 2, 3].forEach(function (tier) {
         playerTier = function () { return tier; };
         allMistakes().filter(trainable).forEach(function (it) {
           var a = openCard(it);
           if (!a) return;
-          a.tier = tier;
-          keep('prompt', line(a));
-          a.hints = 1; keep('hint 1', strip(hintText(a))); a.hints = 2; keep('hint 2', strip(hintText(a))); a.hints = 0;
-          gradeMove(uciToMove(a.st, a.playedUci)); keep('game move again', strip(a.verdict && a.verdict.html));
-          a = openCard(it); a.tier = tier; reveal(); keep('answered, shown', line(a));
-          a = openCard(it); a.tier = tier;
-          if (!a.sol) { solved(uciToMove(a.st, a.bestUci), a.bestUci, null); keep('answered, found', line(a)); }
+          var at = 'tier ' + tier + ' ' + it.key;
+          /* S1: the task, in the spec's words */
+          var d = band(at + ' open', a), want = 'Find a better move than ' + sanOf(a.pre, a.played) + '.';
+          if (d.row1 !== 'Your turn' || d.row2 !== want || d.chip) out.push(at + ' open reads ' + d.row1 + ' / ' + d.row2 + ' / ' + d.chip);
+          /* S1 on a relearn card: the chip */
+          ui.session.keys = [it.key, it.key]; ui.session.relearnOf = {}; ui.session.relearnOf[it.key] = 1; ui.session.idx = 1;
+          d = band(at + ' relearn', a);
+          if (d.chip !== 'One more try') out.push(at + ' relearn chip: ' + d.chip);
+          a = openCard(it);
+          /* S2: a selection leaves the band as it was; the words for a tap
+             that is not a move fit row 2 */
+          var mine = legalMoves(a.st)[0];
+          a.sel = mine.from;
+          if (JSON.stringify(band(at + ' selected', a)) !== JSON.stringify((a.sel = -1, displayFor(a)))) out.push(at + ': a selection changed the band');
+          ['T4', 'T5', 'N1'].forEach(function (id) { frames++; cap(at + ' ' + id, CARD_COPY[id](a), 40, 7); });
+          /* and, until their slices give them their own words, the hints,
+             the game move again and a try being checked stay in the caps */
+          a.hints = 1; band(at + ' hint 1', a); a.hints = 2; band(at + ' hint 2', a); a.hints = 0;
+          gradeMove(uciToMove(a.st, a.playedUci)); band(at + ' game move again', a);
+          if (a.tried && a.tried.reply) { seeIt(); band(at + ' game move again, seen', a); }
+          a = openCard(it);
+          var off = legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci && !(a.sol && a.sol.indexOf(u) >= 0); })[0];
+          if (off) { gradeMove(off); band(at + ' a try ' + a.phase, a); }
+          /* the answered frame: shown, found, found after a miss, close then shown, works too */
+          a = openCard(it); reveal(); d = band(at + ' shown', a);
+          if (d.row1 !== 'The answer: ' + a.lines.best.san[0]) out.push(at + ' shown reads ' + d.row1);
+          a = openCard(it); a.foundGood = { san: sanOf(a.st, mine), win: 60 }; reveal(); band(at + ' shown after a close move', a);
+          if (!a.sol) {
+            a = openCard(it); solved(uciToMove(a.st, a.bestUci), a.bestUci, null); d = band(at + ' found', a);
+            if (d.row1 !== 'Found it') out.push(at + ' found reads ' + d.row1);
+            a = openCard(it); a.misses = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); d = band(at + ' found after a miss', a);
+            if (d.row1 !== 'You got there') out.push(at + ' found after a miss reads ' + d.row1);
+            a = openCard(it); var alt = off || mine;
+            if (moveUci(alt) !== a.bestUci) {
+              a.yours = { uci: [moveUci(alt)], cp: 0, at: 0 };
+              solved(alt, moveUci(alt), { win: 50, best: 52, mate: null }); band(at + ' works too', a);
+            }
+          }
         });
       });
-      return JSON.stringify(out); })()`));
-    eq(bad.length, 0, bad.length + ' too long, first: ' + bad.slice(0, 3).join(' | '));
+      return JSON.stringify({ out: out, frames: frames, seen: seen }); })()`));
+    ok(r.frames > 3000, 'frames ' + r.frames);
+    eq(r.out.length, 0, r.out.length + ' too long, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
   await test('one format by default: the most played among those played in the last 90 days', () => {

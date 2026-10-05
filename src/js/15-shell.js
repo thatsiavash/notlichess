@@ -424,6 +424,12 @@ document.addEventListener('click', function (e) {
   var act = t.getAttribute('data-act'), k = t.getAttribute('data-k');
   if (t.tagName === 'INPUT') return;
   if (act !== 'closeSheet' || e.target === t) e.preventDefault();
+  /* input first: a running slide ends and whatever was staged catches up;
+     then a bar slot that just changed ignores the tap (a double tap's
+     second half) */
+  flushStage();
+  var slot = t.getAttribute('data-slot');
+  if (slot != null && slotGuarded(parseInt(slot, 10))) return;
   var a = ui.session && ui.session.active;
   switch (act) {
     case 'view': closeSheet(); if (ui.session && ui.session.finished && k === 'train') endSession(); setView(k); break;
@@ -484,7 +490,6 @@ document.addEventListener('click', function (e) {
     case 'promo': promoChoose(k); break;
     case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;
-    case 'marksSeen': store.set('nl:marksSeen', true); renderCard(); break;
     /* a teaching line opens at its start, with its arrow; › steps it */
     case 'lineTab': if (a && a.lines && a.lines[k]) { if (a.explore) exploreExit('silent'); a.view = { line: k, idx: -1 }; renderCard(); } break;
     case 'lineTo': if (a && a.lines) { if (a.explore) exploreExit('silent'); a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
@@ -571,24 +576,40 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Escape') {
     if (ui.sheet) { closeSheet(); return; }
+    flushStage();
     var ae = ui.session && ui.session.active;
     if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
   }
   var a = ui.session && ui.session.active;
   if (!a || ui.sheet) return;
+  /* a handled key is input: whatever was staged catches up first */
+  if (/^(ArrowLeft|ArrowRight|Enter| |\?)$/.test(e.key)) flushStage();
+  var onAct = !!(e.target && e.target.closest && e.target.closest('[data-act]'));
   if (a.phase === 'done') {
     if (e.key === 'ArrowLeft') { e.preventDefault(); stepView(-1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); stepView(1); }
-    else if (e.key === 'Enter' || e.key === ' ') { if (!(e.target && e.target.closest && e.target.closest('[data-act]'))) { e.preventDefault(); nextCard(); } }
+    else if ((e.key === 'Enter' || e.key === ' ') && !onAct) { e.preventDefault(); pressRight(); }
   } else if (a.phase === 'guess' || a.phase === 'tried') {
-    /* never a letter: letters start moves in the typed-move field */
-    if (e.key === '?') { e.preventDefault(); giveHint(); }
+    /* never a letter: letters start moves in the typed-move field. ? asks
+       for a hint, Enter presses the right-hand button; both wait out the
+       guard of the slot they stand for */
+    if (e.key === '?') { e.preventDefault(); if (!slotGuarded(slotOfAct('hint'))) giveHint(); }
+    else if (e.key === 'Enter' && !onAct) { e.preventDefault(); pressRight(); }
   }
 });
-function reducedMotion() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+/* the right-hand button, pressed from the keyboard: a click on it, so the
+   double-tap guard and the action are the button's own */
+function pressRight() {
+  var bar = el('cbar'), b = bar && bar.querySelector('[data-slot="' + rightSlot() + '"][data-act]');
+  if (b) b.click();
+}
+/* reduced motion: every slide, fade and crossfade takes 0 ms (in Node
+   tests, ui.reducedTest says so) */
+function reducedMotion() { return !!(ui.reducedTest || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)); }
 /* a move typed as SAN (Nf3, exd5, O-O, e8=Q) or as squares (g1f3) */
 function typedMove(txt) {
+  flushStage();
   var a = ui.session && ui.session.active;
   var xp = a && a.phase === 'done' && a.explore;
   if (!a || (a.phase !== 'guess' && a.phase !== 'tried' && !xp)) return;
@@ -618,7 +639,7 @@ document.addEventListener('keydown', function (e) {
 });
 
 /* ── board input: tap-tap and drag, on the card's own board only ─────────── */
-var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false };
+var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null };
 function sqFromEvent(e) {
   var el2 = document.elementFromPoint(e.clientX, e.clientY);
   var sqEl = el2 && el2.closest ? el2.closest('#bwrap [data-sq]') : null;
@@ -655,6 +676,8 @@ document.addEventListener('pointerdown', function (e) {
   if (!a || !e.target.closest || !e.target.closest('#bwrap')) return;
   var sq = sqFromEvent(e);
   if (sq < 0) return;
+  /* input first: a running slide ends and the board catches up */
+  flushStage();
   if (e.button === 2) { pointerState.rightFrom = sq; return; }
   var bs = boardState(a);
   /* a mouse or pen press on a piece of the side to move starts exploring
@@ -671,6 +694,14 @@ document.addEventListener('pointerdown', function (e) {
       return;
     }
   }
+  /* a board that takes no moves (the answered card): a sideways swipe
+     will step the story (FINAL-SPEC 2.2), so its start is kept when it is
+     clear of both screen edges (iOS Back ends the session) */
+  if (e.button === 0 && !bs.live && !a.pendingPromo) {
+    var W = window.innerWidth || 0;
+    pointerState.swipe = e.clientX >= 24 && e.clientX <= W - 24 ? { x: e.clientX, y: e.clientY } : null;
+    return;
+  }
   if (e.button !== 0 || !bs.live || a.pendingPromo) return;
   /* a try on the board: a press on one of your pieces takes it back at
      once, and the press (a tap or a drag) goes on from the real position */
@@ -683,7 +714,7 @@ document.addEventListener('pointerdown', function (e) {
     sq = pick;
   }
   pointerState.suppressClick = false;
-  if (!bs.explore && a.shapes.length) { a.shapes = []; renderCard(); }
+  if (!bs.explore && a.shapes.length) { a.shapes = []; renderCardBoard(); }
   var p = bs.st.b[sq];
   if (p && isW(p) === bs.st.w) {
     pointerState.dragFrom = sq;
@@ -693,7 +724,8 @@ document.addEventListener('pointerdown', function (e) {
     pointerState.startY = e.clientY;
     var cur = bs.explore ? a.explore.sel : a.sel;
     pointerState.justSelected = cur !== sq;
-    if (cur !== sq) { if (bs.explore) a.explore.sel = sq; else a.sel = sq; renderCard(); }
+    /* a selection changes the board alone (exploring repaints its words too) */
+    if (cur !== sq) { if (bs.explore) { a.explore.sel = sq; renderCard(); } else { a.sel = sq; renderCardBoard(); } }
   }
 });
 document.addEventListener('pointermove', function (e) {
@@ -711,13 +743,19 @@ document.addEventListener('pointermove', function (e) {
   moveGhost(e.clientX, e.clientY);
 });
 function pointerFinish(e, cancelled) {
-  var a = ui.session && ui.session.active;
+  var a = ui.session && ui.session.active, sw = pointerState.swipe;
+  pointerState.swipe = null;
   if (!a) { pointerState.dragFrom = -1; pointerState.rightFrom = -1; killGhost(); return; }
+  /* a swipe: at least 48 px across, twice as far across as down */
+  if (sw && !cancelled) {
+    var dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+    if (Math.abs(dx) >= 48 && Math.abs(dx) > 2 * Math.abs(dy)) storySwipe(dx < 0 ? 1 : -1);
+  }
   var sq = cancelled ? -1 : sqFromEvent(e);
   if (e.button === 2 && pointerState.rightFrom >= 0) {
     if (sq >= 0 && a.phase === 'guess') {
       if (sq === pointerState.rightFrom) a.shapes.push({ at: sq }); else a.shapes.push({ from: pointerState.rightFrom, to: sq });
-      renderCard();
+      renderCardBoard();
     }
     pointerState.rightFrom = -1;
     return;
@@ -740,6 +778,10 @@ function pointerFinish(e, cancelled) {
   }
 }
 document.addEventListener('pointerup', function (e) { pointerFinish(e, false); });
+/* a swipe on the answered board: forward (1) or back (-1) through the
+   stepped story. The story is a later slice (FINAL-SPEC 6, slice 9); until
+   then a swipe changes nothing and the page scrolls as before */
+function storySwipe(d) { return false; }
 /* desktop: pointing at one of Stockfish's rows moves the one arrow to it */
 function xpHover(k, byFocus) {
   var a = ui.session && ui.session.active, ex = a && a.explore;

@@ -114,6 +114,8 @@ function cardFor(it) {
     if (a.sol.length < 3) a.sol = null;
   }
   a.solIdx = 0;
+  /* the card's own position, as exploring keys positions */
+  a.preKey = posKey(pre);
   return a;
 }
 function currentItem() {
@@ -165,6 +167,7 @@ function prefetchCards(ss) {
 
 /* ── moves on the board ──────────────────────────────────────────────────── */
 function sessionClick(sq) {
+  flushStage();
   var ss = ui.session, a = ss && ss.active;
   if (a && a.phase === 'tried' && !a.pendingPromo) {
     /* a try on the board: a tap on one of your pieces takes it back and
@@ -187,15 +190,16 @@ function sessionClick(sq) {
     return;
   }
   var p = a.st.b[sq];
+  /* a selection changes the board alone: the words stay */
   if (p && isW(p) === a.st.w) {
     a.sel = a.sel === sq ? -1 : sq;
     snd('tap');
-    renderCard();
+    renderCardBoard();
     return;
   }
   if (a.sel < 0) return;
   var legal = legalMoves(a.st).filter(function (m) { return m.from === a.sel && m.to === sq; });
-  if (!legal.length) { a.sel = -1; renderCard(); return; }
+  if (!legal.length) { a.sel = -1; renderCardBoard(); return; }
   if (legal.length > 1 && legal[0].promo) { a.pendingPromo = { moves: legal, to: sq }; renderCard(); return; }
   /* a tapped move slides into place; a dragged one is already where it was dropped */
   a.tapped = !pointerState.suppressClick;
@@ -217,7 +221,6 @@ function gradeMove(m) {
   a.shapes = [];
   a.verdict = null; a.hintAfter = false;
   a.attempts++;
-  store.set('nl:marksSeen', true);
   /* the slide is kept until the move is actually drawn: a refused one is
      never animated */
   a.tapAnim = a.tapped ? [m.from, m.to] : null;
@@ -255,7 +258,8 @@ function stepLine(m, u) {
   a.phase = 'reply';
   /* my moves sit at even offsets of the line: the next one is number n */
   a.hintAfter = false;
-  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (Math.ceil(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.', panel: '✓ ' + esc(san) + '.' };
+  var step = 'Move ' + (Math.ceil(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
+  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. ' + step, say: step };
   renderCard();
   var cardKey = a.key;
   setTimeout(function () {
@@ -284,7 +288,7 @@ function sameAsGame(m) {
   var bestSan = sanOf(a.pre, a.best);
   if (said.indexOf(bestSan) >= 0 || familyOf(patternOf(it.b)).key === 'chances') said = 'There is something stronger here.';
   a.hintAfter = false;
-  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ Your game move again. ' + said, '✗ Your game move again. ' + firstClause(said), '✗ Your game move again.'])) };
+  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ Your game move again. ' + said, '✗ Your game move again. ' + firstClause(said), '✗ Your game move again.'])), say: said };
   escalate();
   /* a tapped game move slides in on this, its first frame */
   a.animMove = a.tapAnim; a.tapAnim = null;
@@ -343,11 +347,9 @@ function triedPick(a, sq) {
 }
 /* Try again: the try leaves the board and the card asks again from the
    position before it (a forcing line keeps the moves already found). The
-   model part runs first for anything pressed while a try is shown. The bar
-   changes under the thumb here, so its buttons wait out tooSoon */
+   model part runs first for anything pressed while a try is shown */
 function clearTry(a) {
   engineStop('check');
-  a.barAt = Date.now();
   a.phase = 'guess';
   a.tried = null;
   a.ghostMove = null;
@@ -367,8 +369,7 @@ function seeIt() {
   var a = ui.session && ui.session.active, t = a && a.tried;
   if (!t || a.phase !== 'tried' || !t.reply || t.seen) return;
   t.seen = true;
-  /* the left button becomes help: a second tap of a double tap waits */
-  a.barAt = Date.now();
+  /* it slides as a move the app shows; the bar changes once it lands */
   a.animMove = triedFrame(a).last;
   snd('move');
   renderCard();
@@ -376,7 +377,7 @@ function seeIt() {
 /* the engine could not answer: the try stays where it is, and is not counted */
 function cannotCheck(a, m) {
   a.checkTok = ++checkSeq;
-  a.verdict = { cls: 'verdict-mid', html: 'Stockfish cannot check this move right now. Try again, or show the answer.' };
+  a.verdict = { cls: 'verdict-mid', html: 'Stockfish cannot check this move right now. Try again, or show the answer.', say: 'Not counted. Try again.' };
   showTry(a, m, 'unchecked', null);
 }
 /* ask the engine about a move, from the same position, at the same depth
@@ -440,7 +441,7 @@ function checkMove(m, u, inLine) {
     var close = !inLine && (mateCard ? wMove >= 80 : ((wBest - wMove <= STRONGER_TOL || (chances && wMove >= 70)) && wMove >= b.wa + 10));
     if (close && a2.foundGood) {
       /* already told this kind of move is close: say it again, no penalty */
-      a2.verdict = { cls: 'verdict-mid', html: '◐ ' + esc(sanOf(a2.st, m)) + ' is close too. The best move is stronger still.' };
+      a2.verdict = { cls: 'verdict-mid', html: '◐ ' + esc(sanOf(a2.st, m)) + ' is close too. The best move is stronger still.', say: sanOf(a2.st, m) + ' is close too.' };
       showTry(a2, m, 'close', null);
       return;
     }
@@ -451,7 +452,7 @@ function checkMove(m, u, inLine) {
       keepProgress(a2);
       a2.verdict = { cls: 'verdict-mid', html: '◐ ' + esc(a2.foundGood.san) + ' is close'
         + (mateCard ? ', but there is a forced mate here.' : a2.tier === 1 ? '. The best move keeps more. Keep looking.'
-          : ': ' + Math.round(wMove) + '% against ' + Math.round(wBest) + '%. Keep looking.') };
+          : ': ' + Math.round(wMove) + '% against ' + Math.round(wBest) + '%. Keep looking.'), say: a2.foundGood.san + ' is close. Keep looking.' };
       showTry(a2, m, 'close', null);
       return;
     }
@@ -484,7 +485,7 @@ function miss(m, u, info) {
   }
   why = why || san + ' does not work.';
   a.hintAfter = false;
-  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ ' + why, '✗ ' + firstClause(why), '✗ ' + san + ' does not work.'])) };
+  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ ' + why, '✗ ' + firstClause(why), '✗ ' + san + ' does not work.'])), say: why };
   escalate();
   showTry(a, m, 'miss', reply[0]);
 }
@@ -509,9 +510,9 @@ function reveal() {
   finishCard(a.foundGood && !a.misses ? 'hint' : 'fail');
 }
 /* a second tap on Next lands where Show the answer now sits: taps in the
-   first half second of a card are the old card's. The same holds for half a
-   second after the bar changes under the thumb (Try again, See it, a hint) */
-function tooSoon(a) { return !!a && Date.now() - Math.max(a.shownAt || 0, a.barAt || 0) < 450; }
+   first half second of a card are the old card's. After that, each bar
+   slot guards itself for half a second once it changes (slotGuarded) */
+function tooSoon(a) { return !!a && Date.now() - (a.shownAt || 0) < 450; }
 function giveHint() {
   var a = ui.session && ui.session.active;
   if (!a) return;
@@ -521,7 +522,6 @@ function giveHint() {
   if (a.phase !== 'guess' || a.hints >= 2 || (a.tier === 3 && !a.misses)) { if (cleared) renderCard(); return; }
   a.hints = a.hints + 1;
   a.hintAfter = true;
-  a.barAt = Date.now();
   keepProgress(a);
   renderCard();
 }
@@ -619,6 +619,8 @@ function nextCard() {
   if (!ss) return;
   if (ss.active && ss.active.explore) exploreExit('silent');
   engineStop('check');
+  /* what was staged for this card dies with it */
+  stageReset();
   ss.active = null;
   ss.idx++;
   saveSession();

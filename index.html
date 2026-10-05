@@ -335,13 +335,6 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .ctx{font-size:13px;color:var(--secondary);margin:0 0 6px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctx b{color:var(--primary);font-weight:400}
 .ctx .tag{color:var(--gold-quiet)}
-.task{font-family:var(--font-display);font-size:27px;line-height:1.15;color:var(--display);margin:4px 0 6px}
-.stakes{font-size:14.5px;color:var(--body);margin:0 0 14px}
-.verdict{font-size:16px;margin:4px 0 10px;min-height:1.4em;color:var(--primary)}
-.verdict b{font-weight:600}
-.verdict-good{color:var(--win)}
-.verdict-bad{color:var(--loss)}
-.verdict-mid{color:var(--link-hover)}
 .checking{
   display:flex;align-items:center;gap:10px;font-size:15px;color:var(--gold-quiet);margin:4px 0 10px;
 }
@@ -349,7 +342,6 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .checking .meter i{position:absolute;top:0;bottom:0;width:40%;background:var(--gold);border-radius:2px;animation:sweep 1s ease-in-out infinite}
 @keyframes sweep{0%{left:-40%}100%{left:100%}}
 .acts-row{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;margin:6px 0 4px}
-.hint-note{font-size:14px;color:var(--link-hover);margin:6px 0 8px;border-left:2px solid var(--gold);padding-left:10px}
 .lines{margin:10px 0 6px}
 
 .nav-btn{border:1px solid var(--edge);border-radius:5px;padding:2px 12px;font-size:16px;color:var(--body);line-height:1.4;cursor:pointer}
@@ -386,7 +378,6 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .tl-text .tl-short{display:inline}
   .sticky-acts{flex-wrap:nowrap}
   .sticky-acts > *{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .task{font-size:24px}
   /* thumbs: room around the small controls */
   .card-menu > a{display:inline-flex;min-width:44px;min-height:40px;align-items:center;justify-content:flex-end}
   .sheet .close{padding:10px;margin:-10px -10px 0 0}
@@ -461,28 +452,40 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .brand{gap:8px}
   .hero-top .week{flex-direction:row;align-items:center;gap:8px;margin:-4px 0 14px}
 }
-.card-task{display:none}
-@media (max-width:860px){
-  .card-task{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex-basis:100%;
-    font-size:14.5px;line-height:1.35;color:var(--primary);margin:-2px 0 2px}
-  .card-task.bad{color:#e0968c}
-  .card-task.good{color:#9fcf8a}
-}
+/* the band (FINAL-SPEC 2.0): one fixed 56 px box above the board on a
+   phone, a block at the head of the panel on a wide screen. A disc, row 1
+   (the relearn chip at its right) and row 2, or one caption while
+   exploring; the background and a 3 px left border carry the state. It
+   fades in over 150 ms whenever its words change */
+.band-slot{min-width:0}
+.card-task{display:flex;align-items:center;gap:10px;box-sizing:border-box;height:56px;margin:0;padding:0 10px 0 9px;
+  border-left:3px solid transparent;overflow:hidden;animation:band-in .15s ease-out}
+@keyframes band-in{from{opacity:0}to{opacity:1}}
+.bd-disc{flex:none;width:28px;height:28px;display:block}
+.bd-disc svg{width:100%;height:100%;display:block}
+.bd-disc.d-king{border-radius:50%;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line)}
+.bd-disc.d-king svg{width:22px;height:22px;margin:3px}
+.bd-rows{flex:1 1 auto;min-width:0}
+.bd-top{display:flex;align-items:center;gap:8px;min-width:0}
+.bd-r1{flex:0 1 auto;min-width:0;margin:0;font-family:var(--font-body);font-weight:600;font-size:18px;line-height:22px;color:var(--text-1);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;outline:none;font-variant-numeric:lining-nums}
+.bd-r2{margin:0;font-size:15px;line-height:18px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-r2:empty{display:none}
+.bd-chip{flex:none;margin-left:auto;font-size:11.5px;line-height:18px;padding:0 8px;border:1px solid var(--accent);border-radius:9px;color:var(--accent-hover);white-space:nowrap}
+.bd-cap{margin:0;font-size:15px;line-height:20px;color:var(--text-1);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card-task.k-good{background:rgba(143,181,115,.16);border-left-color:#8fb573}
+.card-task.k-bad{background:rgba(216,130,111,.17);border-left-color:#d8826f}
+.card-task.k-close{background:rgba(157,176,198,.14);border-left-color:#9db0c6}
+.card-task.k-info{background:#211f1b;border-left-color:#6b665d}
+.card-task.k-hint .bd-r1,.card-task.k-hint .bd-r2{color:#d6a852}
+.card-task.k-explore{border-left-color:var(--accent)}
+@media (max-width:374px){.bd-r2{font-size:14px}}
+.strip{display:flex;flex-direction:column;min-width:0}
 
-@media (max-width:860px){
-  .sticky-acts .sticky-nav{display:inline-flex;flex:0 0 44px;justify-content:center;align-items:center;height:46px;font-size:22px}
-  .card-task.good{color:var(--primary)}
-  .card-task.good b{color:#9fcf8a;font-weight:400}
-}
-
-/* the card, guessing: one feedback slot, the actions level with the board ── */
+/* the card's panel: the strip, then the actions level with the board ─── */
 .card > .panel{align-self:stretch}
-.task{font-weight:400}
 .stakes-tag{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-1);margin:0 0 4px}
 .dot-bad{flex:none;width:7px;height:7px;border-radius:50%;background:var(--bad)}
-.feedback{min-height:72px;margin:2px 0 8px}
-.feedback .verdict{margin:0 0 6px}
-.first-line{font-size:14px;color:var(--text-2);margin:0 0 6px}
 .guess-acts .btn-line,.guess-acts .btn-big{flex:1 1 0;justify-content:center;text-align:center;min-height:48px;display:inline-flex;align-items:center}
 @media (min-width:861px){
   .guess-acts,.done-acts{margin-top:auto;padding-top:12px}
@@ -491,14 +494,6 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 /* the card, answered: the result, and both halves of the lesson ────────── */
 .result{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r2);padding:16px 18px;margin:6px 0 12px}
 .result.first{background:var(--good-tint);border-color:rgba(143,181,115,.25)}
-.result-head{display:flex;align-items:center;gap:12px;margin:0 0 6px}
-.disc{flex:none;width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
-  background:var(--good);color:#12160f;font-size:15px;font-weight:600;animation:disc-in var(--dur-2) var(--ease)}
-.disc.disc-help{background:none;border:1.5px solid var(--good);color:var(--good)}
-@keyframes disc-in{from{transform:scale(.8);opacity:0}to{transform:none;opacity:1}}
-.result-h{font-family:var(--font-display);font-weight:500;font-size:28px;line-height:1.2;color:var(--text-1);margin:0;
-  font-variant-numeric:lining-nums tabular-nums;outline:none}
-.result-sub{font-size:14px;color:var(--text-2);margin:0 0 8px}
 .tline{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;background:none;border:0;border-radius:var(--r1);
   padding:8px 8px;margin:2px -8px;font:inherit;font-size:15px;line-height:1.45;color:var(--text-2);cursor:pointer;
   font-variant-numeric:lining-nums}
@@ -519,7 +514,6 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .done-acts .btn-big{flex:1 1 auto;justify-content:center;min-height:48px}
 @media (max-width:860px){
   .result{padding:12px 14px}
-  .result-h{font-size:24px}
   .tline{font-size:14px;line-height:1.4}
 }
 
@@ -550,24 +544,31 @@ body.in-session{padding-bottom:0}
   .board-row{gap:8px}
   .evalbar{width:12px}
   .board-wrap{flex:none;width:var(--board)}
-  .panel{padding-top:24px}
-  .card-top + .board-col{padding-top:24px}
+  /* the band heads the panel, level with the board's top edge, and the
+     board spans both rows beside them */
+  .card{grid-template-rows:auto auto 1fr}
+  .card > .board-col{grid-column:1;grid-row:2 / 4;padding-top:24px}
+  .card > .band-slot{grid-column:2;grid-row:2;padding-top:24px}
+  .card > .panel{grid-column:2;grid-row:3}
+  .card-task{height:auto;min-height:122px;align-items:flex-start;gap:14px;padding:20px 20px 20px 17px;border-radius:10px;background:var(--surface-1)}
+  .bd-r1{font-family:var(--font-display);font-size:28px;line-height:32px;white-space:normal}
+  .bd-r2{margin-top:4px;font-size:17px;line-height:25px;white-space:normal}
+  .bd-chip{margin-top:6px}
+  .bd-cap{font-size:19px;line-height:27px;-webkit-line-clamp:3}
 }
 @media (max-width:860px){
   .card{gap:0;padding-top:0}
   .card-top{position:sticky;top:0;z-index:4;background:var(--bg);flex-wrap:wrap;gap:0 8px;margin:0 calc(-1 * var(--gutter));padding:0 var(--gutter)}
-  .card-task{height:56px;padding:8px 0;margin:0;font-size:15px;line-height:20px;color:var(--text-1);-webkit-line-clamp:2}
-  .card-task.hint{color:var(--accent-hover)}
+  /* the band rides under the session bar, so it stays in view */
+  .band-slot{position:sticky;top:48px;z-index:4;background:var(--bg)}
   .board-row{justify-content:center}
   .evalbar{width:6px}
   .board-wrap{flex:none;width:var(--board-phone)}
-  /* the prompt line carries the task, the stakes and the feedback: in the
-     panel they stay for screen readers only */
-  .panel .task,.panel .stakes,.panel .stakes-tag,.panel .feedback{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;margin:0;padding:0;min-height:0}
+  /* the decisive tag stays for screen readers only */
+  .panel .stakes-tag{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;margin:0;padding:0;min-height:0}
   .panel{padding-top:8px}
   .ctx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0 0 8px}
   .result{background:none;border:0;padding:0;margin:0 0 8px;order:-1}
-  .result .result-head,.result .result-sub,.result .tl-good{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   .guess-acts{height:calc(64px + env(safe-area-inset-bottom));padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:var(--surface-2)}
   .guess-acts .btn-line,.guess-acts .btn-big{min-height:48px;min-width:0}
 }
@@ -778,7 +779,6 @@ a.lg-row{color:inherit}
 .xp-mv.xp-sf{color:var(--text-3)}
 .xp-mv.on{border-bottom-color:var(--accent)}
 .xp-back{flex:none;font-size:13.5px;color:var(--text-2);padding:8px 0;text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px;cursor:pointer}
-.xp-say{font-size:16px;line-height:24px;color:var(--text-1);min-height:48px;margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .xp-cap{font-size:12px;line-height:18px;color:var(--text-3);margin:8px 0 0}
 .xp-rows{display:flex;flex-direction:column;margin:0 -14px}
 .xp-rows.k1 .xp-row:nth-child(n+2),.xp-rows.k2 .xp-row:nth-child(n+3){display:none}
@@ -795,30 +795,25 @@ a.lg-row{color:inherit}
 .xp-row.skel .xp-chip,.xp-row.skel .xp-first,.xp-row.skel .xp-cont{color:transparent;background:var(--line);border-radius:4px}
 .xp-kb{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .xp-kb:focus-within{position:static;width:auto;height:auto;clip:auto;margin:8px 0 4px;display:block}
-.result.xp-on{padding:8px 14px;margin:4px 0 10px}
-.result.xp-on .result-head{margin:0;gap:10px}
-.result.xp-on .disc{width:22px;height:22px;font-size:12px}
-.result.xp-on .result-h{font-size:21px;line-height:28px}
-.result.xp-on .result-sub,.result.xp-on .tline{display:none}
+.card.xp-card .result{display:none}
 .card.xp-card .tag-row,.card.xp-card .habit,.card.xp-card .explore-line{display:none}
 .xp-back-ph{display:none}
 @media (max-width:860px){
   /* the invite sits right under the red line, above the fixed bar */
   .card:not(.xp-card) .result{display:contents}
-  .card:not(.xp-card) .result .tl-bad,.card:not(.xp-card) .result .tl-alt{order:-3}
+  .card:not(.xp-card) .result .tl-bad,.card:not(.xp-card) .result .tl-alt,.card:not(.xp-card) .result .tl-good{order:-3}
   .explore-line{order:-2;margin-bottom:8px}
   .card:not(.xp-card) .result .tl-opp{order:-1}
   .done-acts{height:calc(64px + env(safe-area-inset-bottom));padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:var(--surface-2)}
   .card.xp-card .panel{padding-top:4px}
   .card.xp-card .result,.card.xp-card .ctx{display:none}
   .xp{order:-2;background:none;border:0;border-radius:0;padding:0;margin:0 calc(-1 * var(--gutter))}
-  .xp-head,.xp-say,.xp-kb{display:none}
+  .xp-head,.xp-kb{display:none}
   .xp-meter{border-radius:0}
   .xp-cap{margin:0;padding:0 var(--gutter)}
   .xp-rows{margin:0}
   .xp-row{padding:0 var(--gutter)}
   .xp-back-ph{display:flex;align-items:center;min-height:44px;font-size:14px;color:var(--text-2);padding:0 var(--gutter);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
-  .card-task.xp-task{border-left:2px solid var(--accent);padding-left:10px;margin-left:-12px}
 }
 </style>
 </head>
@@ -5832,6 +5827,7 @@ function endSession(fromPop) {
   /* a move still being checked counts as a try that did not land */
   if (open && open.phase === 'checking') { open.checkTok = ++checkSeq; open.phase = 'guess'; open.attempts = Math.max(open.attempts || 0, 1); }
   engineStop('check');
+  stageReset();
   if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints || open.attempts)) keepProgress(open);
   var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints || open.attempts)));
   if (keep) saveSession(); else store.del(sessKey());
@@ -5988,6 +5984,8 @@ function cardFor(it) {
     if (a.sol.length < 3) a.sol = null;
   }
   a.solIdx = 0;
+  /* the card's own position, as exploring keys positions */
+  a.preKey = posKey(pre);
   return a;
 }
 function currentItem() {
@@ -6039,6 +6037,7 @@ function prefetchCards(ss) {
 
 /* ── moves on the board ──────────────────────────────────────────────────── */
 function sessionClick(sq) {
+  flushStage();
   var ss = ui.session, a = ss && ss.active;
   if (a && a.phase === 'tried' && !a.pendingPromo) {
     /* a try on the board: a tap on one of your pieces takes it back and
@@ -6061,15 +6060,16 @@ function sessionClick(sq) {
     return;
   }
   var p = a.st.b[sq];
+  /* a selection changes the board alone: the words stay */
   if (p && isW(p) === a.st.w) {
     a.sel = a.sel === sq ? -1 : sq;
     snd('tap');
-    renderCard();
+    renderCardBoard();
     return;
   }
   if (a.sel < 0) return;
   var legal = legalMoves(a.st).filter(function (m) { return m.from === a.sel && m.to === sq; });
-  if (!legal.length) { a.sel = -1; renderCard(); return; }
+  if (!legal.length) { a.sel = -1; renderCardBoard(); return; }
   if (legal.length > 1 && legal[0].promo) { a.pendingPromo = { moves: legal, to: sq }; renderCard(); return; }
   /* a tapped move slides into place; a dragged one is already where it was dropped */
   a.tapped = !pointerState.suppressClick;
@@ -6091,7 +6091,6 @@ function gradeMove(m) {
   a.shapes = [];
   a.verdict = null; a.hintAfter = false;
   a.attempts++;
-  store.set('nl:marksSeen', true);
   /* the slide is kept until the move is actually drawn: a refused one is
      never animated */
   a.tapAnim = a.tapped ? [m.from, m.to] : null;
@@ -6129,7 +6128,8 @@ function stepLine(m, u) {
   a.phase = 'reply';
   /* my moves sit at even offsets of the line: the next one is number n */
   a.hintAfter = false;
-  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. Move ' + (Math.ceil(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.', panel: '✓ ' + esc(san) + '.' };
+  var step = 'Move ' + (Math.ceil(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
+  a.verdict = { cls: 'verdict-good', html: '✓ ' + esc(san) + '. ' + step, say: step };
   renderCard();
   var cardKey = a.key;
   setTimeout(function () {
@@ -6158,7 +6158,7 @@ function sameAsGame(m) {
   var bestSan = sanOf(a.pre, a.best);
   if (said.indexOf(bestSan) >= 0 || familyOf(patternOf(it.b)).key === 'chances') said = 'There is something stronger here.';
   a.hintAfter = false;
-  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ Your game move again. ' + said, '✗ Your game move again. ' + firstClause(said), '✗ Your game move again.'])) };
+  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ Your game move again. ' + said, '✗ Your game move again. ' + firstClause(said), '✗ Your game move again.'])), say: said };
   escalate();
   /* a tapped game move slides in on this, its first frame */
   a.animMove = a.tapAnim; a.tapAnim = null;
@@ -6217,11 +6217,9 @@ function triedPick(a, sq) {
 }
 /* Try again: the try leaves the board and the card asks again from the
    position before it (a forcing line keeps the moves already found). The
-   model part runs first for anything pressed while a try is shown. The bar
-   changes under the thumb here, so its buttons wait out tooSoon */
+   model part runs first for anything pressed while a try is shown */
 function clearTry(a) {
   engineStop('check');
-  a.barAt = Date.now();
   a.phase = 'guess';
   a.tried = null;
   a.ghostMove = null;
@@ -6241,8 +6239,7 @@ function seeIt() {
   var a = ui.session && ui.session.active, t = a && a.tried;
   if (!t || a.phase !== 'tried' || !t.reply || t.seen) return;
   t.seen = true;
-  /* the left button becomes help: a second tap of a double tap waits */
-  a.barAt = Date.now();
+  /* it slides as a move the app shows; the bar changes once it lands */
   a.animMove = triedFrame(a).last;
   snd('move');
   renderCard();
@@ -6250,7 +6247,7 @@ function seeIt() {
 /* the engine could not answer: the try stays where it is, and is not counted */
 function cannotCheck(a, m) {
   a.checkTok = ++checkSeq;
-  a.verdict = { cls: 'verdict-mid', html: 'Stockfish cannot check this move right now. Try again, or show the answer.' };
+  a.verdict = { cls: 'verdict-mid', html: 'Stockfish cannot check this move right now. Try again, or show the answer.', say: 'Not counted. Try again.' };
   showTry(a, m, 'unchecked', null);
 }
 /* ask the engine about a move, from the same position, at the same depth
@@ -6314,7 +6311,7 @@ function checkMove(m, u, inLine) {
     var close = !inLine && (mateCard ? wMove >= 80 : ((wBest - wMove <= STRONGER_TOL || (chances && wMove >= 70)) && wMove >= b.wa + 10));
     if (close && a2.foundGood) {
       /* already told this kind of move is close: say it again, no penalty */
-      a2.verdict = { cls: 'verdict-mid', html: '◐ ' + esc(sanOf(a2.st, m)) + ' is close too. The best move is stronger still.' };
+      a2.verdict = { cls: 'verdict-mid', html: '◐ ' + esc(sanOf(a2.st, m)) + ' is close too. The best move is stronger still.', say: sanOf(a2.st, m) + ' is close too.' };
       showTry(a2, m, 'close', null);
       return;
     }
@@ -6325,7 +6322,7 @@ function checkMove(m, u, inLine) {
       keepProgress(a2);
       a2.verdict = { cls: 'verdict-mid', html: '◐ ' + esc(a2.foundGood.san) + ' is close'
         + (mateCard ? ', but there is a forced mate here.' : a2.tier === 1 ? '. The best move keeps more. Keep looking.'
-          : ': ' + Math.round(wMove) + '% against ' + Math.round(wBest) + '%. Keep looking.') };
+          : ': ' + Math.round(wMove) + '% against ' + Math.round(wBest) + '%. Keep looking.'), say: a2.foundGood.san + ' is close. Keep looking.' };
       showTry(a2, m, 'close', null);
       return;
     }
@@ -6358,7 +6355,7 @@ function miss(m, u, info) {
   }
   why = why || san + ' does not work.';
   a.hintAfter = false;
-  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ ' + why, '✗ ' + firstClause(why), '✗ ' + san + ' does not work.'])) };
+  a.verdict = { cls: 'verdict-bad', html: esc(fitLine(['✗ ' + why, '✗ ' + firstClause(why), '✗ ' + san + ' does not work.'])), say: why };
   escalate();
   showTry(a, m, 'miss', reply[0]);
 }
@@ -6383,9 +6380,9 @@ function reveal() {
   finishCard(a.foundGood && !a.misses ? 'hint' : 'fail');
 }
 /* a second tap on Next lands where Show the answer now sits: taps in the
-   first half second of a card are the old card's. The same holds for half a
-   second after the bar changes under the thumb (Try again, See it, a hint) */
-function tooSoon(a) { return !!a && Date.now() - Math.max(a.shownAt || 0, a.barAt || 0) < 450; }
+   first half second of a card are the old card's. After that, each bar
+   slot guards itself for half a second once it changes (slotGuarded) */
+function tooSoon(a) { return !!a && Date.now() - (a.shownAt || 0) < 450; }
 function giveHint() {
   var a = ui.session && ui.session.active;
   if (!a) return;
@@ -6395,7 +6392,6 @@ function giveHint() {
   if (a.phase !== 'guess' || a.hints >= 2 || (a.tier === 3 && !a.misses)) { if (cleared) renderCard(); return; }
   a.hints = a.hints + 1;
   a.hintAfter = true;
-  a.barAt = Date.now();
   keepProgress(a);
   renderCard();
 }
@@ -6493,6 +6489,8 @@ function nextCard() {
   if (!ss) return;
   if (ss.active && ss.active.explore) exploreExit('silent');
   engineStop('check');
+  /* what was staged for this card dies with it */
+  stageReset();
   ss.active = null;
   ss.idx++;
   saveSession();
@@ -6694,12 +6692,12 @@ function xpSpoilIndex() {
   ss.xpSpoil = idx;
 }
 /* another card's position, never the position of the card on screen (a
-   twin card from another game at the same position included) */
+   twin card from another game at the same position included). It reads
+   only: cardFor keys the card's position once */
 function xpSpoil(n) {
   var ss = ui.session, a = ss && ss.active;
   if (!ss || !ss.xpSpoil || !ss.xpSpoil[n.key]) return false;
-  if (a && !a.preKey) a.preKey = posKey(a.pre);
-  return !(a && n.key === a.preKey);
+  return !(a && n.key === (a.preKey || posKey(a.pre)));
 }
 function xpRun(a, ex, n, step) {
   return engineEval(n.fen, { nodes: XP_NODES[step] }, true,
@@ -7068,6 +7066,94 @@ function xpRows(a, ex) {
     row.label = first + (cont.length ? ', then ' + sans.slice(1, plies + 1).join(' ') : '') + '. ' + (myMate != null ? row.chip + '.' : 'Your winning chances ' + row.chip.replace('You ', '') + '.');
     return row;
   });
+}
+/* ── The card's words (FINAL-SPEC section 3) ─────────────────────────────
+   Every string on the card's face lives here, never in the classifier, so
+   the explanation snapshot and CLASSIFY_V do not move. The band has two
+   rows: row 1 at most 26 characters, row 2 at most 40 characters and 7
+   words (a caption, the stepped story's layout, 60 and 8). Every templated
+   row runs the fit ladder: the full text, the same with each material
+   phrase as one word, its first sentence, then the row's fallback. */
+var ROW_CAPS = { row1: { ch: 26, words: 99 }, row2: { ch: 40, words: 7 }, caption: { ch: 60, words: 8 } };
+
+/* the move played in the game, and the two sides, as the copy names them */
+function gameSan(a) { return sanOf(a.pre, a.played); }
+function sidesOf(a) {
+  var w = myPov(a.it);
+  return { me: w ? 'White' : 'Black', mine: w ? 'white' : 'black', opp: w ? 'Black' : 'White' };
+}
+
+/* the copy table, by the spec's ids: the task (T1, T2), the relearn chip
+   (T3), and the three answers to a tap that is not a move (T4 their piece,
+   T5 a drop where that piece cannot go, N1 any piece after an answer) */
+var CARD_COPY = {
+  T1: function () { return 'Your turn'; },
+  T2: function (a) { return 'Find a better move than ' + gameSan(a) + '.'; },
+  T3: function () { return 'One more try'; },
+  T4: function (a) { var s = sidesOf(a); return 'You are ' + s.me + '. Move a ' + s.mine + ' piece.'; },
+  T5: function () { return 'That piece can\'t go there.'; },
+  N1: function () { return 'To try moves, open Details.'; }
+};
+
+/* the live region leads with the verdict in words, so meaning never rests
+   on colour */
+var LIVE_PREFIX = { good: 'Correct.', bad: 'Wrong.', close: 'Good move, not best.', unchecked: 'Not checked.', info: 'Answer shown.' };
+
+/* the fit ladder. cands run from fullest to barest; a caller that can say
+   a material phrase as one word ("a rook", "the queen") passes that form
+   as the next candidate. Then each candidate's first sentence, then the
+   fallback. A row that fits nothing stays empty rather than overflow */
+function fitsRow(s, row) {
+  var cap = ROW_CAPS[row] || ROW_CAPS.row2;
+  return !!s && s.length <= cap.ch && s.split(/\s+/).length <= cap.words;
+}
+function firstSentence(s) { var m = /^.*?[.!?…](?=\s|$)/.exec(String(s || '')); return m ? m[0] : String(s || ''); }
+function fitRow(cands, row, fallback) {
+  var list = [].concat(cands).filter(Boolean);
+  list = list.concat(list.map(firstSentence));
+  for (var i = 0; i < list.length; i++) if (fitsRow(list[i], row)) return list[i];
+  return fitsRow(fallback, row) ? fallback : '';
+}
+/* a classifier sentence without its trailing line of moves: "It loses the
+   bishop after Qxd6 Bxd6." reads "It loses the bishop." */
+function noLine(s) { return String(s || '').replace(/[:,]? after [^.]*\.$/, '.').replace(/ and more\.$/, '.'); }
+
+/* the band for the state the card is in: {disc, kind, row1, row2, chip,
+   cap}. disc: king (in the solver's colour), good, bad, close, checking,
+   unchecked or info; kind: neutral, good, bad, close, info, hint or
+   explore; cap: one caption instead of two rows. The task, the relearn
+   chip and the answered heads are the spec's own words; the verdicts,
+   hints and forcing steps keep today's sentences inside the row caps until
+   their slices give them their own words (6, 7, 10, 11) */
+function bandFor(a) {
+  var t = a.tried, v = a.verdict, best = a.lines ? a.lines.best.san[0] || '' : '';
+  var say = function (fall) { return fitRow([v && v.say, noLine(v && v.say)], 'row2', fall); };
+  if (a.phase === 'done' && a.explore) return { kind: 'explore', cap: sayAt(a, a.explore, a.explore.at) };
+  if (a.phase === 'done') {
+    if (a.result === 'fail' || a.revealed)
+      return { disc: 'info', kind: 'info', row1: 'The answer: ' + best, row2: a.foundGood ? fitRow(['Your ' + a.foundGood.san + ' was close.'], 'row2', '') : '' };
+    if (a.alt) return { disc: 'good', kind: 'good', row1: 'That works too', row2: fitRow(['The engine prefers ' + altNames(a).theirs + '.'], 'row2', '') };
+    return { disc: 'good', kind: 'good', row1: a.result === 'first' ? 'Found it' : 'You got there', row2: '' };
+  }
+  if (a.phase === 'checking') return { disc: 'checking', kind: 'neutral', row1: fitRow(['Checking ' + (a.checking || 'your move') + '…'], 'row1', 'Checking…'), row2: '' };
+  if (a.phase === 'tried' && t) {
+    if (t.kind === 'close') return { disc: 'close', kind: 'close', row1: 'Good move', row2: say('There\'s a stronger one.') };
+    if (t.kind === 'unchecked') return { disc: 'unchecked', kind: 'info', row1: 'Cannot check this move', row2: say('Not counted. Try again.') };
+    if (t.uci === a.playedUci) return { disc: 'bad', kind: 'bad', row1: 'Your game move again', row2: say('There is something stronger here.') };
+    return { disc: 'bad', kind: 'bad', row1: 'Not this one', row2: say(fitRow([t.san + ' does not work.'], 'row2', '')) };
+  }
+  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: 'Right', row2: say('') };
+  var mid = a.sol && a.solIdx > 0;
+  if (a.hints >= 1 && (a.hintAfter || !mid)) {
+    var fam = familyOf(patternOf(a.it.b)).key;
+    var fall = mid ? 'The next move is forcing too.' : fam === 'chances' ? 'You can win material here.' : 'Your move allowed a strong reply.';
+    /* a winning position's hint is its advice, not "You are winning." */
+    var short_ = !mid && fam === 'conversion' ? 'Keep it simple and safe.' : null;
+    return { disc: 'king', kind: 'hint', row1: a.hints >= 2 ? 'Hint 2 of 2' : 'Hint 1 of 2',
+             row2: a.hints >= 2 ? 'Move the circled piece.' : fitRow([hintText(a), short_], 'row2', fall) };
+  }
+  if (mid) return { disc: 'king', kind: 'neutral', row1: 'Your move', row2: say('The next move is forcing too.') };
+  return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), row2: CARD_COPY.T2(a), chip: ss_relearn(a) ? CARD_COPY.T3() : '' };
 }
 /* ── Rendering ──────────────────────────────────────────────────────────────
    Two views (Today, Insights), a sheet for details, settings at the foot.
@@ -7483,13 +7569,15 @@ function doneHtml(ss) {
 /* ── the card ────────────────────────────────────────────────────────────── */
 /* the card's board as data: the position drawn (st), its last move, the
    bar's value from the player's side (ev), the marks for boardSvg (opts),
-   whether the board takes moves (live) and whether the bar waits (pending).
-   It reads the card and writes nothing, so a test can check every frame
-   (the spoiler rule) without a page; what drawing a frame remembers is
-   kept by renderCardBoard */
+   whether the board takes moves (live), whether the bar waits (pending:
+   grey and still on the card, live only while exploring) and how long
+   this frame's slide takes (slideMs: 220 for a move you made, 320 for one
+   the app shows you, 0 when nothing slides). It reads the card and writes
+   nothing, so a test can check every frame (the spoiler rule) without a
+   page; what drawing a frame remembers is kept by paintBoard */
 function boardOptsFor(a) {
   var it = a.it, flip = it.g.color === 'black';
-  var view, opts = { flip: flip }, evLive = false;
+  var view, opts = { flip: flip }, evLive = false, slideMs = 0;
   if (a.phase === 'done' && a.explore) {
     var ex = a.explore, xn = xpCur(ex), xr = ex.res[xn.key], quiet = xpSpoil(xn);
     /* the bar follows the explored position, from the learner's side; it
@@ -7501,16 +7589,18 @@ function boardOptsFor(a) {
     /* one arrow: Stockfish's move, or the row under the pointer */
     var xs = xpShown(ex, xn), hl = xs && !quiet && xs[ex.hot || 0] ? uciToMove(ex.st, xs[ex.hot || 0].pv[0]) : null;
     if (hl) opts.ghost = [hl.from, hl.to];
-    if (ex.anim) opts.anim = ex.anim;
+    if (ex.anim) { opts.anim = ex.anim; slideMs = 220; }
     if (ex.sel >= 0) opts.dots = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel; }).map(function (m) { return m.to; });
   } else if (a.phase === 'done') {
     view = lineView(a);
-    /* a line played or stepped forward slides its move; the solving move
-       slides once, on the first answered frame */
+    /* a line stepped forward slides its move; the solving move slides
+       once, on the first answered frame */
     var lv = a.lastView, L1 = a.lines[a.view.line];
-    if (sameMove(a.animMove, view.last)) opts.anim = a.animMove;
-    else if (lv && lv.line === a.view.line && a.view.idx === lv.idx + 1 && a.view.idx >= 0 && L1 && L1.moves[a.view.idx])
+    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = 220; }
+    else if (lv && lv.line === a.view.line && a.view.idx === lv.idx + 1 && a.view.idx >= 0 && L1 && L1.moves[a.view.idx]) {
       opts.anim = [L1.moves[a.view.idx].from, L1.moves[a.view.idx].to];
+      slideMs = 320;
+    }
     /* one arrow at a time, on the start position only: red for the move you
        played, green for the better one; never both */
     if (a.view && a.view.idx < 0) {
@@ -7535,139 +7625,267 @@ function boardOptsFor(a) {
     opts.shapes = a.shapes;
     if (a.phase === 'guess' && a.solIdx === 0 && !a.explore) opts.bad = [a.played.from, a.played.to];
     if (a.hints >= 2 && a.phase === 'guess') opts.hint = (a.sol && a.solIdx > 0 ? uciToMove(a.st, a.sol[a.solIdx]) || a.best : a.best).from;
-    if (sameMove(a.animMove, view.last)) opts.anim = a.animMove;
+    /* your move slides as you make it; their reply, once See it plays it,
+       slides as a move the app shows */
+    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.phase === 'tried' && a.tried.seen ? 320 : 220; }
   }
+  if (slideMs === 320) opts.animMs = 320;
   opts.mark = view.last;
   opts.label = (view.st.w ? 'White' : 'Black') + ' to move. You played ' + sanOf(a.pre, a.played) + ' in the game.';
   var ck = checkedKingSq(view.st);
   if (ck != null) opts.check = ck;
   return {
-    st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts,
+    st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts, slideMs: slideMs,
     live: a.phase === 'guess' || a.phase === 'tried' || !!(a.phase === 'done' && a.explore),
-    /* the bar fills only once the card is answered: a tall bar during the
-       guess would say "you are winning, find it" */
-    pending: a.phase !== 'done' || !!(a.explore && xpSpoil(xpCur(a.explore)))
+    /* the bar fills only while exploring: a tall bar during the guess would
+       say "you are winning, find it", and a moving one is motion nobody
+       asked for */
+    pending: !(a.phase === 'done' && a.explore) || !!xpSpoil(xpCur(a.explore))
   };
 }
-/* the card's board and its bar, drawn from boardOptsFor */
-function renderCardBoard(a) {
-  var it = a.it, f = boardOptsFor(a);
+/* the board beat: the board svg and the marks over it, and the bar beside
+   them. A frame that slides a piece sets motionUntil, so nothing else is
+   written until the piece lands; instant (an input flushed the beat) draws
+   the frame with no slide */
+function paintBoard(a, instant) {
+  var it = a.it, bw = el('bwrap');
+  if (!bw) return;
+  var f = boardOptsFor(a);
+  if (instant) { f.opts.anim = null; f.slideMs = 0; }
   /* what drawing this frame remembers: the bar's last live value and a
      slide already shown while exploring, the line frame on screen after */
   if (a.phase === 'done' && a.explore) {
     if (f.evLive) a.explore.lastEv = f.ev;
     a.explore.anim = null;
   } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx };
-  var bw = el('bwrap');
   bw.innerHTML = boardSvg(f.st, f.opts) + (a.pendingPromo ? promoHtml(f.st) : '');
   bw.classList.toggle('static', !f.live);
-  releaseAnims(bw);
+  var ms = f.slideMs && !reducedMotion() ? f.slideMs : 0;
+  releaseAnims(bw, ms);
   a.animMove = null;
-  /* the bar: the player's view of the position, with no pawn number */
-  var myCp = f.ev != null ? f.ev : it.b.eb;
-  el('ebar').classList.toggle('pending', f.pending);
-  el('ebar-fill').style.height = winPct(evalWhite(it, myCp)) + '%';
-  el('ebar-lab').textContent = '';
+  /* the bar: the player's view of the position, with no pawn number; still
+     while it waits */
+  var eb = el('ebar'), fill = el('ebar-fill');
+  if (eb) eb.classList.toggle('pending', f.pending);
+  if (fill && !f.pending) fill.style.height = winPct(evalWhite(it, f.ev != null ? f.ev : it.b.eb)) + '%';
+  /* the slide starts two frames from now (releaseAnims), and ends ms later */
+  if (ms) motionUntil = Date.now() + SLIDE_LEAD + ms;
 }
+/* the marks beat: only the marks svg is rewritten, so no piece is touched */
+function paintMarks(a) {
+  var bw = el('bwrap'), old = bw && bw.querySelector('.marks');
+  if (!old) return;
+  var f = boardOptsFor(a);
+  f.opts.anim = null;
+  var html = boardSvg(f.st, f.opts);
+  old.outerHTML = html.slice(html.indexOf('</svg>') + 6);
+}
+/* the board alone, staged: a selection, a drawn shape, a row pointed at
+   while exploring. The words stay as they are */
+function renderCardBoard() { stage(['board']); }
+/* the card: its frame once, then the board and the words as staged beats
+   (14s-stage.js), the words after any slide */
 function renderCard() {
   var box = el('trainbox'), ss = ui.session;
   if (!box || !ss) return;
-  if (ss.finished) { renderTrain(); return; }
+  if (ss.finished) { stageReset(); renderTrain(); return; }
   var a = ss.active;
   if (!a) {
+    stageReset();
     box.dataset.card = '';
     box.innerHTML = '<div class="card"><div class="card-top">' + sessionBarHtml(ss, null) + '</div>'
       + '<div class="panel"><div class="checking"><span class="meter"><i></i></span>Taking a closer look at this position…</div></div></div>';
     return;
   }
-  var it = a.it, flip = it.g.color === 'black';
+  var flip = a.it.g.color === 'black';
   if (box.dataset.card !== a.key) {
+    stageReset();
     box.dataset.card = a.key;
     box.innerHTML = '<div class="card">'
       + '<div class="card-top" id="ctop"></div>'
+      + '<div class="band-slot" id="cband"></div>'
       + '<div class="board-col"><div class="board-row">'
-        + '<div class="evalbar' + (flip ? ' flip' : '') + '" id="ebar"><i class="evalbar-fill" id="ebar-fill"></i><span class="evalbar-label" id="ebar-lab"></span></div>'
+        + '<div class="evalbar pending' + (flip ? ' flip' : '') + '" id="ebar"><i class="evalbar-fill" id="ebar-fill"></i><span class="evalbar-label" id="ebar-lab"></span></div>'
         + '<div class="board-wrap" id="bwrap"></div>'
       + '</div></div>'
-      + '<div class="panel" id="cpanel"></div>'
+      + '<div class="panel" id="cpanel"><div class="strip" id="cstrip"></div><div class="acts-row sticky-acts" id="cbar"></div></div>'
       + '</div>';
   }
-  var newCard = !a.shown;
+  stage(['board', 'text']);
+}
+/* what the card says and offers, as data: the band (bandFor: disc, kind,
+   row1, row2, chip, cap), forcing pips (a later slice), the action bar as
+   slots, the strip's markup and the live region's words */
+function displayFor(a) {
+  var b = bandFor(a), ss = ui.session;
+  return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', pips: null,
+           buttons: barSlots(a, ss), strip: stripHtml(a, ss), live: liveWords(a, b) };
+}
+/* a node's markup, written only when it changed, so a repaint that changes
+   nothing writes nothing (and keeps focus and a running fade) */
+function setHtml(node, html) {
+  if (!node || node.nlHtml === html) return false;
+  node.innerHTML = html;
+  node.nlHtml = html;
+  return true;
+}
+/* the text beat: the session bar, the band, the action bar, the strip and
+   the live region, with keyboard focus kept on the same control */
+function paintText(a) {
+  var ss = ui.session, band = el('cband');
+  if (!band) return;
+  var d = displayFor(a), newCard = !a.shown;
   a.shown = true;
-  /* a focused control in the top bar keeps focus across the repaint */
-  var ct = el('ctop'), tIdx = [].indexOf.call(ct.querySelectorAll('[data-act], a[href]'), document.activeElement);
-  ct.innerHTML = sessionBarHtml(ss, a) + cardTaskHtml(a);
-  makeFocusable(ct);
-  if (tIdx !== -1 && !newCard) { var tb = ct.querySelectorAll('[data-act], a[href]')[tIdx]; if (tb) tb.focus({ preventScroll: true }); }
-  renderCardBoard(a);
-  /* keyboard focus stays on the same control across a repaint, and the
-     verdict is read out to screen readers */
   var foc = document.activeElement, fp = el('cpanel');
-  var focKey = foc && fp && fp.contains(foc) ? (foc.id || ((foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || ''))) : null;
-  var ph = panelHtml(a, ss);
-  ui.repainting = true;
-  try { fp.innerHTML = ph; } finally { ui.repainting = false; }
-  var cardEl = box.querySelector('.card');
-  if (cardEl) cardEl.classList.toggle('xp-card', !!(a.phase === 'done' && a.explore));
-  if (a.phase === 'done' && a.explore) fitRows();
+  var inCard = foc && ((fp && fp.contains(foc)) || band.contains(foc));
+  var focKey = inCard ? (foc.id || ((foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || ''))) : null;
+  paintTop(a, ss);
+  paintBand(a, d);
+  paintBar(d);
+  paintStrip(d);
+  var box = el('trainbox'), cardEl = box && box.querySelector('.card'), xe = a.phase === 'done' && a.explore;
+  if (cardEl) cardEl.classList.toggle('xp-card', !!xe);
+  if (xe) fitRows();
   makeFocusable(fp);
   if (newCard) { var th = el('task-h'); if (th) th.focus({ preventScroll: true }); }
   else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
-  else if (focKey) {
+  else if (focKey && fp) {
     var back = focKey.indexOf('|') < 0 ? el(focKey) : fp.querySelector('[data-act="' + focKey.split('|')[0] + '"]' + (focKey.split('|')[1] ? '[data-k="' + focKey.split('|')[1] + '"]' : ''));
+    /* the band's head is the task before an answer and the result after */
+    if (!back && /^(task|result)-h$/.test(focKey)) back = el('task-h') || el('result-h');
     if (!back && /^xpRow\|/.test(focKey)) { var rws = fp.querySelectorAll('#xp [data-act="xpRow"]'); back = rws[rws.length - 1] || null; }
-    var xe = a.phase === 'done' && a.explore;
     if (xe && xe.wantRow != null && (!back || back.id === 'xp' || back.classList.contains('xp-mv'))) {
       var wr = fp.querySelector('#xp [data-act="xpRow"][data-k="' + xe.wantRow + '"]');
       if (wr) { back = wr; xe.wantRow = null; }
     }
     (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : fp.querySelector(a.phase === 'done' ? '[data-act="next"]' : '#kbmove, [data-act]')) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
-  var said = a.phase === 'done' && a.explore ? xpLive(a, a.explore, a.explore.at) : ((el('ctop').querySelector('.card-task') || {}).textContent || '');
+  paintLive(d);
+}
+/* the session bar: a focused control in it keeps focus across the repaint */
+function paintTop(a, ss) {
+  var ct = el('ctop');
+  if (!ct) return;
+  var html = sessionBarHtml(ss, a);
+  if (ct.nlHtml === html) return;
+  var tIdx = [].indexOf.call(ct.querySelectorAll('[data-act], a[href]'), document.activeElement);
+  setHtml(ct, html);
+  makeFocusable(ct);
+  if (tIdx !== -1) { var tb = ct.querySelectorAll('[data-act], a[href]')[tIdx]; if (tb) tb.focus({ preventScroll: true }); }
+}
+/* the band, the strip: each written only when its words changed */
+function paintBand(a, d) { setHtml(el('cband'), bandHtml(a, d)); }
+function paintStrip(d) {
+  ui.repainting = true;
+  try { setHtml(el('cstrip'), d.strip); } finally { ui.repainting = false; }
+}
+/* the action bar: its slots, noted for the double-tap guard as painted */
+function paintBar(d) {
+  var bar = el('cbar');
+  if (!bar) return;
+  noteSlots(d.buttons);
+  var cls = 'acts-row sticky-acts ' + (d.buttons.length === 3 ? 'done-acts' : 'guess-acts');
+  if (bar.className !== cls) bar.className = cls;
+  ui.repainting = true;
+  try { setHtml(bar, barHtml(d.buttons)); } finally { ui.repainting = false; }
+}
+/* the live region repeats the band for screen readers, once per change */
+function paintLive(d) {
   var live = el('sr-live');
   if (!live) { live = document.createElement('div'); live.id = 'sr-live'; live.className = 'sr-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('data-clarity-mask', 'true'); document.body.appendChild(live); }
-  if (live.textContent !== said) live.textContent = said;
+  if (live.textContent !== d.live) live.textContent = d.live;
 }
-/* phones: the board fills the screen, so the task and the verdict ride
-   above it in one short line (the panel below keeps the full text) */
-/* an alternative that also works is named at the step where it left the
-   engine's line, against the engine's move at that same step */
-function altNames(a) {
-  var at = (a.yours && a.yours.at) || 0;
-  var mine = a.lines.yours && a.lines.yours.san[at], theirs = a.lines.best.san[at] || a.lines.best.san[0];
-  return { mine: mine || 'Your move', theirs: theirs || '' };
+/* the band (FINAL-SPEC 2.0): the fixed box above the board. A disc, then
+   row 1 (the heading the card focuses: the task before an answer, the
+   result after) with the relearn chip at its right, then row 2; or one
+   caption while exploring */
+function bandHtml(a, d) {
+  if (d.cap) return '<div class="card-task k-' + d.kind + ' cap" aria-hidden="true"><p class="bd-cap">' + esc(d.cap) + '</p></div>';
+  return '<div class="card-task k-' + d.kind + '">' + discHtml(a, d.disc)
+    + '<div class="bd-rows"><div class="bd-top"><h2 class="bd-r1" id="' + (a.phase === 'done' ? 'result-h' : 'task-h') + '" tabindex="-1">' + esc(d.row1) + '</h2>'
+    + (d.chip ? '<span class="bd-chip">' + esc(d.chip) + '</span>' : '') + '</div>'
+    + '<p class="bd-r2">' + esc(d.row2) + '</p></div></div>';
 }
-/* the phone's prompt line: one message at a time, two lines at most */
-function cardTaskHtml(a) {
-  var side = a.it.g.color === 'white' ? 'White' : 'Black', txt, cls = '';
-  var strip = function (h) { return String(h).replace(/<span class="dim">[\s\S]*?<\/span>/g, '').replace(/<[^>]+>/g, ''); };
-  if (a.phase === 'done' && a.explore) return '<div class="card-task xp-task" aria-hidden="true">' + esc(sayAt(a, a.explore, a.explore.at)) + '</div>';
-  if (a.phase === 'checking') txt = 'Checking ' + esc(a.checking || 'your move') + '…';
-  else if (a.phase === 'done') {
-    var best = esc(a.lines.best.san[0] || ''), why = esc(a.cls.sentences.best || '');
-    /* the move is named once: "Qf8+ wins the pawn" becomes "It wins the pawn" */
-    if (best && why.indexOf(best + ' ') === 0) why = 'It ' + why.slice(best.length + 1);
-    if (a.result === 'fail' || a.revealed) txt = fitLine(['The answer is ' + best + '. ' + why, 'The answer is ' + best + '.']);
-    else if (a.alt) { txt = fitLine(['✓ ' + esc(altNames(a).mine) + ' works too. The engine prefers ' + esc(altNames(a).theirs) + '.', '✓ ' + esc(altNames(a).mine) + ' works too.']); cls = ' good'; }
-    else { var head1 = '✓ ' + best + '. ' + (a.result === 'first' ? 'Found it.' : 'You got there.'); txt = fitLine([head1 + ' ' + why, head1]); cls = ' good'; }
+/* the band's disc: a king in the solver's colour while it is your move,
+   else the verdict's glyph, drawn as the board's badges are (the close
+   one hollow) */
+function discHtml(a, kind) {
+  if (!kind) return '';
+  if (kind === 'king') return '<span class="bd-disc d-king" aria-hidden="true"><svg viewBox="0 0 45 45"><use href="#pc-' + (myPov(a.it) ? 'wK' : 'bK') + '"/></svg></span>';
+  var col = MARK_BADGE[kind] || MARK_BADGE.info, hollow = kind === 'close';
+  return '<span class="bd-disc d-' + kind + '" aria-hidden="true"><svg viewBox="-10 -10 20 20">'
+    + '<circle r="' + (hollow ? 8.9 : 10) + '" fill="' + (hollow ? '#161512' : col) + '"' + (hollow ? ' stroke="' + col + '" stroke-width="2.2"' : '') + '/>'
+    + '<path d="' + (BADGE_GLYPH[kind] || BADGE_GLYPH.info) + '" fill="none" stroke="' + (hollow ? col : '#fff') + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+}
+/* what the live region says: the band, led by its verdict in words, or the
+   exploration's own line */
+function liveWords(a, b) {
+  if (a.phase === 'done' && a.explore) return xpLive(a, a.explore, a.explore.at);
+  return [LIVE_PREFIX[b.disc] || '', b.row1 || '', b.row2 || ''].filter(Boolean).join(' ');
+}
+/* the action bar as slots, left to right: {act, k, label, cls, off, aria}.
+   Answered: back, forward, Next; a try on the board: help, Try again;
+   guessing: Hint, Show the answer; checking or a reply playing: the same
+   two, switched off, so the bar keeps its place */
+function barSlots(a, ss) {
+  if (a.phase === 'done') {
+    var L = a.lines[a.view.line] || a.lines.best, backOff, fwdOff, backLab = 'Back one move', fwdLab = 'Forward one move';
+    if (a.explore) {
+      var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
+      backOff = false;
+      if (xe.at === 0) backLab = 'Back to the lesson';
+      fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
+      if (xe.at >= xe.nodes.length - 1) fwdLab = 'Play Stockfish\'s pick';
+    } else { backOff = a.view.idx < 0; fwdOff = a.view.idx >= L.states.length - 1; }
+    var last = ss.idx + 1 >= ss.keys.length && !(ss.relearn && ss.relearn.length);
+    return [{ act: 'lineBack', label: '‹', cls: 'nav-btn' + (backOff ? ' nav-off' : ''), aria: backLab },
+            { act: 'lineFwd', label: '›', cls: 'nav-btn' + (fwdOff ? ' nav-off' : ''), aria: fwdLab },
+            { act: 'next', label: last ? 'Finish' : 'Next', cls: 'btn-big' }];
   }
-  else if (a.hints >= 1 && a.hintAfter) { txt = esc(hintText(a)); cls = ' hint'; }
-  else if (a.verdict) { txt = strip(a.verdict.html); cls = a.verdict.cls === 'verdict-bad' ? ' bad' : (a.verdict.cls === 'verdict-good' ? ' good' : ''); }
-  else if (a.hints >= 1) { txt = esc(hintText(a)); cls = ' hint'; }
-  else if (a.sol && a.solIdx > 0) txt = 'Move ' + (Math.floor(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
-  else {
-    var san = esc(sanOf(a.pre, a.played)), task = 'You are ' + side + '. Find a better move. ';
-    txt = fitLine([task + (a.it.b.d ? 'Your ' + san + ', the red arrow, ' + decisiveWords(a.it.g, a.it.b) + '.' : ''), task + 'Your ' + san + ' is the red arrow.']);
+  if (a.phase === 'tried') return triedSlots(a);
+  if (a.phase === 'guess') {
+    /* Hint is named by the hint it gives next, and switched off when it
+       has nothing left to give */
+    var hintOff = a.hints >= 2 || (a.tier === 3 && !a.misses);
+    return [{ act: 'hint', label: a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint'), cls: 'btn-line' + (!hintOff && a.misses ? ' btn-pulse' : ''), off: hintOff },
+            { act: 'reveal', label: 'Show the answer', cls: a.misses >= 2 ? 'btn-big' : 'btn-line' }];
   }
-  return '<div class="card-task' + cls + '" aria-hidden="true">' + txt + '</div>';
+  return [{ act: 'hint', label: 'Hint', cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
+}
+/* the bar while a try is on the board: Try again is the gold right-hand
+   button; on the left, See it plays their reply, then help is offered (the
+   next hint, or from the third miss the answer). A close move keeps
+   looking; a move the engine could not check offers the answer */
+function triedSlots(a) {
+  var t = a.tried, left;
+  if (t.kind === 'close') return [{ act: 'dismissStronger', label: 'Keep looking', cls: 'btn-line' }, { act: 'reveal', label: 'Show the best move', cls: 'btn-line' }];
+  if (t.kind === 'miss' && t.reply && !t.seen) left = { act: 'seeIt', label: 'See it ›', cls: 'btn-line' };
+  else if (t.kind === 'unchecked' || a.misses >= 3) left = { act: 'reveal', label: 'Show the answer', cls: 'btn-line' };
+  else if (a.hints >= 2) left = { act: 'hint', label: 'No more hints', cls: 'btn-line', off: true };
+  else left = { act: 'hint', label: a.hints ? 'Hint 2' : 'Hint', cls: 'btn-line' };
+  return [left, { act: 'tryAgain', label: 'Try again', cls: 'btn-big' }];
+}
+/* a slot as a button: its place (data-slot) for the double-tap guard; a
+   switched-off one has no action */
+function barHtml(slots) {
+  return slots.map(function (s, i) {
+    return '<a class="' + s.cls + (s.off ? ' btn-off' : '') + '" data-slot="' + i + '"'
+      + (s.off ? ' aria-disabled="true"' : ' data-act="' + s.act + '"' + (s.k != null ? ' data-k="' + esc(s.k) + '"' : ''))
+      + (s.aria ? ' aria-label="' + esc(s.aria) + '"' : '') + '>' + esc(s.label) + '</a>';
+  }).join('');
 }
 /* a slide only for the move the board shows as its last one */
 function sameMove(x, y) { return !!(x && y && x[0] === y[0] && x[1] === y[1]); }
-function releaseAnims(root) {
+/* a sliding piece is drawn where it came from and let go two frames later,
+   so its transition runs; motionUntil then runs from that moment (ms, the
+   slide's length), in case those frames took longer than SLIDE_LEAD */
+var SLIDE_LEAD = 50;
+function releaseAnims(root, ms) {
   var ps = root.querySelectorAll('.anim-piece');
   if (!ps.length) return;
   requestAnimationFrame(function () { requestAnimationFrame(function () {
     for (var i = 0; i < ps.length; i++) ps[i].style.transform = 'translate(0px,0px)';
+    if (ms) motionUntil = Math.max(motionUntil, Date.now() + ms);
   }); });
 }
 function promoHtml(st) {
@@ -7675,6 +7893,13 @@ function promoHtml(st) {
   return '<div class="promo-card"><div class="promo-in">' + ['Q', 'R', 'B', 'N'].map(function (p) {
     return '<a class="promo-opt" data-act="promo" data-k="' + p + '"><svg viewBox="0 0 45 45"><use href="#pc-' + (w ? 'w' : 'b') + p + '"/></svg></a>';
   }).join('') + '</div></div>';
+}
+/* an alternative that also works is named at the step where it left the
+   engine's line, against the engine's move at that same step */
+function altNames(a) {
+  var at = (a.yours && a.yours.at) || 0;
+  var mine = a.lines.yours && a.lines.yours.san[at], theirs = a.lines.best.san[at] || a.lines.best.san[0];
+  return { mine: mine || 'Your move', theirs: theirs || '' };
 }
 /* the session bar: end, progress, more */
 function sessionBarHtml(ss, a) {
@@ -7708,7 +7933,7 @@ function menuHtml(a) {
     + '<a data-act="dispute" data-k="engine">Not a real mistake: I think the engine is wrong</a>'
     + '<span class="sep"></span>'
     + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '')
-    + '<span class="menu-keys">Enter: next · ?: hint · ← →: step · Esc: back to the lesson</span>'
+    + '<span class="menu-keys">Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>'
     + '</div>';
 }
 function ctxHtml(a, answered) {
@@ -7723,10 +7948,8 @@ function ctxHtml(a, answered) {
   /* its own line, so a narrow screen never clips it */
   if (drill) h += '<p class="ctx ctx-link"><a href="' + gameHref(g.id, g.color, b.p) + '">Open the game ↗</a></p>';
   if (answered) return h;
-  var tags = [];
-  if (b.d) tags.push('This move ' + decisiveWords(g, b));
-  if (ss_relearn(a)) tags.push('One more try');
-  return h + (tags.length ? '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>' + tags.join(' · ') + '</p>' : '');
+  /* "One more try" is the band's chip */
+  return h + (b.d ? '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(g, b) + '</p>' : '');
 }
 function ss_relearn(a) { var ss = ui.session; return !!(ss && ss.relearnOf && ss.relearnOf[a.key] && ss.keys.indexOf(a.key) !== ss.idx); }
 function clockWords(s) {
@@ -7734,72 +7957,20 @@ function clockWords(s) {
   var m = Math.floor(s / 60), r = s % 60;
   return m + ':' + (r < 10 ? '0' : '') + r;
 }
-/* the stakes of the position, in numbers for most players and in words for
-   newer ones */
-function stakesWords(a, san) {
-  var b = a.it.b;
-  if (a.tier === 1) {
-    var before = b.wb >= 60 ? 'You were better. ' : (b.wb >= 40 ? 'The game was even. ' : '');
-    var after = b.wa < 30 ? 'After ' + esc(san) + ' you were losing.' : (b.wa < 45 ? 'After ' + esc(san) + ' you were worse.' : esc(san) + ' gave away much of your lead.');
-    return before + after;
-  }
-  return 'You played ' + esc(san) + ', the red arrow. Your winning chances fell from ' + Math.round(b.wb) + '% to ' + Math.round(b.wa) + '%.';
-}
-function panelHtml(a, ss) {
-  var it = a.it, b = it.b, side = it.g.color === 'white' ? 'White' : 'Black';
-  var h = ctxHtml(a);
+/* the strip, under the board: the game's context while you solve (and the
+   typed-move field while the board takes a move); once answered, both
+   halves of the lesson, the pattern, the schedule and the way to explore.
+   The result itself is the band's */
+function stripHtml(a, ss) {
+  var it = a.it, b = it.b;
   if (a.phase !== 'done') {
-    var rec0 = srsRec(it), review = rec0 && rec0.box >= 2 && !a.firstSight;
-    var san = sanOf(a.pre, a.played);
-    h += '<h2 class="task" id="task-h" tabindex="-1">' + (a.sol && a.solIdx > 0
-      ? 'Move ' + (Math.floor(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.'
-      : 'You are ' + side + '. Find a better move.') + '</h2>';
-    if (!review && a.solIdx === 0) h += '<p class="stakes">' + stakesWords(a, san) + '</p>';
-    /* the feedback slot: one message at a time, in a space kept for it */
-    var fb = '';
-    if (a.phase === 'checking') fb = '<div class="checking"><span class="meter"><i></i></span>Checking ' + esc(a.checking || 'your move') + '…</div>';
-    else if (a.verdict) fb = '<p class="verdict ' + a.verdict.cls + '">' + (a.verdict.panel || a.verdict.html) + '</p>';
-    else if (!store.get('nl:marksSeen', false) && ss.idx === 0 && a.firstSight && !a.attempts)
-      fb = '<p class="first-line">Drag a piece, or tap it and tap a square. The bar on the left fills in once you answer.</p>';
-    else if (a.tier === 1 && a.solIdx === 0 && !a.hints) fb = '<p class="first-line">Look at every check and capture first, for both sides.</p>';
-    /* while a try is shown, its verdict is the one message; a hint shows on Try again */
-    if (a.hints >= 1 && a.phase !== 'tried') fb += '<p class="hint-note">' + esc(hintText(a)) + (a.hints >= 2 ? ' The piece to move is circled.' : '') + '</p>';
-    h += '<div class="feedback" aria-live="polite">' + fb + '</div>';
-    if (a.phase === 'tried') h += '<div class="acts-row sticky-acts guess-acts">' + triedActs(a) + '</div>';
-    else if (a.phase !== 'guess') {
-      /* while a move is checked or answered, the bar keeps its place, switched off */
-      h += '<div class="acts-row sticky-acts guess-acts"><a class="btn-line btn-off" aria-disabled="true">Hint</a><a class="btn-line btn-off" aria-disabled="true">Show the answer</a></div>';
-    }
-    if (a.phase === 'guess') {
-      /* fixed slots: Hint stays in place, switched off when it has nothing
-         left to give, and named by the hint it gives next (as after See it) */
-      var hintOff = a.hints >= 2 || (a.tier === 3 && !a.misses);
-      var hintLab = a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint');
-      var acts = '<a class="btn-line' + (hintOff ? ' btn-off' : (a.misses ? ' btn-pulse' : '')) + '" data-act="hint"' + (hintOff ? ' aria-disabled="true"' : '') + '>' + hintLab + '</a>'
-        + '<a class="' + (a.misses >= 2 ? 'btn-big' : 'btn-line') + '" data-act="reveal">Show the answer</a>';
-      h += '<div class="acts-row sticky-acts guess-acts">' + acts + '</div>';
-    }
-    /* the typed-move field while the board takes a move: a move typed over
-       a try takes the try back first */
+    var h0 = ctxHtml(a);
+    /* a move typed over a try takes the try back first */
     if (a.phase === 'guess' || a.phase === 'tried')
-      h += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
-    return h;
+      h0 += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
+    return h0;
   }
-  /* done: the result, then both halves of the lesson, always on screen */
   var best = a.lines.best.san[0] || '', s = a.cls.sentences;
-  var disc, head, sub = '';
-  if (a.result === 'fail' || a.revealed) {
-    disc = '';
-    head = 'The answer is ' + esc(best) + '.';
-    if (a.foundGood) sub = 'Your ' + esc(a.foundGood.san) + ' was close.';
-  } else if (a.alt) {
-    disc = '<span class="disc disc-help" aria-hidden="true">✓</span>';
-    head = esc(altNames(a).mine) + ' works too.';
-    sub = 'The engine prefers ' + esc(altNames(a).theirs) + ', by a little.';
-  } else {
-    disc = '<span class="disc' + (a.result === 'first' ? '' : ' disc-help') + '" aria-hidden="true">✓</span>';
-    head = esc(best) + (a.result === 'first' ? '. Found it.' : '. You got there.');
-  }
   var cur = a.explore ? null : a.view.line;
   var tline = function (key, cls, text) {
     var on = cur === key;
@@ -7807,10 +7978,8 @@ function panelHtml(a, ss) {
       + '<span class="tl-dot" aria-hidden="true"></span><span class="tl-text">' + text + '</span>'
       + (on ? '' : '<span class="tl-play" aria-hidden="true"></span>') + '</button>';
   };
-  h = ctxHtml(a, true);
+  var h = ctxHtml(a, true);
   h += '<div class="result' + (a.result === 'first' && !a.alt && !a.revealed ? ' first' : '') + (a.explore ? ' xp-on' : '') + '">'
-    + '<div class="result-head">' + disc + '<h2 class="result-h" id="result-h" tabindex="-1">' + head + '</h2></div>'
-    + (sub ? '<p class="result-sub">' + sub + '</p>' : '')
     + tline('refute', 'tl-bad', '<span class="tl-long">' + esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game) + '</span><span class="tl-short">' + esc(fitLine([s.short || s.game, firstClause(s.short || s.game)])) + '</span>')
     + (a.alt && a.lines.yours ? tline('yours', 'tl-alt', esc(altNames(a).mine) + ' also holds. Here is how it goes on.') : '')
     + tline('best', 'tl-good', esc(s.best || best + ' keeps your position together.'));
@@ -7823,34 +7992,10 @@ function panelHtml(a, ss) {
   if (a.showHabit) h += '<p class="habit">' + esc(habitFor(a, t, info)) + '</p>';
   if (a.explore) h += xpHtml(a);
   else h += '<p class="explore-line"><a class="btn-quiet invite" data-act="explore">' + esc((a.invite || inviteFor(a)).text) + '</a></p>';
-  var L = a.lines[a.view.line] || a.lines.best, backOff, fwdOff, backLab = 'Back one move', fwdLab = 'Forward one move';
-  if (a.explore) {
-    var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
-    backOff = false;
-    if (xe.at === 0) backLab = 'Back to the lesson';
-    fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
-    if (xe.at >= xe.nodes.length - 1) fwdLab = 'Play Stockfish\'s pick';
-  } else { backOff = a.view.idx < 0; fwdOff = a.view.idx >= L.states.length - 1; }
-  h += '<div class="acts-row sticky-acts done-acts">'
-    + '<a class="nav-btn' + (backOff ? ' nav-off' : '') + '" data-act="lineBack" aria-label="' + backLab + '">‹</a>'
-    + '<a class="nav-btn' + (fwdOff ? ' nav-off' : '') + '" data-act="lineFwd" aria-label="' + fwdLab + '">›</a>'
-    + '<a class="btn-big" data-act="next">' + (ss.idx + 1 >= ss.keys.length && !(ss.relearn && ss.relearn.length) ? 'Finish' : 'Next') + '</a></div>';
   return h;
 }
-/* the bar while a try is on the board: Try again is the gold right-hand
-   button; on the left, See it plays their reply, then help is offered (the
-   next hint, or from the third miss the answer). A close move keeps
-   looking; a move the engine could not check offers the answer */
-function triedActs(a) {
-  var t = a.tried, left;
-  if (t.kind === 'close') return '<a class="btn-line" data-act="dismissStronger">Keep looking</a><a class="btn-line" data-act="reveal">Show the best move</a>';
-  if (t.kind === 'miss' && t.reply && !t.seen) left = '<a class="btn-line" data-act="seeIt">See it ›</a>';
-  else if (t.kind === 'unchecked' || a.misses >= 3) left = '<a class="btn-line" data-act="reveal">Show the answer</a>';
-  else if (a.hints >= 2) left = '<a class="btn-line btn-off" aria-disabled="true">No more hints</a>';
-  else left = '<a class="btn-line" data-act="hint">' + (a.hints ? 'Hint 2' : 'Hint') + '</a>';
-  return left + '<a class="btn-big" data-act="tryAgain">Try again</a>';
-}
-/* the exploration: the trail, the sentence, Stockfish's three best moves */
+/* the exploration: the trail and Stockfish's three best moves (its
+   sentence is the band's caption) */
 function xpHtml(a) {
   var ex = a.explore, n = xpCur(ex), res = ex.res[n.key], rows = xpRows(a, ex), tier = a.tier || 2;
   var quiet = xpSpoil(n) || xpGameOver(n.st) || n.down;
@@ -7866,8 +8011,7 @@ function xpHtml(a) {
   if (!trail) trail = '<span class="xp-label">Your analysis</span>';
   var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis" tabindex="-1">'
     + '<span class="xp-meter' + (busy ? ' run' : '') + '" aria-hidden="true"><i></i></span>'
-    + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>'
-    + '<p class="xp-say">' + esc(sayAt(a, ex, ex.at)) + '</p>';
+    + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>';
   if (!quiet) {
     var mine = n.st.w === myPov(a.it), who = mine ? 'Your best moves' : sideName(n.st.w) + '\'s best moves';
     h += '<p class="xp-cap">' + who + (tier === 1 ? '' : ' · your winning chances') + '</p>'
@@ -8160,6 +8304,110 @@ function renderFoot() {
     + '<a href="https://github.com/thatsiavash/notlichess">Source</a></span>';
 }
 
+/* ── The sequencer (FINAL-SPEC 2.2): one change at a time ─────────────────
+   An action changes the card at once (phase, verdict, misses, hints, the
+   result) and then stages what the screen shows, as beats that run in order
+   on the active card:
+     'board'  repaints the board svg and the marks over it once no piece is
+              sliding; a frame that slides a piece sets motionUntil to the
+              slide's end
+     'marks'  rewrites only the marks svg, once no piece is sliding
+     'text'   paints the band, the action bar, the strip and the live
+              region 150 ms after the last slide ends; a newer text beat
+              takes the place of one still waiting (the latest wins)
+     {wait}   waits that many ms from when it is reached
+   Beats paint the card as it is when they run. Any input calls
+   flushStage() first: a running slide jumps to its end, waiting board and
+   marks beats apply at once, and waiting text moves to 150 ms from now.
+   Beats belong to one card and die with it (Next, leaving the card). */
+var TEXT_GAP = 150;
+var motionUntil = 0, stageQ = [], stageTimer = null, stageCard = null, textNotBefore = 0;
+
+function stage(beats) {
+  var a = ui.session && ui.session.active;
+  if (!a) return;
+  if (stageCard !== a.key) { stageReset(); stageCard = a.key; }
+  if (beats.indexOf('text') >= 0) {
+    stageQ = stageQ.filter(function (b) { return b !== 'text'; });
+    textNotBefore = 0;
+  }
+  beats.forEach(function (b) {
+    /* two board beats in a row paint the same card: one is enough */
+    if (b === 'board' && stageQ[stageQ.length - 1] === 'board') return;
+    stageQ.push(typeof b === 'number' ? { wait: b } : b);
+  });
+  stageRun();
+}
+/* run what is due; wait for the rest */
+function stageRun() {
+  clearTimeout(stageTimer);
+  stageTimer = null;
+  var a = ui.session && ui.session.active;
+  if (!a || a.key !== stageCard) { stageQ = []; return; }
+  while (stageQ.length) {
+    var b = stageQ[0], now = Date.now(), due = now;
+    if (b === 'board' || b === 'marks') due = motionUntil;
+    else if (b === 'text') due = Math.max(motionUntil + TEXT_GAP, textNotBefore);
+    else if (b.wait != null) { if (b.until == null) b.until = now + b.wait; due = b.until; }
+    if (due > now) { stageTimer = setTimeout(stageRun, due - now); return; }
+    stageQ.shift();
+    stageApply(b, a, false);
+  }
+}
+function stageApply(b, a, instant) {
+  if (b === 'board') paintBoard(a, instant);
+  else if (b === 'marks') paintMarks(a);
+  else if (b === 'text') paintText(a);
+}
+/* input first: the slide ends, the board catches up, the words wait 150 ms */
+function flushStage() {
+  var now = Date.now(), a = ui.session && ui.session.active, moved = false;
+  if (motionUntil > now) {
+    var bw = el('bwrap'), ps = bw ? bw.querySelectorAll('.anim-piece') : [];
+    for (var i = 0; i < ps.length; i++) { ps[i].style.transition = 'none'; ps[i].style.transform = 'translate(0px,0px)'; }
+    motionUntil = now;
+    moved = true;
+  }
+  var q = stageQ, text = false;
+  stageQ = [];
+  clearTimeout(stageTimer);
+  stageTimer = null;
+  if (a && a.key === stageCard) q.forEach(function (b) {
+    if (b === 'board' || b === 'marks') { stageApply(b, a, true); moved = true; }
+    else if (b === 'text') text = true;
+  });
+  /* a board that just changed counts as a slide that ended now */
+  if (moved) motionUntil = now;
+  if (text) { stageQ.push('text'); textNotBefore = now + TEXT_GAP; stageRun(); }
+}
+function stageReset() {
+  clearTimeout(stageTimer);
+  stageTimer = null;
+  stageQ = [];
+  stageCard = null;
+  motionUntil = 0;
+  textNotBefore = 0;
+}
+
+/* the double-tap guard (2.2): a bar slot whose label or action just changed
+   ignores clicks, Enter and ? for 450 ms, so the second tap of a double tap
+   never lands on the button that took the first one's place. paintBar
+   notes every slot it paints */
+var SLOT_GUARD = 450;
+var slotSig = [], slotAct = [], slotChangedAt = [];
+function noteSlots(slots) {
+  var now = Date.now();
+  slots.forEach(function (s, i) {
+    var sig = (s.label || '') + '|' + (s.off ? '' : s.act || '') + '|' + (s.k == null ? '' : s.k);
+    if (slotSig[i] !== sig) { slotSig[i] = sig; slotChangedAt[i] = now; }
+    slotAct[i] = s.off ? null : s.act || null;
+  });
+  for (var j = slots.length; j < slotSig.length; j++) { slotSig[j] = null; slotAct[j] = null; slotChangedAt[j] = now; }
+}
+function slotGuarded(i) { return i != null && i >= 0 && Date.now() - (slotChangedAt[i] || 0) < SLOT_GUARD; }
+/* the slot that holds an action now, -1 if none; the right-hand one */
+function slotOfAct(act) { return slotAct.indexOf(act); }
+function rightSlot() { for (var i = slotSig.length - 1; i >= 0; i--) if (slotSig[i] != null) return i; return -1; }
 /* ── Landing, identity, boot ────────────────────────────────────────────── */
 
 /* the example on the landing: a real club-level slip (5...Nxd5 in the Two
@@ -8586,6 +8834,12 @@ document.addEventListener('click', function (e) {
   var act = t.getAttribute('data-act'), k = t.getAttribute('data-k');
   if (t.tagName === 'INPUT') return;
   if (act !== 'closeSheet' || e.target === t) e.preventDefault();
+  /* input first: a running slide ends and whatever was staged catches up;
+     then a bar slot that just changed ignores the tap (a double tap's
+     second half) */
+  flushStage();
+  var slot = t.getAttribute('data-slot');
+  if (slot != null && slotGuarded(parseInt(slot, 10))) return;
   var a = ui.session && ui.session.active;
   switch (act) {
     case 'view': closeSheet(); if (ui.session && ui.session.finished && k === 'train') endSession(); setView(k); break;
@@ -8646,7 +8900,6 @@ document.addEventListener('click', function (e) {
     case 'promo': promoChoose(k); break;
     case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;
-    case 'marksSeen': store.set('nl:marksSeen', true); renderCard(); break;
     /* a teaching line opens at its start, with its arrow; › steps it */
     case 'lineTab': if (a && a.lines && a.lines[k]) { if (a.explore) exploreExit('silent'); a.view = { line: k, idx: -1 }; renderCard(); } break;
     case 'lineTo': if (a && a.lines) { if (a.explore) exploreExit('silent'); a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
@@ -8733,24 +8986,40 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Escape') {
     if (ui.sheet) { closeSheet(); return; }
+    flushStage();
     var ae = ui.session && ui.session.active;
     if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
   }
   var a = ui.session && ui.session.active;
   if (!a || ui.sheet) return;
+  /* a handled key is input: whatever was staged catches up first */
+  if (/^(ArrowLeft|ArrowRight|Enter| |\?)$/.test(e.key)) flushStage();
+  var onAct = !!(e.target && e.target.closest && e.target.closest('[data-act]'));
   if (a.phase === 'done') {
     if (e.key === 'ArrowLeft') { e.preventDefault(); stepView(-1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); stepView(1); }
-    else if (e.key === 'Enter' || e.key === ' ') { if (!(e.target && e.target.closest && e.target.closest('[data-act]'))) { e.preventDefault(); nextCard(); } }
+    else if ((e.key === 'Enter' || e.key === ' ') && !onAct) { e.preventDefault(); pressRight(); }
   } else if (a.phase === 'guess' || a.phase === 'tried') {
-    /* never a letter: letters start moves in the typed-move field */
-    if (e.key === '?') { e.preventDefault(); giveHint(); }
+    /* never a letter: letters start moves in the typed-move field. ? asks
+       for a hint, Enter presses the right-hand button; both wait out the
+       guard of the slot they stand for */
+    if (e.key === '?') { e.preventDefault(); if (!slotGuarded(slotOfAct('hint'))) giveHint(); }
+    else if (e.key === 'Enter' && !onAct) { e.preventDefault(); pressRight(); }
   }
 });
-function reducedMotion() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+/* the right-hand button, pressed from the keyboard: a click on it, so the
+   double-tap guard and the action are the button's own */
+function pressRight() {
+  var bar = el('cbar'), b = bar && bar.querySelector('[data-slot="' + rightSlot() + '"][data-act]');
+  if (b) b.click();
+}
+/* reduced motion: every slide, fade and crossfade takes 0 ms (in Node
+   tests, ui.reducedTest says so) */
+function reducedMotion() { return !!(ui.reducedTest || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)); }
 /* a move typed as SAN (Nf3, exd5, O-O, e8=Q) or as squares (g1f3) */
 function typedMove(txt) {
+  flushStage();
   var a = ui.session && ui.session.active;
   var xp = a && a.phase === 'done' && a.explore;
   if (!a || (a.phase !== 'guess' && a.phase !== 'tried' && !xp)) return;
@@ -8780,7 +9049,7 @@ document.addEventListener('keydown', function (e) {
 });
 
 /* ── board input: tap-tap and drag, on the card's own board only ─────────── */
-var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false };
+var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null };
 function sqFromEvent(e) {
   var el2 = document.elementFromPoint(e.clientX, e.clientY);
   var sqEl = el2 && el2.closest ? el2.closest('#bwrap [data-sq]') : null;
@@ -8817,6 +9086,8 @@ document.addEventListener('pointerdown', function (e) {
   if (!a || !e.target.closest || !e.target.closest('#bwrap')) return;
   var sq = sqFromEvent(e);
   if (sq < 0) return;
+  /* input first: a running slide ends and the board catches up */
+  flushStage();
   if (e.button === 2) { pointerState.rightFrom = sq; return; }
   var bs = boardState(a);
   /* a mouse or pen press on a piece of the side to move starts exploring
@@ -8833,6 +9104,14 @@ document.addEventListener('pointerdown', function (e) {
       return;
     }
   }
+  /* a board that takes no moves (the answered card): a sideways swipe
+     will step the story (FINAL-SPEC 2.2), so its start is kept when it is
+     clear of both screen edges (iOS Back ends the session) */
+  if (e.button === 0 && !bs.live && !a.pendingPromo) {
+    var W = window.innerWidth || 0;
+    pointerState.swipe = e.clientX >= 24 && e.clientX <= W - 24 ? { x: e.clientX, y: e.clientY } : null;
+    return;
+  }
   if (e.button !== 0 || !bs.live || a.pendingPromo) return;
   /* a try on the board: a press on one of your pieces takes it back at
      once, and the press (a tap or a drag) goes on from the real position */
@@ -8845,7 +9124,7 @@ document.addEventListener('pointerdown', function (e) {
     sq = pick;
   }
   pointerState.suppressClick = false;
-  if (!bs.explore && a.shapes.length) { a.shapes = []; renderCard(); }
+  if (!bs.explore && a.shapes.length) { a.shapes = []; renderCardBoard(); }
   var p = bs.st.b[sq];
   if (p && isW(p) === bs.st.w) {
     pointerState.dragFrom = sq;
@@ -8855,7 +9134,8 @@ document.addEventListener('pointerdown', function (e) {
     pointerState.startY = e.clientY;
     var cur = bs.explore ? a.explore.sel : a.sel;
     pointerState.justSelected = cur !== sq;
-    if (cur !== sq) { if (bs.explore) a.explore.sel = sq; else a.sel = sq; renderCard(); }
+    /* a selection changes the board alone (exploring repaints its words too) */
+    if (cur !== sq) { if (bs.explore) { a.explore.sel = sq; renderCard(); } else { a.sel = sq; renderCardBoard(); } }
   }
 });
 document.addEventListener('pointermove', function (e) {
@@ -8873,13 +9153,19 @@ document.addEventListener('pointermove', function (e) {
   moveGhost(e.clientX, e.clientY);
 });
 function pointerFinish(e, cancelled) {
-  var a = ui.session && ui.session.active;
+  var a = ui.session && ui.session.active, sw = pointerState.swipe;
+  pointerState.swipe = null;
   if (!a) { pointerState.dragFrom = -1; pointerState.rightFrom = -1; killGhost(); return; }
+  /* a swipe: at least 48 px across, twice as far across as down */
+  if (sw && !cancelled) {
+    var dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+    if (Math.abs(dx) >= 48 && Math.abs(dx) > 2 * Math.abs(dy)) storySwipe(dx < 0 ? 1 : -1);
+  }
   var sq = cancelled ? -1 : sqFromEvent(e);
   if (e.button === 2 && pointerState.rightFrom >= 0) {
     if (sq >= 0 && a.phase === 'guess') {
       if (sq === pointerState.rightFrom) a.shapes.push({ at: sq }); else a.shapes.push({ from: pointerState.rightFrom, to: sq });
-      renderCard();
+      renderCardBoard();
     }
     pointerState.rightFrom = -1;
     return;
@@ -8902,6 +9188,10 @@ function pointerFinish(e, cancelled) {
   }
 }
 document.addEventListener('pointerup', function (e) { pointerFinish(e, false); });
+/* a swipe on the answered board: forward (1) or back (-1) through the
+   stepped story. The story is a later slice (FINAL-SPEC 6, slice 9); until
+   then a swipe changes nothing and the page scrolls as before */
+function storySwipe(d) { return false; }
 /* desktop: pointing at one of Stockfish's rows moves the one arrow to it */
 function xpHover(k, byFocus) {
   var a = ui.session && ui.session.active, ex = a && a.explore;

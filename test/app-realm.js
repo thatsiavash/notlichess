@@ -2,6 +2,7 @@
 // internals through window.__nlTest.ev (enabled because location.hostname is 'localhost').
 // Usage: const A = require('./app-realm')({ now, storage: {...}, session: {...} });
 //        A.ev('todayPlan()'); A.setNow(ms); A.storage; A.click('tryAgain') (a button click, through the page's handler)
+//        A.advance(ms): the clock moves on, and each timer runs when it falls due (A.flush runs them all, whatever their delay)
 // Nothing reaches the network (fetch never resolves) and no engine runs (Worker throws), so everything
 // tested here is the app's own bookkeeping.
 const fs = require('fs'), path = require('path');
@@ -55,7 +56,7 @@ module.exports = function makeApp(opts) {
     Blob: function () {}, URL: { createObjectURL: () => '', revokeObjectURL() {} },
     location: loc, history: { state: null, replaceState() {}, pushState(s) { this.state = s; }, back() {} },
     navigator: { onLine: true, hardwareConcurrency: 4, storage: { persist: () => Promise.resolve(true) } },
-    setTimeout: (fn) => { timers.push(fn); return timers.length; }, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
+    setTimeout: (fn, ms) => { const w = () => fn(); w.due = now + (+ms || 0); timers.push(w); return timers.length; }, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
     requestAnimationFrame() {}, fetch: () => new Promise(() => {}), Worker: function () { throw new Error('no workers in node'); },
     MutationObserver: function () { this.observe = function () {}; }, TextDecoder, KeyboardEvent: function () {},
   };
@@ -70,12 +71,31 @@ module.exports = function makeApp(opts) {
   return {
     ev, storage: local.data, session: session.data, timers, loc,
     setNow: (t) => { now = t; }, getNow: () => now,
-    /* a click on a button with this data-act (and data-k), given to the
-       page's own document click handler */
-    click: (act, k) => {
-      const t = { tagName: 'A', getAttribute: (n) => (n === 'data-act' ? act : n === 'data-k' ? (k == null ? null : String(k)) : null) };
+    /* a click on a button with this data-act (and data-k, and the bar slot
+       it sits in), given to the page's own document click handler */
+    click: (act, k, slot) => {
+      const t = { tagName: 'A', getAttribute: (n) => (n === 'data-act' ? act : n === 'data-k' ? (k == null ? null : String(k)) : n === 'data-slot' ? (slot == null ? null : String(slot)) : null) };
       t.closest = (sel) => (sel === '[data-act]' ? t : null);
       (listeners.click || []).forEach((fn) => fn({ target: t, preventDefault() {} }));
+    },
+    /* a key pressed on the page (on no control), given to its keydown handlers */
+    key: (key) => {
+      const t = { tagName: 'BODY', closest: () => null, matches: () => false };
+      (listeners.keydown || []).forEach((fn) => fn({ key, target: t, preventDefault() {} }));
+    },
+    /* the clock moves on by ms; each timer runs when it falls due, in order,
+       with the clock at its due time (a timer it queues runs too, if due) */
+    advance: (ms) => {
+      const end = now + ms;
+      for (;;) {
+        let i = -1;
+        timers.forEach((t, j) => { if ((t.due || 0) <= end && (i < 0 || (t.due || 0) < (timers[i].due || 0))) i = j; });
+        if (i < 0) break;
+        const t = timers.splice(i, 1)[0];
+        if ((t.due || 0) > now) now = t.due;
+        try { t(); } catch (e) {}
+      }
+      now = end;
     },
     /* run queued timers once (not recursively forever) */
     flush: (rounds) => { for (let r = 0; r < (rounds || 1); r++) { const t = timers.splice(0); t.forEach((f) => { try { f(); } catch (e) {} }); } },

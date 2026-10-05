@@ -288,13 +288,6 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .ctx{font-size:13px;color:var(--secondary);margin:0 0 6px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctx b{color:var(--primary);font-weight:400}
 .ctx .tag{color:var(--gold-quiet)}
-.task{font-family:var(--font-display);font-size:27px;line-height:1.15;color:var(--display);margin:4px 0 6px}
-.stakes{font-size:14.5px;color:var(--body);margin:0 0 14px}
-.verdict{font-size:16px;margin:4px 0 10px;min-height:1.4em;color:var(--primary)}
-.verdict b{font-weight:600}
-.verdict-good{color:var(--win)}
-.verdict-bad{color:var(--loss)}
-.verdict-mid{color:var(--link-hover)}
 .checking{
   display:flex;align-items:center;gap:10px;font-size:15px;color:var(--gold-quiet);margin:4px 0 10px;
 }
@@ -302,7 +295,6 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .checking .meter i{position:absolute;top:0;bottom:0;width:40%;background:var(--gold);border-radius:2px;animation:sweep 1s ease-in-out infinite}
 @keyframes sweep{0%{left:-40%}100%{left:100%}}
 .acts-row{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;margin:6px 0 4px}
-.hint-note{font-size:14px;color:var(--link-hover);margin:6px 0 8px;border-left:2px solid var(--gold);padding-left:10px}
 .lines{margin:10px 0 6px}
 
 .nav-btn{border:1px solid var(--edge);border-radius:5px;padding:2px 12px;font-size:16px;color:var(--body);line-height:1.4;cursor:pointer}
@@ -339,7 +331,6 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .tl-text .tl-short{display:inline}
   .sticky-acts{flex-wrap:nowrap}
   .sticky-acts > *{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .task{font-size:24px}
   /* thumbs: room around the small controls */
   .card-menu > a{display:inline-flex;min-width:44px;min-height:40px;align-items:center;justify-content:flex-end}
   .sheet .close{padding:10px;margin:-10px -10px 0 0}
@@ -414,28 +405,40 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .brand{gap:8px}
   .hero-top .week{flex-direction:row;align-items:center;gap:8px;margin:-4px 0 14px}
 }
-.card-task{display:none}
-@media (max-width:860px){
-  .card-task{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex-basis:100%;
-    font-size:14.5px;line-height:1.35;color:var(--primary);margin:-2px 0 2px}
-  .card-task.bad{color:#e0968c}
-  .card-task.good{color:#9fcf8a}
-}
+/* the band (FINAL-SPEC 2.0): one fixed 56 px box above the board on a
+   phone, a block at the head of the panel on a wide screen. A disc, row 1
+   (the relearn chip at its right) and row 2, or one caption while
+   exploring; the background and a 3 px left border carry the state. It
+   fades in over 150 ms whenever its words change */
+.band-slot{min-width:0}
+.card-task{display:flex;align-items:center;gap:10px;box-sizing:border-box;height:56px;margin:0;padding:0 10px 0 9px;
+  border-left:3px solid transparent;overflow:hidden;animation:band-in .15s ease-out}
+@keyframes band-in{from{opacity:0}to{opacity:1}}
+.bd-disc{flex:none;width:28px;height:28px;display:block}
+.bd-disc svg{width:100%;height:100%;display:block}
+.bd-disc.d-king{border-radius:50%;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line)}
+.bd-disc.d-king svg{width:22px;height:22px;margin:3px}
+.bd-rows{flex:1 1 auto;min-width:0}
+.bd-top{display:flex;align-items:center;gap:8px;min-width:0}
+.bd-r1{flex:0 1 auto;min-width:0;margin:0;font-family:var(--font-body);font-weight:600;font-size:18px;line-height:22px;color:var(--text-1);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;outline:none;font-variant-numeric:lining-nums}
+.bd-r2{margin:0;font-size:15px;line-height:18px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-r2:empty{display:none}
+.bd-chip{flex:none;margin-left:auto;font-size:11.5px;line-height:18px;padding:0 8px;border:1px solid var(--accent);border-radius:9px;color:var(--accent-hover);white-space:nowrap}
+.bd-cap{margin:0;font-size:15px;line-height:20px;color:var(--text-1);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card-task.k-good{background:rgba(143,181,115,.16);border-left-color:#8fb573}
+.card-task.k-bad{background:rgba(216,130,111,.17);border-left-color:#d8826f}
+.card-task.k-close{background:rgba(157,176,198,.14);border-left-color:#9db0c6}
+.card-task.k-info{background:#211f1b;border-left-color:#6b665d}
+.card-task.k-hint .bd-r1,.card-task.k-hint .bd-r2{color:#d6a852}
+.card-task.k-explore{border-left-color:var(--accent)}
+@media (max-width:374px){.bd-r2{font-size:14px}}
+.strip{display:flex;flex-direction:column;min-width:0}
 
-@media (max-width:860px){
-  .sticky-acts .sticky-nav{display:inline-flex;flex:0 0 44px;justify-content:center;align-items:center;height:46px;font-size:22px}
-  .card-task.good{color:var(--primary)}
-  .card-task.good b{color:#9fcf8a;font-weight:400}
-}
-
-/* the card, guessing: one feedback slot, the actions level with the board ── */
+/* the card's panel: the strip, then the actions level with the board ─── */
 .card > .panel{align-self:stretch}
-.task{font-weight:400}
 .stakes-tag{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-1);margin:0 0 4px}
 .dot-bad{flex:none;width:7px;height:7px;border-radius:50%;background:var(--bad)}
-.feedback{min-height:72px;margin:2px 0 8px}
-.feedback .verdict{margin:0 0 6px}
-.first-line{font-size:14px;color:var(--text-2);margin:0 0 6px}
 .guess-acts .btn-line,.guess-acts .btn-big{flex:1 1 0;justify-content:center;text-align:center;min-height:48px;display:inline-flex;align-items:center}
 @media (min-width:861px){
   .guess-acts,.done-acts{margin-top:auto;padding-top:12px}
@@ -444,14 +447,6 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 /* the card, answered: the result, and both halves of the lesson ────────── */
 .result{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r2);padding:16px 18px;margin:6px 0 12px}
 .result.first{background:var(--good-tint);border-color:rgba(143,181,115,.25)}
-.result-head{display:flex;align-items:center;gap:12px;margin:0 0 6px}
-.disc{flex:none;width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
-  background:var(--good);color:#12160f;font-size:15px;font-weight:600;animation:disc-in var(--dur-2) var(--ease)}
-.disc.disc-help{background:none;border:1.5px solid var(--good);color:var(--good)}
-@keyframes disc-in{from{transform:scale(.8);opacity:0}to{transform:none;opacity:1}}
-.result-h{font-family:var(--font-display);font-weight:500;font-size:28px;line-height:1.2;color:var(--text-1);margin:0;
-  font-variant-numeric:lining-nums tabular-nums;outline:none}
-.result-sub{font-size:14px;color:var(--text-2);margin:0 0 8px}
 .tline{display:flex;align-items:flex-start;gap:10px;width:100%;text-align:left;background:none;border:0;border-radius:var(--r1);
   padding:8px 8px;margin:2px -8px;font:inherit;font-size:15px;line-height:1.45;color:var(--text-2);cursor:pointer;
   font-variant-numeric:lining-nums}
@@ -472,7 +467,6 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .done-acts .btn-big{flex:1 1 auto;justify-content:center;min-height:48px}
 @media (max-width:860px){
   .result{padding:12px 14px}
-  .result-h{font-size:24px}
   .tline{font-size:14px;line-height:1.4}
 }
 
@@ -503,24 +497,31 @@ body.in-session{padding-bottom:0}
   .board-row{gap:8px}
   .evalbar{width:12px}
   .board-wrap{flex:none;width:var(--board)}
-  .panel{padding-top:24px}
-  .card-top + .board-col{padding-top:24px}
+  /* the band heads the panel, level with the board's top edge, and the
+     board spans both rows beside them */
+  .card{grid-template-rows:auto auto 1fr}
+  .card > .board-col{grid-column:1;grid-row:2 / 4;padding-top:24px}
+  .card > .band-slot{grid-column:2;grid-row:2;padding-top:24px}
+  .card > .panel{grid-column:2;grid-row:3}
+  .card-task{height:auto;min-height:122px;align-items:flex-start;gap:14px;padding:20px 20px 20px 17px;border-radius:10px;background:var(--surface-1)}
+  .bd-r1{font-family:var(--font-display);font-size:28px;line-height:32px;white-space:normal}
+  .bd-r2{margin-top:4px;font-size:17px;line-height:25px;white-space:normal}
+  .bd-chip{margin-top:6px}
+  .bd-cap{font-size:19px;line-height:27px;-webkit-line-clamp:3}
 }
 @media (max-width:860px){
   .card{gap:0;padding-top:0}
   .card-top{position:sticky;top:0;z-index:4;background:var(--bg);flex-wrap:wrap;gap:0 8px;margin:0 calc(-1 * var(--gutter));padding:0 var(--gutter)}
-  .card-task{height:56px;padding:8px 0;margin:0;font-size:15px;line-height:20px;color:var(--text-1);-webkit-line-clamp:2}
-  .card-task.hint{color:var(--accent-hover)}
+  /* the band rides under the session bar, so it stays in view */
+  .band-slot{position:sticky;top:48px;z-index:4;background:var(--bg)}
   .board-row{justify-content:center}
   .evalbar{width:6px}
   .board-wrap{flex:none;width:var(--board-phone)}
-  /* the prompt line carries the task, the stakes and the feedback: in the
-     panel they stay for screen readers only */
-  .panel .task,.panel .stakes,.panel .stakes-tag,.panel .feedback{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;margin:0;padding:0;min-height:0}
+  /* the decisive tag stays for screen readers only */
+  .panel .stakes-tag{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;margin:0;padding:0;min-height:0}
   .panel{padding-top:8px}
   .ctx{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0 0 8px}
   .result{background:none;border:0;padding:0;margin:0 0 8px;order:-1}
-  .result .result-head,.result .result-sub,.result .tl-good{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   .guess-acts{height:calc(64px + env(safe-area-inset-bottom));padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:var(--surface-2)}
   .guess-acts .btn-line,.guess-acts .btn-big{min-height:48px;min-width:0}
 }
@@ -731,7 +732,6 @@ a.lg-row{color:inherit}
 .xp-mv.xp-sf{color:var(--text-3)}
 .xp-mv.on{border-bottom-color:var(--accent)}
 .xp-back{flex:none;font-size:13.5px;color:var(--text-2);padding:8px 0;text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px;cursor:pointer}
-.xp-say{font-size:16px;line-height:24px;color:var(--text-1);min-height:48px;margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .xp-cap{font-size:12px;line-height:18px;color:var(--text-3);margin:8px 0 0}
 .xp-rows{display:flex;flex-direction:column;margin:0 -14px}
 .xp-rows.k1 .xp-row:nth-child(n+2),.xp-rows.k2 .xp-row:nth-child(n+3){display:none}
@@ -748,28 +748,23 @@ a.lg-row{color:inherit}
 .xp-row.skel .xp-chip,.xp-row.skel .xp-first,.xp-row.skel .xp-cont{color:transparent;background:var(--line);border-radius:4px}
 .xp-kb{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .xp-kb:focus-within{position:static;width:auto;height:auto;clip:auto;margin:8px 0 4px;display:block}
-.result.xp-on{padding:8px 14px;margin:4px 0 10px}
-.result.xp-on .result-head{margin:0;gap:10px}
-.result.xp-on .disc{width:22px;height:22px;font-size:12px}
-.result.xp-on .result-h{font-size:21px;line-height:28px}
-.result.xp-on .result-sub,.result.xp-on .tline{display:none}
+.card.xp-card .result{display:none}
 .card.xp-card .tag-row,.card.xp-card .habit,.card.xp-card .explore-line{display:none}
 .xp-back-ph{display:none}
 @media (max-width:860px){
   /* the invite sits right under the red line, above the fixed bar */
   .card:not(.xp-card) .result{display:contents}
-  .card:not(.xp-card) .result .tl-bad,.card:not(.xp-card) .result .tl-alt{order:-3}
+  .card:not(.xp-card) .result .tl-bad,.card:not(.xp-card) .result .tl-alt,.card:not(.xp-card) .result .tl-good{order:-3}
   .explore-line{order:-2;margin-bottom:8px}
   .card:not(.xp-card) .result .tl-opp{order:-1}
   .done-acts{height:calc(64px + env(safe-area-inset-bottom));padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:var(--surface-2)}
   .card.xp-card .panel{padding-top:4px}
   .card.xp-card .result,.card.xp-card .ctx{display:none}
   .xp{order:-2;background:none;border:0;border-radius:0;padding:0;margin:0 calc(-1 * var(--gutter))}
-  .xp-head,.xp-say,.xp-kb{display:none}
+  .xp-head,.xp-kb{display:none}
   .xp-meter{border-radius:0}
   .xp-cap{margin:0;padding:0 var(--gutter)}
   .xp-rows{margin:0}
   .xp-row{padding:0 var(--gutter)}
   .xp-back-ph{display:flex;align-items:center;min-height:44px;font-size:14px;color:var(--text-2);padding:0 var(--gutter);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
-  .card-task.xp-task{border-left:2px solid var(--accent);padding-left:10px;margin-left:-12px}
 }
