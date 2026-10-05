@@ -79,21 +79,63 @@ function verdictOf(kind, row1, cands, fall) {
   var row2 = fitRow(cands, 'row2', fall || '');
   return { kind: kind, row1: row1, row2: row2, cands: cands, fall: fall || '', html: row1 + (row2 ? ' ' + row2 : '') };
 }
-/* a classifier sentence without its trailing line of moves: "It loses the
-   bishop after Qxd6 Bxd6." reads "It loses the bishop." */
-function noLine(s) { return String(s || '').replace(/[:,]? after [^.]*\.$/, '.').replace(/ and more\.$/, '.'); }
+/* what changed hands along a line, in plain words (FINAL-SPEC 3): the
+   classifier's captureWord, with "the exchange" spelled out as the rook
+   and the piece it went for. Game lines count from 0 (node 0 is your own
+   move, and the line's side is the opponent), best and alternative lines
+   from 1 (node 0 is a null move) */
+function plainCapture(line, k, from) {
+  var w = line ? captureWord(line, k, from) : null;
+  if (w !== 'the exchange') return w;
+  var minors = {};
+  for (var i = from == null ? 1 : from; i <= k && i < line.nodes.length; i++) {
+    var n = line.nodes[i];
+    if (n.captured && !n.pov && (pType(n.captured) === 'N' || pType(n.captured) === 'B')) minors[pType(n.captured)] = 1;
+  }
+  return 'a rook for a ' + (minors.N && !minors.B ? 'knight' : minors.B && !minors.N ? 'bishop' : 'piece');
+}
+
+/* why a wrong try fails (M3), as row 2's ladder {cands, fall}: c is the
+   classifier on the try (on the game move again, the card's own), win the
+   solver's win chance after it, reply their answer in SAN. Checkmate first,
+   then the material it loses, then where the game stands. Inside a forcing
+   line a try that loses nothing says so. A form that would name the answer
+   due now, or needs a reply there is none of, gives way to the fallback */
+function missWhy(a, c, win, reply, inLine) {
+  var s = sidesOf(a), cands = [], fall = 'That helps ' + s.opp + '.';
+  if (c && c.mateAgainst === 1 && reply) cands = ['Then ' + reply.replace(/#$/, '') + ' is checkmate.', s.opp + ' could checkmate you.'];
+  else if (c && c.mateAgainst > 1) cands = [s.opp + ' could checkmate you.'];
+  else if (c && c.lossG >= 1) {
+    var w = materialWord(c.lossG);
+    cands = ['You\'d lose ' + (plainCapture(c.gameLine, c.lossAt, 0) || w) + '.', 'You\'d lose ' + w + '.'];
+    fall = 'You\'d lose material.';
+  }
+  else if (inLine) cands = ['Nothing lost, but there\'s a better move.'];
+  else if (win >= 60) cands = ['Most of your advantage is gone.'];
+  else if (reply) cands = ['After ' + reply + ', ' + (win >= 40 ? 'the game is even.' : s.opp + ' is on top.')];
+  var due = sanOf(a.st, dueMove(a));
+  return { cands: cands.filter(function (x) { return x.indexOf(due) < 0; }), fall: fall };
+}
+/* the game move again (M2): its reason from the card's own refutation and
+   the score after it; a missed-chance card says only that there is more
+   to find, since what the game move allowed is not that card's lesson */
+function gameMoveWhy(a) {
+  if (familyOf(patternOf(a.it.b)).key === 'chances') return { cands: ['There\'s a stronger move here.'], fall: '' };
+  var r1 = a.cls.gameLine && a.cls.gameLine.nodes[1];
+  return missWhy(a, a.cls, a.it.b.wa, r1 ? sanOf(r1.before, r1.move) : null, false);
+}
 
 /* the verdict on a try that stays on the board (S4, S5, S11): row 1 in
-   one to four words, row 2 from its ladder. A wrong try says why in the
-   card's own sentence (why, from the classifier; slice 7 gives it its own
-   words), the game move again says so; a good move that is not the best
-   says there is a stronger one, the second time row 1 alone; a move the
-   engine could not check is not counted */
+   one to four words, row 2 from its ladder. A wrong try says why (why:
+   missWhy's ladder; the band shows it once its reason beat comes), the game
+   move again says so; a good move that is not the best says there is a
+   stronger one, the second time row 1 alone; a move the engine could not
+   check is not counted */
 function triedVerdict(a, t, why, again) {
   if (t.kind === 'close') return verdictOf('close', CARD_COPY.C1(), again ? [] : [CARD_COPY.C2()], '');
   if (t.kind === 'unchecked') return verdictOf('unchecked', CARD_COPY.E1(), [CARD_COPY.E2()], '');
-  if (t.uci === a.playedUci) return verdictOf('bad', CARD_COPY.M2(), why ? [why, noLine(why)] : [], 'There is something stronger here.');
-  return verdictOf('bad', CARD_COPY.M1(), why ? [why, noLine(why)] : [], fitRow([t.san + ' does not work.'], 'row2', ''));
+  why = why || { cands: [], fall: 'That helps ' + sidesOf(a).opp + '.' };
+  return verdictOf('bad', t.uci === a.playedUci ? CARD_COPY.M2() : CARD_COPY.M1(), why.cands, why.fall);
 }
 /* the band for the state the card is in: {disc, kind, row1, row2, chip,
    cap, sweep}. disc: king (in the solver's colour), good, bad, close,
@@ -103,7 +145,7 @@ function triedVerdict(a, t, why, again) {
    tap that is not a move (a.note) takes row 2 for a while, and the chip
    steps aside for it. Row 2 always fits the word budget (bandFit). The
    hints and forcing steps keep today's sentences inside the row caps until
-   their slices give them their own words (7, 10, 11) */
+   their slices give them their own words (10, 11) */
 function bandFor(a) {
   var b = bandOf(a), n = a.note && a.note.key === cardStateKey(a) ? a.note : null;
   if (!b.cap && n) { b.cands = NOTE_COPY[n.id](a); b.fall = ''; b.chip = ''; }
@@ -141,9 +183,11 @@ function bandOf(a) {
   if (a.phase === 'checking' && a.checkSaid)
     return { disc: 'checking', kind: 'neutral', sweep: true, row1: fitRow([CARD_COPY.K1(a)], 'row1', 'Checking…'), cands: a.checkSaid >= 2 ? [CARD_COPY.K2()] : [], fall: '' };
   if (a.phase === 'tried' && t) {
-    var tv = v || triedVerdict(a, t, null, false);
+    /* a miss's reason waits for its own beat (S4, a.reason 2): the verdict
+       alone first */
+    var tv = v || triedVerdict(a, t, null, false), wait = t.kind === 'miss' && (a.reason || 0) < 2;
     return { disc: t.kind === 'miss' ? 'bad' : t.kind, kind: t.kind === 'miss' ? 'bad' : t.kind === 'unchecked' ? 'info' : 'close',
-             row1: tv.row1, cands: tv.cands, fall: tv.fall };
+             row1: tv.row1, cands: wait ? [] : tv.cands, fall: wait ? '' : tv.fall };
   }
   if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: 'Right', cands: v && v.cands ? v.cands : [], fall: '' };
   var mid = a.sol && a.solIdx > 0;

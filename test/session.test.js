@@ -327,20 +327,51 @@ const OPEN = `function openCard(it) {
     eq(r.q, 0, 'engine jobs'); ok(r.srs, 'a schedule changed');
   });
 
-  await test('replaying the game move never names the answer', () => {
+  await test('no miss caption names the answer: the game move again and every try answered with the stored refutation', () => {
     const A = boot();
-    const bad = JSON.parse(A.ev(`(function () { ${OPEN}
-      var out = [];
-      allMistakes().filter(trainable).forEach(function (it) {
-        var a = openCard(it);
-        if (!a) return;
-        var best = sanOf(a.pre, a.best);
-        gradeMove(uciToMove(a.st, a.playedUci));
-        var v = a.verdict ? a.verdict.html : '';
-        if (v.indexOf(best) !== -1 || v.indexOf(sqName(a.best.to)) !== -1 && familyOf(patternOf(it.b)).key === 'chances') out.push(it.key + ': ' + v);
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = 0;
+      /* the verdict and the band once its reason has come: never the answer
+         due now, and on a missed-chance card never its square either */
+      var check = function (a, what) {
+        if (a.phase !== 'tried' || !a.tried) return;
+        var due = dueMove(a), best = sanOf(a.st, due), d = (a.reason = 2, displayFor(a));
+        var said = [a.verdict ? a.verdict.html : '', d.row1, d.row2].join(' | ');
+        n++;
+        if (said.indexOf(best) !== -1 || (said.indexOf(sqName(due.to)) !== -1 && familyOf(patternOf(a.it.b)).key === 'chances')) out.push(what + ': ' + said);
+      };
+      /* a try answered as the engine stub answers it: the stored refutation
+         when it is legal after the try, else the first legal reply */
+      var tryIt = function (a, m, inLine) {
+        var after = cloneState(a.st), ru = unpackUci(a.it.b.ru);
+        applyMove(after, m);
+        var stored = ru.length && playUci(after, ru).uci.length === ru.length, reply = stored ? ru : legalMoves(after).slice(0, 1).map(moveUci);
+        miss(m, moveUci(m), { cp: 0, mate: stored ? a.it.b.ma : null, pv: [moveUci(m)].concat(reply), win: a.it.b.wa }, inLine);
+      };
+      /* tier 1 has no forcing lines; tier 3 asks the same moves as tier 2 */
+      [1, 2].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var a = openCard(it);
+          if (!a) return;
+          gradeMove(uciToMove(a.st, a.playedUci));
+          check(a, 'tier ' + tier + ' ' + it.key + ' the game move');
+          a = openCard(it);
+          legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci && !(a.sol && a.sol.indexOf(u) >= 0); }).slice(0, 12).forEach(function (m) {
+            a = openCard(it); tryIt(a, m, false); check(a, 'tier ' + tier + ' ' + it.key + ' ' + moveUci(m));
+          });
+          if (a.sol && a.sol.length >= 3) {
+            var mid = function () { var x = openCard(it); applyMove(x.st, uciToMove(x.st, x.sol[0])); applyMove(x.st, uciToMove(x.st, x.sol[1])); x.solIdx = 2; return x; };
+            a = mid();
+            legalMoves(a.st).filter(function (m) { return moveUci(m) !== a.sol[2]; }).slice(0, 12).forEach(function (m) {
+              a = mid(); tryIt(a, m, true); check(a, 'tier ' + tier + ' ' + it.key + ' mid-line ' + moveUci(m));
+            });
+          }
+        });
       });
-      return JSON.stringify(out); })()`));
-    eq(bad.length, 0, 'leaks: ' + bad.slice(0, 2).join(' | '));
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n > 1800, 'misses ' + r.n);
+    eq(r.out.length, 0, 'leaks: ' + r.out.slice(0, 2).join(' | '));
   });
 
   await test('hints never name the answer on a missed-chance card', () => {
@@ -392,6 +423,10 @@ const OPEN = `function openCard(it) {
       };
       /* a word for a tap that is not a move, shown as the page shows it */
       var note = function (a, id) { a.note = { id: id, key: cardStateKey(a), seq: 0 }; return a; };
+      /* a miss's reason (M3), in one of its forms or its fallbacks, in plain
+         words ("the exchange" is spelled out as the rook and what it went for) */
+      var plain = function (what, s) { if (/exchange/.test(s)) out.push(what + ' says ' + s); };
+      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose .+\\.|Most of your advantage is gone\\.|After \\S+, (the game is even|(White|Black) is on top)\\.|That helps (White|Black)\\.|There's a stronger move here\\.)$/;
       var theirs = function (a) { for (var q = 0; q < 64; q++) if (a.st.b[q] && isW(a.st.b[q]) !== !!a.st.w) return q; return -1; };
       [1, 2, 3].forEach(function (tier) {
         playerTier = function () { return tier; };
@@ -458,30 +493,53 @@ const OPEN = `function openCard(it) {
             if (d.row1 + ' / ' + d.row2 !== 'Cannot check this move / Not counted. Try again.' || d.disc !== 'unchecked' || d.kind !== 'info') out.push(at + ' not checked reads ' + d.row1 + ' / ' + d.row2);
             d = band(at + ' not checked, T4', note(a, 'T4'));
             if (d.row2 !== t4s) out.push(at + ' not checked T4 reads ' + d.row2);
-            /* a miss with no concrete loss, outside a forcing line (where a
-               try that loses nothing is close, never a miss): the standing
-               words, never "does not work" and never "Nothing lost" */
+            /* S4: a miss says "Not this one" alone, then its reason (M3)
+               once its beat comes (a.reason 2). With no concrete loss and
+               outside a forcing line (where a try that loses nothing is
+               close, never a miss), where the game stands: never "does not
+               work" and never "Nothing lost" */
             a = openCard(it);
             miss(off0, moveUci(off0), { cp: it.b.eb, mate: null, pv: [moveUci(off0)], win: winPct(it.b.eb) }, false);
+            d = band(at + ' a miss, the verdict', a);
+            if (d.row1 !== 'Not this one' || d.row2) out.push(at + ' a miss before its reason reads ' + d.row1 + ' / ' + d.row2);
+            a.reason = 2;
             d = band(at + ' a miss outside a line', a);
-            if (/does not work|Nothing lost/.test(d.row2) || !/^After /.test(d.row2) || d.row1 !== 'Not this one') out.push(at + ' a miss outside a line reads ' + d.row1 + ' / ' + d.row2);
+            if (/does not work|Nothing lost/.test(d.row2) || !M3.test(d.row2) || d.row1 !== 'Not this one') out.push(at + ' a miss outside a line reads ' + d.row1 + ' / ' + d.row2);
             d = band(at + ' a miss, T4', note(a, 'T4'));
             if (d.row2 !== t4) out.push(at + ' a miss T4 reads ' + d.row2);
+            /* the same try answered with the card's stored refutation, as
+               the engine stub answers it: M3 in every form the fixture gives */
+            var ru0 = unpackUci(it.b.ru), aft0 = cloneState(a.st);
+            a = openCard(it); applyMove(aft0, off0);
+            if (ru0.length && playUci(aft0, ru0).uci.length === ru0.length) {
+              miss(off0, moveUci(off0), { cp: it.b.ea != null ? it.b.ea : cpFromWin(it.b.wa), mate: it.b.ma, pv: [moveUci(off0)].concat(ru0), win: it.b.wa }, false);
+              a.reason = 2; d = band(at + ' a miss with a reply', a);
+              if (!M3.test(d.row2)) out.push(at + ' a miss with a reply reads ' + d.row1 + ' / ' + d.row2);
+              plain(at + ' a miss with a reply', a.verdict.cands.join(' | '));
+              if (a.tried.reply) { seeIt(); band(at + ' a miss with a reply, seen', a); }
+            }
             /* inside a forcing line a try that loses nothing is a miss, and says so honestly */
             if (a.sol && a.sol.length >= 3) {
               a = openCard(it);
               applyMove(a.st, uciToMove(a.st, a.sol[0])); applyMove(a.st, uciToMove(a.st, a.sol[1])); a.solIdx = 2;
               var offL = legalMoves(a.st).filter(function (m) { return moveUci(m) !== a.sol[2]; })[0];
               miss(offL, moveUci(offL), { cp: it.b.eb, mate: null, pv: [moveUci(offL)], win: winPct(it.b.eb) }, true);
-              d = band(at + ' a miss that loses nothing, in a line', a);
+              a.reason = 2; d = band(at + ' a miss that loses nothing, in a line', a);
               if (d.row1 + ' / ' + d.row2 !== 'Not this one / Nothing lost, but there\\'s a better move.') out.push(at + ' a miss that loses nothing in a line reads ' + d.row1 + ' / ' + d.row2);
             }
           }
           a = openCard(it);
-          /* and, until their slices give them their own words, the hints,
-             the game move again and a try being checked stay in the caps */
+          /* and, until their slices give them their own words, the hints
+             and a try being checked stay in the caps */
           a.hints = 1; band(at + ' hint 1', a); a.hints = 2; band(at + ' hint 2', a); a.hints = 0;
-          gradeMove(uciToMove(a.st, a.playedUci)); band(at + ' game move again', a);
+          /* the game move again: M2, then its reason (M3 from the card's own
+             refutation, or on a missed-chance card that there is more) */
+          gradeMove(uciToMove(a.st, a.playedUci)); d = band(at + ' game move again', a);
+          if (d.row1 !== 'Your game move again' || d.row2) out.push(at + ' game move again reads ' + d.row1 + ' / ' + d.row2);
+          a.reason = 2; d = band(at + ' game move again, its reason', a);
+          plain(at + ' game move again', a.verdict.cands.join(' | '));
+          if (!M3.test(d.row2) && !(d.row2 === '' && !M3.test(a.verdict.row2))) out.push(at + ' game move again, its reason reads ' + d.row2 + ' (' + a.verdict.row2 + ')');
+          if (familyOf(patternOf(it.b)).key === 'chances' && a.verdict.row2 !== 'There\\'s a stronger move here.') out.push(at + ' a missed chance\\'s game move reads ' + a.verdict.row2);
           if (a.tried && a.tried.reply) { seeIt(); band(at + ' game move again, seen', a); }
           a = openCard(it);
           var off = legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci && !(a.sol && a.sol.indexOf(u) >= 0); })[0];
@@ -508,7 +566,7 @@ const OPEN = `function openCard(it) {
       return JSON.stringify({ out: out, frames: frames, seen: seen }); })()`));
     ok(r.frames > 6000, 'frames ' + r.frames);
     eq(r.out.length, 0, r.out.length + ' too long, first: ' + r.out.slice(0, 3).join(' | '));
-    ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss outside a line', 'a miss that loses nothing, in a line', 'shown, N1'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
+    ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss outside a line', 'a miss with a reply', 'game move again, its reason', 'a miss that loses nothing, in a line', 'shown, N1'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
   });
 
   await test('one format by default: the most played among those played in the last 90 days', () => {

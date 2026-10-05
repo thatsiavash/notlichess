@@ -335,15 +335,16 @@ function sameAsGame(m) {
   if (a.misses === 1) a.runBroke = srsNoteMiss(it) > 0;
   /* the sound comes with the badge, once the move lands */
   a.cue = 'bad';
-  /* the card's own sentence, unless it would name the answer */
-  var said = (a.cls.sentences.short || a.cls.sentences.game).replace(/^\S+\s/, 'It ');
-  var bestSan = sanOf(a.pre, a.best);
-  if (said.indexOf(bestSan) >= 0 || familyOf(patternOf(it.b)).key === 'chances') said = 'There is something stronger here.';
+  /* why, from the card's own refutation (M2, never naming the answer); the
+     reply that punishes it is marked when it captures or checks and loses
+     something, except on a missed-chance card, whose lesson is elsewhere */
+  var why = gameMoveWhy(a), c = a.cls;
+  why.threat = (c.mateAgainst || c.lossG >= 1) && familyOf(patternOf(it.b)).key !== 'chances' ? threatOf(c.gameLine, 1) : null;
   a.hintAfter = false;
   escalate();
   /* a tapped game move slides in on this, its first frame */
   a.animMove = a.tapAnim; a.tapAnim = null;
-  showTry(a, m, 'miss', unpackUci(it.b.ru)[0], said);
+  showTry(a, m, 'miss', unpackUci(it.b.ru)[0], why);
 }
 /* misses and hints outlive a reload, so a retry is never scored first-try */
 function keepProgress(a) {
@@ -364,19 +365,73 @@ function escalate() {
 /* a try stays where it landed until the player takes it back: a.st keeps
    the position before it, and the board draws the try over it (and their
    reply, once See it plays it). kind: 'miss', 'close' or 'unchecked'; why,
-   a miss's reason; again, a second close move. The verdict lands on the
-   square (badge and tints), the band and the bar together, and the
-   keyboard goes to the bar's right-hand button (S20) */
+   a miss's reason (missWhy's ladder, and threat: the reply as threatOf
+   gives it, when it is marked); again, a second close move. The verdict
+   lands on the square (badge and tints), the band and the bar together, and
+   the keyboard goes to the bar's right-hand button (S20); a miss's reason
+   follows in two beats of its own (missReason) */
 function showTry(a, m, kind, reply, why, again) {
   var after = cloneState(a.st);
   applyMove(after, m);
+  var r = reply ? uciToMove(after, reply) : null, took = r ? (r.ep >= 0 ? after.b[r.ep] : after.b[r.to]) : null;
   a.phase = 'tried';
   a.ghostMove = null;
+  /* lost: the piece their reply takes, shown as a token once See it plays it */
   a.tried = { from: m.from, to: m.to, uci: moveUci(m), san: sanOf(a.st, m), kind: kind,
-              reply: reply && uciToMove(after, reply) ? reply : null, seen: false };
+              reply: r ? reply : null, seen: false, threat: (why && why.threat) || null, lost: took ? { sq: r.to, p: took } : null };
   a.verdict = triedVerdict(a, a.tried, why, again);
+  a.reason = 0;
   a.focusRight = true;
+  /* a wrong move is remembered for this showing of the card, at this step
+     of a forcing line, and drawn faintly once the card asks again (the game
+     move has its own red arrow) */
+  if (kind === 'miss' && a.tried.uci !== a.playedUci) {
+    a.wrong = (a.wrong || []).filter(function (w) { return !(w.uci === a.tried.uci && w.at === a.solIdx); });
+    a.wrong.push({ from: m.from, to: m.to, uci: a.tried.uci, at: a.solIdx, fx: a.key + ':' + (a.fxn || 0) + 'tl' });
+  }
   renderCard();
+  if (kind === 'miss') missReason(a);
+}
+/* a miss gives its reason in two more beats once its verdict is read (S4,
+   principle 1): 600 ms later the piece that punishes the try, ringed, with
+   a dashed arrow to what it takes; 150 ms after that the words (300 and 400
+   under reduced motion). a.reason counts them. See it before then plays
+   that move instead of marking it; the words still come */
+function missReason(a) {
+  var t = a.tried, v = textDue(), rm = reducedMotion();
+  stageAt(v + (rm ? 300 : 600), function (a2) {
+    if (a2.tried !== t || a2.reason >= 1) return;
+    a2.reason = 1;
+    if (t.threat && !t.seen) stage(['marks']);
+  });
+  stageAt(v + (rm ? 400 : 750), function (a2) {
+    if (a2.tried !== t) return;
+    a2.reason = 2;
+    stage(['text']);
+  });
+}
+/* the move at ply k of a line, when it captures or checks: the threat a
+   dashed red arrow draws (FINAL-SPEC 2.1), from the attacker's square to
+   where it lands, with what it takes; null for a quiet move */
+function threatOf(line, k) {
+  var n = line && line.nodes[k];
+  if (!n || !n.move) return null;
+  var check = checkersOf(n.after).length > 0;
+  if (!n.captured && !check) return null;
+  return { from: n.move.from, to: n.move.to, piece: n.piece, captured: n.captured ? pType(n.captured) : null,
+           check: check, mate: check && !legalMoves(n.after).length, san: sanOf(n.before, n.move) };
+}
+/* the answer due now: the card's best move, or inside a forcing line the
+   line's next move (FINAL-SPEC 2.3) */
+function dueMove(a) { return (a.sol && a.solIdx > 0 && uciToMove(a.st, a.sol[a.solIdx])) || a.best; }
+/* the wrong move tried last at this step, as the board draws it on the
+   card's position: a faint line and a cross where it landed, one per frame
+   (2.1); when it landed on the answer's square, the cross alone on the
+   square it left (2.3) */
+function triedMark(a) {
+  var at = a.solIdx || 0, w = (a.wrong || []).filter(function (x) { return x.at === at; }).pop();
+  if (!w) return null;
+  return w.to === dueMove(a).to ? { sq: w.from, fx: w.fx } : { from: w.from, to: w.to, fx: w.fx };
 }
 /* what the board shows while a try is on it: the position and its last move */
 function triedFrame(a) {
@@ -433,9 +488,14 @@ function clearTry(a) {
   a.tried = null;
   a.ghostMove = null;
   a.verdict = null;
+  a.reason = 0;
   a.sel = -1;
   /* back to another position: the board crossfades (2.2) */
   a.jump = true;
+  /* the wrong move just taken back stays as a faint line (S4), drawn once
+     the crossfade is over: the board, then that mark, then the words */
+  a.triedHold = !!triedMark(a) && !reducedMotion();
+  if (a.triedHold) stageAt(XFADE, function (a2) { if (a2.triedHold) { a2.triedHold = false; stage(['marks']); } });
 }
 /* Take back (S3): the move being checked leaves the board, ungraded. The
    search stops and its answer is ignored (a new token), the attempt is
@@ -468,10 +528,13 @@ function seeIt() {
   var a = ui.session && ui.session.active, t = a && a.tried;
   if (!t || a.phase !== 'tried' || !t.reply || t.seen) return;
   t.seen = true;
-  /* it slides as a move the app shows; the bar changes once it lands */
+  /* the words about to change (the bar's See it) fade out first (2.2), then
+     it slides as a move the app shows, its sound as it starts, along the
+     reason's arrow; as it lands the ring and arrow go and what it took
+     comes (a token). The bar changes after that */
   a.animMove = triedFrame(a).last;
-  snd('move');
-  renderCard();
+  a.moveCue = true;
+  renderCard(['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text']);
 }
 /* the engine could not answer: the try stays where it is, and is not counted */
 function cannotCheck(a, m) {
@@ -587,20 +650,19 @@ function miss(m, u, info, inLine) {
   if (a.misses === 1) a.runBroke = srsNoteMiss(it) > 0;
   /* the sound comes with the badge */
   a.cue = 'bad';
-  var why = '', san = sanOf(a.st, m);
   var reply = info && info.pv ? (info.pv[0] === u ? info.pv.slice(1) : info.pv) : [];
-  if (info && info.pv && info.pv.length) {
-    /* judged only on what the tried move allows: the card's own answer is
-       never part of the verdict, or a miss would print the solution */
-    var c = classifyMistake(a.st, u, { pv: [] }, { pv: reply, mate: info.mate }, winPct(it.b.eb), info.win, it.b.p);
-    var concrete = c.mateAgainst || c.matGame <= -1;
-    /* a wrong try is told in words at every level. One that loses nothing
-       is a close move outside a forcing line (closeTry), never a miss;
-       inside one it is still a miss, and says so honestly */
-    why = concrete ? c.sentences.short.replace(/ \(\d+% to \d+%\)/g, '')
-      : (inLine && info.win >= winPct(it.b.eb) - STRONGER_TOL ? 'Nothing lost, but there\'s a better move.'
-        : 'After ' + san + ', ' + standingWords(info.win).replace(/^about level$/, 'it is about level') + '. There is something stronger here.');
-  }
+  /* judged only on what the tried move allows: the card's own answer is
+     never part of the verdict, or a miss would print the solution */
+  var c = info && info.pv && info.pv.length ? classifyMistake(a.st, u, { pv: [] }, { pv: reply, mate: info.mate }, winPct(it.b.eb), info.win, it.b.p) : null;
+  var concrete = !!c && !!(c.mateAgainst || c.lossG >= 1), r1 = c && c.gameLine && c.gameLine.nodes[1];
+  /* a wrong try is told in words at every level (M3). One that loses
+     nothing is a close move outside a forcing line (closeTry), never a
+     miss; inside one it is still a miss, and says so honestly */
+  var why = missWhy(a, c, info ? info.win : null, r1 ? sanOf(r1.before, r1.move) : null,
+                    !!inLine && !concrete && !!info && info.win >= winPct(it.b.eb) - STRONGER_TOL);
+  /* the reply that punishes it is marked when it captures or checks and
+     the try loses something by it */
+  why.threat = concrete ? threatOf(c.gameLine, 1) : null;
   a.hintAfter = false;
   escalate();
   showTry(a, m, 'miss', reply[0], why);

@@ -315,7 +315,7 @@ function boardSvg(st, opts) {
     marks += m.body;
   });
   /* z 9: a move already tried, faint: a thin line and a cross where it
-     landed, or the cross alone ({sq}) */
+     landed, or the cross alone ({sq}); it fades in once */
   (opts.tried || []).forEach(function (t) {
     var b = ctr(t.sq != null ? t.sq : t.to), line = '';
     if (t.sq == null) {
@@ -323,7 +323,7 @@ function boardSvg(st, opts) {
       line = '<line class="tried-line" x1="' + a[0] + '" y1="' + a[1] + '" x2="' + (b[0] - dx / len * 6) + '" y2="' + (b[1] - dy / len * 6)
         + '" stroke="#c9503c" stroke-width="2" stroke-linecap="round"/>';
     }
-    marks += '<g class="tried" opacity=".55">' + line + markCross(b[0], b[1], 6) + '</g>';
+    marks += fxOpen(t, 'mk-fade') + '<g class="tried" opacity=".55">' + line + markCross(b[0], b[1], 6) + '</g></g>';
   });
   /* z 10: rings; the older hint ring is hint 2's */
   var rings = (opts.hint != null ? [{ sq: opts.hint, kind: 'hint' }] : []).concat(opts.rings || []);

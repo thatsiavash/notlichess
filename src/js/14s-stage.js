@@ -10,6 +10,8 @@
               verdict's badge and tints, and its sound), if the board beat
               before it held them back for the slide
      'marks'  rewrites only the marks svg, once no piece is sliding
+     'fade'   text out (2.2): before a move the app shows, the words about
+              to change fade out (100 ms, TEXT_OUT, a wait beat after it)
      'text'   paints the band, the action bar, the strip and the live
               region 150 ms after the last slide ends; a newer text beat
               takes the place of one still waiting (the latest wins)
@@ -25,7 +27,7 @@
    3 s, the end of a word or an outline for a tap that is not a move), which
    changes the card then and stages what it shows; input does not hurry
    them. */
-var TEXT_GAP = 150;
+var TEXT_GAP = 150, TEXT_OUT = 100;
 var motionUntil = 0, stageQ = [], stageTimer = null, stageCard = null, textNotBefore = 0, stageTimers = [];
 /* the forcing reply is sliding (paintBoard sets it, the next board clears it) */
 var motionHold = false;
@@ -62,7 +64,7 @@ function stageRun() {
   if (!a || a.key !== stageCard) { stageQ = []; return; }
   while (stageQ.length) {
     var b = stageQ[0], now = Date.now(), due = now;
-    if (b === 'board' || b === 'land' || b === 'marks') due = motionUntil;
+    if (b === 'board' || b === 'land' || b === 'marks' || b === 'fade') due = motionUntil;
     else if (b === 'text') due = Math.max(motionUntil + TEXT_GAP, textNotBefore);
     else if (b.wait != null) { if (b.until == null) b.until = now + b.wait; due = b.until; }
     if (due > now) { stageTimer = setTimeout(stageRun, due - now); return; }
@@ -74,7 +76,14 @@ function stageApply(b, a, instant) {
   if (b === 'board') paintBoard(a, instant);
   else if (b === 'land') { if (a.landing) paintBoard(a, true); }
   else if (b === 'marks') paintMarks(a);
+  else if (b === 'fade') fadeOut(a);
   else if (b === 'text') paintText(a);
+}
+/* how long until the waiting text beat paints (0 when none waits): a beat
+   timed from when the words are read (a miss's reason) starts from there */
+function textDue() {
+  if (stageQ.indexOf('text') < 0) return 0;
+  return Math.max(0, Math.max(motionUntil + TEXT_GAP, textNotBefore) - Date.now());
 }
 /* a timed beat: run(a) at ms from now, on this card only, if it is still
    the one on screen. A flush leaves it alone */
@@ -104,6 +113,8 @@ function flushStage() {
     motionUntil = now;
     moved = true;
   }
+  /* waits and a waiting fade go: the words it would hide stay until the
+     text beat, 150 ms from now */
   var q = stageQ, text = false;
   stageQ = [];
   clearTimeout(stageTimer);
@@ -143,10 +154,12 @@ function stageReset() {
    notes every slot it paints */
 var SLOT_GUARD = 450;
 var slotSig = [], slotAct = [], slotChangedAt = [];
+/* a slot as the guard sees it: its label, its action (none when off), its key */
+function slotSigOf(s) { return (s.label || '') + '|' + (s.off ? '' : s.act || '') + '|' + (s.k == null ? '' : s.k); }
 function noteSlots(slots) {
   var now = Date.now();
   slots.forEach(function (s, i) {
-    var sig = (s.label || '') + '|' + (s.off ? '' : s.act || '') + '|' + (s.k == null ? '' : s.k);
+    var sig = slotSigOf(s);
     if (slotSig[i] !== sig) { slotSig[i] = sig; slotChangedAt[i] = now; }
     slotAct[i] = s.off ? null : s.act || null;
   });

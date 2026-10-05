@@ -206,14 +206,27 @@
       ok('the verdict hands the keyboard to Try again', !!document.activeElement && document.activeElement.getAttribute('data-act') === 'tryAgain', focusName());
       ok('the game-move message never names the answer', text('#cband').indexOf(T.ev('sanOf(ui.session.active.pre, ui.session.active.best)')) === -1, text('#cband'));
       bandFits('the game move again');
+      /* its reason comes after the verdict, in two beats: the piece that punishes it ringed with a dashed arrow
+         to what it takes (when that move captures or checks and the try loses something), then the words */
+      ok('a miss says its verdict alone first', !text('#cband .bd-r2') && T.card().reason === 0, text('#cband') + ' / reason ' + T.card().reason);
+      const rs = await until(() => (T.card().reason === 2 ? T.card() : null), 3000);
+      await sleep(250);
+      const due = T.ev('(function (a) { var d = dueMove(a); return [d.from, d.to]; })(ui.session.active)'), th = rs && rs.tried && rs.tried.threat;
+      ok('a miss gives its reason after the verdict, in words that never name the answer', !!rs && /\S/.test(text('#cband .bd-r2'))
+        && text('#cband').indexOf(T.ev('sanOf(ui.session.active.pre, ui.session.active.best)')) === -1, text('#cband'));
+      ok('the reason on the board: the punishing piece ringed, a dashed arrow to what it takes', !th || th.from === due[1]
+        || (!!$('#bwrap .marks .ring-threat') && (th.to === due[1] || !!$('#bwrap .marks .threat-arrow'))), JSON.stringify(th));
+      bandFits('the game move again, its reason');
       /* the try stays on the board until Try again (a button ignores taps in
          a card's first 450 ms and for 450 ms after the bar changes) */
-      await sleep(500);
       if (press('#cbar [data-act=seeIt]')) {
         /* See it: their reply slides, then the left button changes under the focus */
         await until(() => !$('#cbar [data-act=seeIt]'), 3000);
         await sleep(300);
         ok('after See it the focus stays on the action bar, not the typed-move field', focusInBar(), focusName());
+        const lost = T.card().tried && T.card().tried.lost;
+        ok('after See it the reason marks are gone, and what their reply took shows as a token', !$('#bwrap .marks .ring-threat')
+          && (!lost || lost.sq === due[1] ? !$('#bwrap .marks .token-lost') : !!$('#bwrap .marks .token-lost')), JSON.stringify(lost));
         await sleep(300);
       }
       press('#cbar [data-act=tryAgain]');
@@ -243,6 +256,7 @@
         await until(() => T.card().phase === 'guess', 3000);
         /* the words come back once the crossfade to the card is over (300 ms) */
         await sleep(400);
+        ok('the move just tried stays on the card, faint', !!$('#bwrap .marks .tried'));
         const tier = T.ev('ui.session.active.tier'), c2b = T.card();
         ok('tier 2: hint 1 is on after the second Try again', tier === 3 ? c2b.hints === 0 : c2b.hints >= 1 && /^Hint 1 of 2/.test(text('#cband .bd-r1')), 'tier ' + tier + ', hints ' + c2b.hints + ', ' + text('#cband'));
         bandFits('a hint');

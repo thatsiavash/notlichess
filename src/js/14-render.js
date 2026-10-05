@@ -473,18 +473,38 @@ function boardOptsFor(a) {
     if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.phase === 'tried' && a.tried.seen ? 320 : 220; }
     /* the move just made, on its squares: checking (a grey dots badge), a
        miss (a red cross), a good move that is not the best (a hollow ring
-       with a tick) or one not checked (a question mark). It lands with the
-       piece: a frame that slides it draws it once the slide ends */
-    var vk = null, vm = null;
+       with a tick) or one not checked (a question mark); once See it plays
+       their reply, the piece it took, as a token where it landed (never on
+       the answer's square, 2.3). It lands with the piece: a frame that
+       slides it draws it once the slide ends */
+    var t = a.tried, due = dueMove(a), vk = null, vm = null, fx = null, lands = null;
     if (a.phase === 'checking' && a.ghostMove) { vk = 'checking'; vm = a.ghostMove; }
-    else if (a.phase === 'tried' && !a.tried.seen) { vk = a.tried.kind === 'miss' ? 'bad' : a.tried.kind; vm = [a.tried.from, a.tried.to]; }
-    if (vk && opts.anim) land = true;
-    else if (vk) {
-      var fx = a.key + ':' + (a.fxn || 0) + vk;
-      opts.fx = fx;
-      opts.tints = [{ sq: vm[0], kind: vk }, { sq: vm[1], kind: vk }];
-      opts.badges = [{ sq: vm[1], kind: vk, fx: fx }];
+    else if (a.phase === 'tried' && !t.seen) { vk = t.kind === 'miss' ? 'bad' : t.kind; vm = [t.from, t.to]; }
+    if (vk) {
+      fx = a.key + ':' + (a.fxn || 0) + vk;
+      lands = { tints: [{ sq: vm[0], kind: vk }, { sq: vm[1], kind: vk }], badges: [{ sq: vm[1], kind: vk, fx: fx }] };
+    } else if (a.phase === 'tried' && t.seen && t.lost && t.lost.sq !== due.to) {
+      fx = a.key + ':' + (a.fxn || 0) + 'lost';
+      lands = { tokens: [{ sq: t.lost.sq, p: t.lost.p, kind: 'lost', fx: fx }] };
     }
+    if (lands && opts.anim) land = true;
+    else if (lands) { opts.fx = fx; for (var lk in lands) opts[lk] = lands[lk]; }
+    /* a miss explains itself (S4), once its verdict has been read
+       (a.reason): the piece that punishes it ringed, a dashed arrow to what
+       it takes; when See it plays that move they stay while it slides and
+       go as it lands (marks wait for the piece). Never on the answer's
+       square (2.3): an attacker standing there draws nothing, a target
+       there keeps the ring alone */
+    var th = a.phase === 'tried' && a.reason >= 1 && (!t.seen || opts.anim) ? t.threat : null;
+    if (th && th.from !== due.to) {
+      opts.rings = [{ sq: th.from, kind: 'threat' }];
+      if (th.to !== due.to) opts.arrows = [{ from: th.from, to: th.to, kind: 'threat', key: 'threat' }];
+      if (t.seen) land = true;
+    }
+    /* the card asking again: the wrong move tried last at this step, faint,
+       once the crossfade back has ended (clearTry) */
+    var tm = a.phase === 'guess' && !a.triedHold ? triedMark(a) : null;
+    if (tm) { opts.tried = [tm]; opts.fx = tm.fx; }
   }
   /* "not a move here": the grey outline on a square just tapped */
   if (a.nope && a.nope.key === cardStateKey(a)) opts.rings = (opts.rings || []).concat([{ sq: a.nope.sq, kind: 'nope' }]);
@@ -494,8 +514,10 @@ function boardOptsFor(a) {
      squares change colour once */
   opts.mark = land ? null : view.last;
   opts.label = (view.st.w ? 'White' : 'Black') + ' to move. You played ' + sanOf(a.pre, a.played) + ' in the game.';
+  /* a check given by a piece still sliding glows once it lands, with the
+     rest of what lands */
   var ck = checkedKingSq(view.st);
-  if (ck != null) opts.check = ck;
+  if (ck != null && !land) opts.check = ck;
   return {
     st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts, slideMs: slideMs, land: land,
     fadeMs: a.jump && !slideMs ? XFADE : 0,
@@ -542,9 +564,14 @@ function paintBoard(a, instant) {
   a.animMove = null;
   a.jump = false;
   /* the badge and tints wait for the piece (the land beat), and the
-     verdict's sound comes with them */
+     verdict's sound comes with them; a move the app shows sounds as it
+     starts */
   a.landing = !!(ms && f.land);
   if (!ms && a.cue) { snd(a.cue); a.cue = null; }
+  if (a.moveCue) { snd('move'); a.moveCue = false; }
+  /* a jump: the old words fade out with the old board (text out, 2.2), and
+     the new ones come with the text beat */
+  if (fade) fadeOut(a);
   /* the bar: the player's view of the position, with no pawn number; still
      while it waits */
   var eb = el('ebar'), fill = el('ebar-fill');
@@ -579,6 +606,23 @@ function xfadeHtml(html) {
     .replace('<svg class="board"', '<svg class="xf-board"').replace('<svg class="marks"', '<svg class="xf-marks"').replace(/ role="img" aria-label="[^"]*"/, '');
   return '<div class="xfade" aria-hidden="true">' + old + '</div>';
 }
+/* text out (2.2): the words about to change fade out in 100 ms, before a
+   move the app shows (the fade beat) or with a jump's crossfade: the band
+   when its words change, and each bar button whose label or action
+   changes (the whole bar when its slots change in number). Words that
+   stay, stay. Faded buttons take no tap; the text beat writes the new
+   words and takes the fade off */
+function fadeOut(a) {
+  var d = displayFor(a), band = el('cband'), bar = el('cbar'), n = 0;
+  if (band && band.nlHtml != null && band.nlHtml !== bandHtml(a, d)) band.classList.add('stale');
+  if (!bar || bar.nlHtml == null) return;
+  for (var i = 0; i < slotSig.length; i++) if (slotSig[i] != null) n++;
+  if (n !== d.buttons.length) { bar.classList.add('stale'); return; }
+  d.buttons.forEach(function (s, j) {
+    var b = slotSigOf(s) !== slotSig[j] ? bar.querySelector('[data-slot="' + j + '"]') : null;
+    if (b) b.classList.add('stale');
+  });
+}
 /* the marks beat: only the marks svg is rewritten, so no piece is touched */
 function paintMarks(a) {
   var bw = el('bwrap'), old = bw && bw.querySelector('.marks');
@@ -592,8 +636,9 @@ function paintMarks(a) {
    while exploring. The words stay as they are */
 function renderCardBoard() { stage(['board']); }
 /* the card: its frame once, then the board and the words as staged beats
-   (14s-stage.js), the words after any slide */
-function renderCard() {
+   (14s-stage.js), the words after any slide; beats, when a change needs
+   its own order (See it fades its words out before the reply slides) */
+function renderCard(beats) {
   var box = el('trainbox'), ss = ui.session;
   if (!box || !ss) return;
   if (ss.finished) { stageReset(); renderTrain(); return; }
@@ -619,7 +664,7 @@ function renderCard() {
       + '<div class="panel" id="cpanel"><div class="strip" id="cstrip"></div><div class="acts-row sticky-acts" id="cbar"></div></div>'
       + '</div>';
   }
-  stage(['board', 'land', 'text']);
+  stage(beats || ['board', 'land', 'text']);
 }
 /* what the card says and offers, as data: the band (bandFor: disc, kind,
    row1, row2, chip, cap), forcing pips (a later slice), the action bar as
@@ -653,6 +698,9 @@ function paintText(a) {
   paintBand(a, d);
   paintBar(d);
   paintStrip(d);
+  /* the new words are in: whatever faded out for them (fadeOut) is back */
+  if (band.classList) band.classList.remove('stale');
+  if (bar && bar.classList) { bar.classList.remove('stale'); [].forEach.call(bar.querySelectorAll('.stale'), function (b) { b.classList.remove('stale'); }); }
   var box = el('trainbox'), cardEl = box && box.querySelector('.card'), xe = a.phase === 'done' && a.explore;
   if (cardEl) cardEl.classList.toggle('xp-card', !!xe);
   if (xe) fitRows();

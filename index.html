@@ -823,6 +823,9 @@ a.lg-row{color:inherit}
   .xp-row{padding:0 var(--gutter)}
   .xp-back-ph{display:flex;align-items:center;min-height:44px;font-size:14px;color:var(--text-2);padding:0 var(--gutter);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
 }
+/* text out (2.2): words about to change fade out in 100 ms before the board
+   moves, and take no tap meanwhile; the next words take the class off */
+.band-slot.stale,#cbar.stale,#cbar .stale{opacity:0;transition:opacity .1s ease-out;pointer-events:none}
 </style>
 </head>
 <body>
@@ -2232,7 +2235,7 @@ function boardSvg(st, opts) {
     marks += m.body;
   });
   /* z 9: a move already tried, faint: a thin line and a cross where it
-     landed, or the cross alone ({sq}) */
+     landed, or the cross alone ({sq}); it fades in once */
   (opts.tried || []).forEach(function (t) {
     var b = ctr(t.sq != null ? t.sq : t.to), line = '';
     if (t.sq == null) {
@@ -2240,7 +2243,7 @@ function boardSvg(st, opts) {
       line = '<line class="tried-line" x1="' + a[0] + '" y1="' + a[1] + '" x2="' + (b[0] - dx / len * 6) + '" y2="' + (b[1] - dy / len * 6)
         + '" stroke="#c9503c" stroke-width="2" stroke-linecap="round"/>';
     }
-    marks += '<g class="tried" opacity=".55">' + line + markCross(b[0], b[1], 6) + '</g>';
+    marks += fxOpen(t, 'mk-fade') + '<g class="tried" opacity=".55">' + line + markCross(b[0], b[1], 6) + '</g></g>';
   });
   /* z 10: rings; the older hint ring is hint 2's */
   var rings = (opts.hint != null ? [{ sq: opts.hint, kind: 'hint' }] : []).concat(opts.rings || []);
@@ -6216,15 +6219,16 @@ function sameAsGame(m) {
   if (a.misses === 1) a.runBroke = srsNoteMiss(it) > 0;
   /* the sound comes with the badge, once the move lands */
   a.cue = 'bad';
-  /* the card's own sentence, unless it would name the answer */
-  var said = (a.cls.sentences.short || a.cls.sentences.game).replace(/^\S+\s/, 'It ');
-  var bestSan = sanOf(a.pre, a.best);
-  if (said.indexOf(bestSan) >= 0 || familyOf(patternOf(it.b)).key === 'chances') said = 'There is something stronger here.';
+  /* why, from the card's own refutation (M2, never naming the answer); the
+     reply that punishes it is marked when it captures or checks and loses
+     something, except on a missed-chance card, whose lesson is elsewhere */
+  var why = gameMoveWhy(a), c = a.cls;
+  why.threat = (c.mateAgainst || c.lossG >= 1) && familyOf(patternOf(it.b)).key !== 'chances' ? threatOf(c.gameLine, 1) : null;
   a.hintAfter = false;
   escalate();
   /* a tapped game move slides in on this, its first frame */
   a.animMove = a.tapAnim; a.tapAnim = null;
-  showTry(a, m, 'miss', unpackUci(it.b.ru)[0], said);
+  showTry(a, m, 'miss', unpackUci(it.b.ru)[0], why);
 }
 /* misses and hints outlive a reload, so a retry is never scored first-try */
 function keepProgress(a) {
@@ -6245,19 +6249,73 @@ function escalate() {
 /* a try stays where it landed until the player takes it back: a.st keeps
    the position before it, and the board draws the try over it (and their
    reply, once See it plays it). kind: 'miss', 'close' or 'unchecked'; why,
-   a miss's reason; again, a second close move. The verdict lands on the
-   square (badge and tints), the band and the bar together, and the
-   keyboard goes to the bar's right-hand button (S20) */
+   a miss's reason (missWhy's ladder, and threat: the reply as threatOf
+   gives it, when it is marked); again, a second close move. The verdict
+   lands on the square (badge and tints), the band and the bar together, and
+   the keyboard goes to the bar's right-hand button (S20); a miss's reason
+   follows in two beats of its own (missReason) */
 function showTry(a, m, kind, reply, why, again) {
   var after = cloneState(a.st);
   applyMove(after, m);
+  var r = reply ? uciToMove(after, reply) : null, took = r ? (r.ep >= 0 ? after.b[r.ep] : after.b[r.to]) : null;
   a.phase = 'tried';
   a.ghostMove = null;
+  /* lost: the piece their reply takes, shown as a token once See it plays it */
   a.tried = { from: m.from, to: m.to, uci: moveUci(m), san: sanOf(a.st, m), kind: kind,
-              reply: reply && uciToMove(after, reply) ? reply : null, seen: false };
+              reply: r ? reply : null, seen: false, threat: (why && why.threat) || null, lost: took ? { sq: r.to, p: took } : null };
   a.verdict = triedVerdict(a, a.tried, why, again);
+  a.reason = 0;
   a.focusRight = true;
+  /* a wrong move is remembered for this showing of the card, at this step
+     of a forcing line, and drawn faintly once the card asks again (the game
+     move has its own red arrow) */
+  if (kind === 'miss' && a.tried.uci !== a.playedUci) {
+    a.wrong = (a.wrong || []).filter(function (w) { return !(w.uci === a.tried.uci && w.at === a.solIdx); });
+    a.wrong.push({ from: m.from, to: m.to, uci: a.tried.uci, at: a.solIdx, fx: a.key + ':' + (a.fxn || 0) + 'tl' });
+  }
   renderCard();
+  if (kind === 'miss') missReason(a);
+}
+/* a miss gives its reason in two more beats once its verdict is read (S4,
+   principle 1): 600 ms later the piece that punishes the try, ringed, with
+   a dashed arrow to what it takes; 150 ms after that the words (300 and 400
+   under reduced motion). a.reason counts them. See it before then plays
+   that move instead of marking it; the words still come */
+function missReason(a) {
+  var t = a.tried, v = textDue(), rm = reducedMotion();
+  stageAt(v + (rm ? 300 : 600), function (a2) {
+    if (a2.tried !== t || a2.reason >= 1) return;
+    a2.reason = 1;
+    if (t.threat && !t.seen) stage(['marks']);
+  });
+  stageAt(v + (rm ? 400 : 750), function (a2) {
+    if (a2.tried !== t) return;
+    a2.reason = 2;
+    stage(['text']);
+  });
+}
+/* the move at ply k of a line, when it captures or checks: the threat a
+   dashed red arrow draws (FINAL-SPEC 2.1), from the attacker's square to
+   where it lands, with what it takes; null for a quiet move */
+function threatOf(line, k) {
+  var n = line && line.nodes[k];
+  if (!n || !n.move) return null;
+  var check = checkersOf(n.after).length > 0;
+  if (!n.captured && !check) return null;
+  return { from: n.move.from, to: n.move.to, piece: n.piece, captured: n.captured ? pType(n.captured) : null,
+           check: check, mate: check && !legalMoves(n.after).length, san: sanOf(n.before, n.move) };
+}
+/* the answer due now: the card's best move, or inside a forcing line the
+   line's next move (FINAL-SPEC 2.3) */
+function dueMove(a) { return (a.sol && a.solIdx > 0 && uciToMove(a.st, a.sol[a.solIdx])) || a.best; }
+/* the wrong move tried last at this step, as the board draws it on the
+   card's position: a faint line and a cross where it landed, one per frame
+   (2.1); when it landed on the answer's square, the cross alone on the
+   square it left (2.3) */
+function triedMark(a) {
+  var at = a.solIdx || 0, w = (a.wrong || []).filter(function (x) { return x.at === at; }).pop();
+  if (!w) return null;
+  return w.to === dueMove(a).to ? { sq: w.from, fx: w.fx } : { from: w.from, to: w.to, fx: w.fx };
 }
 /* what the board shows while a try is on it: the position and its last move */
 function triedFrame(a) {
@@ -6314,9 +6372,14 @@ function clearTry(a) {
   a.tried = null;
   a.ghostMove = null;
   a.verdict = null;
+  a.reason = 0;
   a.sel = -1;
   /* back to another position: the board crossfades (2.2) */
   a.jump = true;
+  /* the wrong move just taken back stays as a faint line (S4), drawn once
+     the crossfade is over: the board, then that mark, then the words */
+  a.triedHold = !!triedMark(a) && !reducedMotion();
+  if (a.triedHold) stageAt(XFADE, function (a2) { if (a2.triedHold) { a2.triedHold = false; stage(['marks']); } });
 }
 /* Take back (S3): the move being checked leaves the board, ungraded. The
    search stops and its answer is ignored (a new token), the attempt is
@@ -6349,10 +6412,13 @@ function seeIt() {
   var a = ui.session && ui.session.active, t = a && a.tried;
   if (!t || a.phase !== 'tried' || !t.reply || t.seen) return;
   t.seen = true;
-  /* it slides as a move the app shows; the bar changes once it lands */
+  /* the words about to change (the bar's See it) fade out first (2.2), then
+     it slides as a move the app shows, its sound as it starts, along the
+     reason's arrow; as it lands the ring and arrow go and what it took
+     comes (a token). The bar changes after that */
   a.animMove = triedFrame(a).last;
-  snd('move');
-  renderCard();
+  a.moveCue = true;
+  renderCard(['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text']);
 }
 /* the engine could not answer: the try stays where it is, and is not counted */
 function cannotCheck(a, m) {
@@ -6468,20 +6534,19 @@ function miss(m, u, info, inLine) {
   if (a.misses === 1) a.runBroke = srsNoteMiss(it) > 0;
   /* the sound comes with the badge */
   a.cue = 'bad';
-  var why = '', san = sanOf(a.st, m);
   var reply = info && info.pv ? (info.pv[0] === u ? info.pv.slice(1) : info.pv) : [];
-  if (info && info.pv && info.pv.length) {
-    /* judged only on what the tried move allows: the card's own answer is
-       never part of the verdict, or a miss would print the solution */
-    var c = classifyMistake(a.st, u, { pv: [] }, { pv: reply, mate: info.mate }, winPct(it.b.eb), info.win, it.b.p);
-    var concrete = c.mateAgainst || c.matGame <= -1;
-    /* a wrong try is told in words at every level. One that loses nothing
-       is a close move outside a forcing line (closeTry), never a miss;
-       inside one it is still a miss, and says so honestly */
-    why = concrete ? c.sentences.short.replace(/ \(\d+% to \d+%\)/g, '')
-      : (inLine && info.win >= winPct(it.b.eb) - STRONGER_TOL ? 'Nothing lost, but there\'s a better move.'
-        : 'After ' + san + ', ' + standingWords(info.win).replace(/^about level$/, 'it is about level') + '. There is something stronger here.');
-  }
+  /* judged only on what the tried move allows: the card's own answer is
+     never part of the verdict, or a miss would print the solution */
+  var c = info && info.pv && info.pv.length ? classifyMistake(a.st, u, { pv: [] }, { pv: reply, mate: info.mate }, winPct(it.b.eb), info.win, it.b.p) : null;
+  var concrete = !!c && !!(c.mateAgainst || c.lossG >= 1), r1 = c && c.gameLine && c.gameLine.nodes[1];
+  /* a wrong try is told in words at every level (M3). One that loses
+     nothing is a close move outside a forcing line (closeTry), never a
+     miss; inside one it is still a miss, and says so honestly */
+  var why = missWhy(a, c, info ? info.win : null, r1 ? sanOf(r1.before, r1.move) : null,
+                    !!inLine && !concrete && !!info && info.win >= winPct(it.b.eb) - STRONGER_TOL);
+  /* the reply that punishes it is marked when it captures or checks and
+     the try loses something by it */
+  why.threat = concrete ? threatOf(c.gameLine, 1) : null;
   a.hintAfter = false;
   escalate();
   showTry(a, m, 'miss', reply[0], why);
@@ -7280,21 +7345,63 @@ function verdictOf(kind, row1, cands, fall) {
   var row2 = fitRow(cands, 'row2', fall || '');
   return { kind: kind, row1: row1, row2: row2, cands: cands, fall: fall || '', html: row1 + (row2 ? ' ' + row2 : '') };
 }
-/* a classifier sentence without its trailing line of moves: "It loses the
-   bishop after Qxd6 Bxd6." reads "It loses the bishop." */
-function noLine(s) { return String(s || '').replace(/[:,]? after [^.]*\.$/, '.').replace(/ and more\.$/, '.'); }
+/* what changed hands along a line, in plain words (FINAL-SPEC 3): the
+   classifier's captureWord, with "the exchange" spelled out as the rook
+   and the piece it went for. Game lines count from 0 (node 0 is your own
+   move, and the line's side is the opponent), best and alternative lines
+   from 1 (node 0 is a null move) */
+function plainCapture(line, k, from) {
+  var w = line ? captureWord(line, k, from) : null;
+  if (w !== 'the exchange') return w;
+  var minors = {};
+  for (var i = from == null ? 1 : from; i <= k && i < line.nodes.length; i++) {
+    var n = line.nodes[i];
+    if (n.captured && !n.pov && (pType(n.captured) === 'N' || pType(n.captured) === 'B')) minors[pType(n.captured)] = 1;
+  }
+  return 'a rook for a ' + (minors.N && !minors.B ? 'knight' : minors.B && !minors.N ? 'bishop' : 'piece');
+}
+
+/* why a wrong try fails (M3), as row 2's ladder {cands, fall}: c is the
+   classifier on the try (on the game move again, the card's own), win the
+   solver's win chance after it, reply their answer in SAN. Checkmate first,
+   then the material it loses, then where the game stands. Inside a forcing
+   line a try that loses nothing says so. A form that would name the answer
+   due now, or needs a reply there is none of, gives way to the fallback */
+function missWhy(a, c, win, reply, inLine) {
+  var s = sidesOf(a), cands = [], fall = 'That helps ' + s.opp + '.';
+  if (c && c.mateAgainst === 1 && reply) cands = ['Then ' + reply.replace(/#$/, '') + ' is checkmate.', s.opp + ' could checkmate you.'];
+  else if (c && c.mateAgainst > 1) cands = [s.opp + ' could checkmate you.'];
+  else if (c && c.lossG >= 1) {
+    var w = materialWord(c.lossG);
+    cands = ['You\'d lose ' + (plainCapture(c.gameLine, c.lossAt, 0) || w) + '.', 'You\'d lose ' + w + '.'];
+    fall = 'You\'d lose material.';
+  }
+  else if (inLine) cands = ['Nothing lost, but there\'s a better move.'];
+  else if (win >= 60) cands = ['Most of your advantage is gone.'];
+  else if (reply) cands = ['After ' + reply + ', ' + (win >= 40 ? 'the game is even.' : s.opp + ' is on top.')];
+  var due = sanOf(a.st, dueMove(a));
+  return { cands: cands.filter(function (x) { return x.indexOf(due) < 0; }), fall: fall };
+}
+/* the game move again (M2): its reason from the card's own refutation and
+   the score after it; a missed-chance card says only that there is more
+   to find, since what the game move allowed is not that card's lesson */
+function gameMoveWhy(a) {
+  if (familyOf(patternOf(a.it.b)).key === 'chances') return { cands: ['There\'s a stronger move here.'], fall: '' };
+  var r1 = a.cls.gameLine && a.cls.gameLine.nodes[1];
+  return missWhy(a, a.cls, a.it.b.wa, r1 ? sanOf(r1.before, r1.move) : null, false);
+}
 
 /* the verdict on a try that stays on the board (S4, S5, S11): row 1 in
-   one to four words, row 2 from its ladder. A wrong try says why in the
-   card's own sentence (why, from the classifier; slice 7 gives it its own
-   words), the game move again says so; a good move that is not the best
-   says there is a stronger one, the second time row 1 alone; a move the
-   engine could not check is not counted */
+   one to four words, row 2 from its ladder. A wrong try says why (why:
+   missWhy's ladder; the band shows it once its reason beat comes), the game
+   move again says so; a good move that is not the best says there is a
+   stronger one, the second time row 1 alone; a move the engine could not
+   check is not counted */
 function triedVerdict(a, t, why, again) {
   if (t.kind === 'close') return verdictOf('close', CARD_COPY.C1(), again ? [] : [CARD_COPY.C2()], '');
   if (t.kind === 'unchecked') return verdictOf('unchecked', CARD_COPY.E1(), [CARD_COPY.E2()], '');
-  if (t.uci === a.playedUci) return verdictOf('bad', CARD_COPY.M2(), why ? [why, noLine(why)] : [], 'There is something stronger here.');
-  return verdictOf('bad', CARD_COPY.M1(), why ? [why, noLine(why)] : [], fitRow([t.san + ' does not work.'], 'row2', ''));
+  why = why || { cands: [], fall: 'That helps ' + sidesOf(a).opp + '.' };
+  return verdictOf('bad', t.uci === a.playedUci ? CARD_COPY.M2() : CARD_COPY.M1(), why.cands, why.fall);
 }
 /* the band for the state the card is in: {disc, kind, row1, row2, chip,
    cap, sweep}. disc: king (in the solver's colour), good, bad, close,
@@ -7304,7 +7411,7 @@ function triedVerdict(a, t, why, again) {
    tap that is not a move (a.note) takes row 2 for a while, and the chip
    steps aside for it. Row 2 always fits the word budget (bandFit). The
    hints and forcing steps keep today's sentences inside the row caps until
-   their slices give them their own words (7, 10, 11) */
+   their slices give them their own words (10, 11) */
 function bandFor(a) {
   var b = bandOf(a), n = a.note && a.note.key === cardStateKey(a) ? a.note : null;
   if (!b.cap && n) { b.cands = NOTE_COPY[n.id](a); b.fall = ''; b.chip = ''; }
@@ -7342,9 +7449,11 @@ function bandOf(a) {
   if (a.phase === 'checking' && a.checkSaid)
     return { disc: 'checking', kind: 'neutral', sweep: true, row1: fitRow([CARD_COPY.K1(a)], 'row1', 'Checking…'), cands: a.checkSaid >= 2 ? [CARD_COPY.K2()] : [], fall: '' };
   if (a.phase === 'tried' && t) {
-    var tv = v || triedVerdict(a, t, null, false);
+    /* a miss's reason waits for its own beat (S4, a.reason 2): the verdict
+       alone first */
+    var tv = v || triedVerdict(a, t, null, false), wait = t.kind === 'miss' && (a.reason || 0) < 2;
     return { disc: t.kind === 'miss' ? 'bad' : t.kind, kind: t.kind === 'miss' ? 'bad' : t.kind === 'unchecked' ? 'info' : 'close',
-             row1: tv.row1, cands: tv.cands, fall: tv.fall };
+             row1: tv.row1, cands: wait ? [] : tv.cands, fall: wait ? '' : tv.fall };
   }
   if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: 'Right', cands: v && v.cands ? v.cands : [], fall: '' };
   var mid = a.sol && a.solIdx > 0;
@@ -7834,18 +7943,38 @@ function boardOptsFor(a) {
     if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.phase === 'tried' && a.tried.seen ? 320 : 220; }
     /* the move just made, on its squares: checking (a grey dots badge), a
        miss (a red cross), a good move that is not the best (a hollow ring
-       with a tick) or one not checked (a question mark). It lands with the
-       piece: a frame that slides it draws it once the slide ends */
-    var vk = null, vm = null;
+       with a tick) or one not checked (a question mark); once See it plays
+       their reply, the piece it took, as a token where it landed (never on
+       the answer's square, 2.3). It lands with the piece: a frame that
+       slides it draws it once the slide ends */
+    var t = a.tried, due = dueMove(a), vk = null, vm = null, fx = null, lands = null;
     if (a.phase === 'checking' && a.ghostMove) { vk = 'checking'; vm = a.ghostMove; }
-    else if (a.phase === 'tried' && !a.tried.seen) { vk = a.tried.kind === 'miss' ? 'bad' : a.tried.kind; vm = [a.tried.from, a.tried.to]; }
-    if (vk && opts.anim) land = true;
-    else if (vk) {
-      var fx = a.key + ':' + (a.fxn || 0) + vk;
-      opts.fx = fx;
-      opts.tints = [{ sq: vm[0], kind: vk }, { sq: vm[1], kind: vk }];
-      opts.badges = [{ sq: vm[1], kind: vk, fx: fx }];
+    else if (a.phase === 'tried' && !t.seen) { vk = t.kind === 'miss' ? 'bad' : t.kind; vm = [t.from, t.to]; }
+    if (vk) {
+      fx = a.key + ':' + (a.fxn || 0) + vk;
+      lands = { tints: [{ sq: vm[0], kind: vk }, { sq: vm[1], kind: vk }], badges: [{ sq: vm[1], kind: vk, fx: fx }] };
+    } else if (a.phase === 'tried' && t.seen && t.lost && t.lost.sq !== due.to) {
+      fx = a.key + ':' + (a.fxn || 0) + 'lost';
+      lands = { tokens: [{ sq: t.lost.sq, p: t.lost.p, kind: 'lost', fx: fx }] };
     }
+    if (lands && opts.anim) land = true;
+    else if (lands) { opts.fx = fx; for (var lk in lands) opts[lk] = lands[lk]; }
+    /* a miss explains itself (S4), once its verdict has been read
+       (a.reason): the piece that punishes it ringed, a dashed arrow to what
+       it takes; when See it plays that move they stay while it slides and
+       go as it lands (marks wait for the piece). Never on the answer's
+       square (2.3): an attacker standing there draws nothing, a target
+       there keeps the ring alone */
+    var th = a.phase === 'tried' && a.reason >= 1 && (!t.seen || opts.anim) ? t.threat : null;
+    if (th && th.from !== due.to) {
+      opts.rings = [{ sq: th.from, kind: 'threat' }];
+      if (th.to !== due.to) opts.arrows = [{ from: th.from, to: th.to, kind: 'threat', key: 'threat' }];
+      if (t.seen) land = true;
+    }
+    /* the card asking again: the wrong move tried last at this step, faint,
+       once the crossfade back has ended (clearTry) */
+    var tm = a.phase === 'guess' && !a.triedHold ? triedMark(a) : null;
+    if (tm) { opts.tried = [tm]; opts.fx = tm.fx; }
   }
   /* "not a move here": the grey outline on a square just tapped */
   if (a.nope && a.nope.key === cardStateKey(a)) opts.rings = (opts.rings || []).concat([{ sq: a.nope.sq, kind: 'nope' }]);
@@ -7855,8 +7984,10 @@ function boardOptsFor(a) {
      squares change colour once */
   opts.mark = land ? null : view.last;
   opts.label = (view.st.w ? 'White' : 'Black') + ' to move. You played ' + sanOf(a.pre, a.played) + ' in the game.';
+  /* a check given by a piece still sliding glows once it lands, with the
+     rest of what lands */
   var ck = checkedKingSq(view.st);
-  if (ck != null) opts.check = ck;
+  if (ck != null && !land) opts.check = ck;
   return {
     st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts, slideMs: slideMs, land: land,
     fadeMs: a.jump && !slideMs ? XFADE : 0,
@@ -7903,9 +8034,14 @@ function paintBoard(a, instant) {
   a.animMove = null;
   a.jump = false;
   /* the badge and tints wait for the piece (the land beat), and the
-     verdict's sound comes with them */
+     verdict's sound comes with them; a move the app shows sounds as it
+     starts */
   a.landing = !!(ms && f.land);
   if (!ms && a.cue) { snd(a.cue); a.cue = null; }
+  if (a.moveCue) { snd('move'); a.moveCue = false; }
+  /* a jump: the old words fade out with the old board (text out, 2.2), and
+     the new ones come with the text beat */
+  if (fade) fadeOut(a);
   /* the bar: the player's view of the position, with no pawn number; still
      while it waits */
   var eb = el('ebar'), fill = el('ebar-fill');
@@ -7940,6 +8076,23 @@ function xfadeHtml(html) {
     .replace('<svg class="board"', '<svg class="xf-board"').replace('<svg class="marks"', '<svg class="xf-marks"').replace(/ role="img" aria-label="[^"]*"/, '');
   return '<div class="xfade" aria-hidden="true">' + old + '</div>';
 }
+/* text out (2.2): the words about to change fade out in 100 ms, before a
+   move the app shows (the fade beat) or with a jump's crossfade: the band
+   when its words change, and each bar button whose label or action
+   changes (the whole bar when its slots change in number). Words that
+   stay, stay. Faded buttons take no tap; the text beat writes the new
+   words and takes the fade off */
+function fadeOut(a) {
+  var d = displayFor(a), band = el('cband'), bar = el('cbar'), n = 0;
+  if (band && band.nlHtml != null && band.nlHtml !== bandHtml(a, d)) band.classList.add('stale');
+  if (!bar || bar.nlHtml == null) return;
+  for (var i = 0; i < slotSig.length; i++) if (slotSig[i] != null) n++;
+  if (n !== d.buttons.length) { bar.classList.add('stale'); return; }
+  d.buttons.forEach(function (s, j) {
+    var b = slotSigOf(s) !== slotSig[j] ? bar.querySelector('[data-slot="' + j + '"]') : null;
+    if (b) b.classList.add('stale');
+  });
+}
 /* the marks beat: only the marks svg is rewritten, so no piece is touched */
 function paintMarks(a) {
   var bw = el('bwrap'), old = bw && bw.querySelector('.marks');
@@ -7953,8 +8106,9 @@ function paintMarks(a) {
    while exploring. The words stay as they are */
 function renderCardBoard() { stage(['board']); }
 /* the card: its frame once, then the board and the words as staged beats
-   (14s-stage.js), the words after any slide */
-function renderCard() {
+   (14s-stage.js), the words after any slide; beats, when a change needs
+   its own order (See it fades its words out before the reply slides) */
+function renderCard(beats) {
   var box = el('trainbox'), ss = ui.session;
   if (!box || !ss) return;
   if (ss.finished) { stageReset(); renderTrain(); return; }
@@ -7980,7 +8134,7 @@ function renderCard() {
       + '<div class="panel" id="cpanel"><div class="strip" id="cstrip"></div><div class="acts-row sticky-acts" id="cbar"></div></div>'
       + '</div>';
   }
-  stage(['board', 'land', 'text']);
+  stage(beats || ['board', 'land', 'text']);
 }
 /* what the card says and offers, as data: the band (bandFor: disc, kind,
    row1, row2, chip, cap), forcing pips (a later slice), the action bar as
@@ -8014,6 +8168,9 @@ function paintText(a) {
   paintBand(a, d);
   paintBar(d);
   paintStrip(d);
+  /* the new words are in: whatever faded out for them (fadeOut) is back */
+  if (band.classList) band.classList.remove('stale');
+  if (bar && bar.classList) { bar.classList.remove('stale'); [].forEach.call(bar.querySelectorAll('.stale'), function (b) { b.classList.remove('stale'); }); }
   var box = el('trainbox'), cardEl = box && box.querySelector('.card'), xe = a.phase === 'done' && a.explore;
   if (cardEl) cardEl.classList.toggle('xp-card', !!xe);
   if (xe) fitRows();
@@ -8607,6 +8764,8 @@ function renderFoot() {
               verdict's badge and tints, and its sound), if the board beat
               before it held them back for the slide
      'marks'  rewrites only the marks svg, once no piece is sliding
+     'fade'   text out (2.2): before a move the app shows, the words about
+              to change fade out (100 ms, TEXT_OUT, a wait beat after it)
      'text'   paints the band, the action bar, the strip and the live
               region 150 ms after the last slide ends; a newer text beat
               takes the place of one still waiting (the latest wins)
@@ -8622,7 +8781,7 @@ function renderFoot() {
    3 s, the end of a word or an outline for a tap that is not a move), which
    changes the card then and stages what it shows; input does not hurry
    them. */
-var TEXT_GAP = 150;
+var TEXT_GAP = 150, TEXT_OUT = 100;
 var motionUntil = 0, stageQ = [], stageTimer = null, stageCard = null, textNotBefore = 0, stageTimers = [];
 /* the forcing reply is sliding (paintBoard sets it, the next board clears it) */
 var motionHold = false;
@@ -8659,7 +8818,7 @@ function stageRun() {
   if (!a || a.key !== stageCard) { stageQ = []; return; }
   while (stageQ.length) {
     var b = stageQ[0], now = Date.now(), due = now;
-    if (b === 'board' || b === 'land' || b === 'marks') due = motionUntil;
+    if (b === 'board' || b === 'land' || b === 'marks' || b === 'fade') due = motionUntil;
     else if (b === 'text') due = Math.max(motionUntil + TEXT_GAP, textNotBefore);
     else if (b.wait != null) { if (b.until == null) b.until = now + b.wait; due = b.until; }
     if (due > now) { stageTimer = setTimeout(stageRun, due - now); return; }
@@ -8671,7 +8830,14 @@ function stageApply(b, a, instant) {
   if (b === 'board') paintBoard(a, instant);
   else if (b === 'land') { if (a.landing) paintBoard(a, true); }
   else if (b === 'marks') paintMarks(a);
+  else if (b === 'fade') fadeOut(a);
   else if (b === 'text') paintText(a);
+}
+/* how long until the waiting text beat paints (0 when none waits): a beat
+   timed from when the words are read (a miss's reason) starts from there */
+function textDue() {
+  if (stageQ.indexOf('text') < 0) return 0;
+  return Math.max(0, Math.max(motionUntil + TEXT_GAP, textNotBefore) - Date.now());
 }
 /* a timed beat: run(a) at ms from now, on this card only, if it is still
    the one on screen. A flush leaves it alone */
@@ -8701,6 +8867,8 @@ function flushStage() {
     motionUntil = now;
     moved = true;
   }
+  /* waits and a waiting fade go: the words it would hide stay until the
+     text beat, 150 ms from now */
   var q = stageQ, text = false;
   stageQ = [];
   clearTimeout(stageTimer);
@@ -8740,10 +8908,12 @@ function stageReset() {
    notes every slot it paints */
 var SLOT_GUARD = 450;
 var slotSig = [], slotAct = [], slotChangedAt = [];
+/* a slot as the guard sees it: its label, its action (none when off), its key */
+function slotSigOf(s) { return (s.label || '') + '|' + (s.off ? '' : s.act || '') + '|' + (s.k == null ? '' : s.k); }
 function noteSlots(slots) {
   var now = Date.now();
   slots.forEach(function (s, i) {
-    var sig = (s.label || '') + '|' + (s.off ? '' : s.act || '') + '|' + (s.k == null ? '' : s.k);
+    var sig = slotSigOf(s);
     if (slotSig[i] !== sig) { slotSig[i] = sig; slotChangedAt[i] = now; }
     slotAct[i] = s.off ? null : s.act || null;
   });
@@ -9623,7 +9793,7 @@ window.__nlTest = {
     if (!a) return { session: !!ss, finished: !!(ss && ss.finished), idx: ss ? ss.idx : null, n: ss ? ss.keys.length : null };
     return { idx: ss.idx, n: ss.keys.length, key: a.key, phase: a.phase, best: a.bestUci, played: a.playedUci,
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
-             hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null,
+             hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null, reason: a.reason || 0,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
              sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null,
              verdict: a.verdict ? { kind: a.verdict.kind, row1: a.verdict.row1, row2: a.verdict.row2 } : null };
