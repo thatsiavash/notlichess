@@ -204,7 +204,7 @@ function sessionClick(sq) {
     if (a.sel >= 0) { a.sel = -1; renderCardBoard(); }
     /* after an answer the board takes no moves: a tap on any piece says
        where to try them (N1), and nothing changes */
-    if (lineView(a).st.b[sq]) tapNote(a, 'N1', 2500, sq);
+    if (frameView(a).st.b[sq]) tapNote(a, 'N1', 2500, sq);
     return;
   }
   if (a.phase !== 'guess') return;
@@ -248,8 +248,10 @@ function tapNote(a, id, ms, sq) {
   var seq = ++noteSeq;
   if (sq != null) nopeAt(a, sq);
   a.note = { id: id, key: cardStateKey(a), seq: seq };
-  /* over the word budget even in its short form, the outline answers alone */
-  if (!bandFor(a).row2) { a.note = null; return; }
+  /* over the word budget even in its short form, the outline answers alone
+     (in the story the word takes the strip, beside the step's caption) */
+  var story = a.phase === 'done' && a.view && a.view.mode === 'story';
+  if (story ? bandWords(bandFor(a), barSlots(a, ui.session)) + stripWords(a) > WORD_BUDGET : !bandFor(a).row2) { a.note = null; return; }
   /* the words come after the outline, and go back after ms */
   stage([TEXT_GAP, 'text']);
   stageAt(TEXT_GAP + ms, function (a2) { if (a2.note && a2.note.seq === seq) { a2.note = null; stage(['text']); } });
@@ -824,22 +826,67 @@ function settleBeats(a) {
     stage(['text']);
   });
 }
-/* See why (interim until the story, slice 9): the game line from the card
-   position, its red arrow; Esc or ‹ at its start come back to S0 */
+/* See why (S12): from S0 (See why ›, →, a left swipe) the story opens at
+   G1. A revealed card offers it once settled */
 function seeWhy() {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'done' || a.explore || !a.lines || !a.view || a.view.mode !== 's0' || a.settle < (a.revealed ? 2 : 0)) return;
   a.settle = 2;
-  a.view = { line: 'refute', idx: -1 };
-  a.jump = true;
-  renderCard();
+  storyGo(a, 0, true);
 }
+/* back to the settled result (‹ on G1, Esc): a jump, so it crossfades */
 function backToSettled() {
   var a = ui.session && ui.session.active;
-  if (!a || a.phase !== 'done' || a.explore || !a.view || a.view.mode) return;
+  if (!a || a.phase !== 'done' || a.explore || !a.view || a.view.mode !== 'story') return;
   a.view = { mode: 's0' };
   a.jump = true;
   renderCard();
+}
+/* one ply per tap (S12): forward (d 1: Next move ›, →, Space, a left swipe)
+   or back (d -1: ‹, ←, a right swipe). From S0 forward opens the story; back
+   from G1 is S0 again; forward at the last step does nothing */
+function storyStep(d) {
+  var a = ui.session && ui.session.active;
+  if (!a || a.phase !== 'done' || a.explore || !a.view) return;
+  if (a.view.mode === 's0') { if (d > 0) seeWhy(); return; }
+  if (a.view.mode !== 'story') return;
+  var i = a.view.i, n = buildStory(a).steps.length;
+  if (d < 0) { if (i === 0) backToSettled(); else storyGo(a, i - 1, false); }
+  else if (i < n - 1) storyGo(a, i + 1, true);
+}
+/* the strip's names: "Game" opens G1, "Better" B1, each played from its start */
+function storyJump(seg) {
+  var a = ui.session && ui.session.active;
+  if (!a || a.phase !== 'done' || a.explore || !a.view || a.view.mode !== 'story') return;
+  var j = seg === 'better' ? buildStory(a).g : 0;
+  if (j < buildStory(a).steps.length && j !== a.view.i) storyGo(a, j, true);
+}
+/* step j on screen. Played forward, its ply is a move the app shows: the
+   words about to change fade out (100 ms), then it slides (320 ms) with its
+   sound, what it brings lands with it, then its caption. The first step of
+   a segment (G1, B1) first crossfades to where the segment starts, with its
+   arrow (the red game move, the green better move), then slides. Back is a
+   jump to that step as it landed: a crossfade */
+function storyGo(a, j, play) {
+  var S = buildStory(a), s = S.steps[j], n = s && s.line.nodes[s.k];
+  if (!n || !n.move) return;
+  var rm = reducedMotion(), first = s.k === (s.seg === 'game' ? 0 : s.from);
+  a.sel = -1;
+  if (!play) { a.view = { mode: 'story', i: j }; a.jump = true; renderCard(); return; }
+  var slide = function (a2) { a2.animMove = [n.move.from, n.move.to]; a2.animShown = true; a2.moveCue = true; };
+  if (!first) {
+    a.view = { mode: 'story', i: j };
+    slide(a);
+    renderCard(['fade', rm ? 0 : TEXT_OUT, 'board', 'land', 'text']);
+    return;
+  }
+  a.view = { mode: 'story', i: j, pre: true };
+  a.jump = true;
+  renderCard(['fade', rm ? 0 : TEXT_OUT, 'board', { run: function (a2) {
+    if (a2.view.mode !== 'story' || a2.view.i !== j || !a2.view.pre) return;
+    delete a2.view.pre;
+    slide(a2);
+  } }, 'board', 'land', 'text']);
 }
 /* a second tap on Next lands where Show the answer now sits: taps in the
    first half second of a card are the old card's. After that, each bar
@@ -1004,31 +1051,25 @@ function disputeCard(reason) {
   nextCard();
 }
 
-/* ── after answering: stepping through the lines ────────────────────────── */
-function lineView(a) {
+/* ── after answering: the frame on screen ───────────────────────────────── */
+/* the position an answered card shows, its last move and the bar's value:
+   S0 and the answer shown, the card's own board as play left it; a story
+   step, its ply landed (or, while a segment's first step crossfades in,
+   where that segment starts). A line view ({line, idx}) is where exploring
+   starts from the invite (until slice 12) */
+function frameView(a) {
   var v = a.view || { line: 'best', idx: -1 };
-  /* S0 and the answer shown: the card's own board, as play left it */
+  if (v.mode === 'story') {
+    var s = buildStory(a).steps[v.i], n = s.line.nodes[s.k];
+    if (!v.pre) return { st: n.after, last: [n.move.from, n.move.to], ev: a.it.b.eb };
+    var pn = s.line.nodes[s.k - 1];
+    return { st: n.before, last: pn && pn.move ? [pn.move.from, pn.move.to] : a.preLast, ev: a.it.b.eb };
+  }
   if (v.mode) return { st: a.st, last: a.lastMove, ev: a.it.b.eb };
   var L = a.lines && a.lines[v.line];
   if (!L || !L.states.length) return { st: a.pre, last: a.preLast, ev: a.it.b.eb };
   if (v.idx < 0) return { st: a.pre, last: a.preLast, ev: a.it.b.eb };
   var i = Math.min(v.idx, L.states.length - 1);
   return { st: L.states[i], last: [L.moves[i].from, L.moves[i].to], ev: L.ev[i] != null ? L.ev[i] : a.it.b.eb };
-}
-function stepView(d) {
-  var a = ui.session && ui.session.active;
-  if (!a || a.phase !== 'done' || !a.lines) return;
-  if (a.explore) { exploreStep(d); return; }
-  /* S0: forward is See why; the line's start, back: S0 again */
-  if (a.view.mode) { if (d > 0 && a.view.mode === 's0') seeWhy(); return; }
-  if (d < 0 && a.view.idx < 0) { backToSettled(); return; }
-  var L = a.lines[a.view.line];
-  if (!L) return;
-  var was = a.view.idx;
-  a.view.idx = Math.max(-1, Math.min(L.states.length - 1, a.view.idx + d));
-  /* forward slides the move; back is a jump to the position before it,
-     which crossfades */
-  if (d > 0) snd('move'); else if (a.view.idx !== was) a.jump = true;
-  renderCard();
 }
 

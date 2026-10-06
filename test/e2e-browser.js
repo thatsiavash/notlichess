@@ -83,6 +83,27 @@
     if (bx && W.h0 == null) W.h0 = bx.offsetHeight;
     else if (bx && bx.offsetHeight !== W.h0) W.fit.push(what + ': the band is ' + bx.offsetHeight + ' px tall, not ' + W.h0);
   };
+  const $$ = (s) => document.querySelectorAll(s);
+  /* the story: wait for step i to have landed (its caption painted) */
+  const storyLanded = async (i) => {
+    await until(() => { const x = T.card().story; return x && x.i === i && !x.pre && T.ev('motionUntil') <= Date.now() && text('#cband .bd-cap') === x.cap; }, 4000);
+    await sleep(500);
+  };
+  /* one story frame as seen: its band fits, and the words on screen (caption, strip, bar labels) are 15 or fewer */
+  W.story = [];
+  const storyFrame = (what) => {
+    bandFits('story ' + what);
+    const sc = $('#cstrip').cloneNode(true);
+    [].forEach.call(sc.querySelectorAll('.kb-move'), (x) => x.remove());
+    const words = (t) => String(t || '').split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length;
+    const n = words(text('#cband')) + words(sc.textContent) + [].reduce.call($$('#cbar a'), (x, b) => x + words(b.textContent), 0);
+    if (n > 15 || !text('#cband .bd-cap')) W.story.push(what + ': ' + n + ' words, ' + text('#cband') + ' / ' + sc.textContent + ' / ' + text('#cbar'));
+  };
+  /* a sideways swipe on the board as a finger makes it, from its middle */
+  const swipeBoard = (dx) => {
+    const r = $('#bwrap').getBoundingClientRect(), p = [r.left + r.width / 2, r.top + r.height / 2];
+    fire('pointerdown', p); fire('pointermove', [p[0] + dx / 2, p[1]]); fire('pointerup', [p[0] + dx, p[1]]);
+  };
   const legalOther = (c) => {
     /* a legal move that is neither the answer nor the game move */
     return T.ev(`(function () { var a = ui.session.active, ms = legalMoves(a.st).map(moveUci);
@@ -177,12 +198,43 @@
     const f0 = frame();
     await sleep(5000);
     ok('board and band unchanged 5 s after an answer', frame() === f0, JSON.stringify(c.view) + ' -> ' + JSON.stringify(T.card().view));
-    click('#cbar [data-act=seeWhy]');
-    await sleep(400);
-    ok('See why opens your game line at its start', T.card().view.line === 'refute' && T.card().view.idx === -1, JSON.stringify(T.card().view));
-    ok('the red arrow shows alone at the start of its line', !!$('#bwrap .bad-arrow') && !$('#bwrap .good-arrow'));
+    /* the story (S12): G1 is the game move with its red arrow as the trail, and the reply it allows; then one ply per tap */
+    press('#cbar [data-act=seeWhy]');
+    await storyLanded(0);
+    const sg = T.card().story, g1threat = T.ev('!!buildStory(ui.session.active).threat');
+    ok('See why enters the story at G1, its red arrow kept as the trail, the threat when there is one', !!sg && sg.i === 0 && $$('#bwrap .bad-arrow').length === 1 && $$('#bwrap .threat-arrow').length === (g1threat ? 1 : 0) && !$('#bwrap .good-arrow')
+      && $('#cband .card-task').classList.contains('k-sgame') && text('#cband .bd-cap') === sg.cap, JSON.stringify(sg) + ' ' + text('#cband'));
+    ok('the story\'s bar is ‹, Next move ›, Continue, with the keyboard on Next move', /^‹\s*Next move ›\s*(Continue|Finish)$/.test(text('#cbar').replace(/\n/g, ' ').trim()) && document.activeElement === $('#cbar [data-act=storyFwd]'), text('#cbar') + ' / ' + focusName());
+    storyFrame('G1');
+    /* every step: one ply a tap, a caption that fits, at most 15 words; then Continue in gold, with the keyboard */
+    for (let i = 1; i < sg.n; i++) {
+      press('#cbar [data-act=storyFwd]');
+      await storyLanded(i);
+      storyFrame('step ' + (i + 1));
+    }
+    ok('a story step moves one ply a tap, and Next move ends at the last step', T.card().story.i === sg.n - 1 && !!$('#cbar .btn-off') && /Next move/.test($('#cbar .btn-off').textContent)
+      && document.activeElement === $('#cbar [data-act=next]') && $('#cbar [data-act=next]').classList.contains('btn-big') && $('#cband .card-task').classList.contains(sg.n - 1 >= sg.g ? 'k-sbetter' : 'k-sgame'), focusName());
+    ok('every story frame: a caption that fits its band, at most 15 words on screen', W.story.length === 0, W.story.slice(0, 3).join(' | '));
+    /* back: ‹, ← and a right swipe; forward: a left swipe; Esc to the settled result */
+    if (sg.n > 2) {
+      click('#cbar [data-act=storyBack]');
+      await storyLanded(sg.n - 2);
+      ok('‹ steps back one ply', T.card().story.i === sg.n - 2, JSON.stringify(T.card().story));
+      swipeBoard(-120);
+      await storyLanded(sg.n - 1);
+      ok('a left swipe steps forward', T.card().story.i === sg.n - 1, JSON.stringify(T.card().story));
+      swipeBoard(120);
+      await storyLanded(sg.n - 2);
+      ok('a right swipe steps back', T.card().story.i === sg.n - 2, JSON.stringify(T.card().story));
+    }
+    /* a tap on a piece never steps: the outline, and N1 in the strip when the words allow it */
+    const sNow = T.card().story.i, pq = T.ev('(function (a) { var st = frameView(a).st; for (var q = 0; q < 64; q++) if (st.b[q]) return q; return -1; })(ui.session.active)');
+    fingerTap(pq);
+    await sleep(300);
+    ok('board taps never change the step', T.card().story.i === sNow && !!$('#bwrap .marks .nope-box'), JSON.stringify(T.card().story));
+    await sleep(2600);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await sleep(400);
+    await sleep(500);
     ok('Esc goes back to the settled result', T.card().view.mode === 's0' && !!$('#cstrip [data-act=details]'), JSON.stringify(T.card().view));
 
     /* ── exploring: from Details, three rows, one arrow, a sentence, the way back ─ */
@@ -207,7 +259,7 @@
       ok('a tried move gets one sentence', !!said && said.length <= 80 && !/\u2014/.test(said), said);
       await sleep(3000);
       ok('the sentence does not change once written', T.explore() && T.explore().say === said, T.explore() && T.explore().say);
-      click('[data-act=lineBack]');
+      click('[data-act=xpBack]');
       await sleep(200);
       ok('‹ steps back inside the exploration', T.explore() && T.explore().at === 0);
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -402,7 +454,7 @@
       const dn = await until(() => T.card().phase === 'done', 8000);
       await until(() => T.card().settle === 2, 3000);
       await sleep(300);
-      const any = dn ? T.ev('(function (a) { var st = lineView(a).st; for (var q = 0; q < 64; q++) if (st.b[q]) return q; return -1; })(ui.session.active)') : -1;
+      const any = dn ? T.ev('(function (a) { var st = frameView(a).st; for (var q = 0; q < 64; q++) if (st.b[q]) return q; return -1; })(ui.session.active)') : -1;
       if (any >= 0) fingerTap(any);
       await sleep(300);
       ok('after a dragged solve, the first tap on a piece says where to try moves', !!dn && text('#cband .bd-r2') === T.ev('CARD_COPY.N1(ui.session.active)') && !!$('#bwrap .marks .nope-box'),
@@ -451,6 +503,27 @@
     click('#overlay [data-act=size][data-k="5"]');
     ok('session size can be changed', T.ev("sessionSize()") === 5);
     T.ev("store.set('nl:sessionSize', " + sizeBefore + "); closeSheet(); 'ok'");
+
+    /* ── the story on a card whose game move allows a capture or a check ─ */
+    const tk = T.ev(`(function () { var it = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && threatOf(a.cls.gameLine, 1); })[0]; return it ? it.key : null; })()`);
+    if (tk) {
+      T.ev("startDrill({ type: 'one', key: '" + tk + "', label: 'e2e' }); 'ok'");
+      c = await until(() => { const x = T.card(); return x.phase === 'guess' && x.key === tk ? x : null; }, 30000);
+      if (c) {
+        await sleep(600);
+        await tapMove(c.best);
+        await until(() => T.card().settle === 2, 6000);
+        await sleep(300);
+        click('#cbar [data-act=seeWhy]');
+        await storyLanded(0);
+        ok('See why enters the story; G1 shows one .bad-arrow and one .threat-arrow', T.card().story && T.card().story.i === 0 && $$('#bwrap .bad-arrow').length === 1 && $$('#bwrap .threat-arrow').length === 1 && $$('#bwrap .ring-threat').length === 1,
+          $$('#bwrap .bad-arrow').length + ' red, ' + $$('#bwrap .threat-arrow').length + ' threat: ' + text('#cband'));
+        storyFrame('threat card G1');
+        ok('the threat card\'s story frame fits', W.story.length === 0, W.story.slice(-1).join(''));
+        click('[data-act=endSession]') || T.ev("endSession(); 'ok'");
+        await sleep(300);
+      }
+    } else ok('a card whose game move allows a capture or a check', false, 'none found');
 
     /* ── typed moves ─────────────────────────────────────────────────── */
     T.ev("startDrill({ type: 'family', fam: familyOf(patternOf(allMistakes().filter(trainable)[0].b)).key, label: 'e2e' }); 'ok'");

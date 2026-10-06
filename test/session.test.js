@@ -608,8 +608,28 @@ const OPEN = `function openCard(it) {
             if (!/^See why › \| (Continue|Finish)$/.test(d.buttons.map(function (b) { return b.label; }).join(' | '))) out.push(what + ' settled bar ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
             d = band(what + ', settled, N1', note(a, 'N1'));
             if (d.row2 !== 'To try moves, open Details.') out.push(what + ' N1 reads ' + d.row2);
-            a.note = null; seeWhy(); d = band(what + ', See why', a);
-            if (d.row1 !== r1 || !R4.test(d.row2)) out.push(what + ', See why reads ' + d.row1 + ' / ' + d.row2);
+            /* the story (S12): every step one caption beside the verdict's
+               disc, the strip's two names (a count past 9 steps), the bar
+               [‹] [Next move ›] [Continue], Next move off at the last step;
+               N1 in the strip, beside the caption, only within the budget */
+            a.note = null; seeWhy();
+            var S = buildStory(a);
+            if (a.view.mode !== 'story' || a.view.i !== 0) out.push(what + ': See why did not open the story at G1');
+            for (var si = 0; si < S.steps.length; si++) {
+              a.view = { mode: 'story', i: si }; a.note = null;
+              d = band(what + ', story step', a);
+              var last = si === S.steps.length - 1, bl = d.buttons.map(function (b) { return b.label + (b.off ? ' (off)' : ''); }).join(' | ');
+              if (!d.cap || d.row1 || d.row2 || d.disc !== (a.revealed ? 'info' : 'good') || d.kind !== (si < S.g ? 'sgame' : 'sbetter')) out.push(what + ', story step ' + si + ': ' + JSON.stringify([d.cap, d.row1, d.disc, d.kind]));
+              var want = '‹ | Next move ›' + (last ? ' (off)' : '') + ' | ';
+              if (bl.indexOf(want) !== 0 || !/^(Continue|Finish)$/.test(bl.slice(want.length))) out.push(what + ', story step ' + si + ' bar ' + bl);
+              var sw = words(String(d.strip).replace(/<[^>]*>/g, ' '));
+              if (sw !== (S.steps.length > 9 ? 3 : 2)) out.push(what + ', story step ' + si + ' strip ' + d.strip);
+              if (!/^Step \\d+ of \\d+, (your game|the better move|your move)\\. /.test(d.live) || d.live.indexOf(d.cap) < 0) out.push(what + ', story step ' + si + ' live ' + d.live);
+              tapNote(a, 'N1', 2500, null); d = band(what + ', story step, N1', a);
+              var withN1 = /To try moves, open Details\\./.test(d.strip);
+              if (withN1 !== (words(d.cap) + 5 + 3 <= 15)) out.push(what + ', story step ' + si + ': N1 ' + (withN1 ? 'over the budget' : 'missing') + ', ' + d.cap);
+            }
+            a.note = null;
           };
           a = openCard(it); reveal(); d = band(at + ' shown', a);
           var v1 = 'The answer: ' + a.lines.best.san[0];
@@ -656,7 +676,7 @@ const OPEN = `function openCard(it) {
     ok(r.frames > 6000, 'frames ' + r.frames);
     eq(r.out.length, 0, r.out.length + ' too long, first: ' + r.out.slice(0, 3).join(' | '));
     ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss outside a line', 'a miss with a reply', 'game move again, its reason', 'a miss that loses nothing, in a line', 'shown, N1',
-     'shown, played', 'mid-line shown, settled', 'found, settled', 'works too, settled', 'line found, settled', 'See why'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
+     'shown, played', 'mid-line shown, settled', 'found, settled', 'works too, settled', 'line found, settled', 'story step', 'story step, N1'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
   });
 
   await test('R4 never uses the found form when lines.game.uci[1] !== ru[0]', () => {
@@ -758,6 +778,122 @@ const OPEN = `function openCard(it) {
       return JSON.stringify({ out: out, n: n }); })()`));
     ok(r.n.r4 > 400 && r.n.m3 > 150 && r.n.word > 300 && r.n.trade > 50 && r.n.guard >= 6, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' untrue material words, first: ' + r.out.slice(0, 3).join(' | '));
+  });
+
+  await test('honest captions (U2): every story caption says only what the ply shown does, true on its own board; a material word is the line\'s own captures, "material", or "a lot of material" worth 6 or more', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = { caps: 0, sent: 0, forms: {} };
+      var PW = { pawn: 'P', knight: 'N', bishop: 'B', rook: 'R', queen: 'Q', king: 'K' };
+      var bare = function (s) { return s.replace(/[+#]$/, ''); };
+      /* a material phrase against the line's own captures from node f to k, and its net */
+      /* "material" only where the line's own phrase is none or a trade (one
+         word never claims a piece, and never hides one that can be named) */
+      var matOk = function (p, line, k, f, net) {
+        var own = plainCapture(line, k, f);
+        return net >= 1 && (p === own || (p === 'material' && (!own || / for /.test(own))) || (p === 'a lot of material' && Math.abs(net) >= 6 && (!own || / and /.test(own))));
+      };
+      var sides = function (w) { return w ? 'White' : 'Black'; };
+      var check = function (what, a, S, i) {
+        var s = S.steps[i], line = s.line, nd = line.nodes[s.k], c = a.cls, pov = myPov(a.it), cap = s.cap, cmp = buildCompare(a);
+        var san = sanOf(nd.before, nd.move), b = nd.after.b, game = s.seg === 'game', firstB = !game && s.k === s.from, lastG = game && i === S.g - 1, lastB = !game && i === S.steps.length - 1;
+        var n1 = game && s.k === 0 ? line.nodes[1] : null, rsan = n1 ? sanOf(n1.before, n1.move) : null, found = cmp.found;
+        var mine = function (sq, t) { var p = nd.after.b[sq]; return !!p && isW(p) === pov && (!t || pType(p) === t); };
+        var fail = function (x) { out.push(what + ' step ' + i + ' "' + cap + '": ' + x); };
+        n.caps++;
+        /* the ply it names: the game move, the better move, or this step's own */
+        var sents = cap.match(/[^.]+\\./g) || [cap];
+        var head = sents[0];
+        if (game && s.k === 0) { if (head !== gameSan(a) + '.' && cap !== gameSan(a) + ', your game move.') fail('does not start with the game move ' + gameSan(a)); }
+        else if (firstB) { if (head !== 'Better: ' + san + '.' && cap !== 'Your ' + san + ' works too.') fail('does not name the better move ' + san); if (/works too/.test(cap) !== !!a.alt) fail('works too on a card that is ' + (a.alt ? '' : 'not ') + 'an alternative'); }
+        else if (cap.indexOf(san) !== 0 && cap.indexOf(bare(san)) !== 0) fail('does not start with its ply ' + san);
+        /* no other move of the line is named, except the reply G1 warns of */
+        line.nodes.forEach(function (x, k) {
+          if (!x.move || k === s.k) return;
+          var o = bare(sanOf(x.before, x.move));
+          if (o === bare(san) || (o.length < 3 && !/x/.test(o))) return;
+          if (new RegExp('(^|\\\\s)' + o.replace(/[+#=]/g, '\\\\$&') + '([\\\\s.,]|$)').test(cap) && !(n1 && k === 1)) fail('names another ply, ' + o);
+        });
+        /* each sentence: a known form, true here */
+        sents.slice(firstB || (game && s.k === 0) ? 1 : 0).forEach(function (x, j) {
+          x = x.trim(); n.sent++;
+          var m, form = null, ok = true;
+          if (j === 0 && !firstB && !(game && s.k === 0) && (m = /^(\\S+) takes (your|their) (\\w+)(, as in your game)?\\.$/.exec(x))) {
+            form = 'takes'; var cp = nd.captured;
+            ok = !!cp && pType(cp) === PW[m[3]] && (isW(cp) === pov) === (m[2] === 'your') && (!m[4] || (game && s.k === 1 && found));
+          } else if (j === 0 && (m = /^(\\S+) could take your (\\w+)\\.$/.exec(x))) { form = 'could take'; ok = game && s.k === 1 && !found && !!nd.captured && isW(nd.captured) === pov && pType(nd.captured) === PW[m[2]]; }
+          else if (j === 0 && /^\\S+, check\\.$/.test(x)) { form = 'check'; ok = checkersOf(nd.after).length > 0 && !isMate(nd.after); }
+          else if (j === 0 && /^\\S+$/.test(x.replace(/\\.$/, '')) && sents.length > 1 && /^Checkmate\\.$/.test(sents[1].trim())) { form = 'mate'; ok = isMate(nd.after); }
+          else if (/^Checkmate\\.$/.test(x)) { form = 'mate'; ok = isMate(nd.after); }
+          else if (j === 0 && x === san + '.') { form = 'quiet'; }
+          else if (/^As in your game\\.$/.test(x)) { form = 'found'; ok = game && s.k === 1 && found; }
+          else if (/^They missed it\\.$/.test(x)) { form = 'missed'; ok = game && s.k === 1 && !found; }
+          else if ((m = /^Nothing guards the (\\w+) on ([a-h][1-8])\\.$/.exec(x))) { form = 'unguarded'; var q = sqNum(m[2]); ok = !!n1 && mine(q, PW[m[1]]) && !isDefended(b, q) && n1.move.to === q && !!n1.captured; }
+          else if ((m = /^Their (\\w+) can take your (\\w+)\\.$/.exec(x))) { form = 'can take'; ok = !!n1 && pType(n1.before.b[n1.move.from]) === PW[m[1]] && !!n1.captured && pType(n1.captured) === PW[m[2]] && isW(n1.captured) === pov
+            && MOTIF_VAL[PW[m[1]]] < MOTIF_VAL[PW[m[2]]] && isDefended(b, n1.move.to); }
+          else if ((m = /^Now (\\S+) hits two pieces\\.$/.exec(x))) { form = 'fork'; ok = !!n1 && bare(rsan) === m[1] && attacksFrom(n1.after.b, n1.move.to).filter(function (q) { var p = n1.after.b[q]; return p && isW(p) === pov; }).length >= 2; }
+          else if ((m = /^Now (\\S+) is check\\.$/.exec(x))) { form = 'gives check'; ok = !!n1 && bare(rsan) === m[1] && checkersOf(n1.after).length > 0; }
+          else if ((m = /^Now (White|Black) can checkmate\\.$/.exec(x))) { form = 'mate against'; ok = !!c.mateAgainst && m[1] === sides(!pov) && isMate(S.steps[S.g - 1].line.nodes[S.steps[S.g - 1].k].after); }
+          else if ((m = /^Your (\\w+) can't move safely\\.$/.exec(x))) { form = 'pin'; ok = game && s.k === 0 && b.some(function (p, q) { return p && isW(p) === pov && pType(p) === PW[m[1]] && !!pinRay(b, q); }); }
+          else if (/^Moving one piece opens a line\\.$/.test(x)) { form = 'discovered'; ok = game && s.k === 0 && !!c.allowed.discoveredAttack && c.allowed.discoveredAttack.ply === 1; }
+          else if ((m = /^(White|Black) has no move: a draw\\.$/.exec(x))) { form = 'stalemate'; ok = !legalMoves(nd.after).length && !checkersOf(nd.after).length; }
+          else if ((m = /^The (\\w+) on ([a-h][1-8]) guards it\\.$/.exec(x))) { form = 'guard'; var d = sqNum(m[2]); ok = firstB && mine(d, PW[m[1]]) && attackersOf(b, nd.move.to, pov).indexOf(d) >= 0 && !isDefended(c.gameLine.nodes[0].after.b, a.played.to); }
+          else if ((m = /^It wins ([a-z ]+)\\.$/.exec(x))) { form = 'it wins'; ok = firstB && !a.alt && matOk(m[1], c.bestLine, c.bSettle, 1, c.matBest); }
+          else if (/^It leads to checkmate\\.$/.test(x)) { form = 'leads to mate'; ok = firstB && !!c.mateFor && isMate(line.nodes[S.steps[S.steps.length - 1].k].after); }
+          else if ((m = /^(\\S+) still comes(, but you (win ([a-z ]+)|lose nothing))?\\.$/.exec(x)) || /^You lose less\\.$/.test(x)) {
+            form = 'still comes'; var g1 = c.gameLine.nodes[1];
+            ok = !game && s.k === 2 && !!g1 && sameMove([nd.move.from, nd.move.to], [g1.move.from, g1.move.to])
+              && (!m || !m[3] || (m[4] ? matOk(m[4], c.bestLine, c.bSettle, 1, c.matBest) : c.matBest === 0))
+              && (!/less/.test(x) || (c.matBest < 0 && -c.matBest < c.lossG));
+          }
+          else if ((m = /^You lose ([a-z ]+)\\.$/.exec(x))) { form = 'you lose'; ok = lastG && matOk(m[1], line, s.k, 0, c.lossG); }
+          else if ((m = /^You win ([a-z ]+)\\.$/.exec(x))) { form = 'you win'; ok = lastB && matOk(m[1], line, s.k, s.from, matDiff(b, pov) - matDiff(line.nodes[s.from].before.b, pov)); }
+          if (!form) return fail('an unknown sentence: ' + x);
+          if (form === 'you win' && s.from > 1) n.lineWins = (n.lineWins || 0) + 1;
+          n.forms[form] = (n.forms[form] || 0) + 1;
+          if (!ok) fail(form + ' is not true here');
+        });
+      };
+      var sqNum = function (s) { return (s.charCodeAt(0) - 97) + 8 * (+s[1] - 1); };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          ['solved', 'shown', 'works too', 'works too in a line', 'the line from its third move'].forEach(function (how) {
+            var a = openCard(it);
+            if (!a) return;
+            if (how === 'shown') { reveal(); a.view = { mode: 's0' }; }
+            else if (/in a line|third move/.test(how)) {
+              /* inside a forcing line, another move at the third: its own line from there, the best line after it */
+              if (!a.sol || a.sol.length < 3) return;
+              applyMove(a.st, uciToMove(a.st, a.sol[0])); applyMove(a.st, uciToMove(a.st, a.sol[1])); a.solIdx = 2;
+              /* (or the line's own third move, credited from there: what the moves before it took is not its gain) */
+              var alt2 = how === 'the line from its third move' ? uciToMove(a.st, a.sol[2]) : legalMoves(a.st).filter(function (m) { return moveUci(m) !== a.sol[2]; })[0];
+              if (!alt2) return;
+              var aft = cloneState(a.st); applyMove(aft, alt2);
+              a.yours = { uci: a.sol.slice(0, 2).concat([moveUci(alt2)]).concat(playUci(aft, unpackUci(it.b.lu).slice(3)).uci), cp: 0, at: 2 };
+              solved(alt2, moveUci(alt2), { win: 50, best: 52, mate: null }, true);
+            }
+            else if (how === 'works too') {
+              /* another move that holds, its own line after it (the alternative's story) */
+              var alt = legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci; })[0];
+              if (!alt || a.sol) return;
+              var after = cloneState(a.st); applyMove(after, alt);
+              var rep = legalMoves(after)[0];
+              a.yours = { uci: [moveUci(alt)].concat(rep ? [moveUci(rep)] : []), cp: 0, at: 0 };
+              solved(alt, moveUci(alt), { win: 50, best: 52, mate: null });
+            }
+            else if (a.sol) { while (a.solIdx < a.sol.length) { var m = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.solIdx++; } finishCard('first'); }
+            else solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+            var S = buildStory(a);
+            for (var i = 0; i < S.steps.length; i++) check('tier ' + tier + ' ' + it.key + ' ' + how, a, S, i);
+          });
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    const f = r.n.forms;
+    ok(r.n.caps > 3000 && f.takes > 500 && f['you lose'] > 50 && f.unguarded > 20 && f['can take'] > 10 && f.fork > 5 && f['gives check'] > 20 && f['mate against'] > 5 && f.guard >= 6
+      && f['it wins'] > 20 && f['you win'] > 10 && r.n.lineWins > 5 && f['still comes'] >= 4 && f.found > 50 && f.missed > 50 && f['could take'] > 10 && f.mate > 5, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' untrue captions, first: ' + r.out.slice(0, 4).join(' | '));
   });
 
   await test('one format by default: the most played among those played in the last 90 days', () => {

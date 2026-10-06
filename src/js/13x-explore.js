@@ -36,8 +36,10 @@ function startExplore(o) {
   a.menuOpen = false;
   /* the frame it came from, to come back to (S14) */
   var from = a.view ? JSON.parse(JSON.stringify(a.view)) : { mode: 's0' };
+  /* a story step comes back landed */
+  delete from.pre;
   if (o.view) a.view = { line: o.view.line, idx: o.view.idx };
-  var v = lineView(a);
+  var v = frameView(a);
   a.xpRes = a.xpRes || {};
   var ask = o.via === 'invite' && o.view && a.lines.best.uci[1] && posKey(v.st) === posKey(a.lines.best.states[0])
     ? { uci: a.lines.best.uci[1], san: a.lines.best.san[1] } : null;

@@ -16,6 +16,9 @@
               region 150 ms after the last slide ends; a newer text beat
               takes the place of one still waiting (the latest wins)
      {wait}   waits that many ms from when it is reached
+     {run}    once no piece is moving, changes the card (run(a)), so the
+              board beat after it paints the next frame: the story crossfades
+              to where a segment starts, then slides its first ply
    Beats paint the card as it is when they run. Any input calls
    flushStage() first: a running slide jumps to its end, waiting board and
    marks beats apply at once, and waiting text moves to 150 ms from now.
@@ -67,7 +70,7 @@ function stageRun() {
   if (!a || a.key !== stageCard) { stageQ = []; return; }
   while (stageQ.length) {
     var b = stageQ[0], now = Date.now(), due = now;
-    if (b === 'board' || b === 'land' || b === 'marks' || b === 'fade') due = motionUntil;
+    if (b === 'board' || b === 'land' || b === 'marks' || b === 'fade' || b.run) due = motionUntil;
     else if (b === 'text') due = Math.max(motionUntil + TEXT_GAP, textNotBefore);
     else if (b.wait != null) { if (b.until == null) b.until = now + b.wait; due = b.until; }
     if (due > now) { stageTimer = setTimeout(stageRun, due - now); return; }
@@ -81,6 +84,7 @@ function stageApply(b, a, instant) {
   else if (b === 'marks') paintMarks(a);
   else if (b === 'fade') fadeOut(a);
   else if (b === 'text') paintText(a);
+  else if (b.run) b.run(a);
 }
 /* a timed beat: run(a) at ms from now, on this card only, if it is still
    the one on screen. A flush leaves it alone */
@@ -121,6 +125,7 @@ function flushStage() {
     /* once the reply slides, the rest waits for it as usual */
     if (motionHold) stageQ.push(b);
     else if (b === 'board' || b === 'land' || b === 'marks') { stageApply(b, a, !(b === 'board' && a.replySlide)); moved = true; }
+    else if (b.run) b.run(a);
     else if (b === 'text') text = true;
   }
   if (motionHold) {

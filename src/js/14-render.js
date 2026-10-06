@@ -431,13 +431,33 @@ function boardOptsFor(a) {
        keeps its last value while Stockfish thinks */
     var ev = ex.lastEv;
     if (xr && xr.lines[0] && !quiet) { ev = myPov(it) ? xr.lines[0].cp : -xr.lines[0].cp; evLive = true; }
-    view = { st: ex.st, last: ex.last, ev: ev != null ? ev : lineView(a).ev };
+    view = { st: ex.st, last: ex.last, ev: ev != null ? ev : frameView(a).ev };
     opts.sel = ex.sel;
     /* one arrow: Stockfish's move, or the row under the pointer */
     var xs = xpShown(ex, xn), hl = xs && !quiet && xs[ex.hot || 0] ? uciToMove(ex.st, xs[ex.hot || 0].pv[0]) : null;
     if (hl) opts.ghost = [hl.from, hl.to];
     if (ex.anim) { opts.anim = ex.anim; slideMs = 220; }
     if (ex.sel >= 0) opts.dots = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel; }).map(function (m) { return m.to; });
+  } else if (a.phase === 'done' && a.view && a.view.mode === 'story') {
+    /* a story step (S12): its ply slides in as a move the app shows (320
+       ms) and what it brings lands with it (storyMarks). A segment's first
+       step keeps its arrow as the trail: the red game move on G1, the green
+       better move on B1; while it crossfades in (pre) the arrow is drawn on
+       the position the segment starts from */
+    view = frameView(a);
+    var S = buildStory(a), sp = S.steps[a.view.i], sn = sp.line.nodes[sp.k];
+    if (sp.k === (sp.seg === 'game' ? 0 : sp.from)) {
+      if (sp.seg === 'game') opts.bad = [sn.move.from, sn.move.to];
+      else opts.arrows = [{ from: sn.move.from, to: sn.move.to, kind: 'better', key: 'better' }];
+    }
+    if (!a.view.pre) {
+      if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = 320; }
+      var sm = storyMarks(a, S, a.view.i);
+      if (Object.keys(sm).length) {
+        if (opts.anim) land = true;
+        else { opts.fx = a.key + ':st' + a.view.i; for (var smk in sm) opts[smk] = (opts[smk] || []).concat(sm[smk]); }
+      }
+    }
   } else if (a.phase === 'done' && a.view && a.view.mode) {
     /* S0 and the answer shown (S6, S7): the card's own board as play left
        it. The move just made slides in (220 ms as you made it; 320 when Play
@@ -446,7 +466,7 @@ function boardOptsFor(a) {
        played. The answer shown is its green arrow until it is played; in a
        forcing line the next one lands with their reply. Once settled, S0's
        marks (s0Marks) */
-    view = lineView(a);
+    view = frameView(a);
     if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animShown ? 320 : 220; }
     var mm = a.markMove, sdue = showDue(a), sl = {}, sfx = null;
     if (mm && sameMove([mm.from, mm.to], view.last)) {
@@ -476,22 +496,9 @@ function boardOptsFor(a) {
       }
     }
   } else if (a.phase === 'done') {
-    view = lineView(a);
-    /* a line stepped forward slides its move; the solving move slides
-       once, on the first answered frame */
-    var lv = a.lastView, L1 = a.lines[a.view.line];
-    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = 220; }
-    else if (lv && lv.line === a.view.line && a.view.idx === lv.idx + 1 && a.view.idx >= 0 && L1 && L1.moves[a.view.idx]) {
-      opts.anim = [L1.moves[a.view.idx].from, L1.moves[a.view.idx].to];
-      slideMs = 320;
-    }
-    /* one arrow at a time, on the start position only: red for the move you
-       played, green for the better one; never both */
-    if (a.view && a.view.idx < 0) {
-      var L0 = a.lines[a.view.line];
-      if (a.view.line === 'refute' || a.view.line === 'game') opts.bad = [a.played.from, a.played.to];
-      else if (L0 && L0.moves.length) opts.good = [L0.moves[0].from, L0.moves[0].to];
-    }
+    /* an answered card always shows one of the frames above; a line view
+       only stands while exploring starts from it */
+    view = frameView(a);
   } else {
     var st = a.st, last = a.phase === 'checking' ? a.ghostMove : a.lastMove;
     if (a.phase === 'checking' && a.ghostMove) st = checkingFrame(a);
@@ -619,6 +626,28 @@ function s0Marks(a, st) {
   if (line) (a.won || []).slice(-2).forEach(function (w) { out.tokens.push({ sq: w.sq, p: w.p, kind: 'won', fx: a.key + ':s0' }); });
   return out;
 }
+/* what lands with a story step (S12, 2.1): a capture's token, red when it
+   took a piece of yours, green when yours took one; on G1 the reply it
+   allows (S.threat), ringed with its dashed arrow; on B1 the better move's
+   badge and tints (the tick; the grey i when the answer was shown, since
+   the tick says you found it), then the guard dots when the guard rule
+   holds, else the game move's ghost with its cross, never both */
+function storyMarks(a, S, i) {
+  var s = S.steps[i], n = s.line.nodes[s.k], out = {}, fx = a.key + ':st' + i;
+  if (n.captured) out.tokens = [{ sq: n.move.to, p: n.captured, kind: colorW(n.captured) === myPov(a.it) ? 'lost' : 'won', fx: fx }];
+  if (s.seg === 'game' && s.k === 0 && S.threat) {
+    out.rings = [{ sq: S.threat.from, kind: 'threat' }];
+    out.arrows = [{ from: S.threat.from, to: S.threat.to, kind: 'threat', key: 'threat' }];
+  }
+  if (s.seg === 'better' && s.k === s.from) {
+    var bk = a.revealed ? 'info' : 'good';
+    out.tints = [{ sq: n.move.from, kind: bk }, { sq: n.move.to, kind: bk }];
+    out.badges = [{ sq: n.move.to, kind: bk, fx: fx }];
+    if (S.guard) out.guards = [{ from: S.guard.from, to: S.guard.to }];
+    else if (s.from === 1 && a.played.to !== n.move.to) out.ghosts = [{ sq: a.played.to, p: a.pre.b[a.played.from], fx: fx }];
+  }
+  return out;
+}
 /* the board beat: the board svg and the marks over it, and the bar beside
    them. A frame that slides a piece sets motionUntil, so nothing else is
    written until the piece lands, and holds back what lands with it (the
@@ -704,8 +733,11 @@ function xfadeHtml(html) {
    stay, stay. Faded buttons take no tap; the text beat writes the new
    words and takes the fade off */
 function fadeOut(a) {
-  var d = displayFor(a), band = el('cband'), bar = el('cbar'), n = 0;
+  var d = displayFor(a), band = el('cband'), bar = el('cbar'), strip = el('cstrip'), n = 0;
   if (band && band.nlHtml != null && band.nlHtml !== bandHtml(a, d)) band.classList.add('stale');
+  /* the strip too when its words change (S0's Details giving way to the
+     story's names); the story's dots and count follow the step quietly */
+  if (strip && strip.nlHtml != null && stripWordsOf(strip.nlHtml) !== stripWordsOf(d.strip)) strip.classList.add('stale');
   if (!bar || bar.nlHtml == null) return;
   for (var i = 0; i < slotSig.length; i++) if (slotSig[i] != null) n++;
   if (n !== d.buttons.length) { bar.classList.add('stale'); return; }
@@ -714,6 +746,7 @@ function fadeOut(a) {
     if (b) b.classList.add('stale');
   });
 }
+function stripWordsOf(h) { return String(h || '').replace(/<i class="st-dot[^"]*"><\/i>|<span class="st-count">[^<]*<\/span>/g, '').replace(/ on"/g, '"'); }
 /* the marks beat: only the marks svg is rewritten, so no piece is touched */
 function paintMarks(a) {
   var bw = el('bwrap'), old = bw && bw.querySelector('.marks');
@@ -796,6 +829,8 @@ function paintText(a) {
   paintStrip(d);
   /* the new words are in: whatever faded out for them (fadeOut) is back */
   if (band.classList) band.classList.remove('stale');
+  var sp = el('cstrip');
+  if (sp && sp.classList) sp.classList.remove('stale');
   if (bar && bar.classList) { bar.classList.remove('stale'); [].forEach.call(bar.querySelectorAll('.stale'), function (b) { b.classList.remove('stale'); }); }
   var box = el('trainbox'), cardEl = box && box.querySelector('.card'), xe = a.phase === 'done' && a.explore;
   if (cardEl) cardEl.classList.toggle('xp-card', !!xe);
@@ -837,13 +872,13 @@ function paintText(a) {
    S20): the right-hand button, the one Enter presses (Play it while the
    answer is shown, Continue once settled), and while it is switched off
    (Play it, while their reply plays) that slot itself, so focus never falls
-   to the page or to a slot whose meaning changes under it; See why's lines
-   keep it on › until the last move, then on Continue */
+   to the page or to a slot whose meaning changes under it; the story keeps
+   it on Next move › until the last step, then on Continue */
 function doneFocus(a) {
   var bar = el('cbar');
   if (!bar) return null;
-  var fwd = !a.view.mode && barButton(1);
-  if (fwd && fwd.getAttribute('data-act') === 'lineFwd' && !/nav-off/.test(fwd.getAttribute('class') || '')) return fwd;
+  var fwd = a.view.mode === 'story' && barButton(1);
+  if (fwd && fwd.getAttribute('data-act') === 'storyFwd') return fwd;
   return barButton(rightSlot()) || bar.querySelector('[data-slot="' + rightSlot() + '"]');
 }
 /* the bar's button in slot i, if it holds an action now (an off slot has none) */
@@ -889,6 +924,9 @@ function paintLive(d) {
    result after) with the relearn chip at its right, then row 2; or one
    caption while exploring */
 function bandHtml(a, d) {
+  /* a story step keeps the card's verdict disc beside its caption; the
+     explorer's sentence stands alone (the live region says it) */
+  if (d.cap && d.disc) return '<div class="card-task k-' + d.kind + ' cap">' + discHtml(a, d.disc) + '<p class="bd-cap">' + esc(d.cap) + '</p></div>';
   if (d.cap) return '<div class="card-task k-' + d.kind + ' cap" aria-hidden="true"><p class="bd-cap">' + esc(d.cap) + '</p></div>';
   return '<div class="card-task k-' + d.kind + (d.sweep ? ' sweep' : '') + '">' + discHtml(a, d.disc)
     + '<div class="bd-rows"><div class="bd-top"><h2 class="bd-r1" id="' + (a.phase === 'done' ? 'result-h' : 'task-h') + '" tabindex="-1">' + esc(d.row1) + '</h2>'
@@ -910,6 +948,11 @@ function discHtml(a, kind) {
    exploration's own line */
 function liveWords(a, b) {
   if (a.phase === 'done' && a.explore) return xpLive(a, a.explore, a.explore.at);
+  /* a story step says where it is first (S20): "Step 2 of 3, your game." */
+  if (a.phase === 'done' && a.view && a.view.mode === 'story') {
+    var S = buildStory(a), i = a.view.i;
+    return 'Step ' + (i + 1) + ' of ' + S.steps.length + ', ' + (i < S.g ? 'your game.' : a.alt ? 'your move.' : 'the better move.') + ' ' + b.cap;
+  }
   return [LIVE_PREFIX[b.disc] || '', b.row1 || '', b.row2 || ''].filter(Boolean).join(' ');
 }
 /* the action bar as slots, left to right: {act, k, label, cls, off, aria}.
@@ -924,22 +967,27 @@ function barSlots(a, ss) {
   if (a.phase === 'done') {
     var last = ss.idx + 1 >= ss.keys.length && !(ss.relearn && ss.relearn.length);
     var cont = { act: 'next', label: last ? 'Finish' : 'Continue', cls: 'btn-big' };
-    /* the answer shown (S7): Continue, and Play it in gold; switched off
-       while their reply plays, and once played until the card settles */
-    if (!a.explore && a.view.mode && (a.view.mode === 'show' || (a.revealed && a.settle < 2)))
-      return [{ act: 'next', label: cont.label, cls: 'btn-line' }, { act: 'playIt', label: 'Play it ›', cls: 'btn-big', off: a.showWait || !showDue(a) }];
-    /* settled (S0): the story, and Continue in gold */
-    if (!a.explore && a.view.mode) return [{ act: 'seeWhy', label: 'See why ›', cls: 'btn-line' }, cont];
-    var L = a.lines[a.view.line] || a.lines.best, backOff, fwdOff, backLab = 'Back one move', fwdLab = 'Forward one move';
+    /* exploring: back, forward along its trail (exploreStep), Continue */
     if (a.explore) {
       var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
-      backOff = false;
-      if (xe.at === 0) backLab = 'Back to the lesson';
-      fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
-      if (xe.at >= xe.nodes.length - 1) fwdLab = 'Play Stockfish\'s pick';
-    } else { backOff = false; fwdOff = a.view.idx >= L.states.length - 1; if (a.view.idx < 0) backLab = 'Back to the result'; }
-    return [{ act: 'lineBack', label: '‹', cls: 'nav-btn' + (backOff ? ' nav-off' : ''), aria: backLab },
-            { act: 'lineFwd', label: '›', cls: 'nav-btn' + (fwdOff ? ' nav-off' : ''), aria: fwdLab }, cont];
+      var fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
+      return [{ act: 'xpBack', label: '‹', cls: 'nav-btn', aria: xe.at === 0 ? 'Back to the lesson' : 'Back one move' },
+              { act: 'xpFwd', label: '›', cls: 'nav-btn' + (fwdOff ? ' nav-off' : ''), aria: xe.at >= xe.nodes.length - 1 ? 'Play Stockfish\'s pick' : 'Forward one move' }, cont];
+    }
+    /* the story (S12): ‹, Next move › in gold until the last step, where it
+       is switched off and Continue turns gold */
+    if (a.view.mode === 'story') {
+      var sn = buildStory(a).steps.length, si = a.view.i, end = si >= sn - 1;
+      return [{ act: 'storyBack', label: '‹', cls: 'nav-btn', aria: 'Previous move' },
+              { act: 'storyFwd', label: 'Next move ›', cls: 'btn-big', off: end, aria: end ? null : 'Next move, step ' + (si + 2) + ' of ' + sn },
+              { act: 'next', label: cont.label, cls: end ? 'btn-big' : 'btn-line' }];
+    }
+    /* the answer shown (S7): Continue, and Play it in gold; switched off
+       while their reply plays, and once played until the card settles */
+    if (a.view.mode === 'show' || (a.revealed && a.settle < 2))
+      return [{ act: 'next', label: cont.label, cls: 'btn-line' }, { act: 'playIt', label: 'Play it ›', cls: 'btn-big', off: a.showWait || !showDue(a) }];
+    /* settled (S0): the story, and Continue in gold */
+    return [{ act: 'seeWhy', label: 'See why ›', cls: 'btn-line' }, cont];
   }
   if (a.phase === 'tried') return triedSlots(a);
   /* a move being checked keeps the guess bar until the band says so (K1,
@@ -1077,16 +1125,26 @@ function stripHtml(a, ss) {
     return '';
   }
   if (a.explore) return xpHtml(a);
+  if (a.view.mode === 'story') return storyStripHtml(a);
   /* settled (S0): one link to everything else (S13) */
-  if (a.view.mode) return a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="btn-quiet details-link" data-act="details">Details</a></p>' : '';
-  /* See why, until the story (slice 9): the two lines, by name */
-  var cur = a.view.line, better = a.alt && a.lines.yours ? 'yours' : 'best';
-  var tline = function (key, cls, text) {
-    var on = cur === key;
-    return '<button type="button" class="tline ' + cls + (on ? ' on' : '') + '" data-act="lineTab" data-k="' + key + '" aria-pressed="' + on + '">'
-      + '<span class="tl-dot" aria-hidden="true"></span><span class="tl-text">' + text + '</span></button>';
+  return a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="btn-quiet details-link" data-act="details">Details</a></p>' : '';
+}
+/* the story's strip (S12): "Game ●●● Better ●", a dot per step, the one on
+   screen larger with a ring; each name opens its segment's first step. Over
+   9 dots it folds to "Game 2/5 · Better". A tap on a piece puts N1 here for
+   a while (S2), in place of the dots */
+function storyStripHtml(a) {
+  if (a.note && a.note.key === cardStateKey(a)) return '<p class="story-note">' + esc(CARD_COPY.N1(a)) + '</p>';
+  var S = buildStory(a), i = a.view.i, n = S.steps.length, inGame = i < S.g;
+  var seg = function (key, label, at, len, on) {
+    var dots = '';
+    if (n > 9) dots = on ? '<span class="st-count">' + (i - at + 1) + '/' + len + '</span>' : '';
+    else for (var k = 0; k < len; k++) dots += '<i class="st-dot' + (at + k === i ? ' on' : '') + '"></i>';
+    return '<button type="button" class="st-seg st-' + key + (on ? ' on' : '') + '" data-act="storyJump" data-k="' + key + '" aria-label="' + (key === 'game' ? 'Your game' : 'The better move') + ', from its first move">'
+      + '<span class="st-name">' + label + '</span>' + (dots ? '<span class="st-dots" aria-hidden="true">' + dots + '</span>' : '') + '</button>';
   };
-  return '<div class="result">' + tline('refute', 'tl-bad', 'Game') + tline(better, better === 'yours' ? 'tl-alt' : 'tl-good', 'Better') + '</div>';
+  return '<div class="story-strip' + (n > 9 ? ' folded' : '') + '">' + seg('game', 'Game', 0, S.g, inGame)
+    + (n > 9 ? '<span class="st-sep" aria-hidden="true">·</span>' : '') + seg('better', 'Better', S.g, n - S.g, !inGame) + '</div>';
 }
 /* the Details sheet (S13): what the answered card no longer says on its
    face. The game's context, the decisive line, both long sentences (and an

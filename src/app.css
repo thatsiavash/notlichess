@@ -438,6 +438,11 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .card-task.k-info{background:#211f1b;border-left-color:#6b665d}
 .card-task.k-hint .bd-r1,.card-task.k-hint .bd-r2{color:#d6a852}
 .card-task.k-explore{border-left-color:var(--accent)}
+/* the story (S12): one caption of two lines beside the verdict disc, a red
+   border on your game's steps, green on the better ones */
+.card-task.k-sgame{border-left-color:#d8826f}
+.card-task.k-sbetter{border-left-color:#8fb573}
+.card-task.k-sgame .bd-cap,.card-task.k-sbetter .bd-cap{flex:1 1 auto;min-width:0;font-weight:500;font-size:16px;line-height:20px;font-variant-numeric:lining-nums}
 @media (max-width:374px){.bd-r2{font-size:14px}}
 .strip{display:flex;flex-direction:column;min-width:0}
 
@@ -469,8 +474,26 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .tag-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:2px 0 4px}
 .when{font-size:13px;color:var(--text-3)}
 .explore-line{font-size:13.5px;color:var(--text-2);margin:8px 0 0}
-.done-acts .nav-btn{flex:0 0 48px;height:48px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;padding:0}
+.done-acts .nav-btn{flex:0 0 56px;height:48px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;padding:0}
 .done-acts .btn-big{flex:1 1 auto;justify-content:center;min-height:48px}
+/* the story's bar: [56 px] [1fr] [1fr], the gold one the suggested step */
+.done-acts .btn-line,.done-acts .btn-big{flex:1 1 0;min-width:0;justify-content:center;text-align:center;min-height:48px;display:inline-flex;align-items:center;white-space:nowrap}
+/* the story's strip: each segment's name and its dots, the step on screen
+   larger with a ring; folded to a count over 9 steps */
+.story-strip{display:flex;align-items:center;gap:14px;min-height:44px;flex-wrap:wrap}
+.st-seg{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 4px;margin:0 -4px;background:none;border:0;font:inherit;font-size:14px;color:var(--text-2);cursor:pointer;border-radius:var(--r1)}
+.st-seg.on{color:var(--text-1)}
+.st-seg:focus-visible{outline:2px solid var(--text-1);outline-offset:2px}
+.st-dots{display:inline-flex;align-items:center;gap:6px}
+.st-dot{display:block;width:7px;height:7px;border-radius:50%;background:var(--line-strong)}
+.st-game .st-dot{background:rgba(216,130,111,.55)}
+.st-better .st-dot{background:rgba(143,181,115,.55)}
+.st-game .st-dot.on{background:#d8826f}
+.st-better .st-dot.on{background:#8fb573}
+.st-dot.on{transform:scale(1.4);box-shadow:0 0 0 1.5px var(--bg),0 0 0 3px var(--text-2)}
+.st-count{font-variant-numeric:lining-nums tabular-nums;color:var(--text-2)}
+.st-sep{color:var(--text-3)}
+.story-note{margin:0;min-height:44px;display:flex;align-items:center;font-size:14px;color:var(--text-2)}
 @media (max-width:860px){
   .result{padding:12px 14px}
   .tline{font-size:14px;line-height:1.4}
@@ -516,6 +539,7 @@ body.in-session{padding-bottom:0}
   .bd-r2{margin-top:4px;font-size:17px;line-height:25px;white-space:normal}
   .bd-chip{margin-top:6px}
   .bd-cap{font-size:19px;line-height:27px;-webkit-line-clamp:3}
+  .card-task.k-sgame .bd-cap,.card-task.k-sbetter .bd-cap{font-size:19px;line-height:27px}
 }
 @media (max-width:860px){
   .card{gap:0;padding-top:0}
@@ -779,7 +803,7 @@ a.lg-row{color:inherit}
 /* text out (2.2): words about to change fade out in 100 ms before the board
    moves, and take no tap meanwhile; the next words take the class off. The
    band keeps its colour, border and disc: only its words go */
-.band-slot.stale .bd-rows,.band-slot.stale .bd-cap,#cbar.stale,#cbar .stale{opacity:0;transition:opacity .1s ease-out;pointer-events:none}
+.band-slot.stale .bd-rows,.band-slot.stale .bd-cap,#cbar.stale,#cbar .stale,#cstrip.stale{opacity:0;transition:opacity .1s ease-out;pointer-events:none}
 /* a phone's tap highlight is drawn over a button whatever its opacity: on
    a button fading out it showed as a grey block */
 #cbar a{-webkit-tap-highlight-color:transparent}

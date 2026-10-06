@@ -502,11 +502,12 @@ document.addEventListener('click', function (e) {
     case 'promo': promoChoose(k); break;
     case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;
-    /* a teaching line opens at its start, with its arrow; › steps it */
-    case 'lineTab': if (a && a.lines && a.lines[k]) { if (a.explore) exploreExit('silent'); a.view = { line: k, idx: -1 }; a.jump = true; renderCard(); } break;
-    case 'lineTo': if (a && a.lines) { if (a.explore) exploreExit('silent'); a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
-    case 'lineBack': stepView(-1); break;
-    case 'lineFwd': stepView(1); break;
+    /* the story (S12): one ply per tap; its strip's names open a segment */
+    case 'storyBack': storyStep(-1); break;
+    case 'storyFwd': storyStep(1); break;
+    case 'storyJump': storyJump(k); break;
+    case 'xpBack': exploreStep(-1); break;
+    case 'xpFwd': exploreStep(1); break;
     case 'explore': if (a) { closeSheet(); startExplore({ view: a.invite && a.invite.view, via: 'invite' }); } break;
     case 'exploreOff': exploreExit('link'); break;
     case 'xpGo': if (a && a.explore) exploreGo(parseInt(k, 10)); break;
@@ -600,8 +601,8 @@ document.addEventListener('keydown', function (e) {
     var ae = ui.session && ui.session.active;
     if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
-    /* See why: Esc goes back to the settled result */
-    if (ae && ae.phase === 'done' && ae.view && !ae.view.mode) { e.preventDefault(); backToSettled(); return; }
+    /* the story: Esc goes back to the settled result */
+    if (ae && ae.phase === 'done' && ae.view && ae.view.mode === 'story') { e.preventDefault(); backToSettled(); return; }
     /* a move still being checked: Esc takes it back (S3) */
     if (ae && ae.phase === 'checking') { e.preventDefault(); takeBack(); return; }
   }
@@ -612,10 +613,15 @@ document.addEventListener('keydown', function (e) {
   if (/^(ArrowLeft|ArrowRight|Enter| |\?)$/.test(e.key) && flushStage()) { e.preventDefault(); return; }
   var onAct = !!(e.target && e.target.closest && e.target.closest('[data-act]'));
   if (a.phase === 'done') {
-    if (e.key === 'ArrowLeft') { e.preventDefault(); stepView(-1); }
-    else if (e.key === 'ArrowRight') { e.preventDefault(); stepView(1); }
-    /* Enter is the right-hand button; Space does nothing here (S12) */
+    /* ← → step the story (→ from S0 opens it), or the exploration's trail */
+    var step = a.explore ? exploreStep : storyStep, inStory = !a.explore && a.view && a.view.mode === 'story';
+    if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+    /* Enter is the right-hand button. Space steps the story forward (from
+       the page or the bar, never in place of a strip name); elsewhere on an
+       answered card it does nothing (S12) */
     else if (e.key === 'Enter' && !onAct) { e.preventDefault(); pressRight(); }
+    else if (e.key === ' ' && inStory && (!onAct || e.target.closest('#cbar'))) { e.preventDefault(); storyStep(1); }
     else if (e.key === ' ' && !onAct) e.preventDefault();
   } else if (a.phase === 'guess' || a.phase === 'tried') {
     /* never a letter: letters start moves in the typed-move field. ? asks
@@ -671,7 +677,8 @@ document.addEventListener('keydown', function (e) {
   if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-act][tabindex]:not(input)')) {
     e.preventDefault();
     /* Space presses nothing on an answered card's bar (S12): it is never
-       Continue or See why, only Enter is the right-hand button */
+       Continue or See why, only Enter is the right-hand button (in the
+       story the page's own handler takes Space as a step forward) */
     var sa = ui.session && ui.session.active;
     if (e.key === ' ' && sa && sa.phase === 'done' && !sa.explore && e.target.closest && e.target.closest('#cbar')) return;
     /* once per press: focus keeps its slot, so a repeat would press the
@@ -745,7 +752,7 @@ document.addEventListener('pointerdown', function (e) {
     took = true;
   }
   /* a board that takes no moves (the answered card): a sideways swipe
-     will step the story (FINAL-SPEC 2.2), so its start is kept when it is
+     steps the story (FINAL-SPEC 2.2), so its start is kept when it is
      clear of both screen edges (iOS Back ends the session). A press on a
      piece there is answered by its click (N1) */
   if (e.button === 0 && !bs.live && !a.pendingPromo) {
@@ -823,10 +830,17 @@ function pointerFinish(e, cancelled) {
   }
 }
 document.addEventListener('pointerup', function (e) { pointerFinish(e, false); });
-/* a swipe on the answered board: forward (1) or back (-1) through the
-   stepped story. The story is a later slice (FINAL-SPEC 6, slice 9); until
-   then a swipe changes nothing and the page scrolls as before */
-function storySwipe(d) { return false; }
+/* a swipe on the answered board (S0, the story): forward (1, leftwards)
+   or back (-1) through the story, as › and ‹ step it; from S0 forward opens
+   it. Input first (2.2); the click a mouse swipe may send is not a tap */
+function storySwipe(d) {
+  var a = ui.session && ui.session.active;
+  if (!a || a.phase !== 'done' || a.explore || a.pendingPromo || !a.view || (a.view.mode !== 's0' && a.view.mode !== 'story')) return false;
+  pointerState.suppressClick = true;
+  if (flushStage()) return true;
+  storyStep(d);
+  return true;
+}
 /* desktop: pointing at one of Stockfish's rows moves the one arrow to it */
 function xpHover(k, byFocus) {
   var a = ui.session && ui.session.active, ex = a && a.explore;
@@ -896,6 +910,7 @@ window.__nlTest = {
     return { idx: ss.idx, n: ss.keys.length, key: a.key, phase: a.phase, best: a.bestUci, played: a.playedUci,
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
              hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null, reason: a.reason || 0, settle: a.settle || 0, showWait: !!a.showWait,
+             story: a.phase === 'done' && a.view && a.view.mode === 'story' ? (function (S) { return { i: a.view.i, n: S.steps.length, g: S.g, cap: S.steps[a.view.i].cap, pre: !!a.view.pre }; })(buildStory(a)) : null,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
              sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null,
              verdict: a.verdict ? { kind: a.verdict.kind, row1: a.verdict.row1, row2: a.verdict.row2 } : null };

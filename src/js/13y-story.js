@@ -277,11 +277,171 @@ function r4Of(a) {
   } else cands = [past];
   return { cands: cands, fall: g + ' was a mistake.', never: never };
 }
+/* ── The story (S12): See why, one ply per tap ─────────────────────────────
+   Two segments. Your game: the game move (G1), then the refutation ply by
+   ply to where the loss is counted (cls.lossAt), or to the mate on the
+   stored refutation when it mates. Better: the better move (B1) and the
+   plies after it to where its material settles (cls.bSettle), the whole
+   line to the mate when it mates, or a move that works too stepped from
+   where it left the card's line to where its own line settles. Each step is
+   {seg, line, k, from}: node k of a buildLine line (node 0 of the game line
+   is the game move; node 0 of the better line is a null move, so it starts
+   at from = 1, or later for an alternative inside a forcing line), with its
+   caption (cap). Built once per card; S.g is the number of game steps,
+   S.threat the reply G1 rings and arrows, S.guard the guard dots of B1 */
+function buildStory(a) {
+  if (a.story) return a.story;
+  var c = a.cls, it = a.it, pov = myPov(it), steps = [];
+  var gl = c.gameLine, gEnd = c.lossAt || 0;
+  if (c.mateAgainst) {
+    var ref = buildLine(a.pre, a.playedUci, unpackUci(it.b.ru).slice(0, 20), !pov);
+    if (ref) { gl = ref; gEnd = mateAt(ref); }
+  }
+  gEnd = Math.max(0, Math.min(gEnd, gl.nodes.length - 1));
+  for (var k = 0; k <= gEnd; k++) steps.push({ seg: 'game', line: gl, k: k, from: 0 });
+  var bl = c.bestLine || buildLine(a.pre, '0000', a.lines.best.uci, pov), from = 1, bEnd = Math.max(1, c.bSettle || 0);
+  if (a.alt && a.yours) {
+    var alt = buildLine(a.pre, '0000', a.yours.uci, pov), at = (a.yours.at || 0) + 1;
+    if (alt && alt.nodes[at]) { bl = alt; from = at; bEnd = Math.max(at, settleIndex(alt)); }
+  } else if (c.mateFor) {
+    var ml = buildLine(a.pre, '0000', a.lines.best.uci, pov);
+    if (ml && ml.nodes.length > 1) { bl = ml; bEnd = mateAt(ml); }
+  }
+  bEnd = Math.max(from, Math.min(bEnd, bl.nodes.length - 1));
+  for (k = from; k <= bEnd; k++) steps.push({ seg: 'better', line: bl, k: k, from: from });
+  var S = a.story = { steps: steps, g: gEnd + 1, threat: storyThreat(c, gl), guard: null };
+  /* the guard dots and words of B1: the better move's own square guarded
+     once it is played, the game move's not (the guard rule, read as R4 reads
+     it), by a piece of yours that guards it directly */
+  var bn = bl.nodes[from];
+  if (!a.alt && from === 1 && buildCompare(a).guard) {
+    var mine = colorW(bn.after.b[bn.move.to]), by = attackersOf(bn.after.b, bn.move.to, mine).sort(function (x, y) { return MOTIF_VAL[pType(bn.after.b[x])] - MOTIF_VAL[pType(bn.after.b[y])]; })[0];
+    if (by != null) S.guard = { from: by, to: bn.move.to, piece: pType(bn.after.b[by]) };
+  }
+  steps.forEach(function (s, i) { s.cap = storyCaption(a, S, i); });
+  return S;
+}
+/* the first checkmate along a line (from node 1), else its last node */
+function mateAt(line) {
+  for (var k = 1; k < line.nodes.length; k++) if (isMate(line.nodes[k].after)) return k;
+  return line.nodes.length - 1;
+}
+/* the reply G1 marks (S12): the opponent's next move, when it captures or
+   checks, or is the move of a fork, pin or discovered attack the classifier
+   found right there (ply 1). A tactic further down the line is not on G1's
+   board yet, so it is never drawn or named there */
+function storyThreat(c, gl) {
+  var n1 = gl.nodes[1];
+  if (!n1 || !n1.move) return null;
+  var al = c.allowed || {}, at1 = function (m) { return !!m && m.ply === 1; };
+  var motif = at1(al.fork) ? 'fork' : at1(al.pin) && al.pin.piece !== 'P' ? 'pin' : at1(al.discoveredAttack) ? 'discovered' : null;
+  var th = threatOf(gl, 1);
+  if (!th && !motif) return null;
+  return { from: n1.move.from, to: n1.move.to, motif: motif, th: th, san: sanOf(n1.before, n1.move) };
+}
+/* a ply in plain words (S-ply): a capture names what it took, and whose; a
+   check or a mate says so (without its sign) */
+function plySay(a, n) {
+  var san = sanOf(n.before, n.move), bare = san.replace(/[+#]$/, ''), byMe = n.byWhite === myPov(a.it);
+  if (isMate(n.after)) return bare + '. Checkmate.';
+  if (n.captured) return san + ' takes ' + (byMe ? 'their ' : 'your ') + PIECE_WORD[pType(n.captured)] + '.';
+  if (checkersOf(n.after).length) return bare + ', check.';
+  return san + '.';
+}
+/* what changed hands from node `from` to node k, as the caption names it:
+   the line's own captures, else (only when the count really moved) the
+   words that claim no piece; one word for the ladder's second step */
+function storyGain(line, k, from, net) {
+  if (net < 1) return null;
+  var x = plainCapture(line, k, from);
+  return { w: x || oneWord(null, net), wn: oneWord(x, net) };
+}
+/* a capture that already says it: the step took that one piece */
+function namesIt(n, w) {
+  return !!(n.captured && w && (w === 'the ' + PIECE_WORD[pType(n.captured)] || w === 'a ' + PIECE_WORD[pType(n.captured)]));
+}
+/* the caption of step i (S-G1, S-opp, S-ply, S-B1, S-same), fitted to the
+   caption's 60 characters and 8 words. Each says what the ply shown does,
+   true on its board; the last step of a segment adds what it lost or won */
+function storyCaption(a, S, i) {
+  var c = a.cls, s = S.steps[i], n = s.line.nodes[s.k], sd = sidesOf(a), pov = myPov(a.it), cands = [], fall = '';
+  var lastG = s.seg === 'game' && i === S.g - 1, lastB = s.seg === 'better' && i === S.steps.length - 1;
+  var san = n.move ? sanOf(n.before, n.move) : '';
+  if (s.seg === 'game' && s.k === 0) {
+    var g = gameSan(a), t = S.threat, n1 = s.line.nodes[1];
+    fall = g + ', your game move.';
+    if (c.stalemate) cands.push(g + '. ' + sd.opp + ' has no move: a draw.');
+    else if (c.mateAgainst) cands.push(g + '. Now ' + sd.opp + ' can checkmate.');
+    else if (t) {
+      var th = t.th;
+      if (th && th.captured) {
+        var cap = PIECE_WORD[th.captured];
+        if (!isDefended(n1.before.b, th.to)) cands.push(g + '. Nothing guards the ' + cap + ' on ' + sqName(th.to) + '.');
+        else if (MOTIF_VAL[th.piece] < MOTIF_VAL[th.captured]) cands.push(g + '. Their ' + PIECE_WORD[th.piece] + ' can take your ' + cap + '.');
+      }
+      if (!cands.length && t.motif === 'fork') cands.push(g + '. Now ' + t.san.replace(/[+#]$/, '') + ' hits two pieces.');
+      if (!cands.length && th && th.check) cands.push(g + '. Now ' + t.san.replace(/[+#]$/, '') + ' is check.');
+      /* a pin only when it already holds on G1's board */
+      if (!cands.length && t.motif === 'pin' && pinRay(n1.before.b, c.allowed.pin.sq)) cands.push(g + '. Your ' + PIECE_WORD[c.allowed.pin.piece] + ' can\'t move safely.');
+      if (!cands.length && t.motif === 'discovered') cands.push(g + '. Moving one piece opens a line.');
+    }
+    return fitRow(cands, 'caption', fall);
+  }
+  fall = san + '.';
+  var say = plySay(a, n);
+  if (s.seg === 'game') {
+    /* their first reply: whether they found it in the game (S-opp) */
+    var found = s.k === 1 && buildCompare(a).found;
+    var heads = [say];
+    if (s.k === 1 && n.captured && !isMate(n.after)) {
+      var pw = PIECE_WORD[pType(n.captured)];
+      heads = [found ? san + ' takes your ' + pw + ', as in your game.' : san + ' could take your ' + pw + '. They missed it.', say];
+    } else if (s.k === 1) heads = [say + (found ? ' As in your game.' : ' They missed it.'), say];
+    var loss = lastG && !c.mateAgainst && !isMate(n.after) ? storyGain(s.line, s.k, 0, c.lossG) : null;
+    if (loss && !namesIt(n, loss.w)) {
+      /* the net loss before the step's longer words: last, the move alone
+         (its token shows what it took) */
+      heads.concat([san + '.']).forEach(function (h) { cands.push(h + ' You lose ' + loss.w + '.'); });
+      heads.concat([san + '.']).forEach(function (h) { if (loss.wn !== loss.w) cands.push(h + ' You lose ' + loss.wn + '.'); });
+    }
+    return fitRow(cands.concat(heads), 'caption', fall);
+  }
+  var cmp = buildCompare(a), gain = matDiff(n.after.b, pov) - matDiff(s.line.nodes[s.from].before.b, pov);
+  if (s.k === s.from) {
+    var bs = san;
+    fall = 'Better: ' + bs + '.';
+    if (a.alt) cands.push('Your ' + bs + ' works too.');
+    else if (c.mateFor) cands.push(fall + ' It leads to checkmate.');
+    else if (S.guard) cands.push(fall + ' The ' + PIECE_WORD[S.guard.piece] + ' on ' + sqName(S.guard.from) + ' guards it.');
+    else if (cmp.w2) { cands.push(fall + ' It wins ' + cmp.w2 + '.'); if (cmp.w2n !== cmp.w2) cands.push(fall + ' It wins ' + cmp.w2n + '.'); }
+    return fitRow(cands, 'caption', fall);
+  }
+  /* the same blow as in the game, a move later (S-same, 3.7) */
+  var g1 = c.gameLine.nodes[1];
+  if (!a.alt && !c.mateFor && s.k === 2 && c.bestLine && s.line === c.bestLine && g1 && sameMove([n.move.from, n.move.to], [g1.move.from, g1.move.to])) {
+    fall = san + ' still comes.';
+    if (c.matBest >= 1 && cmp.w2) { cands.push(san + ' still comes, but you win ' + cmp.w2 + '.'); if (cmp.w2n !== cmp.w2) cands.push(san + ' still comes, but you win ' + cmp.w2n + '.'); }
+    else if (c.matBest === 0) cands.push(san + ' still comes, but you lose nothing.');
+    else if (c.matBest < 0 && -c.matBest < c.lossG) cands.push(san + ' still comes. You lose less.');
+    return fitRow(cands, 'caption', fall);
+  }
+  var won = lastB && !isMate(n.after) ? storyGain(s.line, s.k, s.from, gain) : null;
+  if (won && !namesIt(n, won.w)) [say, san + '.'].forEach(function (h) { cands.push(h + ' You win ' + won.w + '.'); if (won.wn !== won.w) cands.push(h + ' You win ' + won.wn + '.'); });
+  return fitRow(cands.concat([say]), 'caption', fall);
+}
+/* the story's strip (S12): "Game ●●● Better ●", the step on screen larger;
+   over 9 dots, "Game 2/5 · Better". Its words count in the budget */
+function storyStripWords(a) {
+  var S = buildStory(a);
+  return S.steps.length > 9 ? 3 : 2;
+}
 /* the words the strip shows (2.0): the Details link once settled, the
    story's two names; nothing before an answer (the typed-move field is off
-   screen until it has the keyboard) */
+   screen until it has the keyboard). A word for a tap (N1) takes the
+   story's strip for a while */
 function stripWords(a) {
   if (a.phase !== 'done' || a.explore || !a.view) return 0;
+  if (a.view.mode === 'story') return a.note && a.note.key === cardStateKey(a) ? wordsIn(CARD_COPY.N1(a)) : storyStripWords(a);
   if (a.view.mode) return a.view.mode === 's0' && a.settle >= 2 ? 1 : 0;
   return 2;
 }
@@ -299,11 +459,18 @@ function rowRoom(a, b) {
    phase is still a change), a try seen, a hint, a step */
 function cardStateKey(a) {
   var t = a.tried;
-  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, a.view ? (a.view.mode || a.view.line + ':' + a.view.idx) : '', a.explore ? 'x' : ''].join('|');
+  var v = a.view;
+  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, v ? (v.mode === 'story' ? 'story:' + v.i : v.mode || v.line + ':' + v.idx) : '', a.explore ? 'x' : ''].join('|');
 }
 function bandOf(a) {
   var t = a.tried, v = a.verdict;
   if (a.phase === 'done' && a.explore) return { kind: 'explore', cap: sayAt(a, a.explore, a.explore.at) };
+  /* the story: one caption for the ply on the board, the card's verdict
+     disc kept, a red border on your game's steps, green on the better ones */
+  if (a.phase === 'done' && a.view && a.view.mode === 'story') {
+    var sp = buildStory(a).steps[a.view.i];
+    return { disc: a.revealed ? 'info' : 'good', kind: sp.seg === 'game' ? 'sgame' : 'sbetter', cap: sp.cap };
+  }
   if (a.phase === 'done') {
     /* row 2: R4 once the result has settled (S0 at V+850, and the story
        that follows it); before that the answer shown says how to play it

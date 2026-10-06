@@ -165,7 +165,7 @@ const DOM = `(function () {
   var log = window.__writes = [], els = window.__els = {};
   var kind = { bwrap: 'board', ebar: 'board', 'ebar-fill': 'board', marks: 'marks', trainbox: 'frame' };
   var FLAG = { tried: /class="tried"/, xfade: /class="xfade"/, ring: /class="ring-threat"/, arrow: /class="threat-arrow"/, token: /token-lost/, slide: /anim-piece/,
-    ghost: /:s0"/, tick: /badge-good/, info: /badge-info/, green: /good-arrow/, won: /token-won/ };
+    ghost: /:s0"/, tick: /badge-good/, info: /badge-info/, green: /good-arrow/, won: /token-won/, red: /bad-arrow/, guard: /guard-line/, faded: /ghost-piece/ };
   var kept = function (id, x) {
     if (id === 'cband' || id === 'cbar') return x;
     if (id === 'bwrap' || id === 'marks') return Object.keys(FLAG).filter(function (k) { return FLAG[k].test(x); }).join(' ');
@@ -525,7 +525,10 @@ const BAR = `(function () {
       gradeMove(other); same('checking a try', a);
       a = openCard(it); reveal();
       same('answered', a);
-      a.lastView = { line: 'best', idx: -1 }; a.view = { line: 'best', idx: 0 }; same('a line stepped forward', a);
+      a.settle = 2; seeWhy(); same('the story, G1 crossfading in', a);
+      delete a.view.pre; a.animMove = boardOptsFor(a).last; same('the story, G1 sliding', a);
+      a.animMove = null; same('the story, G1 landed', a);
+      a.view = { mode: 'story', i: buildStory(a).g }; same('the story, B1', a);
       startExplore({}); same('exploring', a);
       explorePlay(legalMoves(a.explore.st)[0], false); same('exploring, a move sliding', a);
       /* the card's own position, which the spoiler index knows: Stockfish keeps quiet there, and reading that writes nothing */
@@ -565,7 +568,8 @@ const BAR = `(function () {
       gradeMove(uciToMove(b.st, b.playedUci)); wait.push(['tried', boardOptsFor(b)]);
       seeIt(); wait.push(['tried, See it', boardOptsFor(b)]);
       reveal(); wait.push(['answered', boardOptsFor(b)]);
-      b.lastView = { line: 'best', idx: -1 }; b.view = { line: 'best', idx: 0 }; wait.push(['answered, a line stepped', boardOptsFor(b)]);
+      b.settle = 2; seeWhy(); wait.push(['answered, the story', boardOptsFor(b)]);
+      b.view = { mode: 'story', i: buildStory(b).steps.length - 1 }; wait.push(['answered, the story, its last step', boardOptsFor(b)]);
       if (b.phase !== 'done') out.push('the card was not answered');
       wait.forEach(function (w) { if (w[1].pending !== true || w[1].evLive) out.push(w[0] + ': the bar does not wait'); });
       return JSON.stringify(out); })()`));
@@ -770,8 +774,13 @@ const BAR = `(function () {
         if (A.ev('motionUntil - Date.now()') > 0) slides++;
         run(1000);
         ok(/^(Found it|You got there)/.test(band()), at + ': the answered band reads ' + band());
-        /* a line stepped forward slides 320 ms */
-        A.ev('(stepView(1), 1)');
+        /* the story: G1 crossfades in and slides 320 ms, then a step forward, then one back (a crossfade) */
+        A.ev('(storyStep(1), 1)');
+        if (A.ev('motionUntil - Date.now()') > 0) slides++;
+        run(1000);
+        A.ev('(storyStep(1), 1)');
+        run(1000);
+        A.ev('(storyStep(-1), 1)');
         run(1000);
       }
     }
@@ -1660,7 +1669,7 @@ const BAR = `(function () {
         A.ev('(function () { var a = ui.session.active; tryAgain(); reveal(); return 1; })()');
         run(1000);
         s = S();
-        const any = A.ev('(function (a) { var st = lineView(a).st; for (var q = 0; q < 64; q++) if (st.b[q]) return q; })(ui.session.active)');
+        const any = A.ev('(function (a) { var st = frameView(a).st; for (var q = 0; q < 64; q++) if (st.b[q]) return q; })(ui.session.active)');
         A.ev(`(sessionClick(${any}), 1)`);
         run(200);
         const s2 = S();
@@ -1720,7 +1729,7 @@ const BAR = `(function () {
       A.drag(c.bf, c.bt, mouse);
       eq(S().phase, 'done', at + ': the dragged answer solves the card');
       run(1500);
-      q = pick('lineView(a).st', -1);
+      q = pick('frameView(a).st', -1);
       A.tap(q.mine);
       eq(nope(), JSON.stringify([q.mine]), at + ': the first tap after a dragged solve outlines the piece');
       run(200);
@@ -2622,7 +2631,7 @@ const BAR = `(function () {
     A.ev('(playerTier = function () { return 2; }, 1)');
     A.ev(`(function () { ${OPEN} var it = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol; })[0], a = openCard(it);
       solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.settle = 2; seeWhy(); return 1; })()`);
-    eq(A.ev('ui.session.active.view.mode || "line"'), 'line', 'See why open');
+    eq(A.ev('ui.session.active.view.mode'), 'story', 'See why open');
     A.key('Escape');
     eq(A.ev('ui.session.active.view.mode'), 's0', 'Esc: back to S0');
     A.ev(`(function () { startExplore({}); ui.sheet = 'settings'; window.__closed = 0;
@@ -2849,6 +2858,329 @@ const BAR = `(function () {
         eq(res[key], 'fail', at + ': the result stays fail, ' + r0);
         eq(A.ev(`(ui.session ? ui.session.notes : (savedSession() || {}).notes || {})['${key}']`), 'shown', at + ': the note stays shown');
       }
+    }
+  });
+
+  /* ── the story (S12) ── */
+  /* the refutation as the story steps it to a mate: the stored line, kept to 21 plies, to its first checkmate */
+  const MATE_AT = `function mateIdx(a) {
+    var ref = buildLine(a.pre, a.playedUci, unpackUci(a.it.b.ru).slice(0, 20), !myPov(a.it));
+    for (var k = 1; k < ref.nodes.length; k++) if (isMate(ref.nodes[k].after)) return { line: ref, k: k };
+    return { line: ref, k: ref.nodes.length - 1 };
+  }
+  function answered(a, how) {
+    if (how === 'shown') { reveal(); a.view = { mode: 's0' }; a.settle = 2; return a; }
+    if (a.sol) { while (a.solIdx < a.sol.length) { var m = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.solIdx++; } finishCard('first'); }
+    else solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+    a.settle = 2;
+    return a;
+  }`;
+  await test('the game segment ends at lossAt: G1 is the game move, then the refutation ply by ply to the loss (to the mate when it mates)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MATE_AT}
+      var out = [], n = { cards: 0, long: 0, mates: 0, mateLong: 0 };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          ['solved', 'shown'].forEach(function (how) {
+            var a0 = openCard(it);
+            if (!a0) return;
+            var a = answered(a0, how), c = a.cls, S = buildStory(a), at = 'tier ' + tier + ' ' + it.key + ' ' + how;
+            n.cards++;
+            var end = c.mateAgainst ? mateIdx(a) : { line: c.gameLine, k: c.lossAt };
+            if (c.lossAt >= 2) n.long++;
+            if (c.mateAgainst) n.mates++;
+            if (S.g !== Math.min(end.k, end.line.nodes.length - 1) + 1) out.push(at + ': ' + S.g + ' game steps, lossAt ' + c.lossAt + (c.mateAgainst ? ', mate at ' + end.k : ''));
+            var ref = a.lines.refute.uci;
+            for (var i = 0; i < S.g; i++) {
+              var s = S.steps[i], nd = s.line.nodes[s.k];
+              if (s.seg !== 'game' || s.k !== i || moveUci(nd.move) !== ref[i]) out.push(at + ': game step ' + i + ' is ' + s.seg + ' node ' + s.k + ' ' + moveUci(nd.move) + ', not ' + ref[i]);
+            }
+            var last = S.steps[S.g - 1], ln = last.line.nodes[last.k];
+            if (c.mateAgainst && !isMate(ln.after)) out.push(at + ': the mate segment does not end in mate');
+            if (!c.mateAgainst && last.k !== c.lossAt) out.push(at + ': the game segment ends at ' + last.k + ', not lossAt ' + c.lossAt);
+            if (S.steps[0].line.nodes[0].move.from !== a.played.from || S.steps[0].line.nodes[0].move.to !== a.played.to) out.push(at + ': G1 is not the game move');
+            /* a mate is stepped to the mate on the stored refutation, whatever lossAt says (the classifier keeps 8 plies) */
+            if (c.mateAgainst && end.k >= 1) {
+              var keep = c.lossAt; c.lossAt = 0; a.story = null;
+              var S2 = buildStory(a), l2 = S2.steps[S2.g - 1];
+              if (!isMate(l2.line.nodes[l2.k].after)) out.push(at + ': with lossAt 0 the mate segment stops at node ' + l2.k);
+              c.lossAt = keep; a.story = null; n.mateLong++;
+            }
+          });
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.cards > 500 && r.n.long > 100 && r.n.mates > 10 && r.n.mateLong > 5, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
+  });
+
+  await test('the better segment has bSettle steps: the best line from its first move to where it settles (the whole line to a mate; an alternative\'s own line from its move)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MATE_AT}
+      var out = [], n = { cards: 0, multi: 0, alts: 0, inLine: 0, guard: 0, ghost: 0 };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          ['solved', 'shown'].forEach(function (how) {
+            var a0 = openCard(it);
+            if (!a0) return;
+            var a = answered(a0, how), c = a.cls, S = buildStory(a), at = 'tier ' + tier + ' ' + it.key + ' ' + how, nb = S.steps.length - S.g;
+            n.cards++;
+            if (c.mateFor) {
+              var bs = S.steps[S.steps.length - 1];
+              if (!isMate(bs.line.nodes[bs.k].after) && bs.k !== a.lines.best.uci.length) out.push(at + ': the mate line stops short');
+            } else if (nb !== Math.max(1, c.bSettle)) out.push(at + ': ' + nb + ' better steps, bSettle ' + c.bSettle);
+            if (nb > 1) n.multi++;
+            /* what lands on B1: the better move's badge and tints, then guard dots or the game move's ghost, never both; on G1 the reply it allows; a capture's token in its owner's colour */
+            var b1 = S.steps[S.g], bn = b1.line.nodes[b1.k], m1 = storyMarks(a, S, S.g), bk = a.revealed ? 'info' : 'good';
+            if (!m1.badges || m1.badges[0].sq !== bn.move.to || m1.badges[0].kind !== bk || m1.tints.length !== 2) out.push(at + ': B1 badge ' + JSON.stringify(m1.badges));
+            if (!!m1.guards !== !!S.guard || (m1.guards && m1.ghosts)) out.push(at + ': B1 guard dots ' + JSON.stringify(m1.guards) + ' with ghost ' + JSON.stringify(m1.ghosts));
+            if (!S.guard && (!m1.ghosts !== (a.played.to === bn.move.to))) out.push(at + ': B1 ghost ' + JSON.stringify(m1.ghosts));
+            if (m1.ghosts && (m1.ghosts[0].sq !== a.played.to || m1.ghosts[0].p !== a.pre.b[a.played.from])) out.push(at + ': B1 ghost is not the game move');
+            if (S.guard) n.guard++; else if (m1.ghosts) n.ghost++;
+            var m0 = storyMarks(a, S, 0), th = threatOf(c.gameLine, 1);
+            if (!!m0.arrows !== !!S.threat || (th && !m0.arrows) || (m0.arrows && (m0.arrows[0].kind !== 'threat' || m0.rings[0].sq !== m0.arrows[0].from || m0.arrows[0].from !== c.gameLine.nodes[1].move.from))) out.push(at + ': G1 marks ' + JSON.stringify(m0));
+            S.steps.forEach(function (x, i) {
+              var nd = x.line.nodes[x.k], tk = storyMarks(a, S, i).tokens;
+              if (!!tk !== !!nd.captured || (tk && (tk[0].kind !== (isW(nd.captured) === myPov(it) ? 'lost' : 'won') || tk[0].sq !== nd.move.to || tk[0].p !== nd.captured))) out.push(at + ': step ' + i + ' token ' + JSON.stringify(tk));
+            });
+            for (var j = 0; j < nb; j++) {
+              var s = S.steps[S.g + j], nd = s.line.nodes[s.k];
+              if (s.seg !== 'better' || s.k !== j + 1 || moveUci(nd.move) !== a.lines.best.uci[j]) out.push(at + ': better step ' + j + ' is ' + moveUci(nd.move) + ', not lines.best[' + j + '] ' + a.lines.best.uci[j]);
+            }
+          });
+          /* a move that works too: its own line, from its move to where that line settles */
+          var a = openCard(it);
+          if (!a) return;
+          var alt = a.sol ? null : legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci; })[0];
+          if (alt) {
+            var after = cloneState(a.st); applyMove(after, alt);
+            var rest = playUci(after, unpackUci(it.b.lu).slice(1)).uci;
+            a.yours = { uci: [moveUci(alt)].concat(rest), cp: 0, at: 0 };
+            solved(alt, moveUci(alt), { win: 50, best: 52, mate: null });
+            var S = buildStory(a), al = buildLine(a.pre, '0000', a.yours.uci, myPov(it)), want = Math.max(1, settleIndex(al)), b1 = S.steps[S.g];
+            n.alts++;
+            if (S.steps.length - S.g !== want || moveUci(b1.line.nodes[b1.k].move) !== moveUci(alt)) out.push(it.key + ': the alternative has ' + (S.steps.length - S.g) + ' steps from ' + moveUci(b1.line.nodes[b1.k].move) + ', not ' + want + ' from ' + moveUci(alt));
+          }
+          /* inside a forcing line, an early alternative at the third move: its line starts there */
+          if (a.sol && a.sol.length >= 3) {
+            a = openCard(it);
+            var st = cloneState(a.st); applyMove(st, uciToMove(st, a.sol[0])); applyMove(st, uciToMove(st, a.sol[1]));
+            var alt2 = legalMoves(st).filter(function (m) { return moveUci(m) !== a.sol[2]; })[0];
+            if (!alt2) return;
+            a.yours = { uci: a.sol.slice(0, 2).concat([moveUci(alt2)]), cp: 0, at: 2 };
+            applyMove(a.st, uciToMove(a.st, a.sol[0])); applyMove(a.st, uciToMove(a.st, a.sol[1])); a.solIdx = 2;
+            solved(alt2, moveUci(alt2), { win: 50, best: 52, mate: null }, true);
+            var S2 = buildStory(a), f = S2.steps[S2.g];
+            n.inLine++;
+            if (f.k !== 3 || moveUci(f.line.nodes[f.k].move) !== moveUci(alt2) || stateFen(f.line.nodes[f.k].before) !== stateFen(st).replace(/ \\d+ \\d+$/, '') + stateFen(f.line.nodes[f.k].before).match(/ \\d+ \\d+$/)[0]) out.push(it.key + ': the alternative in a line starts at node ' + f.k);
+            a.view = { mode: 'story', i: S2.g, pre: true };
+            if (posKey(frameView(a).st) !== posKey(st)) out.push(it.key + ': B1 of an alternative in a line does not start where it was played');
+          }
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.cards > 500 && r.n.multi > 100 && r.n.alts > 50 && r.n.inLine > 5 && r.n.guard >= 6 && r.n.ghost > 300, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
+  });
+
+  await test('a one-move blunder has 3 steps: See why, then Next move twice, one ply a tap, and Next move off at the last', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    A.ev(BAR);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && !a.cls.mateAgainst && a.cls.lossAt === 1 && a.cls.bSettle === 1; }).slice(0, 6).map(function (x) { return x.key; }))`));
+    ok(keys.length >= 4, 'one-move blunders ' + keys.length);
+    const st = () => JSON.parse(A.ev('JSON.stringify((function (a) { var v = a.view; return { mode: v.mode, i: v.i, fen: stateFen(frameView(a).st), off: /btn-off[^>]*>Next move/.test(window.__els.cbar.innerHTML) }; })(ui.session.active))'));
+    for (const [k, key] of keys.entries()) {
+      A.ev(`(function () { window.__show(model().byKey['${key}']); ui.session.keys.push('x'); return 1; })()`);
+      run(1000);
+      A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
+      run(2500);
+      eq(A.ev('buildStory(ui.session.active).steps.length'), 3, key + ': steps');
+      const fens = [];
+      /* by the bar, or by the keyboard (→ from S0 opens it) */
+      if (k % 2) A.click('seeWhy', null, 0); else A.key('ArrowRight');
+      /* the bar comes with the caption, and its new slots wait out the double-tap guard */
+      run(1700);
+      let s = st(); eq(s.mode + ' ' + s.i, 'story 0', key + ': the first tap opens G1'); fens.push(s.fen);
+      for (let t = 1; t < 3; t++) {
+        if (k % 2) A.click('storyFwd', null, 1); else A.key('ArrowRight');
+        run(1200);
+        s = st(); eq(s.i, t, key + ': tap ' + (t + 1) + ' is step ' + (t + 1)); ok(fens.indexOf(s.fen) < 0, key + ': a new position at each tap'); fens.push(s.fen);
+      }
+      ok(s.off, key + ': Next move is off at the last step');
+      if (k % 2) A.click('storyFwd', null, 1); else A.key('ArrowRight');
+      run(1200);
+      eq(st().i, 2, key + ': nothing past the last step');
+    }
+  });
+
+  await test('board taps never change the step: a piece tap outlines it and says N1 in the strip; swipes, keys and the bar step it, Esc goes back to S0', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    A.ev(BAR);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && a.cls.lossAt + Math.max(1, a.cls.bSettle) >= 4; }).slice(0, 4).map(function (x) { return x.key; }))`));
+    const st = () => JSON.parse(A.ev('JSON.stringify((function (a) { return { mode: a.view.mode, i: a.view.i, fen: stateFen(frameView(a).st), strip: window.__els.cstrip.innerHTML, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null, nope: !!(a.nope && a.nope.key === cardStateKey(a)) }; })(ui.session.active))'));
+    /* a sideways swipe on the board as a finger makes it: from x to x + dx (the realm draws square sq at 200 + file * 45) */
+    const sqs0 = () => A.ev('(function (st) { for (var q = 0; q < 64; q++) if (st.b[q]) return q; })(ui.session.active.pre)');
+    const swipe = (x, dx, dy) => { A.pointer('pointerdown', 0, { clientX: x, clientY: 400 }); A.pointer('pointerup', 0, { clientX: x + dx, clientY: 400 + (dy || 0) }); };
+    for (const key of keys) {
+      A.ev(`(function () { window.__show(model().byKey['${key}']); ui.session.keys.push('x'); return 1; })()`);
+      run(1000);
+      A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
+      run(2500);
+      /* a left swipe in S0 opens the story; a tap while it crossfades in ends the crossfade and the slide, never the step */
+      swipe(420, -120);
+      run(160);
+      A.tap(sqs0(key)); run(1700);
+      let s = st(); eq(s.mode + ' ' + s.i, 'story 0', key + ': a left swipe in S0 opens G1');
+      eq(s.fen, A.ev('(function (a) { var x = buildStory(a).steps[0]; return stateFen(x.line.nodes[0].after); })(ui.session.active)'), key + ': a tap during the crossfade still lands G1');
+      ok(!A.ev('ui.session.active.view.pre'), key + ': G1 landed');
+      A.click('storyFwd', null, 1); run(1200);
+      s = st(); eq(s.i, 1, key + ': Next move');
+      /* every square tapped: never a step, a piece outlined with N1 where the budget allows it */
+      const sqs = JSON.parse(A.ev('JSON.stringify((function (st) { var p = [], e = []; for (var q = 0; q < 64; q++) (st.b[q] ? p : e).push(q); return { p: p.slice(0, 6), e: e.slice(0, 3) }; })(frameView(ui.session.active).st))'));
+      for (const q of sqs.p.concat(sqs.e)) {
+        A.tap(q); run(200);
+        const t = st();
+        eq(t.mode + ' ' + t.i + ' ' + t.fen, s.mode + ' ' + s.i + ' ' + s.fen, key + ': a tap on ' + q + ' changed the step');
+        if (sqs.p.indexOf(q) >= 0) {
+          ok(t.nope, key + ': a piece tap outlines it');
+          const room = A.ev('(function (a) { return wordsIn(buildStory(a).steps[a.view.i].cap) + 5 + 3 <= 15; })(ui.session.active)');
+          eq(t.note === 'N1' && /To try moves, open Details\./.test(t.strip), room, key + ': N1 in the strip as the budget allows');
+        }
+        run(2700);
+      }
+      ok(/data-act="storyJump"/.test(st().strip), key + ': the strip names come back after N1');
+      /* an upward drag (a scroll) never steps either */
+      swipe(420, 10, -100); run(400);
+      eq(st().i, 1, key + ': an upward drag changed the step');
+      /* swipes: left forward, right back; one too short, too steep, or from a screen edge does nothing */
+      swipe(420, -120); run(1200); eq(st().i, 2, key + ': a left swipe steps forward');
+      swipe(420, 120); run(1200); eq(st().i, 1, key + ': a right swipe steps back');
+      swipe(420, -40); run(1200); eq(st().i, 1, key + ': a 40 px swipe does nothing');
+      swipe(420, -80, 50); run(1200); eq(st().i, 1, key + ': a steep swipe does nothing');
+      /* the realm draws the board at x 200 to 560: a screen 540 wide puts its last file within 24 px of the right edge */
+      A.ev('(window.innerWidth = 540, 1)');
+      swipe(530, -200); run(1200); eq(st().i, 1, key + ': a swipe from the right edge does nothing');
+      swipe(500, -200); run(1200); eq(st().i, 2, key + ': a swipe 40 px from the edge steps');
+      A.ev('(window.innerWidth = 1200, 1)');
+      A.key('ArrowLeft'); run(1200);
+      /* keys: → and Space forward, ← back; the strip's names jump */
+      A.key('ArrowRight'); run(1200); eq(st().i, 2, key + ': →');
+      A.key('ArrowLeft'); run(1200); eq(st().i, 1, key + ': ←');
+      A.key(' ', false, { act: 'storyFwd', slot: 1 }); run(1200); eq(st().i, 2, key + ': Space on Next move');
+      A.key(' '); run(1200); eq(st().i, 3, key + ': Space');
+      A.click('storyJump', 'game'); run(1200); eq(st().i, 0, key + ': Game opens G1');
+      A.click('storyJump', 'better'); run(1200); eq(st().i, A.ev('buildStory(ui.session.active).g'), key + ': Better opens B1');
+      A.click('storyJump', 'game'); run(1200);
+      /* ‹ on G1, and Esc, go back to S0 */
+      A.click('storyBack', null, 0); run(1200); eq(st().mode, 's0', key + ': ‹ on G1 is S0');
+      swipe(420, 120); run(1200); eq(st().mode, 's0', key + ': a right swipe in S0 does nothing');
+      A.key(' '); run(1200); eq(st().mode, 's0', key + ': Space in S0 does nothing');
+      A.key('ArrowRight'); run(1200); A.key('ArrowRight'); run(1200); eq(st().i, 1, key + ': → twice');
+      A.key('Escape'); run(1200); eq(st().mode, 's0', key + ': Esc is S0');
+    }
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('the story\'s beats: the words fade out, a segment crossfades to its start with its arrow, the ply slides 320 ms with its sound, what it brings lands with it, the caption 150 ms later; back is a crossfade', () => {
+    for (const reduced of [false, true]) {
+      const A = boot();
+      A.ev(DOM);
+      A.ev('(playerTier = function () { return 2; }, 1)');
+      A.ev(BAR);
+      if (reduced) A.ev('(ui.reducedTest = true, 1)');
+      A.ev('(function () { window.__snd = []; snd = function (k) { window.__snd.push({ k: k, t: Date.now() }); }; return 1; })()');
+      const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+      const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && threatOf(a.cls.gameLine, 1) && a.cls.lossAt >= 1; }).slice(0, 4).map(function (x) { return x.key; }))`));
+      for (const key of keys) {
+        const at = (reduced ? 'reduced, ' : '') + key;
+        A.ev(`(function () { window.__show(model().byKey['${key}']); ui.session.keys.push('x'); return 1; })()`);
+        run(1000);
+        A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
+        run(2500);
+        A.ev('window.__writes.length = 0; window.__snd.length = 0; 1');
+        const t0 = A.getNow();
+        A.click('seeWhy', null, 0);
+        run(1500);
+        const ws = JSON.parse(A.ev('JSON.stringify(window.__writes)')).map((w) => Object.assign(w, { t: w.t - t0 }));
+        const snds = JSON.parse(A.ev('JSON.stringify(window.__snd)')).filter((x) => x.k === 'move').map((x) => x.t - t0);
+        const boards = ws.filter((w) => w.id === 'bwrap' && w.what === 'innerHTML'), texts = ws.filter((w) => w.id === 'cband');
+        const cls = A.ev('JSON.stringify(window.__els.cband.cls)');
+        eq(cls, '{}', at + ': the band is not left faded');
+        if (!reduced) {
+          ok(boards.length >= 2, at + ': boards ' + JSON.stringify(boards));
+          ok(boards[0].t >= 100 && /xfade/.test(boards[0].v) && /red/.test(boards[0].v) && !/slide/.test(boards[0].v), at + ': first the crossfade to the card position, with the red arrow, 100 ms after the tap: ' + JSON.stringify(boards[0]));
+          ok(boards[1].t >= boards[0].t + 150 && /slide/.test(boards[1].v) && /red/.test(boards[1].v) && !/arrow|ring/.test(boards[1].v), at + ': then the game move slides along its arrow, the threat not yet drawn: ' + JSON.stringify(boards[1]));
+          eq(snds.length, 1, at + ': one move sound');
+          eq(snds[0], boards[1].t, at + ': the sound as it slides');
+          const landed = boards.filter((w) => w.t > boards[1].t).concat(ws.filter((w) => w.id === 'marks' && w.t > boards[1].t))[0];
+          ok(!!landed && landed.t >= boards[1].t + 320 && /arrow/.test(landed.v) && /ring/.test(landed.v), at + ': the threat lands once the piece has: ' + JSON.stringify(landed));
+          ok(texts.length && texts[0].t >= landed.t + 150, at + ': the caption 150 ms after: ' + JSON.stringify(texts[0]) + ' vs ' + landed.t);
+        } else {
+          ok(!boards.some((w) => /xfade|slide/.test(w.v)), at + ': under reduced motion nothing slides or crossfades');
+          ok(texts.length && texts[0].t >= 150, at + ': the caption after the board');
+        }
+        /* forward: one ply slides with its sound; back: a crossfade of 150 ms (carried minor), no sound */
+        A.ev('window.__writes.length = 0; window.__snd.length = 0; 1');
+        const t1 = A.getNow();
+        A.click('storyFwd', null, 1);
+        run(1000);
+        const w2 = JSON.parse(A.ev('JSON.stringify(window.__writes)')).filter((w) => w.id === 'bwrap' && w.what === 'innerHTML');
+        eq(JSON.parse(A.ev('JSON.stringify(window.__snd)')).filter((x) => x.k === 'move').length, 1, at + ': a move sound for the next ply');
+        if (!reduced) ok(w2[0] && w2[0].t - t1 >= 100 && /slide/.test(w2[0].v) && !/xfade/.test(w2[0].v), at + ': the next ply slides after the words fade: ' + JSON.stringify(w2));
+        A.ev('window.__writes.length = 0; window.__snd.length = 0; 1');
+        A.click('storyBack', null, 0);
+        const mu = A.ev('motionUntil - Date.now()'), xf = A.ev('/class="xfade"/.test(window.__els.bwrap.innerHTML)');
+        if (!reduced) { eq(mu, 150, at + ': back crossfades 150 ms'); ok(xf, at + ': back draws the crossfade'); }
+        run(1000);
+        eq(JSON.parse(A.ev('JSON.stringify(window.__snd)')).filter((x) => x.k === 'move').length, 0, at + ': no sound going back');
+        eq(A.ev('ui.session.active.view.i'), 0, at + ': back on G1');
+        /* the live region says where the step is */
+        ok(/^Step 1 of \d+, your game\. /.test(A.ev('displayFor(ui.session.active).live')), at + ': the live region leads with the step');
+        A.click('next', null, 2); run(1000);
+      }
+      const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+      eq(bad.length, 0, bad.length + ' writes too early');
+    }
+  });
+
+  await test('the story keeps the keyboard on Next move ›, then on Continue at the last step; ‹ and › are named for screen readers', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    A.ev(BAR);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const foc = () => A.ev(`(function () { var e = document.activeElement; return !e ? 'none' : e.host + ' ' + (e.id || (e.getAttribute('data-act') + '@' + e.getAttribute('data-slot'))); })()`);
+    const on = () => JSON.parse(A.ev(`(function () { var e = document.activeElement; return JSON.stringify(e && e.getAttribute && e.getAttribute('data-act') ? { act: e.getAttribute('data-act'), slot: +e.getAttribute('data-slot') } : null); })()`));
+    const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol; }).slice(0, 3).map(function (x) { return x.key; }))`));
+    for (const key of keys) {
+      A.ev(`(function () { window.__show(model().byKey['${key}']); ui.session.keys.push('x'); return 1; })()`);
+      run(1000);
+      A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
+      run(2500);
+      eq(foc(), 'cbar next@1', key + ': solved, Continue');
+      A.ev('(function () { var b = window.__els.cbar.querySelector(\'[data-act="seeWhy"]\'); b.focus(); b.click(); return 1; })()');
+      run(1700);
+      const n = A.ev('buildStory(ui.session.active).steps.length');
+      for (let i = 0; i < n; i++) {
+        eq(foc(), i < n - 1 ? 'cbar storyFwd@1' : 'cbar next@2', key + ': step ' + (i + 1) + ' of ' + n + ' focus');
+        const bar = A.ev('window.__els.cbar.innerHTML');
+        ok(/data-act="storyBack"[^>]*aria-label="Previous move"/.test(bar), key + ': ‹ is Previous move');
+        if (i < n - 1) ok(new RegExp('aria-label="Next move, step ' + (i + 2) + ' of ' + n + '"').test(bar) && /class="btn-big"[^>]*data-act="storyFwd"/.test(bar) && /class="btn-line"[^>]*data-act="next"/.test(bar), key + ': Next move names the step it goes to, gold, Continue outlined: ' + bar);
+        else ok(/btn-big btn-off[^>]*>Next move/.test(bar) && /class="btn-big"[^>]*data-act="next"/.test(bar), key + ': at the last step Next move is off and Continue gold: ' + bar);
+        if (i < n - 1) { A.key('Enter', false, on()); run(1200); }
+      }
+      /* Enter at the last step is Continue */
+      A.key('Enter', false, on()); run(1000);
+      eq(A.ev('ui.session.idx'), 1, key + ': Enter on Continue');
     }
   });
 
