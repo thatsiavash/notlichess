@@ -313,6 +313,8 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 /* the forcing reply (S10), the one move that plays by itself: slower, and
    easing in and out, so it is always seen moving */
 .anim-piece.anim-slow{transition:transform .4s ease-in-out}
+/* a move the app shows (the story, See it, Play it): 320 ms (2.2) */
+.anim-piece.anim-show{transition:transform .32s ease}
 /* the marks lie over the board in their own svg and never take a tap; a
    badge pops and a token or ghost fades in once, on its first paint */
 .marks{position:absolute;left:0;top:0;width:100%;height:100%;display:block;pointer-events:none;border-radius:4px;overflow:hidden}
@@ -600,7 +602,8 @@ body.in-session{padding-bottom:0}
 }
 @media (max-width:860px){
   .card{gap:0;padding-top:0}
-  .card-top{position:sticky;top:0;z-index:4;background:var(--bg);flex-wrap:wrap;gap:0 8px;margin:0 calc(-1 * var(--gutter));padding:0 var(--gutter)}
+  /* above the band (4), which comes after it: the ••• menu opens over the band */
+  .card-top{position:sticky;top:0;z-index:6;background:var(--bg);flex-wrap:wrap;gap:0 8px;margin:0 calc(-1 * var(--gutter));padding:0 var(--gutter)}
   /* the band rides under the session bar, so it stays in view */
   .band-slot{position:sticky;top:48px;z-index:4;background:var(--bg)}
   .board-row{justify-content:center}
@@ -2218,7 +2221,7 @@ function boardSvg(st, opts) {
         if (opts.anim && opts.anim[1] === sq) {
           var af = opts.anim[0];
           var acol = flip ? 7 - af % 8 : af % 8, arow = flip ? (af >> 3) : 7 - (af >> 3);
-          animAttr = ' class="anim-piece' + (opts.animMs === 400 ? ' anim-slow' : '') + '" style="transform:translate('
+          animAttr = ' class="anim-piece' + (opts.animMs === 400 ? ' anim-slow' : opts.animMs === 320 ? ' anim-show' : '') + '" style="transform:translate('
             + (acol * SZ - x) + 'px,' + (arow * SZ - y) + 'px)"';
         }
         var use = '<use href="#pc-' + PIECE_ID[p] + '" x="' + x + '" y="' + y
@@ -6296,8 +6299,23 @@ function replyClock(a, landIn) {
   var rp = a.reply;
   if (!rp || reducedMotion()) return;
   stageAt(landIn + REPLY_TELE, function (a2) { if (a2.reply === rp && !rp.played) { rp.tele = true; stage(['marks']); } });
-  stageAt(landIn + REPLY_SLIDE - SLIDE_LEAD - (rp.show ? TEXT_OUT : 0), function (a2) { if (a2.reply === rp && !rp.played) theirReply(a2, false); });
+  stageAt(landIn + REPLY_SLIDE - SLIDE_LEAD - (rp.show ? TEXT_OUT : 0), function (a2) {
+    if (a2.reply !== rp || rp.played) return;
+    /* a tab in the background draws no frames: the piece would only jump.
+       It waits, telegraphed, until the page is seen again (replyOnReturn) */
+    if (document.hidden) rp.held = true;
+    else theirReply(a2, false);
+  });
 }
+/* back on the tab: a reply held while it was hidden plays now, sliding,
+   and its words and pips follow it as usual */
+function replyOnReturn() {
+  var a = ui.session && ui.session.active, rp = a && a.reply;
+  if (document.hidden || !rp || !rp.held || rp.played) return;
+  rp.held = false;
+  theirReply(a, false);
+}
+document.addEventListener('visibilitychange', replyOnReturn);
 /* the reply plays: on its timeline, or now (early: an input before 1500
    starts it at once, its telegraph kept, flushStage; or its own button
    under reduced motion). It slides 400 ms with its sound, its ring and
@@ -7675,13 +7693,13 @@ var CARD_COPY = {
 };
 /* F4: their reply in a forcing line, once it has landed, as row 2 says it:
    what it took, or the check it gives, or the move itself; st is the
-   position before it, took what it captured */
+   position before it, took what it captured. The ladder's next form drops
+   "as expected" (S10's 13 words beside a bar after two hints) */
 function replyWords(a, st, m, took) {
   var opp = sidesOf(a).opp, after = cloneState(st);
   applyMove(after, m);
-  if (took) return [opp + ' took your ' + PIECE_WORD[pType(took)] + ', as expected.'];
-  if (checkersOf(after).length) return [opp + ' gives check, as expected.'];
-  return [opp + ' played ' + capSan(st, m) + ', as expected.'];
+  var did = took ? 'took your ' + PIECE_WORD[pType(took)] : checkersOf(after).length ? 'gives check' : 'played ' + capSan(st, m);
+  return [opp + ' ' + did + ', as expected.', opp + ' ' + did + '.'];
 }
 /* the forcing pips (2.0): one dot per move of yours in the line, from your
    first move found to the line's end (never before it: the card opens as
@@ -7724,6 +7742,11 @@ function fitRow(cands, row, fallback) {
    ‹ › … are not words). Over budget, row 2 runs its ladder again with the
    words that are left */
 var WORD_BUDGET = 15;
+/* a forcing line's own frames (S10: "Right", "Your move") hold 13 words,
+   band and bar; the reply's board label (slice 13, two words) is not
+   counted here: it is the first thing to drop when a frame goes over
+   (principle 5), before row 2 runs its ladder */
+var LINE_BUDGET = 13;
 function wordsIn(s) { return String(s || '').split(/\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w); }).length; }
 function barWords(slots) { return (slots || []).reduce(function (n, b) { return n + wordsIn(b.label); }, 0); }
 function bandWords(b, slots) { return wordsIn(b.row1) + wordsIn(b.row2) + wordsIn(b.chip) + wordsIn(b.cap) + barWords(slots); }
@@ -7881,7 +7904,7 @@ function bandFit(a, b) {
     /* a ladder step that would say something untrue (R4's found form) */
     if (b.never && b.never.indexOf(b.row2) >= 0) b.row2 = fitRow([], { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
   }
-  delete b.cands; delete b.fall; delete b.never;
+  delete b.cands; delete b.fall; delete b.never; delete b.budget;
   return b;
 }
 /* the comparison a settled card makes (S6, R4), read once from the
@@ -8174,7 +8197,7 @@ function stripWords(a) {
 function rowRoom(a, b) {
   var ss = ui.session, slots = ss ? barSlots(a, ss) : [], bw = barWords(slots);
   if (ss && a.phase === 'tried' && a.tried && a.tried.kind === 'miss') bw = Math.max(barWords(triedSlots(a, false)), barWords(triedSlots(a, true)));
-  return WORD_BUDGET - bandWords({ row1: b.row1, chip: b.chip }, []) - bw - stripWords(a);
+  return (b.budget || WORD_BUDGET) - bandWords({ row1: b.row1, chip: b.chip }, []) - bw - stripWords(a);
 }
 /* what the card is showing, so a word or an outline meant for one state
    never outlives it: a move (each one counted, so coming back to the same
@@ -8217,7 +8240,7 @@ function bandOf(a) {
              row1: tv.row1, cands: wait ? [] : tv.cands, fall: wait ? '' : tv.fall };
   }
   /* a move of the forcing line found (S10): right, and their reply comes */
-  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: CARD_COPY.F1(), cands: [CARD_COPY.F2(a)], fall: '' };
+  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: CARD_COPY.F1(), cands: [CARD_COPY.F2(a)], fall: '', budget: LINE_BUDGET };
   /* a hint says itself on the showing it came with (pressed, or the
      automatic one this Try again brought: S4), and afterwards while its
      marks stand on the board, so band and board agree; a hint in words
@@ -8229,7 +8252,7 @@ function bandOf(a) {
     return { disc: 'king', kind: 'hint', row1: h.row1, cands: h.cands, fall: h.fall };
   }
   /* their reply has landed: your move, and what it did (F4) */
-  if (mid) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: a.replySaid ? a.replySaid.slice() : [], fall: 'The next move is forcing too.' };
+  if (mid) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: a.replySaid ? a.replySaid.slice() : [], fall: 'The next move is forcing too.', budget: LINE_BUDGET };
   return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '' };
 }
 /* ── Rendering ──────────────────────────────────────────────────────────────
@@ -8273,7 +8296,7 @@ window.addEventListener('popstate', function () {
   /* Back closes a sheet first, then ends a session */
   if (ui.sheet) { closeSheet(true); return; }
   var am = ui.session && ui.session.active;
-  if (am && am.menuOpen) { am.menuOpen = false; renderCard(); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
+  if (am && am.menuOpen) { setMenu(am, false); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
   /* then leaves an exploration, back to the lesson */
   if (am && am.explore) { exploreExit('pop'); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
   if (ui.session) { endSession(true); return; }
@@ -8713,8 +8736,10 @@ function boardOptsFor(a) {
       if (opts.anim) land = true;
       else { opts.fx = sfx; for (var sk in sl) opts[sk] = sl[sk]; }
     }
-    /* their reply after Play it, on S10's timeline (addReplyMarks) */
-    if (addReplyMarks(a, view, opts)) land = true;
+    /* their reply after Play it, on S10's timeline (addReplyMarks); landed,
+       its arrow and token give way to the next answer's green arrow, which
+       lands with it */
+    if (addReplyMarks(a, view, opts, !!sdue)) land = true;
     if (sdue) {
       opts.sel = a.sel;
       if (a.sel === sdue.from) opts.dots = [sdue.to];
@@ -8838,15 +8863,17 @@ function boardOptsFor(a) {
    goes; both ride its slide; as it lands the ring goes, the arrow turns
    solid and what it took shows as a token. The landed marks stay until
    your next move (a.replyMark), as the move's own marks (2.3 exempts
-   them). Added to opts; true when they ride a slide (they go as it lands) */
-function addReplyMarks(a, view, opts) {
+   them), unless noLanded (a line shown: the next answer's green arrow
+   takes the board as it lands). Added to opts; true when they ride a
+   slide (they go as it lands) */
+function addReplyMarks(a, view, opts, noLanded) {
   var rp = a.reply, rk = a.replyMark, o = null, sliding = false;
   if (rp && !rp.played) {
     if (rp.tele && a.sol && a.sol[a.solIdx] === rp.uci) o = { rings: [{ sq: rp.from, kind: 'reply' }], arrows: [{ from: rp.from, to: rp.to, kind: 'reply', key: 'reply' }] };
   } else if (rk && sameMove(view.last, [rk.from, rk.to])) {
     sliding = sameMove(opts.anim, view.last);
     if (sliding) o = { rings: [{ sq: rk.from, kind: 'reply' }], arrows: [{ from: rk.from, to: rk.to, kind: 'reply', key: 'reply' }] };
-    else {
+    else if (!noLanded) {
       o = { arrows: [{ from: rk.from, to: rk.to, kind: 'reply', key: 'reply', solid: true }] };
       if (rk.token) { o.tokens = [{ sq: rk.token.sq, p: rk.token.p, kind: colorW(rk.token.p) === myPov(a.it) ? 'lost' : 'won', fx: rk.fx }]; if (!opts.fx) opts.fx = rk.fx; }
     }
@@ -8952,16 +8979,17 @@ function paintBoard(a, instant) {
   bw.innerHTML = boardSvg(f.st, f.opts) + (a.pendingPromo ? promoHtml(f.st) : '') + fade;
   bw.classList.toggle('static', !f.live);
   var ms = f.slideMs || 0;
-  releaseAnims(bw, ms);
+  /* a move the app shows sounds as its piece is let go (releaseAnims), or
+     at once when it lands where it is drawn */
+  releaseAnims(bw, ms, a.moveCue ? 'move' : null);
+  a.moveCue = false;
   a.animMove = null;
   a.animSlow = false;
   a.jump = false;
   /* the badge and tints wait for the piece (the land beat), and the
-     verdict's sound comes with them; a move the app shows sounds as it
-     starts */
+     verdict's sound comes with them */
   a.landing = !!(ms && f.land);
   if (!ms && a.cue) { snd(a.cue); a.cue = null; }
-  if (a.moveCue) { snd('move'); a.moveCue = false; }
   /* a jump: the old words fade out with the old board (text out, 2.2), and
      the new ones come with the text beat */
   if (fade) fadeOut(a);
@@ -9327,13 +9355,16 @@ function barHtml(slots) {
 function sameMove(x, y) { return !!(x && y && x[0] === y[0] && x[1] === y[1]); }
 /* a sliding piece is drawn where it came from and let go two frames later,
    so its transition runs; motionUntil then runs from that moment (ms, the
-   slide's length), in case those frames took longer than SLIDE_LEAD */
+   slide's length), in case those frames took longer than SLIDE_LEAD. A
+   sound for the move (sound) plays as the piece is let go: at once when
+   none slides, never for a board already gone */
 var SLIDE_LEAD = 50;
-function releaseAnims(root, ms) {
+function releaseAnims(root, ms, sound) {
   var ps = root.querySelectorAll('.anim-piece');
-  if (!ps.length) return;
+  if (!ps.length) { if (sound) snd(sound); return; }
   requestAnimationFrame(function () { requestAnimationFrame(function () {
     for (var i = 0; i < ps.length; i++) ps[i].style.transform = 'translate(0px,0px)';
+    if (sound && ps[0].isConnected) snd(sound);
     /* only for a slide still on screen: one an input already ended
        (flushStage) leaves the clock alone */
     if (ms && ps[0].isConnected && ps[0].style.transition !== 'none') motionUntil = Math.max(motionUntil, Date.now() + ms);
@@ -10378,6 +10409,19 @@ function importProgress() {
 }
 
 /* ── actions ─────────────────────────────────────────────────────────────── */
+/* while the forcing reply is on its way (S10) a tap is input to it (it
+   starts the reply, or is dropped), except these, which are neither board
+   nor flow: Continue in a line shown (S7: it ends the card at any point),
+   × and the menu's ways off the card (the reply is simply left behind),
+   ••• and Details (the reply runs on underneath) */
+var REPLY_FREE = /^(next|endSession|skip|dispute|menu|details)$/;
+/* the ••• menu opens or closes. During the forcing reply it is words like
+   any other: drawn at once, or 150 ms after a piece that is moving lands,
+   and the board is left alone */
+function setMenu(a, open) {
+  a.menuOpen = open;
+  if (a.reply) stage(['text']); else renderCard();
+}
 function parseSpec(t) {
   try { return JSON.parse(t.getAttribute('data-spec')); } catch (e) { return null; }
 }
@@ -10393,7 +10437,7 @@ document.addEventListener('click', function (e) {
   }
   if (!t) {
     var a0 = ui.session && ui.session.active;
-    if (a0 && a0.menuOpen && !(e.target.closest && e.target.closest('.card-menu'))) { a0.menuOpen = false; renderCard(); }
+    if (a0 && a0.menuOpen && !(e.target.closest && e.target.closest('.card-menu'))) setMenu(a0, false);
     return;
   }
   var act = t.getAttribute('data-act'), k = t.getAttribute('data-k');
@@ -10402,7 +10446,8 @@ document.addEventListener('click', function (e) {
   /* input first: a running slide ends and whatever was staged catches up
      (while the forcing reply slides, the tap is dropped); then a bar slot
      that just changed ignores the tap (a double tap's second half) */
-  if (flushStage()) return;
+  var a1 = ui.session && ui.session.active;
+  if (!(a1 && a1.reply && REPLY_FREE.test(act)) && flushStage()) return;
   var slot = t.getAttribute('data-slot');
   if (slot != null && slotGuarded(parseInt(slot, 10))) return;
   var a = ui.session && ui.session.active;
@@ -10465,7 +10510,7 @@ document.addEventListener('click', function (e) {
        the ••• button whose menu offered it */
     case 'details': if (a && a.phase === 'done') {
       var fromMenu = !!a.menuOpen;
-      if (fromMenu) { a.menuOpen = false; renderCard(); }
+      if (fromMenu) setMenu(a, false);
       openSheet('details', fromMenu ? '#ctop [data-act="menu"]' : '#cstrip [data-act="details"]');
     } break;
     /* these wait out a card's first half second (tooSoon); a slot that
@@ -10475,7 +10520,7 @@ document.addEventListener('click', function (e) {
     case 'takeBack': if (!tooSoon(a)) takeBack(); break;
     case 'seeIt': if (!tooSoon(a)) seeIt(); break;
     case 'promo': promoChoose(k); break;
-    case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
+    case 'menu': if (a) { setMenu(a, !a.menuOpen); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;
     /* the story (S12): one ply per tap; its strip's names open a segment */
     case 'storyBack': storyStep(-1); break;
@@ -10572,9 +10617,10 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Escape') {
     if (ui.sheet) { closeSheet(); return; }
-    if (flushStage()) return;
     var ae = ui.session && ui.session.active;
-    if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
+    /* the menu closes first; during the forcing reply it is no input to it */
+    if (!(ae && ae.menuOpen && ae.reply) && flushStage()) return;
+    if (ae && ae.menuOpen) { setMenu(ae, false); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
     /* the story: Esc goes back to the settled result */
     if (ae && ae.phase === 'done' && ae.view && ae.view.mode === 'story') { e.preventDefault(); backToSettled(); return; }

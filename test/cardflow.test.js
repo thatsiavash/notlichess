@@ -2743,7 +2743,8 @@ const BAR = `(function () {
         const reply = ws.filter((w) => w.id === 'bwrap' && /slow/.test(w.v))[0];
         ok(reply && reply.dt === 1500 - lead && !/green/.test(reply.v), at + ': their reply slides from 1500, no arrow yet, ' + JSON.stringify(ws.filter((w) => w.id === 'bwrap')));
         const green = ws.filter((w) => w.id === 'bwrap' && /green/.test(w.v))[0];
-        ok(green && green.dt === 1900 && /rsolid/.test(green.v), at + ': the next arrow lands with it at 1900, ' + JSON.stringify(green));
+        /* landed, the reply's own arrow and token give way to the green arrow (never a token under it) */
+        ok(green && green.dt === 1900 && !/rsolid|rring|rdash|token/.test(green.v), at + ': the next arrow lands with it at 1900, alone, ' + JSON.stringify(green));
         /* the words at 2050: Play it back on, and the next answer named (no write when its name is the same) */
         const named = ws.filter((w) => w.id === 'cband' && w.dt > 0)[0], back = ws.filter((w) => w.id === 'cbar' && w.dt > 200)[0];
         ok(back && back.dt === 2050 && /Play it/.test(back.bar) && (!named || named.dt === 2050), at + ': the words at 2050, ' + JSON.stringify([named, back]));
@@ -3178,7 +3179,8 @@ const BAR = `(function () {
       /* F4 by what the reply did on the board: what it took first, else the check, else the move */
       ok((info.took ? / took your (pawn|knight|bishop|rook|queen), as expected\.$/ : info.check ? / gives check, as expected\.$/ : / played [^ ]+, as expected\.$/).test(R2(b2.v)) && R2(b2.v).indexOf(info.opp + ' ') === 0, at + ': F4 says what the reply did, ' + R2(b2.v));
       ok(bar2 && dt(bar2) === 2050 && !/btn-off/.test(bar2.v) && /data-act="hint"/.test(bar2.v) && /data-act="reveal"/.test(bar2.v), at + ': the bar on at 2050, ' + JSON.stringify(bar2));
-      /* the sounds: good with the tick, move as the slide's board is drawn */
+      /* the sounds: good with the tick, move with the slide's board (these stubs have no piece to let go; with
+         one it sounds as the piece is let go, "a move the app shows slides 320 ms ...") */
       const snd = JSON.parse(A.ev('JSON.stringify(window.__snd)')).map((x) => x.n + '@' + (x.t - t0));
       ok(snd.indexOf('good@0') >= 0 && snd.indexOf('move@' + (1500 - lead)) >= 0, at + ': sounds ' + snd.join(' '));
     }
@@ -3195,7 +3197,7 @@ const BAR = `(function () {
     const keys = JSON.parse(A.ev(FORCING)).slice(0, 6);
     const lead = A.ev('SLIDE_LEAD');
     /* every input the page takes, each through its own handler: a finger on one of your pieces, a bar
-       button, ?, Enter, an arrow, Esc on the open menu, a typed move (the next move of the line) */
+       button, ?, Enter, an arrow, Esc, a typed move (the next move of the line) */
     const own = () => A.ev(`(function (a) { for (var s = 0; s < 64; s++) if (a.st.b[s] && isW(a.st.b[s]) === myPov(a.it)) return s; return -1; })(ui.session.active)`);
     const INPUTS = {
       finger: () => A.tap(own()),
@@ -3205,7 +3207,7 @@ const BAR = `(function () {
       q: () => A.key('?'),
       enter: () => A.key('Enter'),
       arrow: () => A.key('ArrowRight'),
-      esc: () => { A.ev('(ui.session.active.menuOpen = true, 1)'); A.key('Escape'); A.ev('(ui.session.active.menuOpen = false, 1)'); },
+      esc: () => A.key('Escape'),
       typed: () => A.ev('(typedMove(ui.session.active.sol[2]), 1)')
     };
     const names = Object.keys(INPUTS);
@@ -3319,6 +3321,247 @@ const BAR = `(function () {
     const w3 = WR(A, tp).filter((w) => w.id === 'cband')[0], bar3 = WR(A, tp).filter((w) => w.id === 'cbar')[0];
     ok(w3 && w3.t === tp + 300 && /^The answer: /.test(R1(w3.v)), 'shown: the next answer named 300 ms later, ' + JSON.stringify(w3 && [w3.t - tp, R1(w3.v)]));
     ok(bar3 && /data-act="playIt"/.test(bar3.v), 'shown: Play it back, ' + JSON.stringify(bar3));
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  /* a session of two cards: the forcing card key, then a one-move card; the first shown as the page shows it */
+  /* (same: the next card is the same one again, as a relearn showing is) */
+  const TWO = (key, same) => `(function () { var its = [model().byKey['${key}'], ${same ? `model().byKey['${key}']` : `allMistakes().filter(trainable).filter(function (x) { var c = cardFor(x); return x.key !== '${key}' && c && !c.sol; })[0]`}];
+    its.forEach(function (x) { x.b.v = Math.max(x.b.v || 0, 2); });
+    ui.session = { mode: 't', label: 't', keys: its.map(function (x) { return x.key; }), idx: 0, results: {}, relearn: [], relearnOf: ${same ? `{ '${key}': 1 }` : '{}'}, notes: {} };
+    loadCard(); return its[1].key; })()`;
+  const OWN = `(function (a) { for (var s = 0; s < 64; s++) if (a.st.b[s] && isW(a.st.b[s]) === myPov(a.it)) return s; return -1; })(ui.session.active)`;
+
+  await test('a line shown: Continue ends the card at any point of their reply (pending, telegraphed, sliding, landed), and nothing of it reaches the next card', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, notice = function () {}, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(FORCING)).slice(0, 4);
+    const lead = A.ev('SLIDE_LEAD');
+    let n = 0;
+    for (const key of keys) for (const [when, dt, same] of [['pending', 300], ['telegraphed', 1000], ['sliding', 1600], ['landed', 1960], ['sliding, the same card next', 1600, true]]) {
+      const at = key + ' ' + when;
+      const next = A.ev(TWO(key, same));
+      run(1000);
+      A.click('reveal', null, 1); run(600);
+      /* Play it: the answer slides after its fade (100) in 320 ms; their reply's timeline runs from that landing */
+      A.click('playIt', null, 1);
+      const t1 = A.getNow() + 100 + lead + 320;
+      A.advance(t1 + dt - A.getNow());
+      const s = JSON.parse(A.ev(STATE));
+      ok(s.reply && s.phase === 'done' && s.reply.played === (dt > 1500) && s.reply.tele === (dt > 600) && s.hold === (dt === 1600), at + ': their reply ' + when + ', ' + JSON.stringify(s));
+      const tc = A.getNow();
+      A.click('next', null, 0);
+      eq(A.ev('ui.session.idx + " " + ui.session.active.key'), '1 ' + next, at + ': Continue ended the card at once');
+      const s2 = JSON.parse(A.ev(STATE));
+      ok(!s2.reply && !s2.hold && s2.mu <= tc && s2.phase === 'guess' && s2.solIdx === 0, at + ': the next card, nothing held, ' + JSON.stringify(s2));
+      const fen = A.ev('stateFen(ui.session.active.st)');
+      /* the next card takes a move at once */
+      A.ev(`(sessionClick(${OWN}), 1)`);
+      ok(A.ev('ui.session.active.sel') >= 0, at + ': a piece picked up on the next card at once');
+      A.ev('(ui.session.active.sel = -1, renderCardBoard(), 1)');
+      /* no timer of the old reply touches it */
+      run(4000);
+      eq(A.ev('ui.session.active.key + " " + stateFen(ui.session.active.st) + " " + ui.session.active.phase + " " + !!ui.session.active.reply'), next + ' ' + fen + ' guess false', at + ': the next card as it was, 4 s later');
+      const ws = WR(A, tc).filter((w) => (w.id === 'bwrap' || w.id === 'marks') && /slow|rring|rdash|rsolid/.test(w.v));
+      eq(ws.length, 0, at + ': the old reply drawn on the next card, ' + JSON.stringify(ws));
+      eq(A.ev('motionHold'), false, at + ': no hold left');
+      n++;
+    }
+    ok(n >= 12, 'cases ' + n);
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('× and ••• during their reply (phase reply) work at once: × and the menu\'s Skip leave the reply behind; ••• opens with the reply neither started nor skipped (drawn 150 ms after a moving piece lands), and Esc closes it', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, notice = function () {}, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(FORCING)).slice(0, 4);
+    const lead = A.ev('SLIDE_LEAD');
+    const TOP = (t) => JSON.parse(A.ev(`JSON.stringify(window.__writes.filter(function (w) { return w.id === 'ctop' && w.what === 'innerHTML' && w.t >= ${t}; }).map(function (w) { return w.t; }))`));
+    for (const key of keys) for (const [when, dt] of [['pending', 300], ['telegraphed', 1000], ['sliding', 1600], ['landed', 1960]]) {
+      for (const way of ['end', 'skip', 'menu']) {
+        const at = key + ' ' + way + ' ' + when;
+        const next = A.ev(TWO(key));
+        run(1000);
+        A.ev(FIRST('tap'));
+        const t0 = A.getNow() + lead + 220;
+        A.advance(t0 + dt - A.getNow());
+        const s = JSON.parse(A.ev(STATE));
+        ok(s.phase === 'reply' && s.reply && s.reply.played === (dt > 1500) && s.hold === (when === 'sliding'), at + ': their reply ' + when + ', ' + JSON.stringify(s));
+        const tc = A.getNow();
+        if (way === 'end') {
+          A.click('endSession');
+          eq(A.ev('ui.session === null'), true, at + ': the session ended at once');
+          run(4000);
+          eq(WR(A, tc).filter((w) => w.id === 'bwrap' || w.id === 'marks' || w.id === 'cband').length, 0, at + ': nothing of the card drawn after');
+          continue;
+        }
+        if (way === 'skip') {
+          A.ev('(ui.session.active.menuOpen = true, 1)');
+          A.click('skip');
+          eq(A.ev('ui.session.idx + " " + ui.session.active.key + " " + !!ui.session.active.reply'), '1 ' + next + ' false', at + ': Skip left the card at once');
+          run(4000);
+          eq(WR(A, tc).filter((w) => (w.id === 'bwrap' || w.id === 'marks') && /slow|rring|rdash|rsolid/.test(w.v)).length, 0, at + ': the old reply drawn on the next card');
+          continue;
+        }
+        A.click('menu');
+        const s2 = JSON.parse(A.ev(STATE));
+        eq(JSON.stringify([s2.phase, s2.solIdx, s2.reply && s2.reply.played, s2.mu, s2.hold]), JSON.stringify([s.phase, s.solIdx, s.reply.played, s.mu, s.hold]), at + ': the menu neither starts nor skips the reply');
+        eq(A.ev('ui.session.active.menuOpen'), true, at + ': the menu is open');
+        /* drawn at once, unless a piece is moving or just landed: then 150 ms after it lands (with the reply's words) */
+        const want = dt > 1500 ? s.mu + 150 : tc;
+        A.advance(want + 1 - A.getNow());
+        const tops = TOP(tc);
+        ok(tops.length >= 1 && tops[0] === want, at + ': the menu drawn at ' + (tops[0] - tc) + ', want ' + (want - tc));
+        ok(/menu-pop/.test(A.ev('window.__els.ctop.innerHTML')), at + ': its items on the page');
+        /* the reply runs on underneath, on its own timeline */
+        A.advance(t0 + 2060 - A.getNow());
+        eq(A.ev('ui.session.active.phase + " " + ui.session.active.solIdx'), 'guess 2', at + ': the reply played on its timeline, your move at 2050');
+        ok(/menu-pop/.test(A.ev('window.__els.ctop.innerHTML')), at + ': the menu still open');
+        /* the menu draws no board: the only boards are the reply's own, its slide and its landing */
+        const other = WR(A, tc).filter((w) => w.id === 'bwrap' && w.t !== t0 + 1500 - lead && w.t !== t0 + 1900);
+        eq(other.length, 0, at + ': a board drawn for the menu, ' + JSON.stringify(other.map((w) => [w.t - t0, w.v])));
+        const bs = WR(A, tc).filter((w) => w.id === 'bwrap' && /slow/.test(w.v));
+        if (dt < 1500) ok(bs.length === 1 && bs[0].t === t0 + 1500 - lead, at + ': the slide on time, ' + JSON.stringify(bs.map((w) => w.t - t0)));
+        /* Esc closes it (during a reply: the next card's line is not needed, open it again before the reply) */
+        A.key('Escape');
+        eq(A.ev('!!ui.session.active.menuOpen'), false, at + ': Esc closes the menu');
+      }
+    }
+    /* Esc with the menu open during the reply closes the menu and starts nothing */
+    A.ev(TWO(keys[0]));
+    run(1000);
+    A.ev(FIRST('tap'));
+    A.advance(lead + 220 + 1000);
+    A.click('menu');
+    A.key('Escape');
+    const s3 = JSON.parse(A.ev(STATE));
+    ok(!A.ev('!!ui.session.active.menuOpen') && s3.reply && !s3.reply.played && s3.solIdx === 1, 'Esc on the menu during the reply: closed, the reply not started, ' + JSON.stringify(s3));
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('a move the app shows slides 320 ms (anim-show; the forcing reply anim-slow, your own move neither), and its move sound plays as the piece is let go, never with a board already gone', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, notice = function () {}, 1)');
+    /* the browser's two frames before a piece is let go, SLIDE_LEAD in all; the board's sliding piece as a node */
+    A.ev(`(function () { var bw = window.__els.bwrap;
+      requestAnimationFrame = function (f) { setTimeout(f, SLIDE_LEAD / 2); };
+      bw.querySelectorAll = function (sel) { var h = bw.innerHTML; return sel === '.anim-piece' && /anim-piece/.test(h) ? [{ style: {}, get isConnected() { return bw.innerHTML === h; } }] : []; };
+      window.__snd = []; snd = function (n) { window.__snd.push({ n: n, t: Date.now() }); };
+      return 1; })()`);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const lead = A.ev('SLIDE_LEAD');
+    const SND = (t) => JSON.parse(A.ev(`JSON.stringify(window.__snd.filter(function (x) { return x.t >= ${t} && x.n === 'move'; }).map(function (x) { return x.t - ${t}; }))`));
+    const HTML = () => A.ev('window.__els.bwrap.innerHTML');
+    const keys = JSON.parse(A.ev(FORCING)).slice(0, 3);
+    for (const key of keys) {
+      /* the forcing reply: drawn at 1450, let go and sounding at 1500 */
+      A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      A.ev('(window.__snd = [], 1)');
+      const t = A.getNow();
+      A.ev(FIRST('tap'));
+      ok(/class="anim-piece"/.test(HTML()), key + ': your own move slides at 220 ms (no class of its own)');
+      const t0 = t + lead + 220;
+      A.advance(t0 + 1460 - A.getNow());
+      ok(/anim-piece anim-slow/.test(HTML()) && !/anim-show/.test(HTML()), key + ': the reply slides slow');
+      eq(JSON.stringify(SND(t0)), '[]', key + ': no move sound before the piece is let go');
+      A.advance(t0 + 1600 - A.getNow());
+      eq(JSON.stringify(SND(t0)), JSON.stringify([1500]), key + ': the move sound as the reply is let go, 1500');
+      /* a line shown: Play it slides 320 ms with its sound as it is let go, and so does their reply after it */
+      A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      A.click('reveal', null, 1); run(600);
+      const tp = A.getNow();
+      A.click('playIt', null, 1);
+      A.advance(100);
+      ok(/anim-piece anim-show/.test(HTML()), key + ': Play it slides 320 ms');
+      eq(A.ev('motionUntil') - A.getNow(), lead + 320, key + ': motionUntil counts the 320');
+      A.advance(lead + 10);
+      eq(JSON.stringify(SND(tp)), JSON.stringify([100 + lead]), key + ': its sound as it is let go');
+      run(3000);
+    }
+    /* a one-move card: Play it, then Continue before its piece is let go: no sound */
+    const one = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol; }).slice(0, 2).map(function (it) { return it.key; }))`));
+    A.ev(TWO(one[0]).replace(`var c = cardFor(x); return x.key !== '${one[0]}' && c && !c.sol;`, `return x.key === '${one[1]}';`));
+    run(1000);
+    A.click('reveal', null, 1); run(600);
+    const tq = A.getNow();
+    A.click('playIt', null, 1);
+    A.advance(100 + lead / 2);
+    ok(/anim-show/.test(HTML()), 'one move: Play it drawn');
+    A.click('next', null, 0);
+    run(500);
+    eq(JSON.stringify(SND(tq)), '[]', 'one move: no sound for a board gone before its piece was let go');
+    /* the story: each ply slides 320 ms and sounds as it is let go */
+    A.ev(`(function () { window.__show(model().byKey['${one[0]}']); ui.session.keys.push('x'); return 1; })()`);
+    run(1000);
+    A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
+    run(2500);
+    A.key('ArrowRight'); run(1700);
+    const ts = A.getNow();
+    A.key('ArrowRight');
+    run(1200);
+    const sw = SND(ts);
+    const story = JSON.parse(A.ev(`JSON.stringify(window.__writes.filter(function (w) { return w.id === 'bwrap' && w.t >= ${ts} && /slide/.test(w.v); }).map(function (w) { return w.t - ${ts}; }))`));
+    ok(story.length >= 1 && A.ev('ui.session.active.view.mode') === 'story', 'the story stepped, slides at ' + JSON.stringify(story));
+    eq(JSON.stringify(sw), JSON.stringify(story.map((x) => x + lead)), 'the story\'s move sounds as each piece is let go');
+  });
+
+  await test('a tab in the background holds their reply, telegraphed, until it is seen again: then it slides, and its words and pips follow', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(FORCING)).slice(0, 4);
+    const lead = A.ev('SLIDE_LEAD');
+    for (const key of keys) {
+      A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      A.ev(FIRST('tap'));
+      const info = JSON.parse(A.ev(REPLY_INFO));
+      const t0 = A.getNow() + lead + 220;
+      A.advance(t0 + 1000 - A.getNow());
+      A.ev('(document.hidden = true, 1)');
+      A.fire('visibilitychange');
+      A.advance(t0 + 30000 - A.getNow());
+      /* an event while still hidden plays nothing */
+      A.fire('visibilitychange');
+      A.advance(t0 + 60000 - A.getNow());
+      const s = JSON.parse(A.ev(STATE));
+      eq(JSON.stringify([s.phase, s.solIdx, s.reply && s.reply.played, s.reply && s.reply.tele, s.hold]), JSON.stringify(['reply', 1, false, true, false]), key + ': held while hidden');
+      eq(WR(A, t0 + 1).filter((w) => w.id === 'bwrap').length, 0, key + ': no board while hidden (the piece never jumps)');
+      eq(WR(A, t0 + 200).filter((w) => w.id === 'cband').length, 0, key + ': no words while hidden');
+      A.ev('(document.hidden = false, 1)');
+      const tv = A.getNow();
+      A.fire('visibilitychange');
+      const s2 = JSON.parse(A.ev(STATE));
+      ok(s2.reply && s2.reply.played && s2.hold && s2.mu === tv + lead + 400, key + ': seen again, it slides at once, ' + JSON.stringify(s2));
+      const b = WR(A, tv).filter((w) => w.id === 'bwrap')[0];
+      ok(b && b.t === tv && /slow/.test(b.v) && /rring/.test(b.v), key + ': the slide drawn with its telegraph, ' + JSON.stringify(b));
+      A.advance(lead + 400 + 160);
+      const w = WR(A, tv).filter((x) => x.id === 'cband')[0];
+      ok(w && w.t === tv + lead + 400 + 150 && R1(w.v) === 'Your move' && R2(w.v) === info.want && / cur"/.test(w.v), key + ': the words and the pip 150 ms after it lands, ' + JSON.stringify(w && [w.t - tv, R1(w.v), R2(w.v)]));
+      eq(A.ev('ui.session.active.phase'), 'guess', key + ': your move');
+      /* hidden and back before it is due: on its own timeline */
+      A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      A.ev(FIRST('tap'));
+      const t1 = A.getNow() + lead + 220;
+      A.advance(700); A.ev('(document.hidden = true, 1)'); A.fire('visibilitychange');
+      A.advance(300); A.ev('(document.hidden = false, 1)'); A.fire('visibilitychange');
+      A.advance(t1 + 1600 - A.getNow());
+      const sl = WR(A, t1).filter((x) => x.id === 'bwrap' && /slow/.test(x.v))[0];
+      ok(sl && sl.t === t1 + 1500 - lead, key + ': back before it was due, the slide on time, ' + JSON.stringify(sl && sl.t - t1));
+      run(1000);
+    }
     const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
     eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
   });

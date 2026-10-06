@@ -349,8 +349,23 @@ function replyClock(a, landIn) {
   var rp = a.reply;
   if (!rp || reducedMotion()) return;
   stageAt(landIn + REPLY_TELE, function (a2) { if (a2.reply === rp && !rp.played) { rp.tele = true; stage(['marks']); } });
-  stageAt(landIn + REPLY_SLIDE - SLIDE_LEAD - (rp.show ? TEXT_OUT : 0), function (a2) { if (a2.reply === rp && !rp.played) theirReply(a2, false); });
+  stageAt(landIn + REPLY_SLIDE - SLIDE_LEAD - (rp.show ? TEXT_OUT : 0), function (a2) {
+    if (a2.reply !== rp || rp.played) return;
+    /* a tab in the background draws no frames: the piece would only jump.
+       It waits, telegraphed, until the page is seen again (replyOnReturn) */
+    if (document.hidden) rp.held = true;
+    else theirReply(a2, false);
+  });
 }
+/* back on the tab: a reply held while it was hidden plays now, sliding,
+   and its words and pips follow it as usual */
+function replyOnReturn() {
+  var a = ui.session && ui.session.active, rp = a && a.reply;
+  if (document.hidden || !rp || !rp.held || rp.played) return;
+  rp.held = false;
+  theirReply(a, false);
+}
+document.addEventListener('visibilitychange', replyOnReturn);
 /* the reply plays: on its timeline, or now (early: an input before 1500
    starts it at once, its telegraph kept, flushStage; or its own button
    under reduced motion). It slides 400 ms with its sound, its ring and

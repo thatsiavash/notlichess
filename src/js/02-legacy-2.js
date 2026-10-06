@@ -252,7 +252,7 @@ function boardSvg(st, opts) {
         if (opts.anim && opts.anim[1] === sq) {
           var af = opts.anim[0];
           var acol = flip ? 7 - af % 8 : af % 8, arow = flip ? (af >> 3) : 7 - (af >> 3);
-          animAttr = ' class="anim-piece' + (opts.animMs === 400 ? ' anim-slow' : '') + '" style="transform:translate('
+          animAttr = ' class="anim-piece' + (opts.animMs === 400 ? ' anim-slow' : opts.animMs === 320 ? ' anim-show' : '') + '" style="transform:translate('
             + (acol * SZ - x) + 'px,' + (arow * SZ - y) + 'px)"';
         }
         var use = '<use href="#pc-' + PIECE_ID[p] + '" x="' + x + '" y="' + y

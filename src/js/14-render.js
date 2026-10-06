@@ -39,7 +39,7 @@ window.addEventListener('popstate', function () {
   /* Back closes a sheet first, then ends a session */
   if (ui.sheet) { closeSheet(true); return; }
   var am = ui.session && ui.session.active;
-  if (am && am.menuOpen) { am.menuOpen = false; renderCard(); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
+  if (am && am.menuOpen) { setMenu(am, false); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
   /* then leaves an exploration, back to the lesson */
   if (am && am.explore) { exploreExit('pop'); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
   if (ui.session) { endSession(true); return; }
@@ -479,8 +479,10 @@ function boardOptsFor(a) {
       if (opts.anim) land = true;
       else { opts.fx = sfx; for (var sk in sl) opts[sk] = sl[sk]; }
     }
-    /* their reply after Play it, on S10's timeline (addReplyMarks) */
-    if (addReplyMarks(a, view, opts)) land = true;
+    /* their reply after Play it, on S10's timeline (addReplyMarks); landed,
+       its arrow and token give way to the next answer's green arrow, which
+       lands with it */
+    if (addReplyMarks(a, view, opts, !!sdue)) land = true;
     if (sdue) {
       opts.sel = a.sel;
       if (a.sel === sdue.from) opts.dots = [sdue.to];
@@ -604,15 +606,17 @@ function boardOptsFor(a) {
    goes; both ride its slide; as it lands the ring goes, the arrow turns
    solid and what it took shows as a token. The landed marks stay until
    your next move (a.replyMark), as the move's own marks (2.3 exempts
-   them). Added to opts; true when they ride a slide (they go as it lands) */
-function addReplyMarks(a, view, opts) {
+   them), unless noLanded (a line shown: the next answer's green arrow
+   takes the board as it lands). Added to opts; true when they ride a
+   slide (they go as it lands) */
+function addReplyMarks(a, view, opts, noLanded) {
   var rp = a.reply, rk = a.replyMark, o = null, sliding = false;
   if (rp && !rp.played) {
     if (rp.tele && a.sol && a.sol[a.solIdx] === rp.uci) o = { rings: [{ sq: rp.from, kind: 'reply' }], arrows: [{ from: rp.from, to: rp.to, kind: 'reply', key: 'reply' }] };
   } else if (rk && sameMove(view.last, [rk.from, rk.to])) {
     sliding = sameMove(opts.anim, view.last);
     if (sliding) o = { rings: [{ sq: rk.from, kind: 'reply' }], arrows: [{ from: rk.from, to: rk.to, kind: 'reply', key: 'reply' }] };
-    else {
+    else if (!noLanded) {
       o = { arrows: [{ from: rk.from, to: rk.to, kind: 'reply', key: 'reply', solid: true }] };
       if (rk.token) { o.tokens = [{ sq: rk.token.sq, p: rk.token.p, kind: colorW(rk.token.p) === myPov(a.it) ? 'lost' : 'won', fx: rk.fx }]; if (!opts.fx) opts.fx = rk.fx; }
     }
@@ -718,16 +722,17 @@ function paintBoard(a, instant) {
   bw.innerHTML = boardSvg(f.st, f.opts) + (a.pendingPromo ? promoHtml(f.st) : '') + fade;
   bw.classList.toggle('static', !f.live);
   var ms = f.slideMs || 0;
-  releaseAnims(bw, ms);
+  /* a move the app shows sounds as its piece is let go (releaseAnims), or
+     at once when it lands where it is drawn */
+  releaseAnims(bw, ms, a.moveCue ? 'move' : null);
+  a.moveCue = false;
   a.animMove = null;
   a.animSlow = false;
   a.jump = false;
   /* the badge and tints wait for the piece (the land beat), and the
-     verdict's sound comes with them; a move the app shows sounds as it
-     starts */
+     verdict's sound comes with them */
   a.landing = !!(ms && f.land);
   if (!ms && a.cue) { snd(a.cue); a.cue = null; }
-  if (a.moveCue) { snd('move'); a.moveCue = false; }
   /* a jump: the old words fade out with the old board (text out, 2.2), and
      the new ones come with the text beat */
   if (fade) fadeOut(a);
@@ -1093,13 +1098,16 @@ function barHtml(slots) {
 function sameMove(x, y) { return !!(x && y && x[0] === y[0] && x[1] === y[1]); }
 /* a sliding piece is drawn where it came from and let go two frames later,
    so its transition runs; motionUntil then runs from that moment (ms, the
-   slide's length), in case those frames took longer than SLIDE_LEAD */
+   slide's length), in case those frames took longer than SLIDE_LEAD. A
+   sound for the move (sound) plays as the piece is let go: at once when
+   none slides, never for a board already gone */
 var SLIDE_LEAD = 50;
-function releaseAnims(root, ms) {
+function releaseAnims(root, ms, sound) {
   var ps = root.querySelectorAll('.anim-piece');
-  if (!ps.length) return;
+  if (!ps.length) { if (sound) snd(sound); return; }
   requestAnimationFrame(function () { requestAnimationFrame(function () {
     for (var i = 0; i < ps.length; i++) ps[i].style.transform = 'translate(0px,0px)';
+    if (sound && ps[0].isConnected) snd(sound);
     /* only for a slide still on screen: one an input already ended
        (flushStage) leaves the clock alone */
     if (ms && ps[0].isConnected && ps[0].style.transition !== 'none') motionUntil = Math.max(motionUntil, Date.now() + ms);

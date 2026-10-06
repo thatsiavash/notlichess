@@ -405,6 +405,19 @@ function importProgress() {
 }
 
 /* ── actions ─────────────────────────────────────────────────────────────── */
+/* while the forcing reply is on its way (S10) a tap is input to it (it
+   starts the reply, or is dropped), except these, which are neither board
+   nor flow: Continue in a line shown (S7: it ends the card at any point),
+   × and the menu's ways off the card (the reply is simply left behind),
+   ••• and Details (the reply runs on underneath) */
+var REPLY_FREE = /^(next|endSession|skip|dispute|menu|details)$/;
+/* the ••• menu opens or closes. During the forcing reply it is words like
+   any other: drawn at once, or 150 ms after a piece that is moving lands,
+   and the board is left alone */
+function setMenu(a, open) {
+  a.menuOpen = open;
+  if (a.reply) stage(['text']); else renderCard();
+}
 function parseSpec(t) {
   try { return JSON.parse(t.getAttribute('data-spec')); } catch (e) { return null; }
 }
@@ -420,7 +433,7 @@ document.addEventListener('click', function (e) {
   }
   if (!t) {
     var a0 = ui.session && ui.session.active;
-    if (a0 && a0.menuOpen && !(e.target.closest && e.target.closest('.card-menu'))) { a0.menuOpen = false; renderCard(); }
+    if (a0 && a0.menuOpen && !(e.target.closest && e.target.closest('.card-menu'))) setMenu(a0, false);
     return;
   }
   var act = t.getAttribute('data-act'), k = t.getAttribute('data-k');
@@ -429,7 +442,8 @@ document.addEventListener('click', function (e) {
   /* input first: a running slide ends and whatever was staged catches up
      (while the forcing reply slides, the tap is dropped); then a bar slot
      that just changed ignores the tap (a double tap's second half) */
-  if (flushStage()) return;
+  var a1 = ui.session && ui.session.active;
+  if (!(a1 && a1.reply && REPLY_FREE.test(act)) && flushStage()) return;
   var slot = t.getAttribute('data-slot');
   if (slot != null && slotGuarded(parseInt(slot, 10))) return;
   var a = ui.session && ui.session.active;
@@ -492,7 +506,7 @@ document.addEventListener('click', function (e) {
        the ••• button whose menu offered it */
     case 'details': if (a && a.phase === 'done') {
       var fromMenu = !!a.menuOpen;
-      if (fromMenu) { a.menuOpen = false; renderCard(); }
+      if (fromMenu) setMenu(a, false);
       openSheet('details', fromMenu ? '#ctop [data-act="menu"]' : '#cstrip [data-act="details"]');
     } break;
     /* these wait out a card's first half second (tooSoon); a slot that
@@ -502,7 +516,7 @@ document.addEventListener('click', function (e) {
     case 'takeBack': if (!tooSoon(a)) takeBack(); break;
     case 'seeIt': if (!tooSoon(a)) seeIt(); break;
     case 'promo': promoChoose(k); break;
-    case 'menu': if (a) { a.menuOpen = !a.menuOpen; renderCard(); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
+    case 'menu': if (a) { setMenu(a, !a.menuOpen); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;
     /* the story (S12): one ply per tap; its strip's names open a segment */
     case 'storyBack': storyStep(-1); break;
@@ -599,9 +613,10 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'Escape') {
     if (ui.sheet) { closeSheet(); return; }
-    if (flushStage()) return;
     var ae = ui.session && ui.session.active;
-    if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
+    /* the menu closes first; during the forcing reply it is no input to it */
+    if (!(ae && ae.menuOpen && ae.reply) && flushStage()) return;
+    if (ae && ae.menuOpen) { setMenu(ae, false); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
     /* the story: Esc goes back to the settled result */
     if (ae && ae.phase === 'done' && ae.view && ae.view.mode === 'story') { e.preventDefault(); backToSettled(); return; }

@@ -49,13 +49,13 @@ var CARD_COPY = {
 };
 /* F4: their reply in a forcing line, once it has landed, as row 2 says it:
    what it took, or the check it gives, or the move itself; st is the
-   position before it, took what it captured */
+   position before it, took what it captured. The ladder's next form drops
+   "as expected" (S10's 13 words beside a bar after two hints) */
 function replyWords(a, st, m, took) {
   var opp = sidesOf(a).opp, after = cloneState(st);
   applyMove(after, m);
-  if (took) return [opp + ' took your ' + PIECE_WORD[pType(took)] + ', as expected.'];
-  if (checkersOf(after).length) return [opp + ' gives check, as expected.'];
-  return [opp + ' played ' + capSan(st, m) + ', as expected.'];
+  var did = took ? 'took your ' + PIECE_WORD[pType(took)] : checkersOf(after).length ? 'gives check' : 'played ' + capSan(st, m);
+  return [opp + ' ' + did + ', as expected.', opp + ' ' + did + '.'];
 }
 /* the forcing pips (2.0): one dot per move of yours in the line, from your
    first move found to the line's end (never before it: the card opens as
@@ -98,6 +98,11 @@ function fitRow(cands, row, fallback) {
    ‹ › … are not words). Over budget, row 2 runs its ladder again with the
    words that are left */
 var WORD_BUDGET = 15;
+/* a forcing line's own frames (S10: "Right", "Your move") hold 13 words,
+   band and bar; the reply's board label (slice 13, two words) is not
+   counted here: it is the first thing to drop when a frame goes over
+   (principle 5), before row 2 runs its ladder */
+var LINE_BUDGET = 13;
 function wordsIn(s) { return String(s || '').split(/\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w); }).length; }
 function barWords(slots) { return (slots || []).reduce(function (n, b) { return n + wordsIn(b.label); }, 0); }
 function bandWords(b, slots) { return wordsIn(b.row1) + wordsIn(b.row2) + wordsIn(b.chip) + wordsIn(b.cap) + barWords(slots); }
@@ -255,7 +260,7 @@ function bandFit(a, b) {
     /* a ladder step that would say something untrue (R4's found form) */
     if (b.never && b.never.indexOf(b.row2) >= 0) b.row2 = fitRow([], { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
   }
-  delete b.cands; delete b.fall; delete b.never;
+  delete b.cands; delete b.fall; delete b.never; delete b.budget;
   return b;
 }
 /* the comparison a settled card makes (S6, R4), read once from the
@@ -548,7 +553,7 @@ function stripWords(a) {
 function rowRoom(a, b) {
   var ss = ui.session, slots = ss ? barSlots(a, ss) : [], bw = barWords(slots);
   if (ss && a.phase === 'tried' && a.tried && a.tried.kind === 'miss') bw = Math.max(barWords(triedSlots(a, false)), barWords(triedSlots(a, true)));
-  return WORD_BUDGET - bandWords({ row1: b.row1, chip: b.chip }, []) - bw - stripWords(a);
+  return (b.budget || WORD_BUDGET) - bandWords({ row1: b.row1, chip: b.chip }, []) - bw - stripWords(a);
 }
 /* what the card is showing, so a word or an outline meant for one state
    never outlives it: a move (each one counted, so coming back to the same
@@ -591,7 +596,7 @@ function bandOf(a) {
              row1: tv.row1, cands: wait ? [] : tv.cands, fall: wait ? '' : tv.fall };
   }
   /* a move of the forcing line found (S10): right, and their reply comes */
-  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: CARD_COPY.F1(), cands: [CARD_COPY.F2(a)], fall: '' };
+  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: CARD_COPY.F1(), cands: [CARD_COPY.F2(a)], fall: '', budget: LINE_BUDGET };
   /* a hint says itself on the showing it came with (pressed, or the
      automatic one this Try again brought: S4), and afterwards while its
      marks stand on the board, so band and board agree; a hint in words
@@ -603,6 +608,6 @@ function bandOf(a) {
     return { disc: 'king', kind: 'hint', row1: h.row1, cands: h.cands, fall: h.fall };
   }
   /* their reply has landed: your move, and what it did (F4) */
-  if (mid) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: a.replySaid ? a.replySaid.slice() : [], fall: 'The next move is forcing too.' };
+  if (mid) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: a.replySaid ? a.replySaid.slice() : [], fall: 'The next move is forcing too.', budget: LINE_BUDGET };
   return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '' };
 }

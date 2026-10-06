@@ -835,26 +835,35 @@ const PLAIN = `function unplain(s, tier) {
              "{Opp} replies next." beside the bar switched off (under reduced
              motion "Their reply ›" alone on the right), the telegraph, their
              reply landed, then "Your move" with F4; at most 13 words */
-          if (a.sol) {
+          if (a.sol) [0, 1, 2].forEach(function (hn) {
+            /* and after hints (taken at an earlier move: the line's own
+               frames keep the hint bar), where F4 drops "as expected" beside
+               [No more hints] [Show the answer] to stay within 13 */
             a = openCard(it);
-            var F4 = /^(White|Black) (took your (pawn|knight|bishop|rook|queen)|gives check|played [^ ,]+), as expected\.$/;
-            var w13 = function (what, d) { var n = wordsIn(d.row1) + wordsIn(d.row2) + barWords(d.buttons); if (n > 13) out.push(what + ': ' + n + ' words'); };
+            a.hints = hn;
+            var F4 = /^(White|Black) (took your (pawn|knight|bishop|rook|queen)|gives check|played [^ ,]+)(, as expected)?\.$/;
+            var w13 = function (what, d) { var n = wordsIn(d.row1) + wordsIn(d.row2) + barWords(d.buttons); if (n > 13) out.push(what + ': ' + n + ' words, ' + d.row1 + ' / ' + d.row2 + ' | ' + d.buttons.map(function (x) { return x.label; }).join(' | ')); };
+            var hl = hn >= 2 ? 'No more hints' : hn ? 'Hint 2' : 'Hint', hw = hn ? ', hints ' + hn : '';
             for (var fk = 0; fk < a.sol.length - 1; fk += 2) {
-              var fat = at + ' forcing move ' + (fk / 2 + 1), frp;
+              var fat = at + ' forcing move ' + (fk / 2 + 1) + hw, frp;
               gradeMove(uciToMove(a.st, a.sol[fk]));
               if (!(frp = a.reply)) { out.push(fat + ': no reply, ' + a.phase); break; }
               d = band(fat + ', right', a); w13(fat + ', right', d);
-              if (d.row1 !== 'Right' || d.row2 !== sidesOf(a).opp + ' replies next.' || d.buttons.map(function (x) { return x.label + (x.off ? ' (off)' : ''); }).join(' | ') !== (a.hints ? 'Hint 2' : 'Hint') + ' (off) | Show the answer (off)')
+              if (d.row1 !== 'Right' || d.row2 !== sidesOf(a).opp + ' replies next.' || d.buttons.map(function (x) { return x.label + (x.off ? ' (off)' : ''); }).join(' | ') !== hl + ' (off) | Show the answer (off)')
                 out.push(fat + ' reads ' + d.row1 + ' / ' + d.row2 + ' | ' + JSON.stringify(d.buttons));
-              ui.reducedTest = true; d = band(fat + ', right, reduced motion', a); ui.reducedTest = false;
+              ui.reducedTest = true; d = band(fat + ', right, reduced motion', a); w13(fat + ', right, reduced motion', d); ui.reducedTest = false;
               if (d.buttons.map(function (x) { return x.label + (x.off ? ' (off)' : ''); }).join(' | ') !== ' (off) | Their reply ›') out.push(fat + ' under reduced motion offers ' + JSON.stringify(d.buttons));
-              frp.tele = true; band(fat + ', the telegraph', a);
-              theirReply(a, false); d = band(fat + ', landed', a);
+              frp.tele = true; d = band(fat + ', the telegraph', a); w13(fat + ', the telegraph', d);
+              theirReply(a, false); d = band(fat + ', landed', a); w13(fat + ', landed', d);
               if (d.row1 !== 'Right') out.push(fat + ': the words changed as their reply landed: ' + d.row1);
               replyDone(a, frp); d = band(fat + ', your move', a); w13(fat + ', your move', d);
               if (d.row1 !== 'Your move' || !F4.test(d.row2)) out.push(fat + ' then reads ' + d.row1 + ' / ' + d.row2);
+              /* the full form whenever it fits beside the bar; the short one only after two hints */
+              var full = a.replySaid[0], fits = wordsIn(full) <= 13 - 2 - barWords(d.buttons);
+              if ((d.row2 === full) !== fits || (hn < 2 && !fits)) out.push(fat + ': F4 reads ' + d.row2 + ' (full: ' + full + ', fits ' + fits + ')');
+              if (!fits) seen['forcing, F4 short'] = (seen['forcing, F4 short'] || 0) + 1;
             }
-          }
+          });
           a = openCard(it);
           /* the game move again: M2, then its reason (M3 from the card's own
              refutation, or on a missed-chance card that there is more) */
@@ -960,7 +969,7 @@ const PLAIN = `function unplain(s, tier) {
     ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss outside a line', 'a miss with a reply', 'game move again, its reason', 'a miss that loses nothing, in a line', 'shown, N1',
      'shown, played', 'mid-line shown, settled', 'found, settled', 'works too, settled', 'line found, settled', 'story step', 'story step, N1',
      'the automatic hint after Try again', 'Hint pressed over a try', 'Hint pressed over a try, T4', ', hint 2, T4', 'move 2, hint 1',
-     'forcing move 1, right', 'forcing move 2, right, reduced motion', 'forcing move 1, the telegraph', 'forcing move 2, your move'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
+     'forcing move 1, right', 'forcing move 2, right, reduced motion', 'forcing move 1, the telegraph', 'forcing move 2, your move', 'forcing move 1, hints 2, your move', 'forcing, F4 short'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
   });
 
   await test('R4 never uses the found form when lines.game.uci[1] !== ru[0]', () => {
