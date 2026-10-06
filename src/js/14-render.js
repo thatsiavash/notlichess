@@ -437,6 +437,43 @@ function boardOptsFor(a) {
     if (hl) opts.ghost = [hl.from, hl.to];
     if (ex.anim) { opts.anim = ex.anim; slideMs = 220; }
     if (ex.sel >= 0) opts.dots = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel; }).map(function (m) { return m.to; });
+  } else if (a.phase === 'done' && a.view && a.view.mode) {
+    /* S0 and the answer shown (S6, S7): the card's own board as play left
+       it. The move just made slides in (220 ms as you made it; 320 when Play
+       it shows it; a forcing reply as it does in the line) and its verdict
+       lands with it: a filled tick for a solve, the grey i for an answer
+       played. The answer shown is its green arrow until it is played; in a
+       forcing line the next one lands with their reply. Once settled, S0's
+       marks (s0Marks) */
+    view = lineView(a);
+    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animShown ? 320 : 220; }
+    var mm = a.markMove, sdue = showDue(a), sl = {}, sfx = null;
+    if (mm && sameMove([mm.from, mm.to], view.last)) {
+      sfx = a.key + ':' + (a.fxn || 0) + mm.kind;
+      sl.tints = [{ sq: mm.from, kind: mm.kind }, { sq: mm.to, kind: mm.kind }];
+      sl.badges = [{ sq: mm.to, kind: mm.kind, fx: sfx }];
+    }
+    if (sdue) sl.arrows = [{ from: sdue.from, to: sdue.to, kind: 'better', key: 'answer' }];
+    if (sl.tints || sl.arrows) {
+      if (opts.anim) land = true;
+      else { opts.fx = sfx; for (var sk in sl) opts[sk] = sl[sk]; }
+    }
+    if (sdue) {
+      opts.sel = a.sel;
+      if (a.sel === sdue.from) opts.dots = [sdue.to];
+    }
+    if (a.view.mode === 's0' && a.settle >= 1 && !opts.anim) {
+      /* the ghost and the tokens fade in once, as this beat's effect */
+      var s0 = s0Marks(a, view.st);
+      ['ghosts', 'rings', 'arrows', 'tokens'].forEach(function (k) { if (s0[k].length) opts[k] = (opts[k] || []).concat(s0[k]); });
+      if (s0.ghosts.length || s0.tokens.length) opts.fx = a.key + ':s0';
+      /* the threat arrow into the square of the tick: the badge yields its corner */
+      var s0t = s0.arrows[0];
+      if (s0t && opts.badges && s0t.to === opts.badges[0].sq) {
+        var s0c = badgeCorner(s0t.from, s0t.to, flip);
+        if (s0c[0] !== 36 || s0c[1] !== 9) opts.badges = [{ sq: opts.badges[0].sq, kind: opts.badges[0].kind, fx: opts.badges[0].fx, at: s0c }];
+      }
+    }
   } else if (a.phase === 'done') {
     view = lineView(a);
     /* a line stepped forward slides its move; the solving move slides
@@ -522,7 +559,9 @@ function boardOptsFor(a) {
      with a verdict to come gets no tint until the verdict's own, so its
      squares change colour once */
   opts.mark = land ? null : view.last;
-  opts.label = (view.st.w ? 'White' : 'Black') + ' to move. You played ' + sanOf(a.pre, a.played) + ' in the game.';
+  /* the board's name says what it draws: the game move only with its red
+     arrow (mid-line its name can be the answer due now) */
+  opts.label = (view.st.w ? 'White' : 'Black') + ' to move.' + (opts.bad ? ' You played ' + sanOf(a.pre, a.played) + ' in the game.' : '');
   /* a check given by a piece still sliding glows once it lands, with the
      rest of what lands */
   var ck = checkedKingSq(view.st);
@@ -530,7 +569,7 @@ function boardOptsFor(a) {
   return {
     st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts, slideMs: slideMs, land: land,
     fadeMs: a.jump && !slideMs ? XFADE : 0,
-    live: a.phase === 'guess' || a.phase === 'tried' || !!(a.phase === 'done' && a.explore),
+    live: a.phase === 'guess' || a.phase === 'tried' || !!(a.phase === 'done' && (a.explore || (!a.showWait && showDue(a)))),
     /* the bar fills only while exploring: a tall bar during the guess would
        say "you are winning, find it", and a moving one is motion nobody
        asked for */
@@ -559,6 +598,26 @@ function badgeCorner(from, to, flip) {
   }
   return spots[0];
 }
+/* S0's marks (S6, V+700) on the settled board st: the game move's ghost
+   with its cross, where it went (on a forcing line only when that square is
+   empty, and never on the square of the tick, whose badge it would meet);
+   the threat it ran into, the game line's first reply ringed with its dashed
+   arrow, when that reply captures or checks, its piece still stands there
+   and the card is not a missed chance; after a forcing line, green tokens on
+   what you won (at most two) */
+function s0Marks(a, st) {
+  var out = { ghosts: [], rings: [], arrows: [], tokens: [] }, c = a.cls, pl = a.played, mm = a.markMove;
+  var line = !!(a.sol && a.solIdx > 1);
+  if (pl && !(mm && mm.to === pl.to) && (!line || !st.b[pl.to]))
+    out.ghosts.push({ sq: pl.to, p: a.pre.b[pl.from], fx: a.key + ':s0' });
+  var th = familyOf(patternOf(a.it.b)).key !== 'chances' ? threatOf(c.gameLine, 1) : null;
+  if (th && st.b[th.from] && st.b[th.from] === c.gameLine.nodes[1].before.b[th.from]) {
+    out.rings.push({ sq: th.from, kind: 'threat' });
+    out.arrows.push({ from: th.from, to: th.to, kind: 'threat', key: 'threat' });
+  }
+  if (line) (a.won || []).slice(-2).forEach(function (w) { out.tokens.push({ sq: w.sq, p: w.p, kind: 'won', fx: a.key + ':s0' }); });
+  return out;
+}
 /* the board beat: the board svg and the marks over it, and the bar beside
    them. A frame that slides a piece sets motionUntil, so nothing else is
    written until the piece lands, and holds back what lands with it (the
@@ -581,7 +640,7 @@ function paintBoard(a, instant) {
   if (a.phase === 'done' && a.explore) {
     if (f.evLive) a.explore.lastEv = f.ev;
     a.explore.anim = null;
-  } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx };
+  } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx, mode: a.view.mode };
   var fade = f.fadeMs ? xfadeHtml(bw.innerHTML) : '';
   /* the position this card last drew, to tell a board change from a
      repaint of the same position (a selection, a mark, a verdict on a move
@@ -737,7 +796,13 @@ function paintText(a) {
   if (xe) fitRows();
   makeFocusable(fp);
   if (newCard) { var th = el('task-h'); if (th) th.focus({ preventScroll: true }); }
-  else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
+  else if (a.phase === 'done' && !a.focusedResult) {
+    /* an answer hands the keyboard to the right-hand button (S6, S20):
+       Continue once solved, Play it when the answer is shown */
+    a.focusedResult = true;
+    var rh = barButton(rightSlot()) || el('result-h');
+    if (rh) rh.focus({ preventScroll: true });
+  }
   else if (a.focusRight && a.phase === 'tried' && barButton(rightSlot())) { a.focusRight = false; barButton(rightSlot()).focus({ preventScroll: true }); }
   else if (focKey && fp) {
     /* a bar button: the one now in its slot, or the right-hand one (S20)
@@ -756,8 +821,10 @@ function paintText(a) {
     (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : barButton(rightSlot()) || (bar && bar.querySelector('[data-act]'))) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
   paintLive(d);
-  /* a miss's verdict is on screen now: its reason's beats run from here */
+  /* a miss's verdict is on screen now: its reason's beats run from here;
+     so do a settled result's (S0) */
   if (a.reasonFor && a.reasonFor === a.tried && a.phase === 'tried') missReason(a);
+  if (a.settleFor && a.phase === 'done' && a.view && a.view.mode === 's0') settleBeats(a);
 }
 /* the bar's button in slot i, if it holds an action now (an off slot has none) */
 function barButton(i) {
@@ -826,13 +893,23 @@ function liveWords(a, b) {
   return [LIVE_PREFIX[b.disc] || '', b.row1 || '', b.row2 || ''].filter(Boolean).join(' ');
 }
 /* the action bar as slots, left to right: {act, k, label, cls, off, aria}.
-   Answered: back, forward, Next; a try on the board: help, Try again;
+   Answered: See why and Continue (S0), Continue and Play it (the answer
+   shown), back, forward and Continue (See why's lines, exploring); a try
+   on the board: help, Try again;
    guessing: Hint, Show the answer, both outlined, and Hint for everyone
    until it has nothing left to give; a move being checked: Take back and
    the answer switched off; a reply playing: Hint and the answer switched
    off, so the bar keeps its place */
 function barSlots(a, ss) {
   if (a.phase === 'done') {
+    var last = ss.idx + 1 >= ss.keys.length && !(ss.relearn && ss.relearn.length);
+    var cont = { act: 'next', label: last ? 'Finish' : 'Continue', cls: 'btn-big' };
+    /* the answer shown (S7): Continue, and Play it in gold; switched off
+       while their reply plays, and once played until the card settles */
+    if (!a.explore && a.view.mode && (a.view.mode === 'show' || (a.revealed && a.settle < 2)))
+      return [{ act: 'next', label: cont.label, cls: 'btn-line' }, { act: 'playIt', label: 'Play it ›', cls: 'btn-big', off: a.showWait || !showDue(a) }];
+    /* settled (S0): the story, and Continue in gold */
+    if (!a.explore && a.view.mode) return [{ act: 'seeWhy', label: 'See why ›', cls: 'btn-line' }, cont];
     var L = a.lines[a.view.line] || a.lines.best, backOff, fwdOff, backLab = 'Back one move', fwdLab = 'Forward one move';
     if (a.explore) {
       var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
@@ -840,11 +917,9 @@ function barSlots(a, ss) {
       if (xe.at === 0) backLab = 'Back to the lesson';
       fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
       if (xe.at >= xe.nodes.length - 1) fwdLab = 'Play Stockfish\'s pick';
-    } else { backOff = a.view.idx < 0; fwdOff = a.view.idx >= L.states.length - 1; }
-    var last = ss.idx + 1 >= ss.keys.length && !(ss.relearn && ss.relearn.length);
+    } else { backOff = false; fwdOff = a.view.idx >= L.states.length - 1; if (a.view.idx < 0) backLab = 'Back to the result'; }
     return [{ act: 'lineBack', label: '‹', cls: 'nav-btn' + (backOff ? ' nav-off' : ''), aria: backLab },
-            { act: 'lineFwd', label: '›', cls: 'nav-btn' + (fwdOff ? ' nav-off' : ''), aria: fwdLab },
-            { act: 'next', label: last ? 'Finish' : 'Next', cls: 'btn-big' }];
+            { act: 'lineFwd', label: '›', cls: 'nav-btn' + (fwdOff ? ' nav-off' : ''), aria: fwdLab }, cont];
   }
   if (a.phase === 'tried') return triedSlots(a);
   /* a move being checked keeps the guess bar until the band says so (K1,
@@ -945,11 +1020,11 @@ function menuHtml(a) {
     + '<a data-act="dispute" data-k="decided">Not a real mistake: the game was already decided</a>'
     + '<a data-act="dispute" data-k="engine">Not a real mistake: I think the engine is wrong</a>'
     + '<span class="sep"></span>'
-    + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '')
+    + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '<a data-act="details">Details</a>')
     + '<span class="menu-keys">Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>'
     + '</div>';
 }
-function ctxHtml(a, answered) {
+function ctxHtml(a) {
   var g = a.it.g, b = a.it.b;
   var bits = ['vs <b>' + esc(g.opp) + '</b>' + (g.oppR ? ' (' + g.oppR + ')' : ''), gameDateLine(g), perfLabel(g.perf).toLowerCase(), 'move ' + (Math.floor(b.p / 2) + 1)];
   if (b.c != null) bits.push(clockWords(b.c) + ' left');
@@ -960,9 +1035,7 @@ function ctxHtml(a, answered) {
   var h = '<p class="ctx">' + bits.join(' · ') + '</p>';
   /* its own line, so a narrow screen never clips it */
   if (drill) h += '<p class="ctx ctx-link"><a href="' + gameHref(g.id, g.color, b.p) + '">Open the game ↗</a></p>';
-  if (answered) return h;
-  /* "One more try" is the band's chip */
-  return h + (b.d ? '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(g, b) + '</p>' : '');
+  return h;
 }
 function ss_relearn(a) { var ss = ui.session; return !!(ss && ss.relearnOf && ss.relearnOf[a.key] && ss.keys.indexOf(a.key) !== ss.idx); }
 function clockWords(s) {
@@ -970,41 +1043,52 @@ function clockWords(s) {
   var m = Math.floor(s / 60), r = s % 60;
   return m + ':' + (r < 10 ? '0' : '') + r;
 }
-/* the strip, under the board: the game's context while you solve (and the
-   typed-move field while the board takes a move); once answered, both
-   halves of the lesson, the pattern, the schedule and the way to explore.
-   The result itself is the band's */
+/* the strip, under the board (2.0): nothing while you solve (the typed-
+   move field waits there, off screen); once settled, the Details link (the
+   rest of the lesson is in its sheet); the two lines' names under See why;
+   the exploration. The result itself is the band's */
 function stripHtml(a, ss) {
-  var it = a.it, b = it.b;
   if (a.phase !== 'done') {
-    var h0 = ctxHtml(a);
-    /* a move typed over a try takes the try back first */
+    /* empty before an answer (2.0): the game's context is in Details. The
+       typed-move field sits here, off screen until it has the keyboard; a
+       move typed over a try takes the try back first */
     if (a.phase === 'guess' || a.phase === 'tried')
-      h0 += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
-    return h0;
+      return '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
+    return '';
   }
-  var best = a.lines.best.san[0] || '', s = a.cls.sentences;
-  var cur = a.explore ? null : a.view.line;
+  if (a.explore) return xpHtml(a);
+  /* settled (S0): one link to everything else (S13) */
+  if (a.view.mode) return a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="btn-quiet details-link" data-act="details">Details</a></p>' : '';
+  /* See why, until the story (slice 9): the two lines, by name */
+  var cur = a.view.line, better = a.alt && a.lines.yours ? 'yours' : 'best';
   var tline = function (key, cls, text) {
     var on = cur === key;
     return '<button type="button" class="tline ' + cls + (on ? ' on' : '') + '" data-act="lineTab" data-k="' + key + '" aria-pressed="' + on + '">'
-      + '<span class="tl-dot" aria-hidden="true"></span><span class="tl-text">' + text + '</span>'
-      + (on ? '' : '<span class="tl-play" aria-hidden="true"></span>') + '</button>';
+      + '<span class="tl-dot" aria-hidden="true"></span><span class="tl-text">' + text + '</span></button>';
   };
-  var h = ctxHtml(a, true);
-  h += '<div class="result' + (a.result === 'first' && !a.alt && !a.revealed ? ' first' : '') + (a.explore ? ' xp-on' : '') + '">'
-    + tline('refute', 'tl-bad', '<span class="tl-long">' + esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game) + '</span><span class="tl-short">' + esc(fitLine([s.short || s.game, firstClause(s.short || s.game)])) + '</span>')
-    + (a.alt && a.lines.yours ? tline('yours', 'tl-alt', esc(altNames(a).mine) + ' also holds. Here is how it goes on.') : '')
-    + tline('best', 'tl-good', esc(s.best || best + ' keeps your position together.'));
+  return '<div class="result">' + tline('refute', 'tl-bad', 'Game') + tline(better, better === 'yours' ? 'tl-alt' : 'tl-good', 'Better') + '</div>';
+}
+/* the Details sheet (S13): what the answered card no longer says on its
+   face. The game's context, the decisive line, both long sentences (and an
+   alternative's), what the opponent did, the pattern and the schedule, the
+   habit, and the way into exploring */
+function detailsHtml() {
+  var a = ui.session && ui.session.active;
+  if (!a || a.phase !== 'done' || !a.lines) return '';
+  var it = a.it, b = it.b, s = a.cls.sentences, best = a.lines.best.san[0] || '', t = patternOf(b), info = patternInfo(t);
+  var row = function (cls, text) { return '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
+  var h = '<div class="kicker">Details</div><h3>' + esc(info.name) + '</h3>' + ctxHtml(a);
+  if (b.d) h += '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(it.g, b) + '.</p>';
+  h += '<div class="dt-lines">' + row('tl-bad', esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game))
+    + (a.alt && a.lines.yours ? row('tl-alt', esc(altNames(a).mine) + ' also holds.') : '')
+    + row('tl-good', esc(s.best || best + ' keeps your position together.'));
   var opp = opponentLine(a);
-  if (opp) h += tline('game', 'tl-opp', opp);
-  h += '</div>';
-  var t = patternOf(b), info = patternInfo(t);
-  h += '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
-    + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>';
-  if (a.showHabit) h += '<p class="habit">' + esc(habitFor(a, t, info)) + '</p>';
-  if (a.explore) h += xpHtml(a);
-  else h += '<p class="explore-line"><a class="btn-quiet invite" data-act="explore">' + esc((a.invite || inviteFor(a)).text) + '</a></p>';
+  if (opp) h += row('tl-opp', opp);
+  h += '</div><div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
+    + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>'
+    + '<p class="habit">' + esc(habitFor(a, t, info)) + '</p>';
+  /* no engine, no exploring */
+  if (SF.state !== 'failed') h += '<div class="acts-row sheet-acts"><a class="btn-line" data-act="explore">Try your own moves with Stockfish ›</a></div>';
   return h;
 }
 /* the exploration: the trail and Stockfish's three best moves (its
@@ -1201,6 +1285,7 @@ function closeSheet(fromPop) {
 function sheetHtml(kind) {
   var parts = String(kind).split(':'), k = parts[1];
   if (parts[0] === 'settings') return settingsHtml();
+  if (parts[0] === 'details') return detailsHtml();
   if (parts[0] === 'family') {
     var fam = FAMILIES.filter(function (f) { return f.key === k; })[0];
     var agg = insightReport().families.filter(function (a) { return a.fam.key === k; })[0];

@@ -164,7 +164,8 @@ function offBook(a) {
 const DOM = `(function () {
   var log = window.__writes = [], els = window.__els = {};
   var kind = { bwrap: 'board', ebar: 'board', 'ebar-fill': 'board', marks: 'marks', trainbox: 'frame' };
-  var FLAG = { tried: /class="tried"/, xfade: /class="xfade"/, ring: /class="ring-threat"/, arrow: /class="threat-arrow"/, token: /token-lost/, slide: /anim-piece/ };
+  var FLAG = { tried: /class="tried"/, xfade: /class="xfade"/, ring: /class="ring-threat"/, arrow: /class="threat-arrow"/, token: /token-lost/, slide: /anim-piece/,
+    ghost: /:s0"/, tick: /badge-good/, info: /badge-info/, green: /good-arrow/, won: /token-won/ };
   var kept = function (id, x) {
     if (id === 'cband' || id === 'cbar') return x;
     if (id === 'bwrap' || id === 'marks') return Object.keys(FLAG).filter(function (k) { return FLAG[k].test(x); }).join(' ');
@@ -343,6 +344,70 @@ const BAR = `(function () {
     const t = JSON.parse(A.ev('JSON.stringify({ out: window.__t.out, frames: window.__t.frames, misses: window.__t.misses })'));
     ok(t.misses >= 2 * n, 'engine misses ' + t.misses);
     eq(t.out.length, 0, t.out.length + ' spoilers after an engine miss, first: ' + t.out.slice(0, 3).join(' | '));
+  });
+
+  await test('answered means phase done: the answer is drawn only on answered frames (S0, the answer shown, a mid-line reveal)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${SPOILER}
+      var out = [], frames = 0, shown = 0, mid = 0;
+      /* what a frame draws of the answer: a green or gold arrow (hint 2's
+         ring on the piece is allowed before an answer, and spoilerFaults
+         checks it) */
+      var drawn = function (f) {
+        var o = f.opts, xs = (o.arrows || []).filter(function (m) { return m.kind === 'better' || m.kind === 'explore'; });
+        if (o.good) xs.push({ from: o.good[0], to: o.good[1], kind: 'better' });
+        if (o.ghost) xs.push({ kind: 'explore' });
+        return xs;
+      };
+      var check = function (a, what) {
+        var f = boardOptsFor(a), xs = drawn(f);
+        frames++;
+        spoilerFaults(a, f).forEach(function (x) { out.push(what + ': ' + x); });
+        if (!xs.length) return;
+        if (a.phase !== 'done' || !a.result || !ui.session.results[a.key]) out.push(what + ': the answer drawn before it is graded (' + a.phase + ')');
+        /* only the answer shown draws it, and only the move due now, in green */
+        var due = showDue(a);
+        if (!(a.view && a.view.mode === 'show') || xs.length !== 1 || xs[0].kind !== 'better' || !due || xs[0].from !== due.from || xs[0].to !== due.to)
+          out.push(what + ': draws ' + JSON.stringify(xs) + ' in ' + JSON.stringify(a.view));
+        else shown++;
+      };
+      /* the rest of a line shown, its replies played at once */
+      var playLine = function (a, what) {
+        for (var g = 0; g < 20 && showDue(a); g++) {
+          playIt(false); check(a, what + ', played ' + g);
+          a.animMove = null; check(a, what + ', played ' + g + ', landed');
+          if (!a.showWait) continue;
+          var rp = uciToMove(a.st, a.sol[a.solIdx]);
+          a.showWait = false; applyMove(a.st, rp); a.lastMove = [rp.from, rp.to]; a.markMove = null; a.solIdx++;
+          var nx = showDue(a);
+          if (nx) a.answerSan = sanOf(a.st, nx); else settleShown(a);
+          check(a, what + ', their reply ' + g);
+        }
+        [0, 1, 2].forEach(function (k) { a.settle = k; check(a, what + ', settled ' + k); });
+      };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var at = 'tier ' + tier + ' ' + it.key, a = openCard(it);
+          if (!a) return;
+          reveal(); check(a, at + ' shown'); playLine(a, at + ' shown');
+          a = openCard(it); a.hints = 2; check(a, at + ' hint 2'); reveal(); check(a, at + ' shown after hint 2');
+          a = openCard(it);
+          if (a.sol) {
+            /* the first move found (and its reply), then the answer: the move due now */
+            applyMove(a.st, uciToMove(a.st, a.sol[0])); applyMove(a.st, uciToMove(a.st, a.sol[1])); a.solIdx = 2; a.lastMove = null;
+            check(a, at + ' mid-line'); a.hints = 2; check(a, at + ' mid-line, hint 2');
+            reveal(); mid++; check(a, at + ' mid-line shown'); playLine(a, at + ' mid-line shown');
+          } else {
+            solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+            [0, 1, 2].forEach(function (k) { a.settle = k; check(a, at + ' solved, settled ' + k); });
+          }
+        });
+      });
+      return JSON.stringify({ out: out, frames: frames, shown: shown, mid: mid }); })()`));
+    ok(r.frames > 2000, 'frames ' + r.frames);
+    ok(r.shown > 300 && r.mid >= 20, 'answers shown ' + r.shown + ', mid-line reveals ' + r.mid);
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
   await test('the spoiler check sees an answer drawn on the board', () => {
@@ -923,7 +988,7 @@ const BAR = `(function () {
     press('reveal');
     run(1000);
     eq(A.ev('ui.session.active.phase'), 'done', 'Show the answer pressed');
-    eq(foc(), 'cband result-h', 'the answered card focuses its result');
+    eq(foc(), 'cbar playIt@1', 'the answer shown hands the keyboard to Play it, the right-hand button');
   });
 
   await test('Enter presses the right-hand button in guess and tried, and waits out its slot', () => {
@@ -985,13 +1050,18 @@ const BAR = `(function () {
        typed-move box) */
     const hold = (key, on, delay) => { A.advance(delay || 500); for (let t = 0; t < 1500; t += 30) { A.key(key, true, on ? on() : null); A.advance(30); } };
     /* a four-card session, each card already looked at deeply, so Next opens the next one at once */
-    A.ev(`(function () { var its = allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; }).slice(0, 4);
+    A.ev(`(function () { var its = allMistakes().filter(trainable).filter(function (x) { var a0 = cardFor(x); return unpackUci(x.b.ru).length && a0 && !a0.sol; }).slice(0, 4);
       its.forEach(function (x) { x.b.v = Math.max(x.b.v || 0, 2); });
       window.__show(its[0]); ui.session.keys = its.map(function (x) { return x.key; }); return 1; })()`);
     A.advance(1000);
     A.click('reveal', null, 1);
     A.advance(1000);
     eq(S().phase, 'done', 'card 1 answered');
+    /* the answer shown: Enter plays it (the right-hand button), and the card
+       settles with Continue on the right */
+    A.key('Enter');
+    A.advance(2000);
+    eq(A.ev('ui.session.active.view.mode + " " + ui.session.active.settle'), 's0 2', 'Enter played the answer, then the card settled');
     /* Enter goes to the next card; held, it shows nothing there */
     A.key('Enter');
     await tick();
@@ -1073,14 +1143,15 @@ const BAR = `(function () {
     s = S();
     eq(s.phase, 'done', 'Show the answer, unchanged by the hint, is taken at once'); eq(s.result, 'fail', 'result');
     /* a double tap on Show the answer: the second half lands on the answered
-       bar and is ignored (the bar comes 150 ms after the answer's arrow) */
+       bar [Continue] [Play it] and is ignored (the bar comes 150 ms after
+       the answer's arrow) */
     wait(250);
-    A.click('lineFwd', null, 1); A.click('next', null, 2);
-    eq(A.ev('ui.session.active.view.idx'), -1, 'the forward button 100 ms after the answered bar appeared');
-    eq(A.ev('ui.session.idx'), 0, 'Next 100 ms after the answered bar appeared');
+    A.click('playIt', null, 1); A.click('next', null, 0);
+    eq(A.ev('ui.session.active.view.mode + " " + !!ui.session.active.showDone'), 'show false', 'Play it 100 ms after the answered bar appeared');
+    eq(A.ev('ui.session.idx'), 0, 'Continue 100 ms after the answered bar appeared');
     wait(400);
-    A.click('next', null, 2);
-    eq(A.ev('ui.session.idx'), 1, 'Next 500 ms after');
+    A.click('next', null, 0);
+    eq(A.ev('ui.session.idx'), 1, 'Continue 500 ms after');
     /* See it: only the left slot changes, once their reply has landed; Try
        again is taken all the while */
     gameMove(1, 0);
@@ -1508,14 +1579,19 @@ const BAR = `(function () {
         run(100);
         ok(band().indexOf(c.t4) >= 0, at + ': a selection keeps the words');
         A.ev(`(sessionClick(${c.mine}), 1)`);
-        run(2100);
+        /* T4 stays 2.5 s after its words came (150 ms after the tap), and no longer */
+        run(1750);
+        ok(band().indexOf(c.t4) >= 0, at + ': T4 still there 100 ms before its 2.5 s: ' + band());
+        run(150);
         ok(band().indexOf(c.t2) >= 0, at + ': the task is back after 2.5 s: ' + band());
         /* T5: a piece dragged where it cannot go snaps back and says so; a tap there only puts it down */
         A.ev(`(function () { var a = ui.session.active; a.sel = ${c.mine}; pointerState.suppressClick = true; sessionClick(${c.to}); pointerState.suppressClick = false; return 1; })()`);
         run(200);
         ok(band().indexOf('That piece can\'t go there.') >= 0, at + ': T5 after a drop: ' + band());
         eq(S().phase + ' ' + S().attempts, 'guess 0', at + ': T5 graded nothing');
-        run(2100);
+        run(1850);
+        ok(band().indexOf('That piece can\'t go there.') >= 0, at + ': T5 still there 100 ms before its 2 s: ' + band());
+        run(150);
         ok(band().indexOf(c.t2) >= 0, at + ': the task is back after 2 s');
         A.ev(`(function () { var a = ui.session.active; a.sel = ${c.mine}; sessionClick(${c.to}); return 1; })()`);
         run(200);
@@ -1591,7 +1667,9 @@ const BAR = `(function () {
         ok(band().indexOf('To try moves, open Details.') >= 0, at + ': N1 after an answer: ' + band());
         eq(JSON.stringify(s2.nope), JSON.stringify([any]), at + ': N1 outlines the piece');
         eq(s2.explore, false, at + ': a tap no longer opens exploring'); eq(s2.view, s.view, at + ': nor steps the line'); eq(s2.result, s.result, at + ': nor regrades');
-        run(2600);
+        run(2350);
+        ok(band().indexOf('To try moves, open Details.') >= 0, at + ': N1 still there 100 ms before its 2.5 s: ' + band());
+        run(150);
         ok(band().indexOf('To try moves') < 0, at + ': N1 goes after 2.5 s');
         n++;
       }
@@ -2278,6 +2356,226 @@ const BAR = `(function () {
     }
     return out;
   };
+
+  /* the writes since t0, as the settled-result tests read them: who, when,
+     the marks drawn (as words), the band's rows, the bar's labels and the
+     strip's Details */
+  const SETTLED = `function settledWrites(t0) {
+    return window.__writes.filter(function (w) { return w.t >= t0 && (w.v != null || w.id === 'cstrip'); }).map(function (w) {
+      var v = w.v || '';
+      return { id: w.id, kind: w.kind, dt: w.t - t0, v: w.id === 'bwrap' || w.id === 'marks' ? v : '',
+        r1: w.id === 'cband' ? (/<h2 class="bd-r1"[^>]*>([^<]*)<\\/h2>/.exec(v) || [])[1] || '' : null,
+        r2: w.id === 'cband' ? (/<p class="bd-r2">([^<]*)<\\/p>/.exec(v) || [])[1] || '' : null,
+        bar: w.id === 'cbar' ? v.replace(/<a [^>]*>/g, '').split('</a>').filter(Boolean).join(' | ') : null };
+    });
+  }`;
+
+  await test('a solve settles in beats: the tick lands with the piece, S0\'s marks 700 ms after its words, R4 and Details 150 ms later', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev(`${SETTLED} window.__sw = settledWrites; 1`);
+    A.ev('(window.__snd = [], snd = function (n) { window.__snd.push({ n: n, t: Date.now() }); }, 1)');
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    /* one-move cards whose game reply captures or checks (S0's threat pair), and a missed chance */
+    const keys = JSON.parse(A.ev(`(function () { ${OPEN}
+      var its = allMistakes().filter(trainable).filter(function (it) { var a = openCard(it); return a && !a.sol; });
+      var pair = its.filter(function (it) { var a = openCard(it); return familyOf(patternOf(it.b)).key !== 'chances' && threatOf(a.cls.gameLine, 1) && a.best.to !== a.played.to; }).slice(0, 3);
+      /* a missed chance whose game reply captures or checks, from a piece still standing once solved */
+      var ch = its.filter(function (it) { var a = openCard(it), t = threatOf(a.cls.gameLine, 1); if (familyOf(patternOf(it.b)).key !== 'chances' || !t || a.best.to === a.played.to) return false;
+        applyMove(a.st, uciToMove(a.st, a.bestUci)); return a.st.b[t.from] === a.cls.gameLine.nodes[1].before.b[t.from]; }).slice(0, 1);
+      return JSON.stringify(pair.concat(ch).map(function (it) { return it.key; })); })()`));
+    ok(keys.length === 4, 'cards ' + keys.length);
+    for (const reduced of [false, true]) for (const key of keys) {
+      const at = key + (reduced ? ' (reduced motion)' : ''), MARKS = reduced ? 300 : 700, WORDS = reduced ? 400 : 850;
+      A.ev(`(ui.reducedTest = ${reduced}, window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      const t0 = A.getNow();
+      A.ev('(window.__snd = [], 1)');
+      A.ev(`(function (a) { a.tapped = true; gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)`);
+      run(2000);
+      const ws = JSON.parse(A.ev(`JSON.stringify(window.__sw(${t0}))`)), snd = JSON.parse(A.ev('JSON.stringify(window.__snd)'));
+      const first = ws.filter((w) => w.id === 'bwrap')[0], tick = ws.filter((w) => /tick/.test(w.v))[0];
+      ok(first && first.dt === 0 && (reduced ? /tick/.test(first.v) : /slide/.test(first.v) && !/tick/.test(first.v)), at + ': the move slides with no tick yet, ' + JSON.stringify(first));
+      ok(tick && (reduced || tick.dt >= 220), at + ': the tick lands with the piece, ' + JSON.stringify(tick));
+      ok(snd.filter((x) => x.n === 'good').length === 1 && snd.filter((x) => x.n === 'good')[0].t - t0 === tick.dt, at + ': its sound with it, ' + JSON.stringify(snd));
+      const v = ws.filter((w) => w.id === 'cband' && w.r1 === 'Found it')[0], bar = ws.filter((w) => w.id === 'cbar')[0];
+      ok(v && v.r2 === '' && v.dt >= tick.dt + 150, at + ': Found it alone, 150 ms after the tick, ' + JSON.stringify(v));
+      ok(bar && /^See why › \| (Continue|Finish)$/.test(bar.bar) && bar.dt === v.dt, at + ': the bar with it, ' + JSON.stringify(bar));
+      const gh = ws.filter((w) => w.id === 'bwrap' && /ghost/.test(w.v))[0], chances = A.ev(`familyOf(patternOf(model().byKey['${key}'].b)).key`) === 'chances';
+      ok(gh && gh.dt === v.dt + MARKS, at + ': the ghost ' + MARKS + ' ms after the words, ' + JSON.stringify(gh) + ' vs ' + v.dt);
+      ok(chances ? !/ring|arrow/.test(gh.v) : /ring/.test(gh.v) && /arrow/.test(gh.v) || !A.ev('(function (a) { var t = threatOf(a.cls.gameLine, 1); return !!(t && a.st.b[t.from] === a.cls.gameLine.nodes[1].before.b[t.from]); })(ui.session.active)'),
+        at + ': the threat pair with it (none on a missed chance), ' + gh.v);
+      ok(/tick/.test(gh.v), at + ': the tick stays');
+      const r4 = ws.filter((w) => w.id === 'cband' && w.r2)[0], strip = ws.filter((w) => w.id === 'cstrip' && w.dt > 0).pop();
+      ok(r4 && r4.dt === v.dt + WORDS && r4.r1 === 'Found it' && r4.r2 === A.ev('esc(displayFor(ui.session.active).row2)'), at + ': R4 ' + WORDS + ' ms after, ' + JSON.stringify(r4));
+      ok(strip && strip.dt === r4.dt && A.ev('/data-act="details"/.test(window.__els.cstrip.innerHTML)'), at + ': Details with it');
+      /* and then nothing, however long */
+      const n0 = A.ev('window.__writes.length');
+      run(10000);
+      eq(A.ev('window.__writes.length'), n0, at + ': nothing more is written');
+    }
+    A.ev('(ui.reducedTest = false, 1)');
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('Show the answer: the green arrow and "The answer:", Play it plays it with the grey i, then the card settles', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev(BAR);
+    A.ev(`${SETTLED} window.__sw = settledWrites; 1`);
+    A.ev('(window.__snd = [], snd = function (n) { window.__snd.push({ n: n, t: Date.now() }); }, 1)');
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(`(function () { ${OPEN} return JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var a = openCard(it); return a && !a.sol; }).slice(0, 4).map(function (it) { return it.key; })); })()`));
+    for (const how of ['button', 'by hand', 'test hook']) for (const key of keys) {
+      const at = key + ' ' + how;
+      A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      A.click('reveal', null, 1);
+      run(600);
+      const s = JSON.parse(A.ev(`JSON.stringify((function (a) { var d = displayFor(a), f = boardOptsFor(a), b = uciToMove(a.st, a.bestUci);
+        return { phase: a.phase, result: a.result, mode: a.view.mode, r1: d.row1, r2: d.row2, disc: d.disc, bar: d.buttons.map(function (x) { return x.label + (x.off ? ' (off)' : ''); }).join(' | '),
+          arrows: (f.opts.arrows || []).map(function (x) { return x.kind + ' ' + x.from + '-' + x.to; }), bad: f.opts.bad || null, want: 'better ' + b.from + '-' + b.to,
+          san: sanOf(a.st, b), live: f.live, note: ui.session.notes[a.key], recorded: srsRec(a.it) ? 1 : 0 }; })(ui.session.active))`));
+      eq(s.phase + ' ' + s.result + ' ' + s.mode, 'done fail show', at + ': graded and finished, then shown');
+      eq(s.note, 'shown', at + ': the summary note');
+      eq(s.r1 + ' / ' + s.r2, 'The answer: ' + s.san + ' / Play the green arrow.', at + ': V1 / V2');
+      eq(s.disc, 'info', at + ': the i disc');
+      eq(s.bar.replace('Finish', 'Continue'), 'Continue | Play it ›', at + ': the bar');
+      eq(JSON.stringify(s.arrows), JSON.stringify([s.want]), at + ': the green arrow alone, no game arrow');
+      ok(!s.bad && s.live, at + ': the board takes that one move');
+      if (how === 'by hand') {
+        /* another piece of yours says where to try moves; the answer's piece picks up, its one square dotted */
+        const other = A.ev('(function (a) { var b = uciToMove(a.st, a.bestUci); for (var q = 0; q < 64; q++) if (q !== b.from && a.st.b[q] && isW(a.st.b[q]) === !!a.st.w) return q; return -1; })(ui.session.active)');
+        A.ev(`(sessionClick(${other}), 1)`);
+        eq(A.ev('ui.session.active.note && ui.session.active.note.id'), 'N1', at + ': another piece: N1');
+        eq(A.ev('ui.session.active.sel'), -1, at + ': and no selection');
+        A.ev(`(function (a) { var b = uciToMove(a.st, a.bestUci); sessionClick(b.from); return 1; })(ui.session.active)`);
+        eq(A.ev('JSON.stringify(boardOptsFor(ui.session.active).opts.dots)'), A.ev('JSON.stringify([uciToMove(ui.session.active.st, ui.session.active.bestUci).to])'), at + ': its one square dotted');
+        run(3000);
+      }
+      const t0 = A.getNow();
+      A.ev('(window.__snd = [], 1)');
+      if (how === 'button') A.click('playIt', null, 1);
+      else if (how === 'test hook') eq(A.ev(`window.__nlTest.play(ui.session.active.bestUci)`), 'played', at + ': __nlTest.play plays the answer');
+      else A.ev(`(function (a) { var b = uciToMove(a.st, a.bestUci); sessionClick(b.to); return 1; })(ui.session.active)`);
+      const mu = A.ev('motionUntil') - t0;
+      eq(A.ev('(function (a) { var f = stateFen(a.st); playIt(false); return stateFen(a.st) === f && window.__nlTest.play(moveUci(legalMoves(a.st)[0])) === "not guessing"; })(ui.session.active)'), true, at + ': played once');
+      run(3000);
+      const ws = JSON.parse(A.ev(`JSON.stringify(window.__sw(${t0}))`)), snd = JSON.parse(A.ev('JSON.stringify(window.__snd)'));
+      const slide = ws.filter((w) => w.id === 'bwrap')[0], info = ws.filter((w) => /info/.test(w.v))[0];
+      ok(slide && /slide/.test(slide.v) && !/green/.test(slide.v) && !/info/.test(slide.v), at + ': the answer slides, its arrow gone, ' + JSON.stringify(slide));
+      eq(mu, 370, at + ': a 320 ms slide (with its 50 ms lead)');
+      ok(snd.length === 1 && snd[0].n === 'move' && snd[0].t === t0, at + ': its sound as it starts, ' + JSON.stringify(snd));
+      ok(info && info.dt === 370, at + ': the grey i lands with it, ' + JSON.stringify(info));
+      const r4 = ws.filter((w) => w.id === 'cband' && w.r2 && w.r2 !== 'Play the green arrow.')[0];
+      ok(!ws.some((w) => w.id === 'cband' && w.dt < (r4 ? r4.dt : 1e9)), at + ': the band stays until R4, ' + JSON.stringify(ws.filter((w) => w.id === 'cband')));
+      const bars = ws.filter((w) => w.id === 'cbar'), gh = ws.filter((w) => w.id === 'bwrap' && /ghost/.test(w.v))[0];
+      ok(bars[0] && /^(Continue|Finish) \| Play it ›$/.test(bars[0].bar) && bars[0].dt === 520, at + ': the bar repainted once played, ' + JSON.stringify(bars));
+      ok(gh && gh.dt === 520 + 700 && /info/.test(gh.v), at + ': S0\'s marks 700 ms after, ' + JSON.stringify(gh));
+      ok(r4 && r4.dt === 520 + 850 && /^The answer: /.test(r4.r1), at + ': R4 850 ms after, under the answer, ' + JSON.stringify(r4));
+      ok(bars[1] && /^See why › \| (Continue|Finish)$/.test(bars[1].bar) && bars[1].dt === r4.dt, at + ': and the bar to the story, ' + JSON.stringify(bars));
+      eq(A.ev('ui.session.active.result + " " + ui.session.notes[ui.session.active.key]'), 'fail shown', at + ': graded once, as shown');
+    }
+    /* Continue at any point ends the card */
+    A.ev(`(window.__show(model().byKey['${keys[0]}']), 1)`);
+    run(1000); A.click('reveal', null, 1); run(600);
+    A.click('next', null, 0);
+    eq(A.ev('ui.session.idx'), 1, 'Continue before Play it ends the card');
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('a mid-line reveal keeps the moves found and names the move due now; Play it steps the rest of the line', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev(`${SETTLED} window.__sw = settledWrites; 1`);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(`(function () { ${OPEN} return JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var a = openCard(it); return a && a.sol && a.sol.length >= 3; }).map(function (it) { return it.key; })); })()`));
+    ok(keys.length >= 4, 'forcing cards ' + keys.length);
+    let steps = 0;
+    for (const key of keys) for (const from of [0, 2]) {
+      const at = key + ' revealed at move ' + from;
+      A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      /* the line's first move found (its reply plays), then Show the answer */
+      if (from) { A.ev('(function (a) { gradeMove(uciToMove(a.st, a.sol[0])); return 1; })(ui.session.active)'); run(2000); }
+      const before = JSON.parse(A.ev('JSON.stringify({ fen: stateFen(ui.session.active.st), idx: ui.session.active.solIdx })'));
+      eq(before.idx, from, at + ': the line where it stands');
+      A.click('reveal', null, 1);
+      run(600);
+      const s = JSON.parse(A.ev(`JSON.stringify((function (a) { var d = displayFor(a), m = uciToMove(a.st, a.sol[a.solIdx]), f = boardOptsFor(a);
+        return { fen: stateFen(a.st), r1: d.row1, want: 'The answer: ' + sanOf(a.st, m), arrows: (f.opts.arrows || []).map(function (x) { return x.from + '-' + x.to; }), due: m.from + '-' + m.to, result: a.result }; })(ui.session.active))`));
+      eq(s.fen, before.fen, at + ': the moves found stay on the board (4.7)');
+      eq(s.r1, s.want, at + ': the answer named is the move due now');
+      eq(JSON.stringify(s.arrows), JSON.stringify([s.due]), at + ': its green arrow');
+      eq(s.result, 'fail', at + ': graded at once');
+      /* Play it until the line ends: each reply of theirs plays by itself, held (S10), and the next move of yours lands with its arrow */
+      for (let guard = 0; guard < 10 && A.ev('ui.session.active.view.mode') === 'show'; guard++) {
+        const idx = A.ev('ui.session.active.solIdx');
+        A.click('playIt', null, 1);
+        eq(A.ev('ui.session.active.solIdx'), idx + 1, at + ': Play it plays one move');
+        if (A.ev('ui.session.active.view.mode') !== 'show') break;
+        /* while their reply is due, Play it is off and the board takes nothing */
+        eq(A.ev('!!ui.session.active.showWait'), true, at + ': their reply is due');
+        A.click('playIt', null, 1);
+        eq(A.ev('ui.session.active.solIdx'), idx + 1, at + ': Play it does nothing meanwhile');
+        const t1 = A.getNow();
+        run(2000);
+        const ws = JSON.parse(A.ev(`JSON.stringify(window.__sw(${t1}))`));
+        const reply = ws.filter((w) => w.id === 'bwrap' && /slide/.test(w.v) && w.dt >= 600)[0];
+        ok(reply && !/green/.test(reply.v), at + ': their reply slides, no arrow yet, ' + JSON.stringify(ws.filter((w) => w.id === 'bwrap')));
+        const green = ws.filter((w) => w.id === 'bwrap' && /green/.test(w.v))[0];
+        ok(green && green.dt > reply.dt, at + ': the next arrow lands after it');
+        eq(A.ev('ui.session.active.solIdx'), idx + 2, at + ': their reply played');
+        eq(A.ev('displayFor(ui.session.active).row1'), A.ev('"The answer: " + sanOf(ui.session.active.st, uciToMove(ui.session.active.st, ui.session.active.sol[ui.session.active.solIdx]))'), at + ': the next answer named');
+        steps++;
+        A.advance(500);
+      }
+      run(2000);
+      const end = JSON.parse(A.ev(`JSON.stringify((function (a) { var d = displayFor(a); return { mode: a.view.mode, settle: a.settle, idx: a.solIdx, n: a.sol.length, bar: d.buttons.map(function (x) { return x.label; }).join(' | '), r1: d.row1, r2: d.row2 }; })(ui.session.active))`));
+      eq(end.mode + ' ' + end.settle + ' ' + (end.idx === end.n), 's0 2 true', at + ': the line ends, the card settles');
+      eq(end.bar, 'See why › | Continue', at + ': the bar to the story');
+      ok(/^The answer: /.test(end.r1) && end.r2, at + ': R4 under the answer, ' + end.r1 + ' / ' + end.r2);
+    }
+    ok(steps >= 4, 'replies stepped ' + steps);
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('Skip, Back and endSession never regrade a revealed card', () => {
+    const A = boot();
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    A.ev('(notice = function () {}, 1)');
+    A.ev(`(window.__rec = [], srsRecord = (function (f) { return function (it, r) { window.__rec.push(it.key + ' ' + r); return f.apply(this, arguments); }; })(srsRecord), 1)`);
+    const keys = JSON.parse(A.ev(`JSON.stringify((function () { var its = allMistakes().filter(trainable);
+      var one = its.filter(function (it) { var a = cardFor(it); return a && !a.sol; }), line = its.filter(function (it) { var a = cardFor(it); return a && a.sol && a.sol.length >= 3; });
+      return [one[0].key, one[1].key, one[2].key, line[0].key]; })())`));
+    const ways = { skip: 'skipCard()', endSession: 'endSession()', back: 'endSession(true)', dispute: "disputeCard('engine')" };
+    for (const [way, code] of Object.entries(ways)) for (const [i, key] of keys.entries()) {
+      const at = key + ' ' + way + (i === 3 ? ' (mid-line, Play it, their reply due)' : '');
+      A.ev(`(function () { var its = [model().byKey['${key}'], allMistakes().filter(trainable).filter(function (x) { return x.key !== '${key}'; })[0]];
+        its.forEach(function (x) { x.b.v = Math.max(x.b.v || 0, 2); });
+        ui.session = { mode: 't', label: 't', keys: its.map(function (x) { return x.key; }), idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} };
+        loadCard(); return 1; })()`);
+      if (i === 3) A.ev('(function (a) { gradeMove(uciToMove(a.st, a.sol[0])); return 1; })(ui.session.active)'), A.setNow(A.getNow() + 1000), A.flush(3);
+      A.ev('(window.__rec = [], reveal(), 1)');
+      if (i === 3) A.ev('(playIt(false), 1)');
+      if (i === 1) A.ev('(window.__nlTest.play(ui.session.active.bestUci), 1)');
+      const r0 = A.ev('JSON.stringify(ui.session.results)');
+      A.ev(`(${code}, 1)`);
+      A.setNow(A.getNow() + 5000); A.flush(5);
+      eq(A.ev('JSON.stringify(window.__rec)'), JSON.stringify([key + ' fail']), at + ': recorded once, by the reveal');
+      if (way !== 'dispute') {
+        const res = JSON.parse(A.ev(`JSON.stringify(ui.session ? ui.session.results : (savedSession() || {}).results || {})`));
+        eq(res[key], 'fail', at + ': the result stays fail, ' + r0);
+        eq(A.ev(`(ui.session ? ui.session.notes : (savedSession() || {}).notes || {})['${key}']`), 'shown', at + ': the note stays shown');
+      }
+    }
+  });
 
   await test('board primitives: distinct marker ids', () => {
     const A = boot();

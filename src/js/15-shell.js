@@ -484,6 +484,9 @@ document.addEventListener('click', function (e) {
     case 'reveal': if (!tooSoon(a)) reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
+    case 'playIt': playIt(false); break;
+    case 'seeWhy': seeWhy(); break;
+    case 'details': if (a && a.phase === 'done') { if (a.menuOpen) { a.menuOpen = false; renderCard(); } openSheet('details'); } break;
     /* these wait out a card's first half second (tooSoon); a slot that
        just changed is ignored above (slotGuarded) */
     case 'dismissStronger': if (!tooSoon(a)) tryAgain(); break;
@@ -498,7 +501,7 @@ document.addEventListener('click', function (e) {
     case 'lineTo': if (a && a.lines) { if (a.explore) exploreExit('silent'); a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
     case 'lineBack': stepView(-1); break;
     case 'lineFwd': stepView(1); break;
-    case 'explore': if (a) startExplore({ view: a.invite && a.invite.view, via: 'invite' }); break;
+    case 'explore': if (a) { closeSheet(); startExplore({ view: a.invite && a.invite.view, via: 'invite' }); } break;
     case 'exploreOff': exploreExit('link'); break;
     case 'xpGo': if (a && a.explore) exploreGo(parseInt(k, 10)); break;
     case 'xpRow': if (a && a.explore) {
@@ -591,6 +594,8 @@ document.addEventListener('keydown', function (e) {
     var ae = ui.session && ui.session.active;
     if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
+    /* See why: Esc goes back to the settled result */
+    if (ae && ae.phase === 'done' && ae.view && !ae.view.mode) { e.preventDefault(); backToSettled(); return; }
     /* a move still being checked: Esc takes it back (S3) */
     if (ae && ae.phase === 'checking') { e.preventDefault(); takeBack(); return; }
   }
@@ -603,7 +608,9 @@ document.addEventListener('keydown', function (e) {
   if (a.phase === 'done') {
     if (e.key === 'ArrowLeft') { e.preventDefault(); stepView(-1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); stepView(1); }
-    else if ((e.key === 'Enter' || e.key === ' ') && !onAct) { e.preventDefault(); pressRight(); }
+    /* Enter is the right-hand button; Space does nothing here (S12) */
+    else if (e.key === 'Enter' && !onAct) { e.preventDefault(); pressRight(); }
+    else if (e.key === ' ' && !onAct) e.preventDefault();
   } else if (a.phase === 'guess' || a.phase === 'tried') {
     /* never a letter: letters start moves in the typed-move field. ? asks
        for a hint, Enter presses the right-hand button; both wait out the
@@ -692,6 +699,9 @@ function moveGhost(x, y) {
 }
 function boardState(a) {
   if (a.phase === 'done' && a.explore) return { st: a.explore.st, live: true, explore: true };
+  /* the answer shown takes that one move by hand (S7) */
+  var due = a.phase === 'done' && !a.showWait ? showDue(a) : null;
+  if (due) return { st: a.st, live: true, show: due };
   if (a.phase === 'guess') return { st: a.st, live: true };
   if (a.phase === 'tried') return { st: triedFrame(a).st, live: true, tried: true };
   if (a.phase === 'checking') return { st: checkingFrame(a), live: false, checking: true };
@@ -734,7 +744,10 @@ document.addEventListener('pointerdown', function (e) {
     return;
   }
   if (e.button !== 0 || !bs.live || a.pendingPromo) return;
-  if (!bs.explore && a.shapes.length) { a.shapes = []; renderCardBoard(); }
+  /* the answer shown: only its own piece picks up; any other press is
+     answered by its click (N1) */
+  if (bs.show && sq !== bs.show.from) return;
+  if (!bs.explore && !bs.show && a.shapes.length) { a.shapes = []; renderCardBoard(); }
   var p = bs.st.b[sq];
   if (p && isW(p) === bs.st.w) {
     pointerState.dragFrom = sq;
@@ -872,7 +885,7 @@ window.__nlTest = {
     if (!a) return { session: !!ss, finished: !!(ss && ss.finished), idx: ss ? ss.idx : null, n: ss ? ss.keys.length : null };
     return { idx: ss.idx, n: ss.keys.length, key: a.key, phase: a.phase, best: a.bestUci, played: a.playedUci,
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
-             hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null, reason: a.reason || 0,
+             hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null, reason: a.reason || 0, settle: a.settle || 0, showWait: !!a.showWait,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
              sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null,
              verdict: a.verdict ? { kind: a.verdict.kind, row1: a.verdict.row1, row2: a.verdict.row2 } : null };
@@ -885,6 +898,9 @@ window.__nlTest = {
     if (!m) return 'illegal';
     /* a try on the board is taken back first, as a tap on a piece does */
     if (a.phase === 'tried') tryAgain();
+    /* the answer shown: its move is played (Play it) */
+    var due = a.phase === 'done' && !a.explore && !a.showWait ? showDue(a) : null;
+    if (due) { if (moveUci(due) !== uci) return 'not the answer'; playIt(false); return 'played'; }
     if (a.phase === 'guess') { gradeMove(m); return 'graded'; }
     if (a.phase === 'done' && a.explore) { explorePlay(m, false); return 'explored'; }
     return 'not guessing';

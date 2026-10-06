@@ -115,7 +115,9 @@
     recOn();
     ok('session mode hides the site chrome', document.body.classList.contains('in-session'));
     ok('the session bar has an end button and progress', !!$('.sb-end') && !!$('.dots'));
-    ok('the card shows a board, a task and the game context', !!$('#bwrap svg') && /to move|better move/i.test(text('#main')) && !!$('.ctx'));
+    ok('the card shows a board and a task', !!$('#bwrap svg') && /to move|better move/i.test(text('#main')));
+    /* the strip is empty before an answer: the game's context waits in Details (the typed-move field is off screen) */
+    ok('the strip says nothing before an answer', !$('#cstrip .ctx') && !/\S/.test([].map.call(document.querySelectorAll('#cstrip > :not(.kb-move)'), (e) => e.innerText).join('')), text('#cstrip'));
     ok('the move played in the game is marked', !!$('#bwrap svg') && !!c.played);
     const bwk = $('#bwrap').children, bwr = (e) => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(','); };
     ok('the board svg is #bwrap\'s first child, the marks svg over it', bwk[0].matches('svg.board') && !!bwk[1] && bwk[1].matches('svg.marks')
@@ -139,22 +141,44 @@
     await sleep(600);
     bandFits('the card solved');
     ok('the solved card shows the best line', !!c && !!c.lines && c.lines.best.length >= 1);
-    ok('both halves of the lesson are on screen', /\S/.test(text('.tline.tl-bad')) && /\S/.test(text('.tline.tl-good')), text('.result'));
+    /* S0: the verdict, then the game move's ghost, then R4 and Details; See why and Continue */
+    ok('the solve lands as a tick on the square, with the band saying so', !!$('#bwrap .marks .badge-good') && /^(Found it|You got there|That works too)$/.test(text('#cband .bd-r1')), text('#cband'));
+    await until(() => T.card().settle === 2, 3000);
+    await sleep(300);
+    ok('the settled result: the game move\'s ghost where it went', !!$('#bwrap .board .ghost-piece') === (T.ev('s0Marks(ui.session.active, ui.session.active.st).ghosts.length') > 0)
+      && !!$('#bwrap .marks .badge-good'), T.ev('JSON.stringify(s0Marks(ui.session.active, ui.session.active.st))'));
+    ok('the settled band reads the result over R4', /^(Found it|You got there|That works too)$/.test(text('#cband .bd-r1')) && /\S/.test(text('#cband .bd-r2')) && !!$('#cstrip [data-act=details]')
+      && /^See why ›\s*(Continue|Finish)$/.test(text('#cbar').replace(/\n/g, ' ').trim()), text('#cband') + ' | ' + text('#cstrip') + ' | ' + text('#cbar'));
+    bandFits('the card settled');
     ok('no pawn number on the board', !/[+-]\d+\.\d/.test(text('#ebar-lab')));
+    /* the Details sheet: both long sentences, the game, the pattern, the way to explore */
+    click('#cstrip [data-act=details]');
+    await until(() => $('#overlay .sheet'), 3000);
+    const sn = T.card().sentences;
+    ok('the Details sheet holds both sentences', !!sn && text('#overlay .sheet').indexOf(sn.best) !== -1 && text('#overlay .sheet').indexOf(sn.game.replace(/ \(\d+% to \d+%\)/g, '')) !== -1 && !!$('#overlay .sheet .ctx'),
+      text('#overlay .sheet').slice(0, 200));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(200);
+    ok('Escape closes Details', !$('#overlay .sheet'));
     /* nothing moves on its own: after the solving move lands, the board and the band stay */
     await sleep(600);
     const frame = () => ($('#bwrap') ? $('#bwrap').innerHTML : '') + '|' + text('.card-task') + '|' + JSON.stringify(T.card().view);
     const f0 = frame();
     await sleep(5000);
     ok('board and band unchanged 5 s after an answer', frame() === f0, JSON.stringify(c.view) + ' -> ' + JSON.stringify(T.card().view));
-    click('.tline.tl-bad');
-    await sleep(200);
-    ok('tapping the red line opens your game line at its start', T.card().view.line === 'refute' && T.card().view.idx === -1, JSON.stringify(T.card().view));
+    click('#cbar [data-act=seeWhy]');
+    await sleep(400);
+    ok('See why opens your game line at its start', T.card().view.line === 'refute' && T.card().view.idx === -1, JSON.stringify(T.card().view));
     ok('the red arrow shows alone at the start of its line', !!$('#bwrap .bad-arrow') && !$('#bwrap .good-arrow'));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(400);
+    ok('Esc goes back to the settled result', T.card().view.mode === 's0' && !!$('#cstrip [data-act=details]'), JSON.stringify(T.card().view));
 
-    /* ── exploring: the invite, three rows, one arrow, a sentence, the way back ─ */
-    const inv = $('#cpanel [data-act=explore]');
-    ok('the answered card invites you to test a move', !!inv && /^(Why .+\? Try another (white|black) move and Stockfish answers\.|Move a piece to test an idea\. Stockfish answers\.)$/.test(inv.textContent.trim()), inv && inv.textContent);
+    /* ── exploring: from Details, three rows, one arrow, a sentence, the way back ─ */
+    click('#cstrip [data-act=details]');
+    await until(() => $('#overlay .sheet'), 3000);
+    const inv = $('#overlay [data-act=explore]');
+    ok('Details offers to try your own moves', !!inv && inv.textContent.trim() === 'Try your own moves with Stockfish ›', inv && inv.textContent);
     ok('the answered board is still static before exploring', $('#bwrap').classList.contains('static'));
     if (inv) { recOff(); inv.click(); }
     const xr = await until(() => { const x = T.explore(); return x && x.lines && x.lines.length ? x : null; }, 10000);
@@ -177,7 +201,7 @@
       ok('‹ steps back inside the exploration', T.explore() && T.explore().at === 0);
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await sleep(200);
-      ok('Esc returns to the lesson', !T.explore() && !!$('.tline.tl-good'));
+      ok('Esc returns to the lesson', !T.explore() && T.card().view.mode === 's0' && !!$('#cstrip [data-act=details]'), JSON.stringify(T.card().view));
     }
     if (inv) { await sleep(300); recOn(); }
 
@@ -281,8 +305,22 @@
         click('#cpanel [data-act=reveal]');
         await until(() => T.card().phase === 'done', 3000);
         await sleep(300);
-        ok('a revealed card says what the answer is', /^The answer: \S+/.test(text('#cband .bd-r1')), text('#cband'));
+        ok('a revealed card says what the answer is', /^The answer: \S+/.test(text('#cband .bd-r1')) && text('#cband .bd-r2') === 'Play the green arrow.' && !!$('#bwrap .marks .good-arrow') && !$('#bwrap .marks .bad-arrow'), text('#cband'));
         bandFits('the answer shown');
+        /* Play it: the answer slides and lands with the grey i, then the card settles under the answer */
+        await sleep(300);
+        const v1 = text('#cband .bd-r1');
+        press('#cbar [data-act=playIt]');
+        await until(() => T.card().settle === 2 || T.card().showWait, 3000);
+        if (T.card().showWait || (T.card().view && T.card().view.mode === 'show')) {
+          /* a forcing line: each reply plays, then Play it again */
+          for (let g = 0; g < 8 && T.card().view.mode === 'show'; g++) { await until(() => !T.card().showWait && !!$('#cbar [data-act=playIt]'), 4000); await sleep(500); click('#cbar [data-act=playIt]'); await sleep(300); }
+        }
+        await until(() => T.card().settle === 2, 4000);
+        await sleep(300);
+        ok('Play it plays the answer: the grey i, then R4 under the answer, and See why', !!$('#bwrap .marks .badge-info') && /^The answer: \S+/.test(text('#cband .bd-r1')) && /\S/.test(text('#cband .bd-r2'))
+          && text('#cband .bd-r2') !== 'Play the green arrow.' && !!$('#cbar [data-act=seeWhy]'), v1 + ' -> ' + text('#cband') + ' | ' + text('#cbar'));
+        bandFits('the answer played');
       } else ok('a close alternative was accepted as solved', c2.result !== 'fail');
       /* Next ignores taps for 450 ms after the bar changed to it (the reveal above), which left the
          skip and drag lines below waiting 30 s for a card that never came */
@@ -341,17 +379,27 @@
       const want2 = c.sol ? c.sol : [c.best];
       await sleep(600);
       for (let i = 0; i < want2.length; i += 2) {
-        await until(() => T.card().phase === 'guess', 8000);
+        /* the forcing reply has landed (a press while it slides is dropped, S10) */
+        await until(() => T.card().phase === 'guess' && !T.ev('motionHold') && T.ev('motionUntil') <= Date.now(), 8000);
+        await sleep(100);
         dragMove(want2[i]);
         await until(() => T.card().phase === 'done' || T.card().solIdx > i, 6000);
+        if (T.card().phase !== 'done' && T.card().solIdx <= i) break;
       }
       const dn = await until(() => T.card().phase === 'done', 8000);
-      await sleep(1200);
+      await until(() => T.card().settle === 2, 3000);
+      await sleep(300);
       const any = dn ? T.ev('(function (a) { var st = lineView(a).st; for (var q = 0; q < 64; q++) if (st.b[q]) return q; return -1; })(ui.session.active)') : -1;
       if (any >= 0) fingerTap(any);
       await sleep(300);
       ok('after a dragged solve, the first tap on a piece says where to try moves', !!dn && text('#cband .bd-r2') === T.ev('CARD_COPY.N1(ui.session.active)') && !!$('#bwrap .marks .nope-box'),
         T.card().phase + ': ' + text('#cband'));
+      /* and Details is there, and opens */
+      const dl = $('#cstrip [data-act=details]');
+      if (dl) dl.click();
+      await until(() => $('#overlay .sheet'), 2000);
+      ok('the Details that N1 names is in the strip, and opens', !!dl && !!$('#overlay .sheet .dt-lines'));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await sleep(2600);
     }
     /* finish quickly: reveal the rest */

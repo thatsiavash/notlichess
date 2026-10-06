@@ -783,3 +783,11 @@ a.lg-row{color:inherit}
 /* a phone's tap highlight is drawn over a button whatever its opacity: on
    a button fading out it showed as a grey block */
 #cbar a{-webkit-tap-highlight-color:transparent}
+/* the settled card's one link (S0), and the Details sheet behind it (S13) */
+.details-row{margin:2px 0 0}
+.details-link{display:inline-flex;align-items:center;min-height:44px;font-size:15px}
+.sheet .ctx{white-space:normal}
+.sheet .stakes-tag{margin:8px 0 4px}
+.dt-lines{margin:14px 0 10px}
+.dt-line{display:flex;align-items:flex-start;gap:10px;margin:0 0 10px;font-size:15px;line-height:1.45;color:var(--text-1)}
+.dt-line.tl-opp{font-size:13.5px;color:var(--text-2)}

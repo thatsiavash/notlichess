@@ -830,6 +830,14 @@ a.lg-row{color:inherit}
 /* a phone's tap highlight is drawn over a button whatever its opacity: on
    a button fading out it showed as a grey block */
 #cbar a{-webkit-tap-highlight-color:transparent}
+/* the settled card's one link (S0), and the Details sheet behind it (S13) */
+.details-row{margin:2px 0 0}
+.details-link{display:inline-flex;align-items:center;min-height:44px;font-size:15px}
+.sheet .ctx{white-space:normal}
+.sheet .stakes-tag{margin:8px 0 4px}
+.dt-lines{margin:14px 0 10px}
+.dt-line{display:flex;align-items:flex-start;gap:10px;margin:0 0 10px;font-size:15px;line-height:1.45;color:var(--text-1)}
+.dt-line.tl-opp{font-size:13.5px;color:var(--text-2)}
 </style>
 </head>
 <body>
@@ -6090,10 +6098,20 @@ function sessionClick(sq) {
     return;
   }
   if (a.phase === 'done') {
-    if (a.explore) exploreClick(sq);
+    if (a.explore) { exploreClick(sq); return; }
+    /* the answer shown takes that one move, by hand (S7): its piece picks
+       up, its square plays it, anything else puts it down */
+    var due = !a.showWait ? showDue(a) : null;
+    if (due && (sq === due.from || a.sel === due.from)) {
+      if (sq === due.from) { a.sel = a.sel === sq ? -1 : sq; if (a.sel >= 0) snd('tap'); renderCardBoard(); }
+      else if (sq === due.to) playIt(pointerState.suppressClick);
+      else { a.sel = -1; renderCardBoard(); }
+      return;
+    }
+    if (a.sel >= 0) { a.sel = -1; renderCardBoard(); }
     /* after an answer the board takes no moves: a tap on any piece says
        where to try them (N1), and nothing changes */
-    else if (lineView(a).st.b[sq]) tapNote(a, 'N1', 2500, sq);
+    if (lineView(a).st.b[sq]) tapNote(a, 'N1', 2500, sq);
     return;
   }
   if (a.phase !== 'guess') return;
@@ -6193,14 +6211,16 @@ function gradeMove(m) {
 function stepLine(m, u) {
   var a = ui.session.active;
   var san = sanOf(a.st, m);
+  noteWon(a, m);
   applyMove(a.st, m);
   a.lastMove = [m.from, m.to];
   a.animMove = a.tapAnim || null; a.tapAnim = null;
   a.solIdx++;
-  snd('good');
+  /* the line's last move is the solve: its sound comes with its badge */
   if (a.solIdx >= a.sol.length) { solved(null, null, null, true); return; }
   var reply = uciToMove(a.st, a.sol[a.solIdx]);
   if (!reply) { solved(null, null, null, true); return; }
+  snd('good');
   a.phase = 'reply';
   /* my moves sit at even offsets of the line: the next one is number n */
   a.hintAfter = false;
@@ -6580,13 +6600,24 @@ function miss(m, u, info, inLine) {
   escalate();
   showTry(a, m, 'miss', reply[0], why);
 }
+/* a capture of yours inside a forcing line, kept for the settled board's
+   tokens (S6: green tokens on what you won) */
+function noteWon(a, m) {
+  var took = m.ep >= 0 ? a.st.b[m.ep] : a.st.b[m.to];
+  if (took) (a.won = a.won || []).push({ sq: m.to, p: took });
+}
+/* the card is solved (S6): the board keeps your move, and the verdict (a
+   filled tick, green tints, its sound) lands with the piece */
 function solved(m, u, alt, lineDone) {
   var ss = ui.session, a = ss.active;
-  if (m) { applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = a.tapAnim || null; a.tapAnim = null; }
+  if (m) {
+    if (a.sol && a.solIdx > 0) noteWon(a, m);
+    applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = a.tapAnim || null; a.tapAnim = null;
+  }
   a.alt = alt && u !== a.bestUci ? alt : null;
   var result = a.misses ? 'retry' : ((a.hints || a.foundGood) ? 'hint' : 'first');
+  a.cue = 'good';
   finishCard(result);
-  snd('good');
 }
 function reveal() {
   var a = ui.session && ui.session.active;
@@ -6602,10 +6633,111 @@ function reveal() {
   if (a.phase === 'tried') clearTry(a);
   engineStop('check');
   a.revealed = true;
-  a.st = cloneState(a.pre);
-  /* found a close move and then asked for the best one: a hint, not a miss */
-  if (a.foundGood && !a.misses && !ss_relearn(a)) (ui.session.notes = ui.session.notes || {})[a.key] = 'close';
+  a.sel = -1;
+  /* inside a forcing line the moves already found stay on the board, and
+     the answer is the move due now (problem map 4.7) */
+  if (!(a.sol && a.solIdx > 0)) { a.st = cloneState(a.pre); a.lastMove = a.preLast; }
+  /* the summary says it was shown (S17); a relearn card keeps its first note */
+  if (!ss_relearn(a)) (ui.session.notes = ui.session.notes || {})[a.key] = 'shown';
+  /* graded at once (a close move found first makes it a hint), so leaving
+     the card from here never grades it again; then the answer is shown */
   finishCard(a.foundGood && !a.misses ? 'hint' : 'fail', still && !a.jump ? MARKS_THEN_WORDS : null);
+}
+/* the move the reveal shows now (S7): the forcing line's next move of
+   yours, else the card's answer; null once it is played */
+function showDue(a) {
+  if (!a.view || a.view.mode !== 'show') return null;
+  if (a.sol) return a.solIdx < a.sol.length && !!a.st.w === myPov(a.it) ? uciToMove(a.st, a.sol[a.solIdx]) : null;
+  return a.showDone ? null : uciToMove(a.st, a.bestUci);
+}
+/* Play it (S7): the answer shown is played, as a move the app shows (320
+   ms, its sound as it starts); it lands with the grey i badge and tints,
+   and the band stays. Inside a forcing line their reply follows as the
+   forcing reply does, and the next move of yours is shown the same way.
+   At the end of the line (at once on a one-move card) the card settles:
+   S0's marks, then R4 and the bar to the story. Played by hand (dragged)
+   it lands where it was dropped */
+function playIt(dragged) {
+  var a = ui.session && ui.session.active, m = a && a.phase === 'done' && !a.explore && !a.showWait ? showDue(a) : null;
+  if (!m) return;
+  a.sel = -1;
+  if (a.sol) noteWon(a, m);
+  applyMove(a.st, m);
+  a.lastMove = [m.from, m.to];
+  a.markMove = { from: m.from, to: m.to, kind: 'info' };
+  a.fxn = (a.fxn || 0) + 1;
+  a.animMove = dragged ? null : [m.from, m.to];
+  a.animShown = true;
+  a.moveCue = !dragged;
+  var reply = null;
+  if (a.sol) { a.solIdx++; reply = a.solIdx < a.sol.length ? uciToMove(a.st, a.sol[a.solIdx]) : null; }
+  else a.showDone = true;
+  if (!reply) { settleShown(a); renderCard(); return; }
+  /* their reply, on the forcing line's own timing (S10 as it is today) */
+  a.showWait = true;
+  renderCard();
+  var cardKey = a.key;
+  setTimeout(function () {
+    var a2 = ui.session && ui.session.active;
+    if (!a2 || a2.key !== cardKey || !a2.showWait || a2.phase !== 'done') return;
+    a2.showWait = false;
+    applyMove(a2.st, reply);
+    a2.lastMove = [reply.from, reply.to];
+    a2.markMove = null;
+    a2.animMove = [reply.from, reply.to];
+    a2.animShown = false;
+    a2.replySlide = true;
+    a2.solIdx++;
+    snd('move');
+    /* the next move of yours is the answer now */
+    var next = showDue(a2);
+    if (next) a2.answerSan = sanOf(a2.st, next);
+    else settleShown(a2);
+    renderCard();
+  }, 650);
+}
+/* the shown line is over: the card settles as S0 does (the answer's band
+   stays until R4 comes) */
+function settleShown(a) {
+  a.view = { mode: 's0' };
+  a.settle = 0;
+  a.settleFor = true;
+}
+/* S0's two beats once the verdict is read (S6): 700 ms after its words
+   paint (paintText calls this then) the game move's ghost and the threat it
+   ran into; at 850 R4 in row 2, the strip's Details and, after a reveal,
+   the bar to the story (300 and 400 under reduced motion) */
+function settleBeats(a) {
+  var rm = reducedMotion();
+  a.settleFor = false;
+  stageAt(rm ? 300 : 700, function (a2) {
+    if (a2.view.mode !== 's0' || a2.settle >= 1) return;
+    a2.settle = 1;
+    /* the ghost lives in the board svg: a board beat with nothing sliding */
+    stage(['board']);
+  });
+  stageAt(rm ? 400 : 850, function (a2) {
+    if (a2.view.mode !== 's0' || a2.settle >= 2) return;
+    a2.settle = 2;
+    stage(['text']);
+  });
+}
+/* See why (interim until the story, slice 9): the game line from the card
+   position, its red arrow; Esc or ‹ at its start come back to S0 */
+function seeWhy() {
+  var a = ui.session && ui.session.active;
+  if (!a || a.phase !== 'done' || a.explore || !a.lines || !a.view || a.view.mode !== 's0' || a.settle < (a.revealed ? 2 : 0)) return;
+  a.settle = 2;
+  a.view = { line: 'refute', idx: -1 };
+  a.jump = true;
+  renderCard();
+}
+function backToSettled() {
+  var a = ui.session && ui.session.active;
+  if (!a || a.phase !== 'done' || a.explore || !a.view || a.view.mode) return;
+  a.view = { mode: 's0' };
+  a.jump = true;
+  renderCard();
 }
 /* a second tap on Next lands where Show the answer now sits: taps in the
    first half second of a card are the old card's. After that, each bar
@@ -6697,12 +6829,20 @@ function finishCard(result, beats) {
   var habitKey = 'nl:habitSeen:' + patternOf(a.it.b);
   a.showHabit = a.tier === 1 || Date.now() - store.get(habitKey, 0) > 7 * DAY;
   if (a.showHabit) store.set(habitKey, Date.now());
-  /* the board keeps showing what was just played: the move found, the
-     alternative that also works, or the end of the forcing line; a shown
-     answer is its green arrow. Nothing plays by itself from here */
-  if (a.revealed || result === 'fail') a.view = { line: 'best', idx: -1 };
-  else if (a.alt && a.lines.yours && a.lines.yours.states.length) a.view = { line: 'yours', idx: Math.min(a.yours.at || 0, a.lines.yours.states.length - 1) };
-  else a.view = { line: 'best', idx: Math.min(a.sol ? a.solIdx - 1 : 0, a.lines.best.states.length - 1) };
+  /* the board keeps showing what was just played (S6: the move found, the
+     alternative that also works, or the end of the forcing line), its tick
+     landing with the piece, then settles (S0); a shown answer is its green
+     arrow, to be played (S7). Nothing plays by itself from here */
+  a.settle = 0;
+  if (a.revealed) {
+    a.view = { mode: 'show' };
+    var due = showDue(a);
+    a.answerSan = due ? sanOf(a.st, due) : '';
+  } else {
+    a.view = { mode: 's0' };
+    if (a.lastMove) a.markMove = { from: a.lastMove[0], to: a.lastMove[1], kind: 'good' };
+    a.settleFor = true;
+  }
   saveSession();
   modelDirty();
   renderCard(beats);
@@ -6765,6 +6905,8 @@ function disputeCard(reason) {
 /* ── after answering: stepping through the lines ────────────────────────── */
 function lineView(a) {
   var v = a.view || { line: 'best', idx: -1 };
+  /* S0 and the answer shown: the card's own board, as play left it */
+  if (v.mode) return { st: a.st, last: a.lastMove, ev: a.it.b.eb };
   var L = a.lines && a.lines[v.line];
   if (!L || !L.states.length) return { st: a.pre, last: a.preLast, ev: a.it.b.eb };
   if (v.idx < 0) return { st: a.pre, last: a.preLast, ev: a.it.b.eb };
@@ -6775,6 +6917,9 @@ function stepView(d) {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'done' || !a.lines) return;
   if (a.explore) { exploreStep(d); return; }
+  /* S0: forward is See why; the line's start, back: S0 again */
+  if (a.view.mode) { if (d > 0 && a.view.mode === 's0') seeWhy(); return; }
+  if (d < 0 && a.view.idx < 0) { backToSettled(); return; }
   var L = a.lines[a.view.line];
   if (!L) return;
   var was = a.view.idx;
@@ -6821,12 +6966,14 @@ function startExplore(o) {
   if (!a || a.phase !== 'done' || a.explore || a.pendingPromo || !a.lines) return;
   o = o || {};
   a.menuOpen = false;
+  /* the frame it came from, to come back to (S14) */
+  var from = a.view ? JSON.parse(JSON.stringify(a.view)) : { mode: 's0' };
   if (o.view) a.view = { line: o.view.line, idx: o.view.idx };
   var v = lineView(a);
   a.xpRes = a.xpRes || {};
   var ask = o.via === 'invite' && o.view && a.lines.best.uci[1] && posKey(v.st) === posKey(a.lines.best.states[0])
     ? { uci: a.lines.best.uci[1], san: a.lines.best.san[1] } : null;
-  a.explore = { root: { line: a.view.line, idx: a.view.idx }, nodes: [xpNode(v.st, v.last, null)],
+  a.explore = { root: from, nodes: [xpNode(v.st, v.last, null)],
                 at: 0, sel: o.sq != null ? o.sq : -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null,
                 ask: ask, wantRow: o.via === 'invite' ? 0 : null };
   xpSync(a.explore);
@@ -6841,13 +6988,13 @@ function exploreExit(how) {
   var root = a.explore.root;
   engineStop('explore');
   a.explore = null;
-  a.view = { line: root.line, idx: root.idx };
-  a.lastView = { line: root.line, idx: root.idx };
+  a.view = JSON.parse(JSON.stringify(root));
+  a.lastView = { line: root.line, idx: root.idx, mode: root.mode };
   track('explore_exit_' + (how || 'link'));
   enginePump();
   if (how === 'silent') return;
   renderCard();
-  var inv = document.querySelector('#cpanel [data-act="explore"]');
+  var inv = document.querySelector('#cpanel [data-act="details"]');
   if (inv && how !== 'pop') inv.focus({ preventScroll: true });
 }
 /* a move in the exploration, by either side */
@@ -7339,7 +7486,12 @@ var CARD_COPY = {
   C1: function () { return 'Good move'; },
   C2: function () { return 'There\'s a stronger one.'; },
   E1: function () { return 'Cannot check this move'; },
-  E2: function () { return 'Not counted. Try again.'; }
+  E2: function () { return 'Not counted. Try again.'; },
+  R1: function () { return 'Found it'; },
+  R2: function () { return 'You got there'; },
+  R3: function () { return 'That works too'; },
+  V1: function (a) { return 'The answer: ' + (a.answerSan || ''); },
+  V2: function () { return 'Play the green arrow.'; }
 };
 /* a word for a tap that is not a move, as row 2 says it: the full text,
    then (when the words on screen would go over budget) a shorter one */
@@ -7466,34 +7618,122 @@ function bandFit(a, b) {
     b.row2 = fitRow(b.cands, 'row2', b.fall);
     var room = rowRoom(a, b);
     if (wordsIn(b.row2) > room) b.row2 = fitRow(b.cands, { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
+    /* a ladder step that would say something untrue (R4's found form) */
+    if (b.never && b.never.indexOf(b.row2) >= 0) b.row2 = fitRow([], { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
   }
-  delete b.cands; delete b.fall;
+  delete b.cands; delete b.fall; delete b.never;
   return b;
 }
-/* the words row 2 has left beside row 1, the chip and the bar. A miss's
+/* the comparison a settled card makes (S6, R4), read once from the
+   classifier and the card's lines: did the opponent find the punishment
+   (found: their game reply was the refutation's first move), what the game
+   move lost (w, in plain words, and wn as one word), what the better move
+   wins (w2, w2n: the card's best line, or for a move that works too its own
+   line) and whether it is guarded (the guard rule) */
+function buildCompare(a) {
+  if (a.compare) return a.compare;
+  var c = a.cls, it = a.it, pov = myPov(it), ru = unpackUci(it.b.ru), gm = a.lines ? a.lines.game.uci : [];
+  var line = c.bestLine, settle = c.bSettle, gain = c.matBest, at = 1, better = a.lines ? a.lines.best.san[0] || '' : '';
+  if (a.alt && a.yours) {
+    var alt = buildLine(a.pre, '0000', a.yours.uci, pov);
+    if (alt && alt.nodes[(a.yours.at || 0) + 1]) {
+      line = alt; at = (a.yours.at || 0) + 1;
+      settle = settleIndex(alt);
+      gain = matDiff(alt.nodes[settle].after.b, pov) - matDiff(a.pre.b, pov);
+      better = sanOf(alt.nodes[at].before, alt.nodes[at].move);
+    }
+  }
+  var bn = line && line.nodes[at];
+  a.compare = {
+    found: !!(gm[1] && ru[0] && gm[1] === ru[0]), betterSan: better, gameSan: gameSan(a),
+    w: c.lossG >= 1 ? plainCapture(c.gameLine, c.lossAt, 0) || materialWord(c.lossG) : '', wn: materialWord(c.lossG),
+    w2: gain >= 1 && line ? plainCapture(line, settle) || materialWord(gain) : '', w2n: materialWord(gain),
+    guard: guardRule(c.gameLine, a.played, bn)
+  };
+  return a.compare;
+}
+/* the guard rule (FINAL-SPEC 3): the square the game move went to is not
+   defended once it is played, the better move's square is (isDefended
+   says false on an empty square, so each is read on the board just after
+   its own move). Its other half, a better move that defends a piece the
+   game move left hanging, does not make "{bestSan} is guarded." true, so
+   R4 reads only this one */
+function guardRule(gameLine, played, bn) {
+  var g0 = gameLine && gameLine.nodes[0];
+  if (!g0 || !bn || !bn.move || !played) return false;
+  return !isDefended(g0.after.b, played.to) && isDefended(bn.after.b, bn.move.to);
+}
+/* R4, the settled caption (S6), as row 2's ladder {cands, fall}: by the
+   card's family, what the game move did against what the better move does.
+   Each form also comes with its material as one word ("a rook"), the
+   ladder's second step; the mistake alone, then the first sentence and the
+   fallback come after */
+function r4Of(a) {
+  var c = a.cls, cmp = buildCompare(a), g = cmp.gameSan, bs = cmp.betterSan, fam = familyOf(patternOf(a.it.b)).key;
+  var w = a.it.b.wa, opp = sidesOf(a).opp, cands = [];
+  var past = 'After ' + g + ', ' + (w >= 60 ? 'you were still better' : w >= 40 ? 'the game was even' : opp + ' was on top') + '.';
+  /* a form with its material phrase, then the same with the one word */
+  var both = function (f, x, xn) { return x === xn || !xn ? [f(x)] : [f(x), f(xn)]; };
+  /* the found form ("lost", a checkmate allowed and played) only when the
+     opponent did find it: a ladder step that would cut a not-found form
+     down to it (never) takes the fallback instead */
+  var never = [];
+  if ((fam === 'king' || fam === 'safety') && c.mateAgainst) {
+    cands = [g + ' allowed checkmate.' + (cmp.found ? '' : ' They missed it.')];
+    if (!cmp.found) never.push(g + ' allowed checkmate.');
+  }
+  else if ((fam === 'safety' || fam === 'king') && c.lossG >= 1) {
+    var mistake = function (x) { return g + (cmp.found ? ' lost ' : ' could lose ') + x + '.'; };
+    var better = cmp.guard ? bs + ' is guarded. ' : null;
+    if (better) cands = both(function (x) { return better + mistake(x); }, cmp.w, cmp.wn);
+    else if (cmp.w2) cands = [bs + ' wins ' + cmp.w2 + '. ' + mistake(cmp.w), bs + ' wins ' + cmp.w2n + '. ' + mistake(cmp.wn)];
+    /* the mistake alone before the better half alone (the first sentence):
+       the game move is what the card is about */
+    cands = cands.concat(both(mistake, cmp.w, cmp.wn));
+  } else if (fam === 'chances') {
+    if (c.mateFor) cands = [bs + ' leads to checkmate.'];
+    else if (cmp.w2) cands = both(function (x) { return bs + ' wins ' + x + '. ' + g + ' missed it.'; }, cmp.w2, cmp.w2n);
+  } else if (fam === 'conversion') {
+    cands = [c.stalemate ? g + ' allowed a draw.' : c.perpetualAgainst ? g + ' allowed endless checks.' : past];
+  } else cands = [past];
+  return { cands: cands, fall: g + ' was a mistake.', never: never };
+}
+/* the words the strip shows (2.0): the Details link once settled, the
+   story's two names; nothing before an answer (the typed-move field is off
+   screen until it has the keyboard) */
+function stripWords(a) {
+  if (a.phase !== 'done' || a.explore || !a.view) return 0;
+  if (a.view.mode) return a.view.mode === 's0' && a.settle >= 2 ? 1 : 0;
+  return 2;
+}
+/* the words row 2 has left beside row 1, the chip, the strip and the bar. A miss's
    bar changes while its words stay (See it gives way to Hint or Show the
    answer), so its row 2 is fitted once, beside the wider of its two bars:
    the reason never rewrites itself when only a button changes */
 function rowRoom(a, b) {
   var ss = ui.session, slots = ss ? barSlots(a, ss) : [], bw = barWords(slots);
   if (ss && a.phase === 'tried' && a.tried && a.tried.kind === 'miss') bw = Math.max(barWords(triedSlots(a, false)), barWords(triedSlots(a, true)));
-  return WORD_BUDGET - bandWords({ row1: b.row1, chip: b.chip }, []) - bw;
+  return WORD_BUDGET - bandWords({ row1: b.row1, chip: b.chip }, []) - bw - stripWords(a);
 }
 /* what the card is showing, so a word or an outline meant for one state
    never outlives it: a move (each one counted, so coming back to the same
    phase is still a change), a try seen, a hint, a step */
 function cardStateKey(a) {
   var t = a.tried;
-  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, a.view ? a.view.line + ':' + a.view.idx : '', a.explore ? 'x' : ''].join('|');
+  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, a.view ? (a.view.mode || a.view.line + ':' + a.view.idx) : '', a.explore ? 'x' : ''].join('|');
 }
 function bandOf(a) {
-  var t = a.tried, v = a.verdict, best = a.lines ? a.lines.best.san[0] || '' : '';
+  var t = a.tried, v = a.verdict;
   if (a.phase === 'done' && a.explore) return { kind: 'explore', cap: sayAt(a, a.explore, a.explore.at) };
   if (a.phase === 'done') {
-    if (a.result === 'fail' || a.revealed)
-      return { disc: 'info', kind: 'info', row1: 'The answer: ' + best, cands: a.foundGood ? ['Your ' + a.foundGood.san + ' was close.'] : [], fall: '' };
-    if (a.alt) return { disc: 'good', kind: 'good', row1: 'That works too', cands: ['The engine prefers ' + altNames(a).theirs + '.'], fall: '' };
-    return { disc: 'good', kind: 'good', row1: a.result === 'first' ? 'Found it' : 'You got there', cands: [], fall: '' };
+    /* row 2: R4 once the result has settled (S0 at V+850, and the story
+       that follows it); before that the answer shown says how to play it
+       (V2), and a solve says nothing more yet */
+    var mode = a.view && a.view.mode, said = !mode || (mode === 's0' && a.settle >= 2), r4 = said ? r4Of(a) : null;
+    if (a.revealed)
+      return { disc: 'info', kind: 'info', row1: CARD_COPY.V1(a), cands: r4 ? r4.cands : [CARD_COPY.V2()], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null };
+    return { disc: 'good', kind: 'good', row1: a.alt ? CARD_COPY.R3() : a.result === 'first' ? CARD_COPY.R1() : CARD_COPY.R2(),
+             cands: r4 ? r4.cands : [], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null };
   }
   /* S3: the band keeps what it said for 300 ms, then says the move is
      being checked, and at 3 s that it still is */
@@ -7958,6 +8198,43 @@ function boardOptsFor(a) {
     if (hl) opts.ghost = [hl.from, hl.to];
     if (ex.anim) { opts.anim = ex.anim; slideMs = 220; }
     if (ex.sel >= 0) opts.dots = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel; }).map(function (m) { return m.to; });
+  } else if (a.phase === 'done' && a.view && a.view.mode) {
+    /* S0 and the answer shown (S6, S7): the card's own board as play left
+       it. The move just made slides in (220 ms as you made it; 320 when Play
+       it shows it; a forcing reply as it does in the line) and its verdict
+       lands with it: a filled tick for a solve, the grey i for an answer
+       played. The answer shown is its green arrow until it is played; in a
+       forcing line the next one lands with their reply. Once settled, S0's
+       marks (s0Marks) */
+    view = lineView(a);
+    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animShown ? 320 : 220; }
+    var mm = a.markMove, sdue = showDue(a), sl = {}, sfx = null;
+    if (mm && sameMove([mm.from, mm.to], view.last)) {
+      sfx = a.key + ':' + (a.fxn || 0) + mm.kind;
+      sl.tints = [{ sq: mm.from, kind: mm.kind }, { sq: mm.to, kind: mm.kind }];
+      sl.badges = [{ sq: mm.to, kind: mm.kind, fx: sfx }];
+    }
+    if (sdue) sl.arrows = [{ from: sdue.from, to: sdue.to, kind: 'better', key: 'answer' }];
+    if (sl.tints || sl.arrows) {
+      if (opts.anim) land = true;
+      else { opts.fx = sfx; for (var sk in sl) opts[sk] = sl[sk]; }
+    }
+    if (sdue) {
+      opts.sel = a.sel;
+      if (a.sel === sdue.from) opts.dots = [sdue.to];
+    }
+    if (a.view.mode === 's0' && a.settle >= 1 && !opts.anim) {
+      /* the ghost and the tokens fade in once, as this beat's effect */
+      var s0 = s0Marks(a, view.st);
+      ['ghosts', 'rings', 'arrows', 'tokens'].forEach(function (k) { if (s0[k].length) opts[k] = (opts[k] || []).concat(s0[k]); });
+      if (s0.ghosts.length || s0.tokens.length) opts.fx = a.key + ':s0';
+      /* the threat arrow into the square of the tick: the badge yields its corner */
+      var s0t = s0.arrows[0];
+      if (s0t && opts.badges && s0t.to === opts.badges[0].sq) {
+        var s0c = badgeCorner(s0t.from, s0t.to, flip);
+        if (s0c[0] !== 36 || s0c[1] !== 9) opts.badges = [{ sq: opts.badges[0].sq, kind: opts.badges[0].kind, fx: opts.badges[0].fx, at: s0c }];
+      }
+    }
   } else if (a.phase === 'done') {
     view = lineView(a);
     /* a line stepped forward slides its move; the solving move slides
@@ -8043,7 +8320,9 @@ function boardOptsFor(a) {
      with a verdict to come gets no tint until the verdict's own, so its
      squares change colour once */
   opts.mark = land ? null : view.last;
-  opts.label = (view.st.w ? 'White' : 'Black') + ' to move. You played ' + sanOf(a.pre, a.played) + ' in the game.';
+  /* the board's name says what it draws: the game move only with its red
+     arrow (mid-line its name can be the answer due now) */
+  opts.label = (view.st.w ? 'White' : 'Black') + ' to move.' + (opts.bad ? ' You played ' + sanOf(a.pre, a.played) + ' in the game.' : '');
   /* a check given by a piece still sliding glows once it lands, with the
      rest of what lands */
   var ck = checkedKingSq(view.st);
@@ -8051,7 +8330,7 @@ function boardOptsFor(a) {
   return {
     st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts, slideMs: slideMs, land: land,
     fadeMs: a.jump && !slideMs ? XFADE : 0,
-    live: a.phase === 'guess' || a.phase === 'tried' || !!(a.phase === 'done' && a.explore),
+    live: a.phase === 'guess' || a.phase === 'tried' || !!(a.phase === 'done' && (a.explore || (!a.showWait && showDue(a)))),
     /* the bar fills only while exploring: a tall bar during the guess would
        say "you are winning, find it", and a moving one is motion nobody
        asked for */
@@ -8080,6 +8359,26 @@ function badgeCorner(from, to, flip) {
   }
   return spots[0];
 }
+/* S0's marks (S6, V+700) on the settled board st: the game move's ghost
+   with its cross, where it went (on a forcing line only when that square is
+   empty, and never on the square of the tick, whose badge it would meet);
+   the threat it ran into, the game line's first reply ringed with its dashed
+   arrow, when that reply captures or checks, its piece still stands there
+   and the card is not a missed chance; after a forcing line, green tokens on
+   what you won (at most two) */
+function s0Marks(a, st) {
+  var out = { ghosts: [], rings: [], arrows: [], tokens: [] }, c = a.cls, pl = a.played, mm = a.markMove;
+  var line = !!(a.sol && a.solIdx > 1);
+  if (pl && !(mm && mm.to === pl.to) && (!line || !st.b[pl.to]))
+    out.ghosts.push({ sq: pl.to, p: a.pre.b[pl.from], fx: a.key + ':s0' });
+  var th = familyOf(patternOf(a.it.b)).key !== 'chances' ? threatOf(c.gameLine, 1) : null;
+  if (th && st.b[th.from] && st.b[th.from] === c.gameLine.nodes[1].before.b[th.from]) {
+    out.rings.push({ sq: th.from, kind: 'threat' });
+    out.arrows.push({ from: th.from, to: th.to, kind: 'threat', key: 'threat' });
+  }
+  if (line) (a.won || []).slice(-2).forEach(function (w) { out.tokens.push({ sq: w.sq, p: w.p, kind: 'won', fx: a.key + ':s0' }); });
+  return out;
+}
 /* the board beat: the board svg and the marks over it, and the bar beside
    them. A frame that slides a piece sets motionUntil, so nothing else is
    written until the piece lands, and holds back what lands with it (the
@@ -8102,7 +8401,7 @@ function paintBoard(a, instant) {
   if (a.phase === 'done' && a.explore) {
     if (f.evLive) a.explore.lastEv = f.ev;
     a.explore.anim = null;
-  } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx };
+  } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx, mode: a.view.mode };
   var fade = f.fadeMs ? xfadeHtml(bw.innerHTML) : '';
   /* the position this card last drew, to tell a board change from a
      repaint of the same position (a selection, a mark, a verdict on a move
@@ -8258,7 +8557,13 @@ function paintText(a) {
   if (xe) fitRows();
   makeFocusable(fp);
   if (newCard) { var th = el('task-h'); if (th) th.focus({ preventScroll: true }); }
-  else if (a.phase === 'done' && !a.focusedResult) { a.focusedResult = true; var rh = el('result-h'); if (rh) rh.focus({ preventScroll: true }); }
+  else if (a.phase === 'done' && !a.focusedResult) {
+    /* an answer hands the keyboard to the right-hand button (S6, S20):
+       Continue once solved, Play it when the answer is shown */
+    a.focusedResult = true;
+    var rh = barButton(rightSlot()) || el('result-h');
+    if (rh) rh.focus({ preventScroll: true });
+  }
   else if (a.focusRight && a.phase === 'tried' && barButton(rightSlot())) { a.focusRight = false; barButton(rightSlot()).focus({ preventScroll: true }); }
   else if (focKey && fp) {
     /* a bar button: the one now in its slot, or the right-hand one (S20)
@@ -8277,8 +8582,10 @@ function paintText(a) {
     (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : barButton(rightSlot()) || (bar && bar.querySelector('[data-act]'))) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
   paintLive(d);
-  /* a miss's verdict is on screen now: its reason's beats run from here */
+  /* a miss's verdict is on screen now: its reason's beats run from here;
+     so do a settled result's (S0) */
   if (a.reasonFor && a.reasonFor === a.tried && a.phase === 'tried') missReason(a);
+  if (a.settleFor && a.phase === 'done' && a.view && a.view.mode === 's0') settleBeats(a);
 }
 /* the bar's button in slot i, if it holds an action now (an off slot has none) */
 function barButton(i) {
@@ -8347,13 +8654,23 @@ function liveWords(a, b) {
   return [LIVE_PREFIX[b.disc] || '', b.row1 || '', b.row2 || ''].filter(Boolean).join(' ');
 }
 /* the action bar as slots, left to right: {act, k, label, cls, off, aria}.
-   Answered: back, forward, Next; a try on the board: help, Try again;
+   Answered: See why and Continue (S0), Continue and Play it (the answer
+   shown), back, forward and Continue (See why's lines, exploring); a try
+   on the board: help, Try again;
    guessing: Hint, Show the answer, both outlined, and Hint for everyone
    until it has nothing left to give; a move being checked: Take back and
    the answer switched off; a reply playing: Hint and the answer switched
    off, so the bar keeps its place */
 function barSlots(a, ss) {
   if (a.phase === 'done') {
+    var last = ss.idx + 1 >= ss.keys.length && !(ss.relearn && ss.relearn.length);
+    var cont = { act: 'next', label: last ? 'Finish' : 'Continue', cls: 'btn-big' };
+    /* the answer shown (S7): Continue, and Play it in gold; switched off
+       while their reply plays, and once played until the card settles */
+    if (!a.explore && a.view.mode && (a.view.mode === 'show' || (a.revealed && a.settle < 2)))
+      return [{ act: 'next', label: cont.label, cls: 'btn-line' }, { act: 'playIt', label: 'Play it ›', cls: 'btn-big', off: a.showWait || !showDue(a) }];
+    /* settled (S0): the story, and Continue in gold */
+    if (!a.explore && a.view.mode) return [{ act: 'seeWhy', label: 'See why ›', cls: 'btn-line' }, cont];
     var L = a.lines[a.view.line] || a.lines.best, backOff, fwdOff, backLab = 'Back one move', fwdLab = 'Forward one move';
     if (a.explore) {
       var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
@@ -8361,11 +8678,9 @@ function barSlots(a, ss) {
       if (xe.at === 0) backLab = 'Back to the lesson';
       fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
       if (xe.at >= xe.nodes.length - 1) fwdLab = 'Play Stockfish\'s pick';
-    } else { backOff = a.view.idx < 0; fwdOff = a.view.idx >= L.states.length - 1; }
-    var last = ss.idx + 1 >= ss.keys.length && !(ss.relearn && ss.relearn.length);
+    } else { backOff = false; fwdOff = a.view.idx >= L.states.length - 1; if (a.view.idx < 0) backLab = 'Back to the result'; }
     return [{ act: 'lineBack', label: '‹', cls: 'nav-btn' + (backOff ? ' nav-off' : ''), aria: backLab },
-            { act: 'lineFwd', label: '›', cls: 'nav-btn' + (fwdOff ? ' nav-off' : ''), aria: fwdLab },
-            { act: 'next', label: last ? 'Finish' : 'Next', cls: 'btn-big' }];
+            { act: 'lineFwd', label: '›', cls: 'nav-btn' + (fwdOff ? ' nav-off' : ''), aria: fwdLab }, cont];
   }
   if (a.phase === 'tried') return triedSlots(a);
   /* a move being checked keeps the guess bar until the band says so (K1,
@@ -8466,11 +8781,11 @@ function menuHtml(a) {
     + '<a data-act="dispute" data-k="decided">Not a real mistake: the game was already decided</a>'
     + '<a data-act="dispute" data-k="engine">Not a real mistake: I think the engine is wrong</a>'
     + '<span class="sep"></span>'
-    + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '')
+    + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '<a data-act="details">Details</a>')
     + '<span class="menu-keys">Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>'
     + '</div>';
 }
-function ctxHtml(a, answered) {
+function ctxHtml(a) {
   var g = a.it.g, b = a.it.b;
   var bits = ['vs <b>' + esc(g.opp) + '</b>' + (g.oppR ? ' (' + g.oppR + ')' : ''), gameDateLine(g), perfLabel(g.perf).toLowerCase(), 'move ' + (Math.floor(b.p / 2) + 1)];
   if (b.c != null) bits.push(clockWords(b.c) + ' left');
@@ -8481,9 +8796,7 @@ function ctxHtml(a, answered) {
   var h = '<p class="ctx">' + bits.join(' · ') + '</p>';
   /* its own line, so a narrow screen never clips it */
   if (drill) h += '<p class="ctx ctx-link"><a href="' + gameHref(g.id, g.color, b.p) + '">Open the game ↗</a></p>';
-  if (answered) return h;
-  /* "One more try" is the band's chip */
-  return h + (b.d ? '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(g, b) + '</p>' : '');
+  return h;
 }
 function ss_relearn(a) { var ss = ui.session; return !!(ss && ss.relearnOf && ss.relearnOf[a.key] && ss.keys.indexOf(a.key) !== ss.idx); }
 function clockWords(s) {
@@ -8491,41 +8804,52 @@ function clockWords(s) {
   var m = Math.floor(s / 60), r = s % 60;
   return m + ':' + (r < 10 ? '0' : '') + r;
 }
-/* the strip, under the board: the game's context while you solve (and the
-   typed-move field while the board takes a move); once answered, both
-   halves of the lesson, the pattern, the schedule and the way to explore.
-   The result itself is the band's */
+/* the strip, under the board (2.0): nothing while you solve (the typed-
+   move field waits there, off screen); once settled, the Details link (the
+   rest of the lesson is in its sheet); the two lines' names under See why;
+   the exploration. The result itself is the band's */
 function stripHtml(a, ss) {
-  var it = a.it, b = it.b;
   if (a.phase !== 'done') {
-    var h0 = ctxHtml(a);
-    /* a move typed over a try takes the try back first */
+    /* empty before an answer (2.0): the game's context is in Details. The
+       typed-move field sits here, off screen until it has the keyboard; a
+       move typed over a try takes the try back first */
     if (a.phase === 'guess' || a.phase === 'tried')
-      h0 += '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
-    return h0;
+      return '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
+    return '';
   }
-  var best = a.lines.best.san[0] || '', s = a.cls.sentences;
-  var cur = a.explore ? null : a.view.line;
+  if (a.explore) return xpHtml(a);
+  /* settled (S0): one link to everything else (S13) */
+  if (a.view.mode) return a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="btn-quiet details-link" data-act="details">Details</a></p>' : '';
+  /* See why, until the story (slice 9): the two lines, by name */
+  var cur = a.view.line, better = a.alt && a.lines.yours ? 'yours' : 'best';
   var tline = function (key, cls, text) {
     var on = cur === key;
     return '<button type="button" class="tline ' + cls + (on ? ' on' : '') + '" data-act="lineTab" data-k="' + key + '" aria-pressed="' + on + '">'
-      + '<span class="tl-dot" aria-hidden="true"></span><span class="tl-text">' + text + '</span>'
-      + (on ? '' : '<span class="tl-play" aria-hidden="true"></span>') + '</button>';
+      + '<span class="tl-dot" aria-hidden="true"></span><span class="tl-text">' + text + '</span></button>';
   };
-  var h = ctxHtml(a, true);
-  h += '<div class="result' + (a.result === 'first' && !a.alt && !a.revealed ? ' first' : '') + (a.explore ? ' xp-on' : '') + '">'
-    + tline('refute', 'tl-bad', '<span class="tl-long">' + esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game) + '</span><span class="tl-short">' + esc(fitLine([s.short || s.game, firstClause(s.short || s.game)])) + '</span>')
-    + (a.alt && a.lines.yours ? tline('yours', 'tl-alt', esc(altNames(a).mine) + ' also holds. Here is how it goes on.') : '')
-    + tline('best', 'tl-good', esc(s.best || best + ' keeps your position together.'));
+  return '<div class="result">' + tline('refute', 'tl-bad', 'Game') + tline(better, better === 'yours' ? 'tl-alt' : 'tl-good', 'Better') + '</div>';
+}
+/* the Details sheet (S13): what the answered card no longer says on its
+   face. The game's context, the decisive line, both long sentences (and an
+   alternative's), what the opponent did, the pattern and the schedule, the
+   habit, and the way into exploring */
+function detailsHtml() {
+  var a = ui.session && ui.session.active;
+  if (!a || a.phase !== 'done' || !a.lines) return '';
+  var it = a.it, b = it.b, s = a.cls.sentences, best = a.lines.best.san[0] || '', t = patternOf(b), info = patternInfo(t);
+  var row = function (cls, text) { return '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
+  var h = '<div class="kicker">Details</div><h3>' + esc(info.name) + '</h3>' + ctxHtml(a);
+  if (b.d) h += '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(it.g, b) + '.</p>';
+  h += '<div class="dt-lines">' + row('tl-bad', esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game))
+    + (a.alt && a.lines.yours ? row('tl-alt', esc(altNames(a).mine) + ' also holds.') : '')
+    + row('tl-good', esc(s.best || best + ' keeps your position together.'));
   var opp = opponentLine(a);
-  if (opp) h += tline('game', 'tl-opp', opp);
-  h += '</div>';
-  var t = patternOf(b), info = patternInfo(t);
-  h += '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
-    + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>';
-  if (a.showHabit) h += '<p class="habit">' + esc(habitFor(a, t, info)) + '</p>';
-  if (a.explore) h += xpHtml(a);
-  else h += '<p class="explore-line"><a class="btn-quiet invite" data-act="explore">' + esc((a.invite || inviteFor(a)).text) + '</a></p>';
+  if (opp) h += row('tl-opp', opp);
+  h += '</div><div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
+    + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>'
+    + '<p class="habit">' + esc(habitFor(a, t, info)) + '</p>';
+  /* no engine, no exploring */
+  if (SF.state !== 'failed') h += '<div class="acts-row sheet-acts"><a class="btn-line" data-act="explore">Try your own moves with Stockfish ›</a></div>';
   return h;
 }
 /* the exploration: the trail and Stockfish's three best moves (its
@@ -8722,6 +9046,7 @@ function closeSheet(fromPop) {
 function sheetHtml(kind) {
   var parts = String(kind).split(':'), k = parts[1];
   if (parts[0] === 'settings') return settingsHtml();
+  if (parts[0] === 'details') return detailsHtml();
   if (parts[0] === 'family') {
     var fam = FAMILIES.filter(function (f) { return f.key === k; })[0];
     var agg = insightReport().families.filter(function (a) { return a.fam.key === k; })[0];
@@ -9492,6 +9817,9 @@ document.addEventListener('click', function (e) {
     case 'reveal': if (!tooSoon(a)) reveal(); break;
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
+    case 'playIt': playIt(false); break;
+    case 'seeWhy': seeWhy(); break;
+    case 'details': if (a && a.phase === 'done') { if (a.menuOpen) { a.menuOpen = false; renderCard(); } openSheet('details'); } break;
     /* these wait out a card's first half second (tooSoon); a slot that
        just changed is ignored above (slotGuarded) */
     case 'dismissStronger': if (!tooSoon(a)) tryAgain(); break;
@@ -9506,7 +9834,7 @@ document.addEventListener('click', function (e) {
     case 'lineTo': if (a && a.lines) { if (a.explore) exploreExit('silent'); a.view.idx = parseInt(t.getAttribute('data-n'), 10); renderCard(); } break;
     case 'lineBack': stepView(-1); break;
     case 'lineFwd': stepView(1); break;
-    case 'explore': if (a) startExplore({ view: a.invite && a.invite.view, via: 'invite' }); break;
+    case 'explore': if (a) { closeSheet(); startExplore({ view: a.invite && a.invite.view, via: 'invite' }); } break;
     case 'exploreOff': exploreExit('link'); break;
     case 'xpGo': if (a && a.explore) exploreGo(parseInt(k, 10)); break;
     case 'xpRow': if (a && a.explore) {
@@ -9599,6 +9927,8 @@ document.addEventListener('keydown', function (e) {
     var ae = ui.session && ui.session.active;
     if (ae && ae.menuOpen) { ae.menuOpen = false; renderCard(); var mb1 = document.querySelector('#ctop [data-act="menu"]'); if (mb1) mb1.focus({ preventScroll: true }); return; }
     if (ae && ae.explore) { e.preventDefault(); exploreExit('esc'); return; }
+    /* See why: Esc goes back to the settled result */
+    if (ae && ae.phase === 'done' && ae.view && !ae.view.mode) { e.preventDefault(); backToSettled(); return; }
     /* a move still being checked: Esc takes it back (S3) */
     if (ae && ae.phase === 'checking') { e.preventDefault(); takeBack(); return; }
   }
@@ -9611,7 +9941,9 @@ document.addEventListener('keydown', function (e) {
   if (a.phase === 'done') {
     if (e.key === 'ArrowLeft') { e.preventDefault(); stepView(-1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); stepView(1); }
-    else if ((e.key === 'Enter' || e.key === ' ') && !onAct) { e.preventDefault(); pressRight(); }
+    /* Enter is the right-hand button; Space does nothing here (S12) */
+    else if (e.key === 'Enter' && !onAct) { e.preventDefault(); pressRight(); }
+    else if (e.key === ' ' && !onAct) e.preventDefault();
   } else if (a.phase === 'guess' || a.phase === 'tried') {
     /* never a letter: letters start moves in the typed-move field. ? asks
        for a hint, Enter presses the right-hand button; both wait out the
@@ -9700,6 +10032,9 @@ function moveGhost(x, y) {
 }
 function boardState(a) {
   if (a.phase === 'done' && a.explore) return { st: a.explore.st, live: true, explore: true };
+  /* the answer shown takes that one move by hand (S7) */
+  var due = a.phase === 'done' && !a.showWait ? showDue(a) : null;
+  if (due) return { st: a.st, live: true, show: due };
   if (a.phase === 'guess') return { st: a.st, live: true };
   if (a.phase === 'tried') return { st: triedFrame(a).st, live: true, tried: true };
   if (a.phase === 'checking') return { st: checkingFrame(a), live: false, checking: true };
@@ -9742,7 +10077,10 @@ document.addEventListener('pointerdown', function (e) {
     return;
   }
   if (e.button !== 0 || !bs.live || a.pendingPromo) return;
-  if (!bs.explore && a.shapes.length) { a.shapes = []; renderCardBoard(); }
+  /* the answer shown: only its own piece picks up; any other press is
+     answered by its click (N1) */
+  if (bs.show && sq !== bs.show.from) return;
+  if (!bs.explore && !bs.show && a.shapes.length) { a.shapes = []; renderCardBoard(); }
   var p = bs.st.b[sq];
   if (p && isW(p) === bs.st.w) {
     pointerState.dragFrom = sq;
@@ -9880,7 +10218,7 @@ window.__nlTest = {
     if (!a) return { session: !!ss, finished: !!(ss && ss.finished), idx: ss ? ss.idx : null, n: ss ? ss.keys.length : null };
     return { idx: ss.idx, n: ss.keys.length, key: a.key, phase: a.phase, best: a.bestUci, played: a.playedUci,
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
-             hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null, reason: a.reason || 0,
+             hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null, reason: a.reason || 0, settle: a.settle || 0, showWait: !!a.showWait,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
              sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null,
              verdict: a.verdict ? { kind: a.verdict.kind, row1: a.verdict.row1, row2: a.verdict.row2 } : null };
@@ -9893,6 +10231,9 @@ window.__nlTest = {
     if (!m) return 'illegal';
     /* a try on the board is taken back first, as a tap on a piece does */
     if (a.phase === 'tried') tryAgain();
+    /* the answer shown: its move is played (Play it) */
+    var due = a.phase === 'done' && !a.explore && !a.showWait ? showDue(a) : null;
+    if (due) { if (moveUci(due) !== uci) return 'not the answer'; playIt(false); return 'played'; }
     if (a.phase === 'guess') { gradeMove(m); return 'graded'; }
     if (a.phase === 'done' && a.explore) { explorePlay(m, false); return 'explored'; }
     return 'not guessing';

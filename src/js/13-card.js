@@ -191,10 +191,20 @@ function sessionClick(sq) {
     return;
   }
   if (a.phase === 'done') {
-    if (a.explore) exploreClick(sq);
+    if (a.explore) { exploreClick(sq); return; }
+    /* the answer shown takes that one move, by hand (S7): its piece picks
+       up, its square plays it, anything else puts it down */
+    var due = !a.showWait ? showDue(a) : null;
+    if (due && (sq === due.from || a.sel === due.from)) {
+      if (sq === due.from) { a.sel = a.sel === sq ? -1 : sq; if (a.sel >= 0) snd('tap'); renderCardBoard(); }
+      else if (sq === due.to) playIt(pointerState.suppressClick);
+      else { a.sel = -1; renderCardBoard(); }
+      return;
+    }
+    if (a.sel >= 0) { a.sel = -1; renderCardBoard(); }
     /* after an answer the board takes no moves: a tap on any piece says
        where to try them (N1), and nothing changes */
-    else if (lineView(a).st.b[sq]) tapNote(a, 'N1', 2500, sq);
+    if (lineView(a).st.b[sq]) tapNote(a, 'N1', 2500, sq);
     return;
   }
   if (a.phase !== 'guess') return;
@@ -294,14 +304,16 @@ function gradeMove(m) {
 function stepLine(m, u) {
   var a = ui.session.active;
   var san = sanOf(a.st, m);
+  noteWon(a, m);
   applyMove(a.st, m);
   a.lastMove = [m.from, m.to];
   a.animMove = a.tapAnim || null; a.tapAnim = null;
   a.solIdx++;
-  snd('good');
+  /* the line's last move is the solve: its sound comes with its badge */
   if (a.solIdx >= a.sol.length) { solved(null, null, null, true); return; }
   var reply = uciToMove(a.st, a.sol[a.solIdx]);
   if (!reply) { solved(null, null, null, true); return; }
+  snd('good');
   a.phase = 'reply';
   /* my moves sit at even offsets of the line: the next one is number n */
   a.hintAfter = false;
@@ -681,13 +693,24 @@ function miss(m, u, info, inLine) {
   escalate();
   showTry(a, m, 'miss', reply[0], why);
 }
+/* a capture of yours inside a forcing line, kept for the settled board's
+   tokens (S6: green tokens on what you won) */
+function noteWon(a, m) {
+  var took = m.ep >= 0 ? a.st.b[m.ep] : a.st.b[m.to];
+  if (took) (a.won = a.won || []).push({ sq: m.to, p: took });
+}
+/* the card is solved (S6): the board keeps your move, and the verdict (a
+   filled tick, green tints, its sound) lands with the piece */
 function solved(m, u, alt, lineDone) {
   var ss = ui.session, a = ss.active;
-  if (m) { applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = a.tapAnim || null; a.tapAnim = null; }
+  if (m) {
+    if (a.sol && a.solIdx > 0) noteWon(a, m);
+    applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = a.tapAnim || null; a.tapAnim = null;
+  }
   a.alt = alt && u !== a.bestUci ? alt : null;
   var result = a.misses ? 'retry' : ((a.hints || a.foundGood) ? 'hint' : 'first');
+  a.cue = 'good';
   finishCard(result);
-  snd('good');
 }
 function reveal() {
   var a = ui.session && ui.session.active;
@@ -703,10 +726,111 @@ function reveal() {
   if (a.phase === 'tried') clearTry(a);
   engineStop('check');
   a.revealed = true;
-  a.st = cloneState(a.pre);
-  /* found a close move and then asked for the best one: a hint, not a miss */
-  if (a.foundGood && !a.misses && !ss_relearn(a)) (ui.session.notes = ui.session.notes || {})[a.key] = 'close';
+  a.sel = -1;
+  /* inside a forcing line the moves already found stay on the board, and
+     the answer is the move due now (problem map 4.7) */
+  if (!(a.sol && a.solIdx > 0)) { a.st = cloneState(a.pre); a.lastMove = a.preLast; }
+  /* the summary says it was shown (S17); a relearn card keeps its first note */
+  if (!ss_relearn(a)) (ui.session.notes = ui.session.notes || {})[a.key] = 'shown';
+  /* graded at once (a close move found first makes it a hint), so leaving
+     the card from here never grades it again; then the answer is shown */
   finishCard(a.foundGood && !a.misses ? 'hint' : 'fail', still && !a.jump ? MARKS_THEN_WORDS : null);
+}
+/* the move the reveal shows now (S7): the forcing line's next move of
+   yours, else the card's answer; null once it is played */
+function showDue(a) {
+  if (!a.view || a.view.mode !== 'show') return null;
+  if (a.sol) return a.solIdx < a.sol.length && !!a.st.w === myPov(a.it) ? uciToMove(a.st, a.sol[a.solIdx]) : null;
+  return a.showDone ? null : uciToMove(a.st, a.bestUci);
+}
+/* Play it (S7): the answer shown is played, as a move the app shows (320
+   ms, its sound as it starts); it lands with the grey i badge and tints,
+   and the band stays. Inside a forcing line their reply follows as the
+   forcing reply does, and the next move of yours is shown the same way.
+   At the end of the line (at once on a one-move card) the card settles:
+   S0's marks, then R4 and the bar to the story. Played by hand (dragged)
+   it lands where it was dropped */
+function playIt(dragged) {
+  var a = ui.session && ui.session.active, m = a && a.phase === 'done' && !a.explore && !a.showWait ? showDue(a) : null;
+  if (!m) return;
+  a.sel = -1;
+  if (a.sol) noteWon(a, m);
+  applyMove(a.st, m);
+  a.lastMove = [m.from, m.to];
+  a.markMove = { from: m.from, to: m.to, kind: 'info' };
+  a.fxn = (a.fxn || 0) + 1;
+  a.animMove = dragged ? null : [m.from, m.to];
+  a.animShown = true;
+  a.moveCue = !dragged;
+  var reply = null;
+  if (a.sol) { a.solIdx++; reply = a.solIdx < a.sol.length ? uciToMove(a.st, a.sol[a.solIdx]) : null; }
+  else a.showDone = true;
+  if (!reply) { settleShown(a); renderCard(); return; }
+  /* their reply, on the forcing line's own timing (S10 as it is today) */
+  a.showWait = true;
+  renderCard();
+  var cardKey = a.key;
+  setTimeout(function () {
+    var a2 = ui.session && ui.session.active;
+    if (!a2 || a2.key !== cardKey || !a2.showWait || a2.phase !== 'done') return;
+    a2.showWait = false;
+    applyMove(a2.st, reply);
+    a2.lastMove = [reply.from, reply.to];
+    a2.markMove = null;
+    a2.animMove = [reply.from, reply.to];
+    a2.animShown = false;
+    a2.replySlide = true;
+    a2.solIdx++;
+    snd('move');
+    /* the next move of yours is the answer now */
+    var next = showDue(a2);
+    if (next) a2.answerSan = sanOf(a2.st, next);
+    else settleShown(a2);
+    renderCard();
+  }, 650);
+}
+/* the shown line is over: the card settles as S0 does (the answer's band
+   stays until R4 comes) */
+function settleShown(a) {
+  a.view = { mode: 's0' };
+  a.settle = 0;
+  a.settleFor = true;
+}
+/* S0's two beats once the verdict is read (S6): 700 ms after its words
+   paint (paintText calls this then) the game move's ghost and the threat it
+   ran into; at 850 R4 in row 2, the strip's Details and, after a reveal,
+   the bar to the story (300 and 400 under reduced motion) */
+function settleBeats(a) {
+  var rm = reducedMotion();
+  a.settleFor = false;
+  stageAt(rm ? 300 : 700, function (a2) {
+    if (a2.view.mode !== 's0' || a2.settle >= 1) return;
+    a2.settle = 1;
+    /* the ghost lives in the board svg: a board beat with nothing sliding */
+    stage(['board']);
+  });
+  stageAt(rm ? 400 : 850, function (a2) {
+    if (a2.view.mode !== 's0' || a2.settle >= 2) return;
+    a2.settle = 2;
+    stage(['text']);
+  });
+}
+/* See why (interim until the story, slice 9): the game line from the card
+   position, its red arrow; Esc or ‹ at its start come back to S0 */
+function seeWhy() {
+  var a = ui.session && ui.session.active;
+  if (!a || a.phase !== 'done' || a.explore || !a.lines || !a.view || a.view.mode !== 's0' || a.settle < (a.revealed ? 2 : 0)) return;
+  a.settle = 2;
+  a.view = { line: 'refute', idx: -1 };
+  a.jump = true;
+  renderCard();
+}
+function backToSettled() {
+  var a = ui.session && ui.session.active;
+  if (!a || a.phase !== 'done' || a.explore || !a.view || a.view.mode) return;
+  a.view = { mode: 's0' };
+  a.jump = true;
+  renderCard();
 }
 /* a second tap on Next lands where Show the answer now sits: taps in the
    first half second of a card are the old card's. After that, each bar
@@ -798,12 +922,20 @@ function finishCard(result, beats) {
   var habitKey = 'nl:habitSeen:' + patternOf(a.it.b);
   a.showHabit = a.tier === 1 || Date.now() - store.get(habitKey, 0) > 7 * DAY;
   if (a.showHabit) store.set(habitKey, Date.now());
-  /* the board keeps showing what was just played: the move found, the
-     alternative that also works, or the end of the forcing line; a shown
-     answer is its green arrow. Nothing plays by itself from here */
-  if (a.revealed || result === 'fail') a.view = { line: 'best', idx: -1 };
-  else if (a.alt && a.lines.yours && a.lines.yours.states.length) a.view = { line: 'yours', idx: Math.min(a.yours.at || 0, a.lines.yours.states.length - 1) };
-  else a.view = { line: 'best', idx: Math.min(a.sol ? a.solIdx - 1 : 0, a.lines.best.states.length - 1) };
+  /* the board keeps showing what was just played (S6: the move found, the
+     alternative that also works, or the end of the forcing line), its tick
+     landing with the piece, then settles (S0); a shown answer is its green
+     arrow, to be played (S7). Nothing plays by itself from here */
+  a.settle = 0;
+  if (a.revealed) {
+    a.view = { mode: 'show' };
+    var due = showDue(a);
+    a.answerSan = due ? sanOf(a.st, due) : '';
+  } else {
+    a.view = { mode: 's0' };
+    if (a.lastMove) a.markMove = { from: a.lastMove[0], to: a.lastMove[1], kind: 'good' };
+    a.settleFor = true;
+  }
   saveSession();
   modelDirty();
   renderCard(beats);
@@ -866,6 +998,8 @@ function disputeCard(reason) {
 /* ── after answering: stepping through the lines ────────────────────────── */
 function lineView(a) {
   var v = a.view || { line: 'best', idx: -1 };
+  /* S0 and the answer shown: the card's own board, as play left it */
+  if (v.mode) return { st: a.st, last: a.lastMove, ev: a.it.b.eb };
   var L = a.lines && a.lines[v.line];
   if (!L || !L.states.length) return { st: a.pre, last: a.preLast, ev: a.it.b.eb };
   if (v.idx < 0) return { st: a.pre, last: a.preLast, ev: a.it.b.eb };
@@ -876,6 +1010,9 @@ function stepView(d) {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'done' || !a.lines) return;
   if (a.explore) { exploreStep(d); return; }
+  /* S0: forward is See why; the line's start, back: S0 again */
+  if (a.view.mode) { if (d > 0 && a.view.mode === 's0') seeWhy(); return; }
+  if (d < 0 && a.view.idx < 0) { backToSettled(); return; }
   var L = a.lines[a.view.line];
   if (!L) return;
   var was = a.view.idx;

@@ -34,12 +34,14 @@ function startExplore(o) {
   if (!a || a.phase !== 'done' || a.explore || a.pendingPromo || !a.lines) return;
   o = o || {};
   a.menuOpen = false;
+  /* the frame it came from, to come back to (S14) */
+  var from = a.view ? JSON.parse(JSON.stringify(a.view)) : { mode: 's0' };
   if (o.view) a.view = { line: o.view.line, idx: o.view.idx };
   var v = lineView(a);
   a.xpRes = a.xpRes || {};
   var ask = o.via === 'invite' && o.view && a.lines.best.uci[1] && posKey(v.st) === posKey(a.lines.best.states[0])
     ? { uci: a.lines.best.uci[1], san: a.lines.best.san[1] } : null;
-  a.explore = { root: { line: a.view.line, idx: a.view.idx }, nodes: [xpNode(v.st, v.last, null)],
+  a.explore = { root: from, nodes: [xpNode(v.st, v.last, null)],
                 at: 0, sel: o.sq != null ? o.sq : -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null,
                 ask: ask, wantRow: o.via === 'invite' ? 0 : null };
   xpSync(a.explore);
@@ -54,13 +56,13 @@ function exploreExit(how) {
   var root = a.explore.root;
   engineStop('explore');
   a.explore = null;
-  a.view = { line: root.line, idx: root.idx };
-  a.lastView = { line: root.line, idx: root.idx };
+  a.view = JSON.parse(JSON.stringify(root));
+  a.lastView = { line: root.line, idx: root.idx, mode: root.mode };
   track('explore_exit_' + (how || 'link'));
   enginePump();
   if (how === 'silent') return;
   renderCard();
-  var inv = document.querySelector('#cpanel [data-act="explore"]');
+  var inv = document.querySelector('#cpanel [data-act="details"]');
   if (inv && how !== 'pop') inv.focus({ preventScroll: true });
 }
 /* a move in the exploration, by either side */

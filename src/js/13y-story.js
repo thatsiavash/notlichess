@@ -34,7 +34,12 @@ var CARD_COPY = {
   C1: function () { return 'Good move'; },
   C2: function () { return 'There\'s a stronger one.'; },
   E1: function () { return 'Cannot check this move'; },
-  E2: function () { return 'Not counted. Try again.'; }
+  E2: function () { return 'Not counted. Try again.'; },
+  R1: function () { return 'Found it'; },
+  R2: function () { return 'You got there'; },
+  R3: function () { return 'That works too'; },
+  V1: function (a) { return 'The answer: ' + (a.answerSan || ''); },
+  V2: function () { return 'Play the green arrow.'; }
 };
 /* a word for a tap that is not a move, as row 2 says it: the full text,
    then (when the words on screen would go over budget) a shorter one */
@@ -161,34 +166,122 @@ function bandFit(a, b) {
     b.row2 = fitRow(b.cands, 'row2', b.fall);
     var room = rowRoom(a, b);
     if (wordsIn(b.row2) > room) b.row2 = fitRow(b.cands, { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
+    /* a ladder step that would say something untrue (R4's found form) */
+    if (b.never && b.never.indexOf(b.row2) >= 0) b.row2 = fitRow([], { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
   }
-  delete b.cands; delete b.fall;
+  delete b.cands; delete b.fall; delete b.never;
   return b;
 }
-/* the words row 2 has left beside row 1, the chip and the bar. A miss's
+/* the comparison a settled card makes (S6, R4), read once from the
+   classifier and the card's lines: did the opponent find the punishment
+   (found: their game reply was the refutation's first move), what the game
+   move lost (w, in plain words, and wn as one word), what the better move
+   wins (w2, w2n: the card's best line, or for a move that works too its own
+   line) and whether it is guarded (the guard rule) */
+function buildCompare(a) {
+  if (a.compare) return a.compare;
+  var c = a.cls, it = a.it, pov = myPov(it), ru = unpackUci(it.b.ru), gm = a.lines ? a.lines.game.uci : [];
+  var line = c.bestLine, settle = c.bSettle, gain = c.matBest, at = 1, better = a.lines ? a.lines.best.san[0] || '' : '';
+  if (a.alt && a.yours) {
+    var alt = buildLine(a.pre, '0000', a.yours.uci, pov);
+    if (alt && alt.nodes[(a.yours.at || 0) + 1]) {
+      line = alt; at = (a.yours.at || 0) + 1;
+      settle = settleIndex(alt);
+      gain = matDiff(alt.nodes[settle].after.b, pov) - matDiff(a.pre.b, pov);
+      better = sanOf(alt.nodes[at].before, alt.nodes[at].move);
+    }
+  }
+  var bn = line && line.nodes[at];
+  a.compare = {
+    found: !!(gm[1] && ru[0] && gm[1] === ru[0]), betterSan: better, gameSan: gameSan(a),
+    w: c.lossG >= 1 ? plainCapture(c.gameLine, c.lossAt, 0) || materialWord(c.lossG) : '', wn: materialWord(c.lossG),
+    w2: gain >= 1 && line ? plainCapture(line, settle) || materialWord(gain) : '', w2n: materialWord(gain),
+    guard: guardRule(c.gameLine, a.played, bn)
+  };
+  return a.compare;
+}
+/* the guard rule (FINAL-SPEC 3): the square the game move went to is not
+   defended once it is played, the better move's square is (isDefended
+   says false on an empty square, so each is read on the board just after
+   its own move). Its other half, a better move that defends a piece the
+   game move left hanging, does not make "{bestSan} is guarded." true, so
+   R4 reads only this one */
+function guardRule(gameLine, played, bn) {
+  var g0 = gameLine && gameLine.nodes[0];
+  if (!g0 || !bn || !bn.move || !played) return false;
+  return !isDefended(g0.after.b, played.to) && isDefended(bn.after.b, bn.move.to);
+}
+/* R4, the settled caption (S6), as row 2's ladder {cands, fall}: by the
+   card's family, what the game move did against what the better move does.
+   Each form also comes with its material as one word ("a rook"), the
+   ladder's second step; the mistake alone, then the first sentence and the
+   fallback come after */
+function r4Of(a) {
+  var c = a.cls, cmp = buildCompare(a), g = cmp.gameSan, bs = cmp.betterSan, fam = familyOf(patternOf(a.it.b)).key;
+  var w = a.it.b.wa, opp = sidesOf(a).opp, cands = [];
+  var past = 'After ' + g + ', ' + (w >= 60 ? 'you were still better' : w >= 40 ? 'the game was even' : opp + ' was on top') + '.';
+  /* a form with its material phrase, then the same with the one word */
+  var both = function (f, x, xn) { return x === xn || !xn ? [f(x)] : [f(x), f(xn)]; };
+  /* the found form ("lost", a checkmate allowed and played) only when the
+     opponent did find it: a ladder step that would cut a not-found form
+     down to it (never) takes the fallback instead */
+  var never = [];
+  if ((fam === 'king' || fam === 'safety') && c.mateAgainst) {
+    cands = [g + ' allowed checkmate.' + (cmp.found ? '' : ' They missed it.')];
+    if (!cmp.found) never.push(g + ' allowed checkmate.');
+  }
+  else if ((fam === 'safety' || fam === 'king') && c.lossG >= 1) {
+    var mistake = function (x) { return g + (cmp.found ? ' lost ' : ' could lose ') + x + '.'; };
+    var better = cmp.guard ? bs + ' is guarded. ' : null;
+    if (better) cands = both(function (x) { return better + mistake(x); }, cmp.w, cmp.wn);
+    else if (cmp.w2) cands = [bs + ' wins ' + cmp.w2 + '. ' + mistake(cmp.w), bs + ' wins ' + cmp.w2n + '. ' + mistake(cmp.wn)];
+    /* the mistake alone before the better half alone (the first sentence):
+       the game move is what the card is about */
+    cands = cands.concat(both(mistake, cmp.w, cmp.wn));
+  } else if (fam === 'chances') {
+    if (c.mateFor) cands = [bs + ' leads to checkmate.'];
+    else if (cmp.w2) cands = both(function (x) { return bs + ' wins ' + x + '. ' + g + ' missed it.'; }, cmp.w2, cmp.w2n);
+  } else if (fam === 'conversion') {
+    cands = [c.stalemate ? g + ' allowed a draw.' : c.perpetualAgainst ? g + ' allowed endless checks.' : past];
+  } else cands = [past];
+  return { cands: cands, fall: g + ' was a mistake.', never: never };
+}
+/* the words the strip shows (2.0): the Details link once settled, the
+   story's two names; nothing before an answer (the typed-move field is off
+   screen until it has the keyboard) */
+function stripWords(a) {
+  if (a.phase !== 'done' || a.explore || !a.view) return 0;
+  if (a.view.mode) return a.view.mode === 's0' && a.settle >= 2 ? 1 : 0;
+  return 2;
+}
+/* the words row 2 has left beside row 1, the chip, the strip and the bar. A miss's
    bar changes while its words stay (See it gives way to Hint or Show the
    answer), so its row 2 is fitted once, beside the wider of its two bars:
    the reason never rewrites itself when only a button changes */
 function rowRoom(a, b) {
   var ss = ui.session, slots = ss ? barSlots(a, ss) : [], bw = barWords(slots);
   if (ss && a.phase === 'tried' && a.tried && a.tried.kind === 'miss') bw = Math.max(barWords(triedSlots(a, false)), barWords(triedSlots(a, true)));
-  return WORD_BUDGET - bandWords({ row1: b.row1, chip: b.chip }, []) - bw;
+  return WORD_BUDGET - bandWords({ row1: b.row1, chip: b.chip }, []) - bw - stripWords(a);
 }
 /* what the card is showing, so a word or an outline meant for one state
    never outlives it: a move (each one counted, so coming back to the same
    phase is still a change), a try seen, a hint, a step */
 function cardStateKey(a) {
   var t = a.tried;
-  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, a.view ? a.view.line + ':' + a.view.idx : '', a.explore ? 'x' : ''].join('|');
+  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, a.view ? (a.view.mode || a.view.line + ':' + a.view.idx) : '', a.explore ? 'x' : ''].join('|');
 }
 function bandOf(a) {
-  var t = a.tried, v = a.verdict, best = a.lines ? a.lines.best.san[0] || '' : '';
+  var t = a.tried, v = a.verdict;
   if (a.phase === 'done' && a.explore) return { kind: 'explore', cap: sayAt(a, a.explore, a.explore.at) };
   if (a.phase === 'done') {
-    if (a.result === 'fail' || a.revealed)
-      return { disc: 'info', kind: 'info', row1: 'The answer: ' + best, cands: a.foundGood ? ['Your ' + a.foundGood.san + ' was close.'] : [], fall: '' };
-    if (a.alt) return { disc: 'good', kind: 'good', row1: 'That works too', cands: ['The engine prefers ' + altNames(a).theirs + '.'], fall: '' };
-    return { disc: 'good', kind: 'good', row1: a.result === 'first' ? 'Found it' : 'You got there', cands: [], fall: '' };
+    /* row 2: R4 once the result has settled (S0 at V+850, and the story
+       that follows it); before that the answer shown says how to play it
+       (V2), and a solve says nothing more yet */
+    var mode = a.view && a.view.mode, said = !mode || (mode === 's0' && a.settle >= 2), r4 = said ? r4Of(a) : null;
+    if (a.revealed)
+      return { disc: 'info', kind: 'info', row1: CARD_COPY.V1(a), cands: r4 ? r4.cands : [CARD_COPY.V2()], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null };
+    return { disc: 'good', kind: 'good', row1: a.alt ? CARD_COPY.R3() : a.result === 'first' ? CARD_COPY.R1() : CARD_COPY.R2(),
+             cands: r4 ? r4.cands : [], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null };
   }
   /* S3: the band keeps what it said for 300 ms, then says the move is
      being checked, and at 3 s that it still is */

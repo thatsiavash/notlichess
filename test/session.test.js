@@ -417,17 +417,33 @@ const OPEN = `function openCard(it) {
       };
       /* principle 5: 15 words before the next tap, the band and the bar
          together (glyphs such as the arrows are not words) */
-      var words = function (s) { return String(s || '').split(/\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w); }).length; };
+      var words = function (s) { return String(s || '').split(/\\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w); }).length; };
       var band = function (what, a) {
         var d = displayFor(a);
         frames++;
         seen[what] = (seen[what] || 0) + 1;
         cap(what + ', row 1', d.row1, 26, 99); cap(what + ', row 2', d.row2, 40, 7); cap(what + ', caption', d.cap, 60, 8); cap(what + ', chip', d.chip, 14, 3);
         if (!d.cap && !d.row1) out.push(what + ': no row 1');
-        var n = [d.row1, d.row2, d.chip, d.cap].concat(d.buttons.map(function (b) { return b.label; })).reduce(function (x, y) { return x + words(y); }, 0);
-        if (n > 15) out.push(what + ': ' + n + ' words, ' + [d.row1, d.row2, d.chip].join(' / ') + ' | ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
+        /* the strip counts too (its typed-move field is off screen until it
+           has the keyboard): empty before an answer, Details once settled */
+        var strip = String(d.strip || '').replace(/<label class="kb-move">[\\s\\S]*?<\\/label>/g, '').replace(/<[^>]*>/g, ' ');
+        var n = [d.row1, d.row2, d.chip, d.cap, strip].concat(d.buttons.map(function (b) { return b.label; })).reduce(function (x, y) { return x + words(y); }, 0);
+        if (n > 15) out.push(what + ': ' + n + ' words, ' + [d.row1, d.row2, d.chip, strip.trim()].join(' / ') + ' | ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
         return d;
       };
+      /* the rest of a line shown (S7), their replies played at once, to the
+         settled frame */
+      var playLine = function (a) {
+        for (var g = 0; g < 20 && showDue(a); g++) {
+          playIt(false);
+          if (!a.showWait) continue;
+          var rp = uciToMove(a.st, a.sol[a.solIdx]);
+          a.showWait = false; applyMove(a.st, rp); a.lastMove = [rp.from, rp.to]; a.markMove = null; a.solIdx++;
+          var nx = showDue(a);
+          if (nx) a.answerSan = sanOf(a.st, nx); else settleShown(a);
+        }
+      };
+      var R4 = /^(\\S+ is guarded\\. |\\S+ wins [a-z ]+\\. )?\\S+ (lost|could lose) (a|an|the|two|three) [a-z ]+\\.$|^\\S+ (is guarded|wins [a-z ]+)\\.$|^\\S+ allowed checkmate\\.( They missed it\\.)?$|^\\S+ wins [a-z ]+\\. \\S+ missed it\\.$|^\\S+ leads to checkmate\\.$|^\\S+ allowed (a draw|endless checks)\\.$|^After \\S+, (you were still better|the game was even|(White|Black) was on top)\\.$|^\\S+ was a mistake\\.$/;
       /* a word for a tap that is not a move, shown as the page shows it */
       var note = function (a, id) { a.note = { id: id, key: cardStateKey(a), seq: 0 }; return a; };
       /* a miss's reason (M3), in one of its forms or its fallbacks, in plain
@@ -572,29 +588,108 @@ const OPEN = `function openCard(it) {
           a = openCard(it);
           var off = legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci && !(a.sol && a.sol.indexOf(u) >= 0); })[0];
           if (off) { gradeMove(off); band(at + ' a try ' + a.phase, a); }
-          /* the answered frame: shown, found, found after a miss, close then shown, works too */
+          /* the answered frames. Shown (S7): V1 / V2 exactly, the band kept
+             once played, then V1 over R4 when settled; found (S6): R1 alone,
+             then R1 over R4; found after a miss (R2), works too (R3); a
+             mid-line reveal names the move due now; See why keeps R4 */
+          var settled = function (what, a, r1) {
+            a.settle = 1; d = band(what + ', S0 marks', a);
+            if (d.row1 !== r1 || (d.row2 && !a.revealed)) out.push(what + ' at V+700 reads ' + d.row1 + ' / ' + d.row2);
+            a.settle = 2; d = band(what + ', settled', a);
+            if (d.row1 !== r1 || !R4.test(d.row2)) out.push(what + ' settled reads ' + d.row1 + ' / ' + d.row2);
+            plain(what + ', R4', r4Of(a).cands.join(' | '));
+            if (!/data-act="details"/.test(d.strip)) out.push(what + ': no Details once settled');
+            if (!/^See why › \| (Continue|Finish)$/.test(d.buttons.map(function (b) { return b.label; }).join(' | '))) out.push(what + ' settled bar ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
+            d = band(what + ', settled, N1', note(a, 'N1'));
+            if (d.row2 !== 'To try moves, open Details.') out.push(what + ' N1 reads ' + d.row2);
+            a.note = null; seeWhy(); d = band(what + ', See why', a);
+            if (d.row1 !== r1 || !R4.test(d.row2)) out.push(what + ', See why reads ' + d.row1 + ' / ' + d.row2);
+          };
           a = openCard(it); reveal(); d = band(at + ' shown', a);
-          if (d.row1 !== 'The answer: ' + a.lines.best.san[0]) out.push(at + ' shown reads ' + d.row1);
+          var v1 = 'The answer: ' + a.lines.best.san[0];
+          if (d.row1 !== v1 || d.row2 !== 'Play the green arrow.' || d.disc !== 'info') out.push(at + ' shown reads ' + d.row1 + ' / ' + d.row2);
           d = band(at + ' shown, N1', note(a, 'N1'));
           if (d.row2 !== 'To try moves, open Details.') out.push(at + ' N1 reads ' + d.row2);
+          a.note = null;
+          if (!a.sol) { playIt(false); d = band(at + ' shown, played', a); if (d.row1 + ' / ' + d.row2 !== v1 + ' / Play the green arrow.') out.push(at + ' played reads ' + d.row1 + ' / ' + d.row2); }
+          else playLine(a);
+          settled(at + ' shown', a, a.sol ? displayFor(a).row1 : v1);
           a = openCard(it); a.foundGood = { san: sanOf(a.st, mine), win: 60 }; reveal(); band(at + ' shown after a close move', a);
+          playLine(a); settled(at + ' shown after a close move', a, displayFor(a).row1);
+          if (a.sol && a.sol.length >= 3) {
+            a = openCard(it);
+            applyMove(a.st, uciToMove(a.st, a.sol[0])); applyMove(a.st, uciToMove(a.st, a.sol[1])); a.solIdx = 2;
+            reveal(); d = band(at + ' mid-line shown', a);
+            if (d.row1 !== 'The answer: ' + sanOf(a.st, uciToMove(a.st, a.sol[2])) || d.row2 !== 'Play the green arrow.') out.push(at + ' mid-line shown reads ' + d.row1 + ' / ' + d.row2);
+            playLine(a); settled(at + ' mid-line shown', a, displayFor(a).row1);
+          }
           if (!a.sol) {
             a = openCard(it); solved(uciToMove(a.st, a.bestUci), a.bestUci, null); d = band(at + ' found', a);
-            if (d.row1 !== 'Found it') out.push(at + ' found reads ' + d.row1);
+            if (d.row1 !== 'Found it' || d.row2 || d.strip) out.push(at + ' found reads ' + d.row1 + ' / ' + d.row2 + ' / ' + d.strip);
+            settled(at + ' found', a, 'Found it');
             a = openCard(it); a.misses = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); d = band(at + ' found after a miss', a);
             if (d.row1 !== 'You got there') out.push(at + ' found after a miss reads ' + d.row1);
+            settled(at + ' found after a miss', a, 'You got there');
             a = openCard(it); var alt = off || mine;
             if (moveUci(alt) !== a.bestUci) {
               a.yours = { uci: [moveUci(alt)], cp: 0, at: 0 };
               solved(alt, moveUci(alt), { win: 50, best: 52, mate: null }); band(at + ' works too', a);
+              settled(at + ' works too', a, 'That works too');
             }
+          } else {
+            /* the whole line found */
+            a = openCard(it);
+            while (a.solIdx < a.sol.length) { var lm = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, lm); a.lastMove = [lm.from, lm.to]; a.solIdx++; }
+            finishCard('first'); settled(at + ' line found', a, 'Found it');
           }
         });
       });
       return JSON.stringify({ out: out, frames: frames, seen: seen }); })()`));
     ok(r.frames > 6000, 'frames ' + r.frames);
     eq(r.out.length, 0, r.out.length + ' too long, first: ' + r.out.slice(0, 3).join(' | '));
-    ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss outside a line', 'a miss with a reply', 'game move again, its reason', 'a miss that loses nothing, in a line', 'shown, N1'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
+    ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss outside a line', 'a miss with a reply', 'game move again, its reason', 'a miss that loses nothing, in a line', 'shown, N1',
+     'shown, played', 'mid-line shown, settled', 'found, settled', 'works too, settled', 'line found, settled', 'See why'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
+  });
+
+  await test('R4 never uses the found form when lines.game.uci[1] !== ru[0]', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = { found: 0, missed: 0, doctored: 0, long: 0 };
+      /* the found form: the game move "lost" something, or "allowed
+         checkmate" with nothing after it (said only when the opponent played
+         the refutation's first move in the game) */
+      var foundForm = function (a, row2) { var g = buildCompare(a).gameSan; return row2.indexOf(g + ' lost ') >= 0 || row2 === g + ' allowed checkmate.'; };
+      var look = function (a, what, doctor) {
+        var ru = unpackUci(a.it.b.ru), gm = a.lines.game.uci;
+        if (doctor) { gm = a.lines.game.uci = gm.slice(); gm[1] = ru[0] === 'a1a2' ? 'a1a3' : 'a1a2'; a.compare = null; n.doctored++; }
+        /* a longer move name, so the not-found mate form no longer fits and
+           the ladder would cut it to its first sentence */
+        if (doctor === 'long') { buildCompare(a).gameSan = 'Qxe8+R'; n.long++; }
+        a.settle = 2;
+        var row2 = displayFor(a).row2, found = gm[1] === ru[0];
+        if (found) n.found++; else n.missed++;
+        if (!found && foundForm(a, row2)) out.push(what + (doctor ? ' (doctored)' : '') + ': ' + row2);
+        if (!found && r4Of(a).cands.some(function (c) { return foundForm(a, c); })) out.push(what + ': a found form among ' + r4Of(a).cands.join(' | '));
+      };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var at = 'tier ' + tier + ' ' + it.key, a = openCard(it);
+          if (!a) return;
+          var settle = function () {
+            if (a.sol) { while (a.solIdx < a.sol.length) { var m = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.solIdx++; } finishCard('first'); }
+            else solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+          };
+          settle(); look(a, at + ' solved', false);
+          a = openCard(it); settle(); look(a, at + ' solved', true);
+          a = openCard(it); reveal(); a.view = { mode: 's0' }; look(a, at + ' shown', false);
+          a = openCard(it); reveal(); a.view = { mode: 's0' }; look(a, at + ' shown', true);
+          if (a.cls.mateAgainst) { a = openCard(it); settle(); look(a, at + ' solved, a long name', 'long'); }
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.found > 50 && r.n.missed > 100 && r.n.doctored > 500 && r.n.long >= 6, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' found forms, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
   await test('one format by default: the most played among those played in the last 90 days', () => {
