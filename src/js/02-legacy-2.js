@@ -141,10 +141,12 @@ var BADGE_GLYPH = {
    halo so it reads on light and dark squares alike. Its head is a marker of
    its own (the id is unique on the page). A short arrow, under 1.6 squares,
    stops nearer the centre with the same head, so a one-square move shows */
-function markArrow(x1, y1, x2, y2, kind, id, key, solid) {
+function markArrow(x1, y1, x2, y2, kind, id, key, solid, shy) {
   var k = MARK_ARROW[kind] || MARK_ARROW.game, dash = solid ? '' : k.dash || '';
   var dx = x2 - x1, dy = y2 - y1, len = Math.sqrt(dx * dx + dy * dy) || 1;
-  var inset = 45 * (len < 45 * 1.6 ? 0.22 : 0.34);
+  /* shy: a second arrow into a square another arrow already ends on stops
+     with its tip near that square's edge, so the two heads never stack */
+  var inset = 45 * (shy ? 0.58 : len < 45 * 1.6 ? 0.22 : 0.34);
   var tx = x2 - dx / len * inset, ty = y2 - dy / len * inset;
   var at = ' x1="' + x1 + '" y1="' + y1 + '" x2="' + tx + '" y2="' + ty + '" stroke-linecap="' + (dash ? 'butt' : 'round') + '"'
     + (dash ? ' stroke-dasharray="' + dash + '"' : '');
@@ -172,7 +174,9 @@ function markRing(x, y, kind) {
   if (kind === 'nope') return '<rect class="nope-box" x="' + (x + 2) + '" y="' + (y + 2) + '" width="41" height="41" fill="none" stroke="rgba(160,154,144,.9)" stroke-width="2"/>';
   if (kind === 'threat') return '<circle' + c + ' stroke="rgba(0,0,0,.35)" stroke-width="6.5"/><circle class="ring-threat"' + c + ' stroke="#e0503e" stroke-width="3.6"/>';
   if (kind === 'reply') return '<circle class="reply-ring"' + c + ' stroke="rgba(122,150,184,.95)" stroke-width="3" stroke-dasharray="6 4"/>';
-  if (kind === 'target') return '<circle class="ring-target"' + c + ' stroke="rgba(182,130,53,.95)" stroke-width="3" stroke-dasharray="4 3"/>';
+  /* the prize: dashed in the label gold, on a dark halo like the red
+     ring's, so it reads on dark squares as well as light ones */
+  if (kind === 'target') return '<circle' + c + ' stroke="rgba(20,14,8,.6)" stroke-width="6"/><circle class="ring-target"' + c + ' stroke="#e8c27a" stroke-width="3.2" stroke-dasharray="4 3"/>';
   /* the hint ring paints after pieces and arrows: a hint buried under a red
      arrow is no hint at all */
   return '<circle' + c + ' stroke="rgba(20,14,8,.55)" stroke-width="6"/><circle class="hint-ring"' + c + ' stroke="rgba(182,130,53,.95)" stroke-width="3.5"/>';
@@ -309,8 +313,10 @@ function boardSvg(st, opts) {
   if (opts.good) arrows.push({ from: opts.good[0], to: opts.good[1], kind: 'better', key: 'good' });
   if (opts.bad) arrows.push({ from: opts.bad[0], to: opts.bad[1], kind: 'game', key: 'bad' });
   arrows = arrows.concat(opts.arrows || []);
+  var ends = {};
   arrows.forEach(function (ar, i) {
-    var a = ctr(ar.from), b = ctr(ar.to), m = markArrow(a[0], a[1], b[0], b[1], ar.kind, 'ah' + uid + '-' + i, ar.key, ar.solid);
+    var a = ctr(ar.from), b = ctr(ar.to), m = markArrow(a[0], a[1], b[0], b[1], ar.kind, 'ah' + uid + '-' + i, ar.key, ar.solid, !!ends[ar.to]);
+    ends[ar.to] = 1;
     defs += m.def;
     marks += m.body;
   });

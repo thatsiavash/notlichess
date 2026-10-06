@@ -629,6 +629,11 @@ document.addEventListener('keydown', function (e) {
        guard of the slot they stand for */
     if (e.key === '?') { e.preventDefault(); if (!slotGuarded(slotOfAct('hint'))) giveHint(); }
     else if (e.key === 'Enter' && !onAct) { e.preventDefault(); pressRight(); }
+  } else if (a.phase === 'checking' && e.key === '?') {
+    /* a move being checked keeps the guess bar until K1: ? does what its
+       Hint button does, while that button is on */
+    e.preventDefault();
+    if (!a.checkSaid && slotOfAct('hint') >= 0 && !slotGuarded(slotOfAct('hint'))) giveHint();
   }
 });
 /* the right-hand button, pressed from the keyboard: a click on it, so the

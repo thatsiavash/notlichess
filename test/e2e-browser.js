@@ -442,7 +442,7 @@
       const opp2 = T.ev('(function (a) { var st = triedFrame(a).st; for (var q = 0; q < 64; q++) if (st.b[q] && isW(st.b[q]) !== !!a.st.w) return q; return -1; })(ui.session.active)');
       fingerTap(opp2);
       await sleep(300);
-      ok('after a dragged move, the first tap on their piece says which side you are', T.ev('NOTE_COPY.T4(ui.session.active)').indexOf(text('#cband .bd-r2')) !== -1 && !!$('#bwrap .marks .nope-box') && T.card().phase === 'tried',
+      ok('after a dragged move, the first tap on their piece says which side you are', T.ev('NOTE_COPY.T4(ui.session.active)').indexOf(text('#cband .bd-r2')) !== -1 && (!!$('#bwrap .marks .nope-box') || !!$('#bwrap .marks .ring-threat')) && T.card().phase === 'tried',
         T.card().phase + ': ' + text('#cband'));
       await sleep(400);
       press('#cbar [data-act=tryAgain]');

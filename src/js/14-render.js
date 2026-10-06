@@ -566,8 +566,11 @@ function boardOptsFor(a) {
       if (hm.arrows.length) opts.arrows = (opts.arrows || []).concat(hm.arrows);
     }
   }
-  /* "not a move here": the grey outline on a square just tapped */
-  if (a.nope && a.nope.key === cardStateKey(a)) opts.rings = (opts.rings || []).concat([{ sq: a.nope.sq, kind: 'nope' }]);
+  /* "not a move here": the grey outline on a square just tapped. Before an
+     answer a ring already drawn (a hint's, a miss's reason) keeps the frame
+     to one ring (2.1) and the band's T4 says it alone; after an answer the
+     outline is the tap's answer (principle 6) */
+  if (a.nope && a.nope.key === cardStateKey(a) && (a.phase === 'done' || !(opts.rings || []).length)) opts.rings = (opts.rings || []).concat([{ sq: a.nope.sq, kind: 'nope' }]);
   if (slideMs === 320) opts.animMs = 320;
   /* the last-move tint marks a move that has landed: a piece sliding in
      with a verdict to come gets no tint until the verdict's own, so its

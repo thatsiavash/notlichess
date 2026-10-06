@@ -373,7 +373,7 @@ function keepProgress(a) {
    hint shows on Try again; no number of misses shows the answer */
 function escalate() {
   var a = ui.session.active, autoAt = a.tier === 1 ? 1 : (a.tier === 2 ? 2 : 0);
-  if (autoAt && a.misses >= autoAt && !a.hints) a.hints = 1;
+  if (autoAt && a.misses >= autoAt && !a.hints) { a.hints = 1; a.hintAt = a.misses; }
   keepProgress(a);
 }
 /* a try stays where it landed until the player takes it back: a.st keeps
@@ -910,6 +910,7 @@ function giveHint() {
   else if (cleared) dropCheck(a);
   if (a.phase !== 'guess' || a.hints >= 2) { if (cleared) renderCard(); return; }
   a.hints = a.hints + 1;
+  a.hintAt = a.misses;
   a.hintAfter = true;
   keepProgress(a);
   if (cleared) holdMarks(a);
@@ -949,10 +950,11 @@ function hintMarks(a) {
   return out;
 }
 /* hint 1's danger: the game line's first reply after the game move, when it
-   captures or checks (threatOf), drawn on the card's position, where its
-   piece already stands */
+   captures or checks (threatOf) and the game line really loses (material,
+   or a checkmate against you), drawn on the card's position, where its
+   piece already stands. A reply that hurts nothing is no danger */
 function hintDanger(a) {
-  var th = a.cls && threatOf(a.cls.gameLine, 1);
+  var c = a.cls, th = c && (c.lossG >= 1 || c.mateAgainst) ? threatOf(c.gameLine, 1) : null;
   return th && a.pre.b[th.from] && isW(a.pre.b[th.from]) !== myPov(a.it) ? th : null;
 }
 /* hint 1's prize on a missed-chance card: the most valuable piece of theirs

@@ -1725,7 +1725,8 @@ const BAR = `(function () {
     A.ev('(playerTier = function () { return 2; }, 1)');
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
     const band = () => A.ev('window.__els.cband.innerHTML.replace(/<[^>]+>/g, " ").replace(/&#39;/g, "\'").replace(/\\s+/g, " ").trim()');
-    const nope = () => JSON.stringify((JSON.parse(A.ev('JSON.stringify(boardOptsFor(ui.session.active).opts.rings || [])'))).filter((r) => r.kind === 'nope').map((r) => r.sq));
+    /* the tap answered with "not a move here": its outline drawn, or before an answer held back by a ring already drawn (2.1's one ring) */
+    const nope = () => A.ev('(function (a) { var r = (boardOptsFor(a).opts.rings || []), n = a.nope && a.nope.key === cardStateKey(a) ? a.nope.sq : -1, drawn = r.filter(function (x) { return x.kind === "nope"; }).map(function (x) { return x.sq; }); return JSON.stringify(n < 0 || (drawn.length ? drawn[0] === n : a.phase !== "done" && r.length > 0) ? (n < 0 ? [] : [n]) : ["outline " + JSON.stringify(r)]); })(ui.session.active)');
     const S = () => JSON.parse(A.ev('JSON.stringify((function (a) { return { phase: a.phase, attempts: a.attempts, misses: a.misses, sel: a.sel, flag: pointerState.suppressClick }; })(ui.session.active))'));
     const cards = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol && unpackUci(it.b.ru).length; }).slice(0, 4).map(function (it) { return it.key; }))`));
     ok(cards.length === 4, 'cards ' + cards.length);
@@ -2321,6 +2322,137 @@ const BAR = `(function () {
     ok(n >= 24 && withTried >= 4, 'misses ' + n + ', with a tried line ' + withTried);
     const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
     eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('? follows the Hint button: while a move is checked it gives the hint until K1 (the move taken back), and does nothing once K1 takes the bar', async () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev(BAR);
+    A.ev(`(function () { ${AFTER} window.__offBook = offBook; window.__holdTry = true; playerTier = function () { return 3; }; return 1; })()`);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const S = () => JSON.parse(A.ev('JSON.stringify((function (a) { return { phase: a.phase, hints: a.hints, attempts: a.attempts, said: a.checkSaid || 0, acts: slotAct.join(" ") }; })(ui.session.active))'));
+    const keys = JSON.parse(A.ev('JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol; }).slice(0, 4).map(function (it) { return it.key; }))'));
+    let n = 0;
+    for (const key of keys) {
+      A.ev(`(window.readyEngine(), window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      A.ev('(gradeMove(window.__offBook(ui.session.active)), 1)');
+      let s = S();
+      eq(s.phase + ' ' + s.said, 'checking 0', key + ': a move being checked, before K1');
+      ok(/^hint /.test(s.acts), key + ': the guess bar still offers Hint: ' + s.acts);
+      A.key('?');
+      s = S();
+      eq(s.phase + ' ' + s.hints + ' ' + s.attempts, 'guess 1 0', key + ': ? before K1 gives the hint, as the button does, and takes the move back');
+      run(1000);
+      A.ev('(gradeMove(window.__offBook(ui.session.active)), 1)');
+      run(400);
+      s = S();
+      ok(s.phase === 'checking' && s.said >= 1 && !/hint/.test(s.acts), key + ': K1 took the bar: ' + JSON.stringify(s));
+      A.key('?');
+      s = S();
+      eq(s.phase + ' ' + s.hints, 'checking 1', key + ': ? after K1 does nothing, as there is no Hint button');
+      A.ev('(takeBack(), 1)');
+      n++;
+    }
+    A.ev('(window.__holdTry = false, 1)');
+    eq(n, 4, 'cards');
+  });
+
+  await test('after Try again, band and board agree on the hint: the band says it on the showing it came with and while its marks stand, else T1 and T2', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = { fresh: 0, drawn: 0, task: 0 };
+      var look = function (what, a, fresh) {
+        a.triedHold = false;
+        var d = displayFor(a), hm = hintMarks(a), o = boardOptsFor(a).opts;
+        var drawn = hm.rings.length + hm.arrows.length > 0, said = d.row1 === 'Hint 1 of 2' || d.row1 === 'Hint 2 of 2';
+        var onBoard = (o.rings || []).some(function (m) { return m.kind === 'target' || m.kind === 'hint' || (hm.danger && m.kind === 'threat'); });
+        if (onBoard !== drawn) out.push(what + ': the board draws the hint ' + onBoard + ', hintMarks ' + drawn);
+        if (said !== (fresh || drawn)) out.push(what + ': the band reads ' + d.row1 + ' / ' + d.row2 + (fresh ? ' on the hint\\'s own showing' : '') + (drawn ? ' with its marks drawn' : ' with nothing drawn'));
+        if (!said && (d.row1 !== CARD_COPY.T1(a) || d.row2 !== CARD_COPY.T2(a))) out.push(what + ': the task back reads ' + d.row1 + ' / ' + d.row2);
+        if (fresh) n.fresh++; else if (drawn) n.drawn++; else n.task++;
+      };
+      var miss = function (a) { if (a.phase === 'tried') tryAgain(); gradeMove(uciToMove(a.st, a.playedUci)); return a.phase === 'tried'; };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var a = openCard(it);
+          if (!a || a.sol || !unpackUci(it.b.ru).length) return;
+          var at = 'tier ' + tier + ' ' + it.key;
+          /* tier 3: Hint pressed on the card, then the game move missed */
+          if (tier === 3) { giveHint(); look(at + ' hint pressed', a, true); }
+          for (var m = 1; m <= 3; m++) {
+            if (!miss(a)) return out.push(at + ': miss ' + m + ' is ' + a.phase);
+            tryAgain();
+            /* fresh: the automatic hint this Try again brought (tier 1 at miss 1, tier 2 at miss 2) */
+            look(at + ' Try again after miss ' + m, a, (tier === 1 && m === 1) || (tier === 2 && m === 2));
+          }
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.fresh >= 60 && r.n.drawn >= 60 && r.n.task >= 20, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' disagree, first: ' + r.out.slice(0, 3).join(' | '));
+  });
+
+  await test('one ring a frame before an answer: "not a move here" is drawn only when no other ring is (hint rings); after an answer it is the tap\'s answer', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = { alone: 0, held: 0, done: 0 };
+      allMistakes().filter(trainable).forEach(function (it) {
+        [0, 1, 2].forEach(function (h) {
+          var a = openCard(it);
+          if (!a) return;
+          a.hints = h;
+          var theirs = -1;
+          for (var q = 0; q < 64; q++) if (a.st.b[q] && isW(a.st.b[q]) !== myPov(a.it)) { theirs = q; break; }
+          var before = (boardOptsFor(a).opts.rings || []).slice();
+          a.nope = { sq: theirs, key: cardStateKey(a), seq: 1 };
+          var rings = boardOptsFor(a).opts.rings || [];
+          if (!before.length) { n.alone++; if (JSON.stringify(rings) !== JSON.stringify([{ sq: theirs, kind: 'nope' }])) out.push(it.key + ' hints ' + h + ': the outline alone is ' + JSON.stringify(rings)); }
+          else { n.held++; if (JSON.stringify(rings) !== JSON.stringify(before)) out.push(it.key + ' hints ' + h + ': an outline over ' + JSON.stringify(before) + ': ' + JSON.stringify(rings)); }
+        });
+        /* answered (principle 6): the outline whatever else is drawn */
+        var d = openCard(it);
+        if (!d) return;
+        reveal(); d.view = { mode: 's0' }; d.settle = 2;
+        d.nope = { sq: -1, key: cardStateKey(d), seq: 1 };
+        for (var q2 = 0; q2 < 64; q2++) if (frameView(d).st.b[q2]) { d.nope.sq = q2; break; }
+        n.done++;
+        if (!(boardOptsFor(d).opts.rings || []).some(function (m) { return m.kind === 'nope' && m.sq === d.nope.sq; })) out.push(it.key + ': no outline after an answer');
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.alone >= 60 && r.n.held >= 100 && r.n.done >= 40, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
+  });
+
+  await test('two arrows into one square keep both heads: the second stops near the square\'s edge (the hint\'s danger recapturing on the game move\'s square)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], cards = [];
+      var ends = function (svg) {
+        var re = /<line class="([a-z-]+-arrow)"[^>]* x1="([\\d.-]+)" y1="([\\d.-]+)" x2="([\\d.-]+)" y2="([\\d.-]+)"/g, m, o = [];
+        while ((m = re.exec(svg))) o.push({ cls: m[1], x2: +m[4], y2: +m[5] });
+        return o;
+      };
+      var ctr = function (sq, flip) { var c = flip ? 7 - sq % 8 : sq % 8, rw = flip ? sq >> 3 : 7 - (sq >> 3); return [c * 45 + 22.5, rw * 45 + 22.5]; };
+      allMistakes().filter(trainable).forEach(function (it) {
+        var a = openCard(it);
+        if (!a) return;
+        a.hints = 1;
+        var f = boardOptsFor(a), o = f.opts, hm = hintMarks(a);
+        if (!o.bad || !hm.danger || hm.danger.to !== o.bad[1]) return;
+        cards.push(it.key);
+        var e = ends(boardSvg(f.st, o)), t = ctr(o.bad[1], o.flip), d = e.map(function (x) { return Math.hypot(x.x2 - t[0], x.y2 - t[1]) / 45; });
+        if (e.length !== 2 || e[0].cls !== 'bad-arrow' || e[1].cls !== 'threat-arrow') return out.push(it.key + ': arrows ' + JSON.stringify(e));
+        if (d[0] > 0.35) out.push(it.key + ': the game arrow stops ' + d[0].toFixed(2) + ' of a square short');
+        if (Math.abs(d[1] - 0.58) > 1e-6) out.push(it.key + ': the danger stops ' + d[1].toFixed(2) + ' short, not 0.58');
+      });
+      /* one arrow into a square keeps its usual inset */
+      var st = stateFromFen('8/8/8/8/4K3/8/8/k7 w - - 0 1'), one = ends(boardSvg(st, { arrows: [{ from: 28, to: 44, kind: 'threat' }, { from: 0, to: 9, kind: 'threat' }] }));
+      if (Math.abs(Math.hypot(one[0].x2 - 202.5, one[0].y2 - 112.5) - 0.34 * 45) > 1e-6) out.push('a lone arrow moved its tip: ' + JSON.stringify(one));
+      return JSON.stringify({ out: out, cards: cards }); })()`));
+    ok(r.cards.length >= 1 && r.cards.indexOf('184430442654:12') >= 0, 'cards ' + JSON.stringify(r.cards));
+    eq(r.out.length, 0, r.out.join(' | '));
   });
 
   await test('the sound context is made inside the player\'s gesture, never inside a timed beat; a piece picked up taps', () => {
@@ -3542,7 +3674,7 @@ const BAR = `(function () {
       eq(crosses.length, o.ghosts.length, name + ': ghost crosses');
       o.ghosts.forEach((g, i) => { const c = cornerOf(g.sq, flip); ok(at([crosses[i][1], crosses[i][2]], [c[0] + 37.5, c[1] + 7.5]), name + ': ghost cross ' + i + ' at the top-right'); });
       /* rings round their own square's centre, r 20: the threat ring red over a dark halo, the reply ring
-         dashed 6 4, the prize ring dashed 4 3, hint 2's ring gold; the nope outline a square, 2 units in */
+         dashed 6 4, the prize ring dashed 4 3 in the label gold over a dark halo (it reads on dark squares), hint 2's ring gold; the nope outline a square, 2 units in */
       const ring = (kind) => o.rings.filter((x) => x.kind === kind)[0];
       const ringAt = (cls, sq) => { const c = ctrOf(sq, flip); return p.marks.match(new RegExp('<circle class="' + cls + '" cx="' + rx(c[0]) + '" cy="' + rx(c[1]) + '" r="20" fill="none" ([^>]*)/>')); };
       const tc = ctrOf(ring('threat').sq, flip), cc = ' cx="' + tc[0] + '" cy="' + tc[1] + '" r="20" fill="none"';
@@ -3551,7 +3683,8 @@ const BAR = `(function () {
       m = ringAt('reply-ring', ring('reply').sq);
       ok(m && m[1] === 'stroke="rgba(122,150,184,.95)" stroke-width="3" stroke-dasharray="6 4"', name + ': the reply ring, dashed 6 4, ' + (m && m[1]));
       m = ringAt('ring-target', ring('target').sq);
-      ok(m && m[1] === 'stroke="rgba(182,130,53,.95)" stroke-width="3" stroke-dasharray="4 3"', name + ': the prize ring, dashed 4 3, ' + (m && m[1]));
+      const gc = ctrOf(ring('target').sq, flip), gcc = ' cx="' + gc[0] + '" cy="' + gc[1] + '" r="20" fill="none"';
+      ok(m && m[1] === 'stroke="#e8c27a" stroke-width="3.2" stroke-dasharray="4 3"' && p.marks.indexOf('<circle' + gcc + ' stroke="rgba(20,14,8,.6)" stroke-width="6"/><circle class="ring-target"' + gcc) >= 0, name + ': the prize ring, label gold dashed 4 3 over a dark halo, ' + (m && m[1]));
       m = ringAt('hint-ring', o.hint);
       ok(m && m[1] === 'stroke="rgba(182,130,53,.95)" stroke-width="3.5"', name + ': hint 2\'s ring, gold, ' + (m && m[1]));
       const nc = cornerOf(ring('nope').sq, flip);

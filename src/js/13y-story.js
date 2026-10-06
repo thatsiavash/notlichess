@@ -167,12 +167,14 @@ function triedVerdict(a, t, why, again) {
    circled piece." Hint 1 inside a forcing line is about this step: your
    king in check (only the solver's own, on the position the card asks
    from: U3), else that the next move is forcing too. On the card's first
-   move: a danger drawn says to look at it; a missed chance names its prize
-   (the line's own words, else one word true to a trade), a checkmate, a
-   fork made by the first move; a winning position, keeping it simple; a
-   quiet one, its worst piece; else the reply the game move allowed (never
-   one landing on the answer's square, which would point at it). No form
-   names the answer due now */
+   move only H2's forms: a danger drawn says to look at it ("runs into"
+   only beside its marks, so never pointing at an empty board); a missed
+   chance names its prize (the line's own words, else one word true to a
+   trade), a checkmate, a fork made by the first move (only when the line
+   is missing), else checks and captures; a winning position, keeping it
+   simple; a quiet one, its worst piece; a safety or king card with nothing
+   drawn, what the answer wins when it wins something, else keeping it
+   safe. No form names the answer due now */
 function hintText(a) {
   var marks = hintMarks(a), due = dueMove(a), dueSan = sanOf(a.st, due), cands, fall;
   var r = { row1: CARD_COPY[a.hints >= 2 ? 'H3' : 'H1'](), marks: marks };
@@ -183,22 +185,21 @@ function hintText(a) {
     cands = [inCheck ? 'Your king is in check.' : 'The next move is forcing too.'];
     fall = 'The next move is forcing too.';
   } else {
-    var t = patternOf(a.it.b), fam = familyOf(t).key, c = a.cls, th = hintDanger(a);
-    fall = fam === 'chances' ? 'You can win material here.' : 'Your move allowed a strong reply.';
-    if (fam === 'chances') {
-      var line = c.bestLine, mt = c.missed || {};
-      var pw = line && !line.unsettled && c.matBest >= 1 ? plainCapture(line, c.bSettle) : null;
-      if (c.mateFor) cands = ['There is a checkmate here.'];
-      else if (line && !line.unsettled && c.matBest >= 1) cands = ['You can win ' + (pw || oneWord(null, c.matBest)) + ' here.', 'You can win ' + oneWord(pw, c.matBest) + ' here.'];
-      else if (mt.fork && mt.fork.ply === 1 && c.matBest >= 2) cands = ['One piece can hit two targets.'];
-      else cands = ['Look for checks and captures.'];
-    }
-    /* a reply that captures or checks: drawn, or (its marks on the
-       answer's squares) said alone */
-    else if (th) cands = ['See what ' + gameSan(a) + ' runs into.'];
+    var fam = familyOf(patternOf(a.it.b)).key, c = a.cls, line = c.bestLine, mt = c.missed || {};
+    var win = !!line && !line.unsettled && c.matBest >= 1, pw = win ? plainCapture(line, c.bSettle) : null;
+    /* what the answer gets, in H2's words: a checkmate, or the material
+       its line wins */
+    var gets = c.mateFor ? ['There is a checkmate here.']
+      : win ? ['You can win ' + (pw || oneWord(null, c.matBest)) + ' here.', 'You can win ' + oneWord(pw, c.matBest) + ' here.'] : null;
+    var own = fam === 'conversion' ? 'Keep it simple and safe.' : fam === 'quiet' ? 'Improve your worst piece.'
+      : fam === 'chances' || win ? 'You can win material here.' : 'Keep it simple and safe.';
+    fall = own;
+    if (fam === 'chances') cands = gets || (mt.fork && mt.fork.ply === 1 && c.matBest >= 2 ? ['One piece can hit two targets.'] : ['Look for checks and captures.']);
+    /* the reply the game move runs into, drawn beside these words */
+    else if (marks.danger) cands = ['See what ' + gameSan(a) + ' runs into.'];
     else if (fam === 'conversion') cands = ['Keep it simple and safe.'];
-    else if (fam === 'quiet') { cands = ['Find your worst piece and improve it.', 'Improve your worst piece.']; fall = 'Improve your worst piece.'; }
-    else cands = [allowedSaid(a, due)];
+    else if (fam === 'quiet') cands = ['Find your worst piece and improve it.', 'Improve your worst piece.'];
+    else cands = gets || ['Keep it simple and safe.'];
   }
   /* the guard: no form names the answer due now */
   var names = function (x) { return String(x || '').split(/[\s.,]+/).indexOf(dueSan) >= 0; };
@@ -206,30 +207,6 @@ function hintText(a) {
   r.fall = names(fall) ? '' : fall;
   r.row2 = fitRow(r.cands, 'row2', r.fall);
   return r;
-}
-/* the reply the game move allowed, or the move its tactic turns on (the
-   first capture or check that follows), in the opponent's moves: "Your
-   move allowed Nd5, a fork." A reply landing on the answer's own square
-   would point at it, so that one is "a strong reply" */
-function allowedSaid(a, due) {
-  var c = a.cls, t = patternOf(a.it.b), g = c.gameLine, r1 = g && g.nodes[1];
-  if (!r1) return '';
-  var n0 = g.nodes[0];
-  /* a capture answered by a recapture on the same square: count first */
-  if (n0.captured && r1.captured && r1.move.to === n0.move.to && !c.mateAgainst)
-    return 'Before you capture on ' + sqName(n0.move.to) + ', count who defends it.';
-  var motif = { forkAllowed: c.allowed.fork, pinAllowed: c.allowed.pin, discoveredAllowed: c.allowed.discoveredAttack, promotion: c.allowed.promotion }[t];
-  var k = motif && motif.ply >= 1 ? motif.ply - (motif.ply % 2 === 0 ? 1 : 0) : 0;
-  if (!k) {
-    for (var i = 1; i < g.nodes.length && i <= Math.max(1, c.gSettle); i += 2) {
-      var n = g.nodes[i];
-      if (n.captured || checkersOf(n.after).length) { k = i; break; }
-    }
-  }
-  var key = (k && g.nodes[k]) || r1, word = { forkAllowed: ', a fork', pinAllowed: ', a pin', discoveredAllowed: ', a discovered attack' }[t] || '';
-  var hit = function (n) { return n && n.move && n.move.to === due.to; };
-  if (hit(r1) || hit(key)) return 'Your move allowed a strong reply' + word + '.';
-  return 'Your move allowed ' + sanOf(r1.before, r1.move) + (key !== r1 ? ', then ' + sanOf(key.before, key.move) : '') + word + '.';
 }
 /* the band for the state the card is in: {disc, kind, row1, row2, chip,
    cap, sweep}. disc: king (in the solver's colour), good, bad, close,
@@ -591,8 +568,13 @@ function bandOf(a) {
              row1: tv.row1, cands: wait ? [] : tv.cands, fall: wait ? '' : tv.fall };
   }
   if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: 'Right', cands: v && v.cands ? v.cands : [], fall: '' };
-  var mid = a.sol && a.solIdx > 0;
-  if (a.hints >= 1 && (a.hintAfter || !mid)) {
+  /* a hint says itself on the showing it came with (pressed, or the
+     automatic one this Try again brought: S4), and afterwards while its
+     marks stand on the board, so band and board agree; a hint in words
+     only, from before the last miss, gives the task back (T1, T2). A
+     hint set with no showing recorded (hintAt) counts as this one's */
+  var mid = a.sol && a.solIdx > 0, hm = a.hints >= 1 ? hintMarks(a) : null;
+  if (a.hints >= 1 && (a.hintAfter || !mid) && (a.hintAt == null || a.hintAt === a.misses || hm.rings.length + hm.arrows.length > 0)) {
     var h = hintText(a);
     return { disc: 'king', kind: 'hint', row1: h.row1, cands: h.cands, fall: h.fall };
   }

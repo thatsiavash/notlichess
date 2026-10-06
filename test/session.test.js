@@ -24,6 +24,19 @@ const OPEN = `function openCard(it) {
   return a;
 }`;
 
+/* plain words on the card face (FINAL-SPEC 3): no percentages, "winning
+   chances", "about level", "edge", "lead", "exchange", "Stockfish" at tier
+   1, and no pattern names ("pinned" and "fork" only at tier 3). unplain(s,
+   tier) names the first word that breaks it, '' when none does */
+const PLAIN = `function unplain(s, tier) {
+  s = String(s || '');
+  var m = /\\d+ ?%|winning chances|about level|\\bedge\\b|\\blead\\b|\\bexchange\\b/i.exec(s);
+  if (m) return m[0];
+  if (tier === 1 && /stockfish/i.test(s)) return 'Stockfish';
+  var re = /\\b(forks?|forked|forking|pins?|pinned|pinning|skewers?|skewered|discovered|hanging|hidden attack|tactics?|tactical|overload(ed|ing)?|deflection|decoy|zwischenzug|desperado|x-ray|back rank)\\b/gi, w;
+  while ((w = re.exec(s))) if (!(tier === 3 && /^(fork|pinned)$/i.test(w[1]))) return w[1];
+  return '';
+}`;
 (async () => {
   await test('the fixture boots with its games and cards', () => {
     const A = boot();
@@ -377,7 +390,8 @@ const OPEN = `function openCard(it) {
   await test('hints never name the answer, in words or marks: every card and tier, hints 1 and 2, on the card and inside a forcing line; a prize ringed is a piece the line wins', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var out = [], n = { frames: 0, danger: 0, dropped: 0, prize: 0, prizeDropped: 0, words: 0, mid: 0, ring2: 0 };
+      ${PLAIN}
+      var out = [], n = { frames: 0, plain2: 0, danger: 0, dropped: 0, harmless: 0, plain: 0, prize: 0, prizeDropped: 0, words: 0, mid: 0, ring2: 0 };
       var same = function (x, y) { return JSON.stringify(x) === JSON.stringify(y); };
       var words = function (s) { return String(s || '').split(/[\\s.,:]+/); };
       /* "You can win X here.": X is the line's own captures, or the two
@@ -401,6 +415,8 @@ const OPEN = `function openCard(it) {
           if (words(x).indexOf(dueSan) >= 0) out.push(what + ' has a form naming the answer: ' + x);
           if (String(x).split(gameSan(a)).join(' ').indexOf(sqName(due.to)) >= 0) out.push(what + ' names the answer square: ' + x);
         });
+        /* every hint string, ladder and fallback too, in plain words at this tier */
+        [d.row1, d.row2, h.fall].concat(h.cands).forEach(function (x) { var bad = unplain(x, a.tier); n.plain2++; if (bad) out.push(what + ': "' + bad + '" in a hint: ' + x); });
         /* the board draws exactly these marks */
         var rings = (f.opts.rings || []).filter(function (m) { return m.kind !== 'nope'; }), arrows = (f.opts.arrows || []);
         if (!same(rings, hm.rings) || !same(arrows, hm.arrows) || f.opts.hint != null) out.push(what + ': the board draws ' + JSON.stringify([rings, arrows, f.opts.hint]) + ' for ' + JSON.stringify([hm.rings, hm.arrows]));
@@ -424,8 +440,8 @@ const OPEN = `function openCard(it) {
           return;
         }
         var fam = familyOf(patternOf(a.it.b)).key, c = a.cls, th = threatOf(c.gameLine, 1);
+        prizeWord(what, a, d.row2); h.cands.forEach(function (x) { prizeWord(what + ' (ladder)', a, x); });
         if (fam === 'chances') {
-          prizeWord(what, a, d.row2); h.cands.forEach(function (x) { prizeWord(what + ' (ladder)', a, x); });
           if (hm.arrows.length || hm.rings.some(function (m) { return m.kind !== 'target'; }) || hm.rings.length > 1) out.push(what + ': a missed chance draws ' + JSON.stringify(hm));
           var pz = hintPrize(a);
           if (pz && (pz.sq === due.to || pz.sq === due.from)) n.prizeDropped++;
@@ -445,19 +461,30 @@ const OPEN = `function openCard(it) {
           if (!took) out.push(what + ': the line never wins the ' + p + ' on ' + sqName(sq));
           return;
         }
-        if (th && (sqs.length || [th.from, th.to].some(function (q) { return q === due.from || q === due.to; }))) {
+        /* a danger is drawn only for a reply that captures or checks on a
+           game line that really loses (material, or a checkmate) */
+        var hurts = th && (c.lossG >= 1 || c.mateAgainst);
+        if (th && !hurts) n.harmless++;
+        if (hurts && (sqs.length || [th.from, th.to].some(function (q) { return q === due.from || q === due.to; }))) {
           if (sqs.length) {
             n.danger++;
             if (!same(hm.rings, [{ sq: th.from, kind: 'threat' }]) || hm.arrows.length !== 1 || hm.arrows[0].from !== th.from || hm.arrows[0].to !== th.to || hm.arrows[0].kind !== 'threat') out.push(what + ': the danger drawn is not the game reply ' + th.san + ': ' + JSON.stringify(hm));
             if (!a.st.b[th.from] || isW(a.st.b[th.from]) === myPov(a.it)) out.push(what + ': the ring is not on a piece of theirs');
+            if (d.row2 !== 'See what ' + gameSan(a) + ' runs into.') out.push(what + ': a danger reads ' + d.row2);
           } else n.dropped++;
-          if (d.row2 !== 'See what ' + gameSan(a) + ' runs into.') out.push(what + ': a danger reads ' + d.row2);
-        } else {
-          if (sqs.length) out.push(what + ': marks with no capture or check to show ' + JSON.stringify(hm));
+        } else if (sqs.length) out.push(what + ': marks with no losing capture or check to show ' + JSON.stringify(hm));
+        if (!sqs.length) {
+          /* "runs into" only beside its marks; then H2 by family: a winning
+             position keeps it simple, a quiet one improves its worst
+             piece, safety and king say what the answer gets or keep it safe */
           if (/runs into/.test(d.row2)) out.push(what + ': says runs into with nothing drawn');
-          /* H2 by family: a winning position keeps it simple; a quiet one improves its worst piece */
           if (fam === 'conversion' && d.row2 !== 'Keep it simple and safe.') out.push(what + ': a winning position reads ' + d.row2);
           if (fam === 'quiet' && !/^(Find your worst piece and improve it|Improve your worst piece)\.$/.test(d.row2)) out.push(what + ': a quiet position reads ' + d.row2);
+          if (fam === 'safety' || fam === 'king') {
+            n.plain++;
+            var get = c.mateFor ? 'There is a checkmate here.' : null;
+            if (!(d.row2 === get || /^You can win .+ here\.$/.test(d.row2) && c.matBest >= 1 && !c.mateFor || d.row2 === 'Keep it simple and safe.' && !c.mateFor && !(c.matBest >= 1 && c.bestLine && !c.bestLine.unsettled))) out.push(what + ': a ' + fam + ' card with nothing drawn reads ' + d.row2);
+          }
         }
       };
       [1, 2, 3].forEach(function (tier) {
@@ -482,10 +509,10 @@ const OPEN = `function openCard(it) {
          not its line's first move has no prize; a prize square holding
          another piece now is not ringed; with no one phrase for what
          changed hands (three kinds of piece) only "material" or "a lot of
-         material" is said; a reply landing on the answer's square is never
-         named; a piece that came to its square during the line is not the
+         material" is said; a game move spelled like the answer drops "runs
+         into"; a piece that came to its square during the line is not the
          one standing there now */
-      var fx = { line: 0, swap: 0, word: 0, guard: 0 };
+      var fx = { line: 0, swap: 0, word: 0, mate: 0, fork: 0 };
       playerTier = function () { return 2; };
       allMistakes().filter(trainable).forEach(function (it) {
         var a = openCard(it);
@@ -510,17 +537,34 @@ const OPEN = `function openCard(it) {
           captureWord = function () { return 'material'; };
           try { fx.word++; hintText(a).cands.concat([displayFor(a).row2]).forEach(function (x) { prizeWord(at + ' (three kinds of piece)', a, x); }); } finally { captureWord = cw; }
         }
-        /* a form that would name the answer gives way to the fallback */
+        /* a form that would name the answer gives way to the fallback, its
+           family's own (a win claimed only where the line wins) */
         if (fam !== 'chances' && hintDanger(a)) {
-          var gs = gameSan, ans = sanOf(a.st, a.best);
+          var gs = gameSan, ans = sanOf(a.st, a.best), wins = c.matBest >= 1 && c.bestLine && !c.bestLine.unsettled;
           gameSan = function () { return ans; };
-          try { var hx = hintText(a); fx.named = (fx.named || 0) + 1; hx.cands.concat([hx.fall, hx.row2]).forEach(function (x) { if (words(x).indexOf(ans) >= 0) out.push(at + ': a hint names the answer: ' + x); }); } finally { gameSan = gs; }
+          try {
+            var hx = hintText(a); fx.named = (fx.named || 0) + 1;
+            hx.cands.concat([hx.fall, hx.row2]).forEach(function (x) { if (words(x).indexOf(ans) >= 0) out.push(at + ': a hint names the answer: ' + x); });
+            if (/^You can win/.test(hx.row2) && !wins) out.push(at + ': the fallback claims a win the line does not have: ' + hx.row2);
+          } finally { gameSan = gs; }
         }
-        var r1 = c.gameLine && c.gameLine.nodes[1];
-        if (fam !== 'chances' && r1 && r1.move) {
-          fx.guard++;
-          var said = allowedSaid(a, { from: -1, to: r1.move.to });
-          if (said.indexOf(sqName(r1.move.to)) >= 0 && said.indexOf('Before you capture') !== 0) out.push(at + ': names the reply landing on the answer square: ' + said);
+        /* a checkmate against you with no material lost is a danger too */
+        var th1 = threatOf(c.gameLine, 1);
+        if (fam !== 'chances' && th1 && a.pre.b[th1.from] && isW(a.pre.b[th1.from]) !== myPov(a.it)) {
+          var keepL = [c.lossG, c.mateAgainst];
+          c.lossG = 0; c.mateAgainst = 3;
+          try { fx.mate++; if (!hintDanger(a)) out.push(at + ': a reply leading to mate is no danger'); c.mateAgainst = null; if (hintDanger(a)) out.push(at + ': a reply that loses nothing is a danger'); } finally { c.lossG = keepL[0]; c.mateAgainst = keepL[1]; }
+        }
+        /* the fork form (reached only when the best line is missing) in plain words at tiers 1 and 2 */
+        if (fam === 'chances' && !c.mateFor) {
+          var keepF = [c.bestLine, c.missed];
+          c.bestLine = null; c.missed = { fork: { ply: 1 } };
+          try {
+            var fr = hintText(a);
+            fx.fork++;
+            if (fr.row2 !== 'One piece can hit two targets.' && fr.row2 !== 'You can win material here.') out.push(at + ': the fork form reads ' + fr.row2);
+            [1, 2].forEach(function (tr) { [fr.row2].concat(fr.cands).forEach(function (x) { var bad = unplain(x, tr); if (bad) out.push(at + ': "' + bad + '" at tier ' + tr + ': ' + x); }); });
+          } finally { c.bestLine = keepF[0]; c.missed = keepF[1]; }
         }
       });
       var st0 = stateFromFen('4k3/8/8/3n4/1n6/8/8/R3K3 w - - 0 1');
@@ -531,8 +575,8 @@ const OPEN = `function openCard(it) {
       if (!ctl || ctl.sq !== 25 || ctl.p !== 'n') out.push('the knight standing on b4 all along is not the prize: ' + JSON.stringify(ctl));
       n.doctored = fx;
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.doctored.line >= 5 && r.n.doctored.word >= 10 && r.n.doctored.guard >= 40 && r.n.doctored.named >= 20, JSON.stringify(r.n.doctored));
-    ok(r.n.frames > 600 && r.n.danger > 60 && r.n.dropped >= 10 && r.n.prize >= 10 && r.n.words >= 30 && r.n.mid > 30 && r.n.ring2 > 300, JSON.stringify(r.n));
+    ok(r.n.doctored.line >= 5 && r.n.doctored.word >= 10 && r.n.doctored.named >= 20 && r.n.doctored.mate >= 20 && r.n.doctored.fork >= 5, JSON.stringify(r.n.doctored));
+    ok(r.n.frames > 600 && r.n.danger > 60 && r.n.dropped >= 10 && r.n.harmless >= 6 && r.n.plain >= 40 && r.n.prize >= 10 && r.n.words >= 30 && r.n.mid > 30 && r.n.ring2 > 300 && r.n.plain2 > 4 * r.n.frames, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
@@ -579,7 +623,7 @@ const OPEN = `function openCard(it) {
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
-  await test('S1 to S8, S11 and the answered frame fit 26 / 40 / 60 characters and 15 words at every tier', () => {
+  await test('S1 to S8, S11 and the answered frame fit 26 / 40 / 60 characters and 15 words at every tier, in plain words', () => {
     const A = boot();
     /* the fit ladder's own steps: a row that fits stays as it is; a longer
        one falls to its first sentence; then to the fallback; and a fallback
@@ -601,7 +645,8 @@ const OPEN = `function openCard(it) {
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       /* the band's caps (FINAL-SPEC 3): row 1 26 characters, row 2 40 and 7
          words, a caption 60 and 8; the chip one short label */
-      var out = [], frames = 0, seen = {};
+      var out = [], frames = 0, seen = {}, plainSeen = 0;
+      ${PLAIN}
       var cap = function (what, s, ch, words) {
         s = String(s || '');
         if (s.length > ch || (s && s.split(/\\s+/).length > words) || /\u2014/.test(s)) out.push(what + ' (' + s.length + '): ' + s);
@@ -614,6 +659,12 @@ const OPEN = `function openCard(it) {
         frames++;
         seen[what] = (seen[what] || 0) + 1;
         cap(what + ', row 1', d.row1, 26, 99); cap(what + ', row 2', d.row2, 40, 7); cap(what + ', caption', d.cap, 60, 8); cap(what + ', chip', d.chip, 14, 3);
+        /* and in plain words, the explore panel aside (S14) */
+        if (!a.explore) [d.row1, d.row2, d.cap, d.chip, d.strip].concat(d.buttons.map(function (b) { return b.label; })).forEach(function (x) {
+          var bad = unplain(String(x || '').replace(/<[^>]*>/g, ' '), a.tier);
+          if (bad) out.push(what + ': "' + bad + '" on the card face at tier ' + a.tier + ': ' + x);
+          plainSeen++;
+        });
         if (!d.cap && !d.row1) out.push(what + ': no row 1');
         /* the strip counts too (its typed-move field is off screen until it
            has the keyboard): empty before an answer, Details once settled */
@@ -879,9 +930,9 @@ const OPEN = `function openCard(it) {
           }
         });
       });
-      return JSON.stringify({ out: out, frames: frames, seen: seen }); })()`));
-    ok(r.frames > 6000, 'frames ' + r.frames);
-    eq(r.out.length, 0, r.out.length + ' too long, first: ' + r.out.slice(0, 3).join(' | '));
+      return JSON.stringify({ out: out, frames: frames, seen: seen, plain: plainSeen }); })()`));
+    ok(r.frames > 6000 && r.plain > 6 * r.frames, 'frames ' + r.frames + ', strings read for plain words ' + r.plain);
+    eq(r.out.length, 0, r.out.length + ' too long or not plain, first: ' + r.out.slice(0, 3).join(' | '));
     ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss outside a line', 'a miss with a reply', 'game move again, its reason', 'a miss that loses nothing, in a line', 'shown, N1',
      'shown, played', 'mid-line shown, settled', 'found, settled', 'works too, settled', 'line found, settled', 'story step', 'story step, N1',
      'the automatic hint after Try again', 'Hint pressed over a try', 'Hint pressed over a try, T4', ', hint 2, T4', 'move 2, hint 1'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
@@ -988,9 +1039,10 @@ const OPEN = `function openCard(it) {
     eq(r.out.length, 0, r.out.length + ' untrue material words, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
-  await test('honest captions (U2): every story caption says only what the ply shown does, true on its own board; a material word is the line\'s own captures, "material", or "a lot of material" worth 6 or more', () => {
+  await test('honest captions (U2): every story caption says only what the ply shown does, true on its own board; a material word is the line\'s own captures, "material", or "a lot of material" worth 6 or more; in plain words', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      ${PLAIN}
       var out = [], n = { caps: 0, sent: 0, forms: {} };
       var PW = { pawn: 'P', knight: 'N', bishop: 'B', rook: 'R', queen: 'Q', king: 'K' };
       var bare = function (s) { return s.replace(/[+#]$/, ''); };
@@ -1012,6 +1064,9 @@ const OPEN = `function openCard(it) {
         var mine = function (sq, t) { var p = nd.after.b[sq]; return !!p && isW(p) === pov && (!t || pType(p) === t); };
         var fail = function (x) { out.push(what + ' step ' + i + ' "' + cap + '": ' + x); };
         n.caps++;
+        /* in plain words at this tier */
+        var unpl = unplain(cap, a.tier);
+        if (unpl) fail('"' + unpl + '" on the card face');
         /* the ply it names: the game move, the better move, or this step's own */
         var sents = cap.match(/[^.]+\\./g) || [cap];
         var head = sents[0];
