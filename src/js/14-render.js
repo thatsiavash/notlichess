@@ -512,7 +512,6 @@ function boardOptsFor(a) {
     if (a.phase === 'guess' && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
     opts.shapes = a.shapes;
     if (a.phase === 'guess' && a.solIdx === 0 && !a.explore) opts.bad = [a.played.from, a.played.to];
-    if (a.hints >= 2 && a.phase === 'guess') opts.hint = (a.sol && a.solIdx > 0 ? uciToMove(a.st, a.sol[a.solIdx]) || a.best : a.best).from;
     /* your move slides as you make it; their reply, once See it plays it,
        slides as a move the app shows */
     if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.phase === 'tried' && a.tried.seen ? 320 : 220; }
@@ -559,6 +558,13 @@ function boardOptsFor(a) {
        once the crossfade back has ended (clearTry) */
     var tm = a.phase === 'guess' && !a.triedHold ? triedMark(a) : null;
     if (tm) { opts.tried = [tm]; opts.fx = tm.fx; }
+    /* a hint's marks (S8), while the card asks; after Try again they land
+       with the tried line, once the crossfade is over */
+    if (a.phase === 'guess' && !a.triedHold) {
+      var hm = hintMarks(a);
+      if (hm.rings.length) opts.rings = (opts.rings || []).concat(hm.rings);
+      if (hm.arrows.length) opts.arrows = (opts.arrows || []).concat(hm.arrows);
+    }
   }
   /* "not a move here": the grey outline on a square just tapped */
   if (a.nope && a.nope.key === cardStateKey(a)) opts.rings = (opts.rings || []).concat([{ sq: a.nope.sq, kind: 'nope' }]);

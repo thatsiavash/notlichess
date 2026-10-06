@@ -374,22 +374,212 @@ const OPEN = `function openCard(it) {
     eq(r.out.length, 0, 'leaks: ' + r.out.slice(0, 2).join(' | '));
   });
 
-  await test('hints never name the answer on a missed-chance card', () => {
+  await test('hints never name the answer, in words or marks: every card and tier, hints 1 and 2, on the card and inside a forcing line; a prize ringed is a piece the line wins', () => {
     const A = boot();
-    const bad = JSON.parse(A.ev(`(function () { ${OPEN}
-      var out = [];
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = { frames: 0, danger: 0, dropped: 0, prize: 0, prizeDropped: 0, words: 0, mid: 0, ring2: 0 };
+      var same = function (x, y) { return JSON.stringify(x) === JSON.stringify(y); };
+      var words = function (s) { return String(s || '').split(/[\\s.,:]+/); };
+      /* "You can win X here.": X is the line's own captures, or the two
+         words that claim no piece ("a lot of material" worth 6 or more) */
+      var prizeWord = function (what, a, s) {
+        var m = /^You can win (.+) here\\.$/.exec(s), c = a.cls;
+        if (!m) return;
+        n.words++;
+        var own = plainCapture(c.bestLine, c.bSettle);
+        if (m[1] === own || m[1] === 'material' || (m[1] === 'a lot of material' && Math.abs(c.matBest) >= 6)) return;
+        out.push(what + ': "' + s + '" where the line took ' + (own || 'no one phrase') + ' (net ' + c.matBest + ')');
+      };
+      var frame = function (what, a) {
+        n.frames++;
+        var due = dueMove(a), dueSan = sanOf(a.st, due), d = displayFor(a), h = hintText(a), hm = hintMarks(a), f = boardOptsFor(a);
+        if (h.row1 !== d.row1) out.push(what + ': the band reads ' + d.row1 + ', the hint ' + h.row1);
+        if (!same(h.marks, hm)) out.push(what + ': hintText draws other marks than hintMarks');
+        if (words(d.row1).concat(words(d.row2)).indexOf(dueSan) >= 0) out.push(what + ' names the answer: ' + d.row1 + ' / ' + d.row2);
+        /* nor the answer's square, inside any move it names but the game move (whose red arrow is on the card) */
+        [d.row2].concat(h.cands, [h.fall]).forEach(function (x) {
+          if (words(x).indexOf(dueSan) >= 0) out.push(what + ' has a form naming the answer: ' + x);
+          if (String(x).split(gameSan(a)).join(' ').indexOf(sqName(due.to)) >= 0) out.push(what + ' names the answer square: ' + x);
+        });
+        /* the board draws exactly these marks */
+        var rings = (f.opts.rings || []).filter(function (m) { return m.kind !== 'nope'; }), arrows = (f.opts.arrows || []);
+        if (!same(rings, hm.rings) || !same(arrows, hm.arrows) || f.opts.hint != null) out.push(what + ': the board draws ' + JSON.stringify([rings, arrows, f.opts.hint]) + ' for ' + JSON.stringify([hm.rings, hm.arrows]));
+        var sqs = [];
+        hm.rings.forEach(function (m) { sqs.push(m.sq); });
+        hm.arrows.forEach(function (m) { sqs.push(m.from, m.to); });
+        if (a.hints >= 2) {
+          n.ring2++;
+          if (!same(hm.rings, [{ sq: due.from, kind: 'hint' }]) || hm.arrows.length) out.push(what + ': hint 2 draws ' + JSON.stringify(hm));
+          if (d.row1 !== 'Hint 2 of 2' || d.row2 !== 'Move the circled piece.') out.push(what + ': hint 2 reads ' + d.row1 + ' / ' + d.row2);
+          return;
+        }
+        if (d.row1 !== 'Hint 1 of 2') out.push(what + ': hint 1 reads ' + d.row1);
+        /* hint 1 never touches the answer's squares, both arrow ends */
+        if (sqs.indexOf(due.from) >= 0 || sqs.indexOf(due.to) >= 0) out.push(what + ': hint 1 marks the answer ' + JSON.stringify(hm));
+        if (a.sol && a.solIdx > 0) {
+          n.mid++;
+          var mine = checkersOf(a.st).length > 0 && !!a.st.w === myPov(a.it);
+          if (sqs.length) out.push(what + ': an in-line hint 1 draws ' + JSON.stringify(hm));
+          if (d.row2 !== (mine ? 'Your king is in check.' : 'The next move is forcing too.')) out.push(what + ': an in-line hint 1 reads ' + d.row2);
+          return;
+        }
+        var fam = familyOf(patternOf(a.it.b)).key, c = a.cls, th = threatOf(c.gameLine, 1);
+        if (fam === 'chances') {
+          prizeWord(what, a, d.row2); h.cands.forEach(function (x) { prizeWord(what + ' (ladder)', a, x); });
+          if (hm.arrows.length || hm.rings.some(function (m) { return m.kind !== 'target'; }) || hm.rings.length > 1) out.push(what + ': a missed chance draws ' + JSON.stringify(hm));
+          var pz = hintPrize(a);
+          if (pz && (pz.sq === due.to || pz.sq === due.from)) n.prizeDropped++;
+          if (!hm.rings.length) return;
+          n.prize++;
+          /* truth: the piece ringed stands there now, is theirs, and the
+             stored line (starting with the answer, winning material) takes
+             it on that square before it settles, nothing having moved there */
+          var sq = hm.rings[0].sq, p = a.st.b[sq], line = c.bestLine, took = false, touched = false;
+          if (!p || isW(p) === myPov(a.it) || pType(p) === 'K') out.push(what + ': the prize ring is on ' + (p || 'an empty square'));
+          if (!(c.matBest >= 1) || line.unsettled || moveUci(line.nodes[1].move) !== a.bestUci) out.push(what + ': a prize on a line that wins nothing');
+          for (var k = 1; k <= c.bSettle && k < line.nodes.length && !took; k++) {
+            var nd = line.nodes[k], at = nd.move.ep >= 0 ? nd.move.ep : nd.move.to;
+            if (at === sq && nd.pov && nd.captured === p && !touched) took = true;
+            if (nd.move.from === sq || nd.move.to === sq) touched = true;
+          }
+          if (!took) out.push(what + ': the line never wins the ' + p + ' on ' + sqName(sq));
+          return;
+        }
+        if (th && (sqs.length || [th.from, th.to].some(function (q) { return q === due.from || q === due.to; }))) {
+          if (sqs.length) {
+            n.danger++;
+            if (!same(hm.rings, [{ sq: th.from, kind: 'threat' }]) || hm.arrows.length !== 1 || hm.arrows[0].from !== th.from || hm.arrows[0].to !== th.to || hm.arrows[0].kind !== 'threat') out.push(what + ': the danger drawn is not the game reply ' + th.san + ': ' + JSON.stringify(hm));
+            if (!a.st.b[th.from] || isW(a.st.b[th.from]) === myPov(a.it)) out.push(what + ': the ring is not on a piece of theirs');
+          } else n.dropped++;
+          if (d.row2 !== 'See what ' + gameSan(a) + ' runs into.') out.push(what + ': a danger reads ' + d.row2);
+        } else {
+          if (sqs.length) out.push(what + ': marks with no capture or check to show ' + JSON.stringify(hm));
+          if (/runs into/.test(d.row2)) out.push(what + ': says runs into with nothing drawn');
+          /* H2 by family: a winning position keeps it simple; a quiet one improves its worst piece */
+          if (fam === 'conversion' && d.row2 !== 'Keep it simple and safe.') out.push(what + ': a winning position reads ' + d.row2);
+          if (fam === 'quiet' && !/^(Find your worst piece and improve it|Improve your worst piece)\.$/.test(d.row2)) out.push(what + ': a quiet position reads ' + d.row2);
+        }
+      };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var at = 'tier ' + tier + ' ' + it.key;
+          [1, 2].forEach(function (h) {
+            var a = openCard(it);
+            if (!a) return;
+            a.hints = h; a.hintAfter = true; frame(at + ' hint ' + h, a);
+            /* inside a forcing line, at each of your moves after the first */
+            for (var i = 2; a.sol && i < a.sol.length; i += 2) {
+              a = openCard(it);
+              for (var j = 0; j < i; j++) { var m = uciToMove(a.st, a.sol[j]); applyMove(a.st, m); a.lastMove = [m.from, m.to]; }
+              a.solIdx = i; a.hints = h; a.hintAfter = true;
+              frame(at + ' move ' + (i / 2 + 1) + ' hint ' + h, a);
+            }
+          });
+        });
+      });
+      /* what the fixture never reaches, doctored: a card whose answer is
+         not its line's first move has no prize; a prize square holding
+         another piece now is not ringed; with no one phrase for what
+         changed hands (three kinds of piece) only "material" or "a lot of
+         material" is said; a reply landing on the answer's square is never
+         named; a piece that came to its square during the line is not the
+         one standing there now */
+      var fx = { line: 0, swap: 0, word: 0, guard: 0 };
+      playerTier = function () { return 2; };
       allMistakes().filter(trainable).forEach(function (it) {
-        if (familyOf(patternOf(it.b)).key !== 'chances') return;
         var a = openCard(it);
         if (!a) return;
-        var best = sanOf(a.pre, a.best), h1 = hintText(a);
-        if (h1.indexOf(best) !== -1) out.push(it.key + ': ' + h1);
+        a.hints = 1;
+        var at = 'doctored ' + it.key, fam = familyOf(patternOf(it.b)).key, pz = hintPrize(a), c = a.cls;
+        if (fam === 'chances' && pz) {
+          var keep = [a.best, a.bestUci], other = legalMoves(a.st).filter(function (m) { return moveUci(m) !== a.bestUci; })[0];
+          a.best = other; a.bestUci = moveUci(other);
+          fx.line++;
+          if (hintPrize(a)) out.push(at + ': a prize on a line that does not start with the answer');
+          a.best = keep[0]; a.bestUci = keep[1];
+          var was = a.pre.b[pz.sq], alt = pType(was) === 'P' ? (isW(was) ? 'N' : 'n') : (isW(was) ? 'P' : 'p');
+          a.pre.b[pz.sq] = a.st.b[pz.sq] = alt;
+          fx.swap++;
+          var pz2 = hintPrize(a);
+          if (pz2 && pz2.sq === pz.sq) out.push(at + ': the prize ring stays on ' + sqName(pz.sq) + ' over another piece');
+          a.pre.b[pz.sq] = a.st.b[pz.sq] = was;
+        }
+        if (fam === 'chances' && c.matBest >= 1 && !c.mateFor && c.bestLine && !c.bestLine.unsettled) {
+          var cw = captureWord;
+          captureWord = function () { return 'material'; };
+          try { fx.word++; hintText(a).cands.concat([displayFor(a).row2]).forEach(function (x) { prizeWord(at + ' (three kinds of piece)', a, x); }); } finally { captureWord = cw; }
+        }
+        /* a form that would name the answer gives way to the fallback */
+        if (fam !== 'chances' && hintDanger(a)) {
+          var gs = gameSan, ans = sanOf(a.st, a.best);
+          gameSan = function () { return ans; };
+          try { var hx = hintText(a); fx.named = (fx.named || 0) + 1; hx.cands.concat([hx.fall, hx.row2]).forEach(function (x) { if (words(x).indexOf(ans) >= 0) out.push(at + ': a hint names the answer: ' + x); }); } finally { gameSan = gs; }
+        }
+        var r1 = c.gameLine && c.gameLine.nodes[1];
+        if (fam !== 'chances' && r1 && r1.move) {
+          fx.guard++;
+          var said = allowedSaid(a, { from: -1, to: r1.move.to });
+          if (said.indexOf(sqName(r1.move.to)) >= 0 && said.indexOf('Before you capture') !== 0) out.push(at + ': names the reply landing on the answer square: ' + said);
+        }
       });
-      return JSON.stringify(out); })()`));
-    eq(bad.length, 0, 'leaks: ' + bad.slice(0, 2).join(' | '));
+      var st0 = stateFromFen('4k3/8/8/3n4/1n6/8/8/R3K3 w - - 0 1');
+      var fake = { cls: { bestLine: buildLine(st0, '0000', ['a1a2', 'b4c6', 'a2b2', 'd5b4', 'b2b4'], true), bSettle: 5, matBest: 3, mateFor: 0 }, best: uciToMove(st0, 'a1a2'), pre: st0 };
+      if (hintPrize(fake)) out.push('a knight that came to b4 during the line is ringed as the one standing there: ' + JSON.stringify(hintPrize(fake)));
+      fake.cls.bestLine = buildLine(st0, '0000', ['a1a2', 'e8d8', 'a2b2', 'd8e8', 'b2b4'], true);
+      var ctl = hintPrize(fake);
+      if (!ctl || ctl.sq !== 25 || ctl.p !== 'n') out.push('the knight standing on b4 all along is not the prize: ' + JSON.stringify(ctl));
+      n.doctored = fx;
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.doctored.line >= 5 && r.n.doctored.word >= 10 && r.n.doctored.guard >= 40 && r.n.doctored.named >= 20, JSON.stringify(r.n.doctored));
+    ok(r.n.frames > 600 && r.n.danger > 60 && r.n.dropped >= 10 && r.n.prize >= 10 && r.n.words >= 30 && r.n.mid > 30 && r.n.ring2 > 300, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
-  await test('S1 to S5, S11 and the answered frame fit 26 / 40 / 60 characters and 15 words at every tier', () => {
+  await test('U3: an in-line hint says "Your king is in check." only when the solver\'s own king is in check, on the position the card asks from', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = { mine: 0, free: 0, theirs: 0 };
+      [2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var a = openCard(it);
+          if (!a || !a.sol) return;
+          for (var i = 0; i < a.sol.length; i++) {
+            var m = uciToMove(a.st, a.sol[i]);
+            applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.solIdx = i + 1;
+            var at = 'tier ' + tier + ' ' + it.key + ' after ' + a.sol.slice(0, i + 1).join(' ');
+            var checked = checkersOf(a.st).length > 0;
+            a.hints = 1; a.hintAfter = true;
+            if (i % 2 === 0) {
+              /* your move just made, their reply to come (phase reply): their
+                 king in check is never yours */
+              if (checked) n.theirs++;
+              a.phase = 'reply';
+              if (/king is in check/.test(hintText(a).row2)) out.push(at + ' (reply): ' + hintText(a).row2);
+              a.phase = 'guess';
+              continue;
+            }
+            /* your move again (phase guess): the band says it exactly when
+               your king is attacked; while a move is checked (before K1) it
+               keeps saying it, after K1 the band speaks of the check */
+            checked ? n.mine++ : n.free++;
+            var d = displayFor(a), want = checked ? 'Your king is in check.' : 'The next move is forcing too.';
+            if (d.row1 !== 'Hint 1 of 2' || d.row2 !== want) out.push(at + ': ' + d.row1 + ' / ' + d.row2 + ', want ' + want);
+            a.phase = 'checking'; a.checkSaid = 0;
+            if (displayFor(a).row2 !== want) out.push(at + ' (checking, before K1): ' + displayFor(a).row2);
+            a.checkSaid = 1;
+            if (/king is in check/.test(hintText(a).row2)) out.push(at + ' (checking, after K1): ' + hintText(a).row2);
+            a.phase = 'guess'; a.checkSaid = 0;
+          }
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.mine >= 8 && r.n.free >= 20 && r.n.theirs >= 7, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
+  });
+
+  await test('S1 to S8, S11 and the answered frame fit 26 / 40 / 60 characters and 15 words at every tier', () => {
     const A = boot();
     /* the fit ladder's own steps: a row that fits stays as it is; a longer
        one falls to its first sentence; then to the fallback; and a fallback
@@ -571,9 +761,26 @@ const OPEN = `function openCard(it) {
             }
           }
           a = openCard(it);
-          /* and, until their slices give them their own words, the hints
-             and a try being checked stay in the caps */
-          a.hints = 1; band(at + ' hint 1', a); a.hints = 2; band(at + ' hint 2', a); a.hints = 0;
+          /* the hints (S8): hint 1 and hint 2 on the card, the automatic one
+             after Try again, one pressed over the try, and at each later
+             move of a forcing line; T4 beside each */
+          var hintBand = function (what, a) {
+            d = band(what, a);
+            if (d.kind !== 'hint' || !/^Hint [12] of 2$/.test(d.row1) || !d.row2) out.push(what + ' reads ' + d.kind + ': ' + d.row1 + ' / ' + d.row2);
+            band(what + ', T4', note(a, 'T4')); a.note = null;
+          };
+          a.hints = 1; hintBand(at + ' hint 1', a); a.hints = 2; hintBand(at + ' hint 2', a);
+          a = openCard(it); a.misses = 1; gradeMove(uciToMove(a.st, a.playedUci));
+          if (a.phase === 'tried') { tryAgain(); if (a.hints) hintBand(at + ' the automatic hint after Try again', a); }
+          a = openCard(it); gradeMove(uciToMove(a.st, a.playedUci));
+          if (a.phase === 'tried') { giveHint(); hintBand(at + ' Hint pressed over a try', a); }
+          for (var hi = 2; a.sol && hi < a.sol.length; hi += 2) {
+            a = openCard(it);
+            for (var hj = 0; hj < hi; hj++) { var hm = uciToMove(a.st, a.sol[hj]); applyMove(a.st, hm); a.lastMove = [hm.from, hm.to]; }
+            a.solIdx = hi; a.hintAfter = true;
+            a.hints = 1; hintBand(at + ' move ' + (hi / 2 + 1) + ', hint 1', a); a.hints = 2; hintBand(at + ' move ' + (hi / 2 + 1) + ', hint 2', a);
+          }
+          a = openCard(it);
           /* the game move again: M2, then its reason (M3 from the card's own
              refutation, or on a missed-chance card that there is more) */
           gradeMove(uciToMove(a.st, a.playedUci)); d = band(at + ' game move again', a);
@@ -676,7 +883,8 @@ const OPEN = `function openCard(it) {
     ok(r.frames > 6000, 'frames ' + r.frames);
     eq(r.out.length, 0, r.out.length + ' too long, first: ' + r.out.slice(0, 3).join(' | '));
     ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss outside a line', 'a miss with a reply', 'game move again, its reason', 'a miss that loses nothing, in a line', 'shown, N1',
-     'shown, played', 'mid-line shown, settled', 'found, settled', 'works too, settled', 'line found, settled', 'story step', 'story step, N1'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
+     'shown, played', 'mid-line shown, settled', 'found, settled', 'works too, settled', 'line found, settled', 'story step', 'story step, N1',
+     'the automatic hint after Try again', 'Hint pressed over a try', 'Hint pressed over a try, T4', ', hint 2, T4', 'move 2, hint 1'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
   });
 
   await test('R4 never uses the found form when lines.game.uci[1] !== ru[0]', () => {

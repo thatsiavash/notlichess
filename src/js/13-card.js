@@ -511,10 +511,17 @@ function clearTry(a) {
   a.sel = -1;
   /* back to another position: the board crossfades (2.2) */
   a.jump = true;
-  /* the wrong move just taken back stays as a faint line (S4), drawn once
-     the crossfade is over: the board, then that mark, then the words */
-  a.triedHold = !!triedMark(a) && !reducedMotion();
-  if (a.triedHold) stageAt(XFADE, function (a2) { if (a2.triedHold) { a2.triedHold = false; stage(['marks']); } });
+  holdMarks(a);
+}
+/* back on the card's position after a crossfade: the wrong move just taken
+   back stays as a faint line (S4), and a hint (one drawn before, or the
+   automatic one this miss brought, or one pressed over the try) shows its
+   marks; both are drawn once the crossfade is over: the board, then those
+   marks, then the words. Run again once a hint is added */
+function holdMarks(a) {
+  var hm = hintMarks(a), hold = (!!triedMark(a) || hm.rings.length + hm.arrows.length > 0) && !reducedMotion();
+  if (hold && !a.triedHold) stageAt(XFADE, function (a2) { if (a2.triedHold) { a2.triedHold = false; stage(['marks']); } });
+  a.triedHold = hold;
 }
 /* Take back (S3): the move being checked leaves the board, ungraded. The
    search stops and its answer is ignored (a new token), the attempt is
@@ -905,50 +912,69 @@ function giveHint() {
   a.hints = a.hints + 1;
   a.hintAfter = true;
   keepProgress(a);
+  if (cleared) holdMarks(a);
   /* from the card itself only its marks change: they are drawn, then the
      words 150 ms later, never in the same frame (principles 1 and 2) */
   renderCard(cleared ? null : MARKS_THEN_WORDS);
 }
-function hintText(a) {
-  var t = patternOf(a.it.b), info = patternInfo(t), fam = familyOf(t), c = a.cls;
-  /* inside a forcing line the hint is about this step, not the whole card */
-  if (a.sol && a.solIdx > 0) {
-    return checkedKingSq(a.st) != null ? 'You are in check. Find the square where your king is safe.'
-      : 'Keep going: the next move is forcing too. Look at every check and capture.';
+/* the marks a hint draws (FINAL-SPEC S8, 2.1), from the card's hint state,
+   on the position the card asks from: hint 2 is the gold ring on the piece
+   to move (the answer due now, so inside a forcing line the step's own
+   piece); hint 1 on the card's first move is, on a missed-chance card, a
+   dashed gold ring on the prize (hintPrize), else the danger the game move
+   ran into (hintDanger): the piece that punishes it ringed, a dashed arrow
+   to what it takes or checks. Inside a forcing line hint 1 is words only.
+   A hint-1 mark never touches the answer's from- or to-square (2.3, both
+   arrow ends): such a mark is dropped and hint 1 is words only. The two
+   hints never share a frame, so "the circled piece" is always one piece.
+   {rings, arrows, prize, danger}; drawn only while the card asks (guess) */
+function hintMarks(a) {
+  var out = { rings: [], arrows: [], prize: null, danger: null };
+  if (!a || !(a.hints >= 1)) return out;
+  var due = dueMove(a);
+  if (a.hints >= 2) { out.rings.push({ sq: due.from, kind: 'hint' }); return out; }
+  if (a.sol && a.solIdx > 0) return out;
+  var off = function (sqs) { return sqs.every(function (q) { return q !== due.from && q !== due.to; }); };
+  if (familyOf(patternOf(a.it.b)).key === 'chances') {
+    var pz = hintPrize(a);
+    if (pz && off([pz.sq])) { out.prize = pz; out.rings.push({ sq: pz.sq, kind: 'target' }); }
+    return out;
   }
-  if (fam.key === 'chances') {
-    var mt = c.missed;
-    if (c.mateFor) return 'There is a forced mate. Look at every check.';
-    /* the first hint names the prize, never the move */
-    var prize = c.bestLine && !c.bestLine.unsettled ? (captureWord(c.bestLine, c.bSettle) || materialWord(c.matBest)) : '';
-    if (a.hints < 2 && prize && c.matBest >= 1) return fitLine(['You can win ' + prize + ' here. Look at every check and capture.', 'You can win ' + prize + ' here.']);
-    if (mt.fork && c.matBest >= 2) return mt.fork.ply === 1 ? 'There is a fork: one of your pieces can hit two targets.' : 'Your first move sets up a fork.';
-    if (mt.pin && mt.pin.ply === 1 && mt.pin.piece !== 'P') return 'Look along the lines: something can be pinned.';
-    if (t === 'missedMaterial') return 'Something of theirs is undefended. Can you take it?';
-    return 'Look for checks, captures and threats: yours first.';
+  var th = hintDanger(a);
+  if (th && off([th.from, th.to])) {
+    out.danger = th;
+    out.rings.push({ sq: th.from, kind: 'threat' });
+    out.arrows.push({ from: th.from, to: th.to, kind: 'threat', key: 'hint' });
   }
-  if (fam.key === 'conversion') return 'You are winning. Find the move that keeps it simple and safe.';
-  var g = c.gameLine, n0 = g && g.nodes[0], r1 = g && g.nodes[1];
-  if (!r1) return info.habit;
-  /* a capture answered by a recapture on the same square: count first */
-  if (n0.captured && r1.captured && r1.move.to === n0.move.to && !c.mateAgainst)
-    return 'Before you capture on ' + sqName(n0.move.to) + ', count who defends it.';
-  /* name the move the tactic turns on, else the first capture or check */
-  var motif = { forkAllowed: c.allowed.fork, pinAllowed: c.allowed.pin, discoveredAllowed: c.allowed.discoveredAttack,
-                promotion: c.allowed.promotion }[t];
-  var k = motif && motif.ply >= 1 ? motif.ply - (motif.ply % 2 === 0 ? 1 : 0) : 0;
-  if (!k && fam.key !== 'quiet') {
-    for (var i = 1; i < g.nodes.length && i <= Math.max(1, c.gSettle); i += 2) {
-      var n = g.nodes[i];
-      if (n.captured || checkersOf(n.after).length) { k = i; break; }
-    }
+  return out;
+}
+/* hint 1's danger: the game line's first reply after the game move, when it
+   captures or checks (threatOf), drawn on the card's position, where its
+   piece already stands */
+function hintDanger(a) {
+  var th = a.cls && threatOf(a.cls.gameLine, 1);
+  return th && a.pre.b[th.from] && isW(a.pre.b[th.from]) !== myPov(a.it) ? th : null;
+}
+/* hint 1's prize on a missed-chance card: the most valuable piece of theirs
+   the stored best line takes before it settles, still standing on its
+   square in the card's position (no move of the line has touched that
+   square before the capture), on a line that starts with the card's answer
+   and wins material overall. {sq, p}; null when there is none */
+function hintPrize(a) {
+  var c = a.cls, line = c && c.bestLine, n1 = line && line.nodes[1];
+  if (!n1 || !n1.move || line.unsettled || c.mateFor || !(c.matBest >= 1)) return null;
+  if (n1.move.from !== a.best.from || n1.move.to !== a.best.to) return null;
+  var best = null, touched = {};
+  for (var k = 1; k <= c.bSettle && k < line.nodes.length; k++) {
+    var n = line.nodes[k];
+    if (!n.move) break;
+    var sq = n.move.ep >= 0 ? n.move.ep : n.move.to;
+    if (n.pov && n.captured && !touched[sq] && a.pre.b[sq] === n.captured && (!best || MOTIF_VAL[pType(n.captured)] > MOTIF_VAL[pType(best.p)]))
+      best = { sq: sq, p: n.captured };
+    touched[n.move.from] = touched[n.move.to] = 1;
+    if (n.move.ep >= 0) touched[n.move.ep] = 1;
   }
-  var key = (k && g.nodes[k]) || r1, word = { forkAllowed: ', a fork', pinAllowed: ', a pin', discoveredAllowed: ', a discovered attack' }[t] || '';
-  var said = 'Your move allowed ' + sanOf(r1.before, r1.move) + (key !== r1 ? ', then ' + sanOf(key.before, key.move) : '') + word + '.';
-  /* a reply on the answer's own square would give the answer away */
-  var ans = a.best, hit = function (n) { return ans && n && n.move && n.move.to === ans.to; };
-  if (hit(r1) || hit(key)) said = 'Your move allowed a strong reply' + word + '.';
-  return fitLine([said + ' Find a move that stops it.', said]);
+  return best;
 }
 function finishCard(result, beats) {
   var ss = ui.session, a = ss.active;

@@ -364,6 +364,13 @@
         const tier = T.ev('ui.session.active.tier'), c2b = T.card();
         ok('tier 2: hint 1 is on after the second Try again', tier === 3 ? c2b.hints === 0 : c2b.hints >= 1 && /^Hint 1 of 2/.test(text('#cband .bd-r1')), 'tier ' + tier + ', hints ' + c2b.hints + ', ' + text('#cband'));
         bandFits('a hint');
+        /* the hint draws what hintMarks says (a ring and dashed arrow for a danger, a dashed gold ring for a
+           prize, or nothing), never on the answer's squares */
+        const hm = JSON.parse(T.ev('JSON.stringify(hintMarks(ui.session.active))'));
+        const n = (s) => document.querySelectorAll('#bwrap .marks ' + s).length;
+        const bsq = [sqOf(c.best.slice(0, 2)), sqOf(c.best.slice(2, 4))];
+        ok('the hint draws its marks on the board, off the answer\'s squares', n('.ring-threat') === (hm.danger ? 1 : 0) && n('.threat-arrow') === (hm.danger ? 1 : 0) && n('.ring-target') === (hm.prize ? 1 : 0)
+          && !hm.rings.filter((m) => m.kind !== 'hint').concat(hm.arrows).some((m) => [m.sq, m.from, m.to].some((q) => bsq.indexOf(q) !== -1)), JSON.stringify(hm) + ' drawn ' + [n('.ring-threat'), n('.threat-arrow'), n('.ring-target')].join(','));
         const more = legalOther(c).filter((u) => tried.indexOf(u) === -1);
         let c3 = null;
         for (let mi = 0; mi < Math.min(4, more.length) && !c3; mi++) {

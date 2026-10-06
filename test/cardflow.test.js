@@ -165,7 +165,7 @@ const DOM = `(function () {
   var log = window.__writes = [], els = window.__els = {};
   var kind = { bwrap: 'board', ebar: 'board', 'ebar-fill': 'board', marks: 'marks', trainbox: 'frame' };
   var FLAG = { tried: /class="tried"/, xfade: /class="xfade"/, ring: /class="ring-threat"/, arrow: /class="threat-arrow"/, token: /token-lost/, slide: /anim-piece/,
-    ghost: /:s0"/, tick: /badge-good/, info: /badge-info/, green: /good-arrow/, won: /token-won/, red: /bad-arrow/, guard: /guard-line/, faded: /ghost-piece/ };
+    target: /class="ring-target"/, hint: /class="hint-ring"/, ghost: /:s0"/, tick: /badge-good/, info: /badge-info/, green: /good-arrow/, won: /token-won/, red: /bad-arrow/, guard: /guard-line/, faded: /ghost-piece/ };
   var kept = function (id, x) {
     if (id === 'cband' || id === 'cbar') return x;
     if (id === 'bwrap' || id === 'marks') return Object.keys(FLAG).filter(function (k) { return FLAG[k].test(x); }).join(' ');
@@ -267,10 +267,10 @@ const BAR = `(function () {
   return 1; })()`;
 
 (async () => {
-  await test('the spoiler rule holds on every card before an answer, tiers 1 to 3 (open, hints 0 to 2, after a miss)', async () => {
+  await test('the spoiler rule holds on every card before an answer, tiers 1 to 3 (open, hints 0 to 2, inside a forcing line, after a miss, a hint pressed over a try)', async () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${SPOILER} ${AFTER}
-      var out = [], cards = 0, frames = 0, its = allMistakes().filter(trainable);
+      var out = [], cards = 0, frames = 0, hinted = 0, its = allMistakes().filter(trainable);
       [1, 2, 3].forEach(function (tier) {
         playerTier = function () { return tier; };
         its.forEach(function (it) {
@@ -281,8 +281,25 @@ const BAR = `(function () {
             frames++;
             if (fault) out.push('tier ' + tier + ' ' + it.key + ' ' + what);
             else spoilerFaults(a).forEach(function (x) { out.push('tier ' + tier + ' ' + it.key + ' ' + what + ': ' + x); });
+            /* a hint's marks on their own, as the card asking would draw
+               them, whatever the phase (2.3's hint rule in tried too) */
+            if (a.hints >= 1 && a.phase !== 'reply' && a.phase !== 'done') {
+              var hm = hintMarks(a), g = Object.create(a);
+              g.phase = 'guess';
+              if (hm.rings.length || hm.arrows.length) hinted++;
+              spoilerFaults(g, { st: a.st, opts: { rings: hm.rings, arrows: hm.arrows }, pending: true }).forEach(function (x) { out.push('tier ' + tier + ' ' + it.key + ' ' + what + ', its hint marks: ' + x); });
+            }
           };
           [0, 1, 2].forEach(function (h) { a.hints = h; check('hints ' + h); });
+          /* inside a forcing line: each of your later moves, hint 1 and hint
+             2 pressed there, and hint 2 kept from an earlier move */
+          for (var i = 2; a.sol && i < a.sol.length; i += 2) {
+            a = openCard(it);
+            for (var j = 0; j < i; j++) { var lm = uciToMove(a.st, a.sol[j]); applyMove(a.st, lm); a.lastMove = [lm.from, lm.to]; }
+            a.solIdx = i;
+            [1, 2].forEach(function (h) { a.hints = h; a.hintAfter = true; check('move ' + (i / 2 + 1) + ', hint ' + h); });
+            a.hintAfter = false; check('move ' + (i / 2 + 1) + ', hint 2 kept');
+          }
           /* the game move again, tapped: it stays on the board */
           a = openCard(it);
           a.tapped = true;
@@ -290,6 +307,17 @@ const BAR = `(function () {
           check('game move again, sliding');
           a.animMove = null;
           afterMiss(a, check, 'game move again');
+          /* twice more: the automatic hint after Try again (tier 1 from
+             miss 1, tier 2 from miss 2), then Hint pressed over the try
+             (the board crossfading back, then its marks), twice */
+          gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
+          afterMiss(a, check, 'game move again, miss 2');
+          for (var hp = 0; hp < 2; hp++) {
+            gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
+            if (a.phase !== 'tried') { check('game move again, not on the board but ' + a.phase, true); break; }
+            giveHint(); check('Hint pressed over the try ' + (hp + 1) + ', crossfading');
+            a.triedHold = false; check('Hint pressed over the try ' + (hp + 1));
+          }
           /* a good move that is not the best, a move not checked, and the
              outline of a tap on their piece (S2, S5, S11) */
           var off = offBook(a = openCard(it));
@@ -301,9 +329,10 @@ const BAR = `(function () {
           for (var q = 0; q < 64; q++) if (a.st.b[q] && isW(a.st.b[q]) !== !!a.st.w) { tapNote(a, 'T4', 2500, q); check('T4 on ' + sqName(q)); }
         });
       });
-      return JSON.stringify({ out: out, cards: cards, frames: frames, trainable: its.length }); })()`));
+      return JSON.stringify({ out: out, cards: cards, frames: frames, hinted: hinted, trainable: its.length }); })()`));
     ok(r.trainable >= 90 && r.cards === 3 * r.trainable, r.cards + ' cards of ' + r.trainable);
-    ok(r.frames >= 12 * r.cards, 'frames ' + r.frames);
+    ok(r.frames >= 20 * r.cards, 'frames ' + r.frames);
+    ok(r.hinted >= 3 * r.cards, 'frames with hint marks ' + r.hinted);
     eq(r.out.length, 0, r.out.length + ' spoilers, first: ' + r.out.slice(0, 3).join(' | '));
     /* a try off the card's lines, tapped: the checking frame, then the
        engine's miss (the stub answers on the next tick) */
@@ -2216,6 +2245,80 @@ const BAR = `(function () {
       ok(text.length && Math.min.apply(null, text.map((w) => w.dt)) >= 150, at + ': the words 150 ms after it: ' + JSON.stringify(ws));
     }
     A.ev('(ui.reducedTest = false, 1)');
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('a hint is drawn: after Try again the automatic hint (and a hint pressed over a try) lands with the tried line once the crossfade ends, its words 300 ms after the tap; every hint frame keeps the mark budget', async () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev(BAR);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    /* one-move cards whose hint 1 draws: a danger (ring and arrow) or a prize (dashed gold ring) */
+    const keys = JSON.parse(A.ev(`JSON.stringify((function () { var dz = [], pz = [];
+      allMistakes().filter(trainable).forEach(function (it) {
+        ui.session = { mode: 't', label: 't', keys: [it.key], idx: 0, results: {}, relearn: [], relearnOf: {} };
+        var a = cardFor(it); if (!a || a.sol) return; a.hints = 1;
+        var hm = hintMarks(a); if (hm.danger) dz.push(it.key); else if (hm.prize) pz.push(it.key);
+      }); return dz.slice(0, 4).concat(pz.slice(0, 2)); })())`));
+    ok(keys.length === 6, 'cards ' + keys.length);
+    const at0 = (t) => JSON.parse(A.ev(`JSON.stringify(window.__writes.filter(function (w) { return w.t >= ${t} && w.v != null; }).map(function (w) {
+      return w.kind + ' ' + w.id + ' +' + (w.t - ${t}) + (w.kind === 'text' ? (/Hint 1 of 2/.test(w.v) ? ' H1' : /Hint 2 of 2/.test(w.v) ? ' H3' : '') : ' ' + w.v);
+    }))`));
+    /* the marks the card draws now, against the budget (2.1): two arrows, one ring (the gold pair aside), one tried line */
+    const budget = (at) => {
+      const b = JSON.parse(A.ev(`JSON.stringify((function (a) { var o = boardOptsFor(a).opts;
+        return { arrows: (o.arrows || []).length + (o.bad ? 1 : 0), rings: (o.rings || []).filter(function (m) { return m.kind !== 'nope'; }).length + (o.hint != null ? 1 : 0), tried: (o.tried || []).length }; })(ui.session.active))`));
+      ok(b.arrows <= 2 && b.rings <= 1 && b.tried <= 1, at + ': over the budget ' + JSON.stringify(b));
+      return b;
+    };
+    const hinted = (w) => / (ring arrow|target|ring|arrow)/.test(w) && /(ring|target)/.test(w);
+    let n = 0, withTried = 0;
+    for (const reduced of [false, true]) {
+      A.ev(`(ui.reducedTest = ${reduced}, 1)`);
+      for (const key of keys) for (const how of ['auto', 'pressed', 'auto, off-book']) {
+        const at = key + ' ' + how + (reduced ? ' (reduced motion)' : '');
+        /* tier 1: the first miss brings hint 1; tier 3: none, Hint is pressed over the try */
+        A.ev(`(playerTier = function () { return ${how === 'pressed' ? 3 : 1}; }, 1)`);
+        A.ev(`(function () { var a = window.__show(model().byKey['${key}']); window.readyEngine();
+          var m = '${how}' === 'auto, off-book' ? legalMoves(a.st).filter(function (x) { var u = moveUci(x); return u !== a.bestUci && u !== a.playedUci; })[0] : uciToMove(a.st, a.playedUci);
+          gradeMove(m); return 1; })()`);
+        await tick(); await tick();
+        run(1500);
+        if (A.ev('ui.session.active.phase') !== 'tried' || A.ev('ui.session.active.tried.kind') !== 'miss') continue;
+        eq(A.ev('ui.session.active.hints'), how === 'pressed' ? 0 : 1, at + ': hints before Try again');
+        ok(!at0(0).slice(-6).some((w) => /^(board|marks)/.test(w) && / (target|hint)/.test(w)), at + ': no hint mark over the try');
+        n++;
+        const t0 = A.getNow();
+        if (how === 'pressed') A.key('?'); else A.click('tryAgain', null, 1);
+        run(600);
+        const ws = at0(t0);
+        eq(A.ev('ui.session.active.hints'), 1, at + ': hint 1 after it');
+        const text = ws.filter((w) => /^text cband/.test(w));
+        if (!reduced) {
+          ok(/^board bwrap \+0 /.test(ws[0]) && / xfade/.test(ws[0]) && !hinted(ws[0]), at + ': the crossfade at the tap, without the hint marks: ' + ws.join(', '));
+          const mk = ws.filter((w) => /^marks marks \+150 /.test(w));
+          ok(mk.length && hinted(mk[0]), at + ': the hint marks land when the crossfade ends: ' + ws.join(', '));
+          if (how === 'auto, off-book') { ok(/ tried/.test(mk[0]), at + ': with the tried line: ' + ws.join(', ')); withTried++; }
+          ok(text.length && +text[0].split('+')[1].split(' ')[0] === 300 && / H1$/.test(text[0]), at + ': "Hint 1 of 2" 300 ms after the tap: ' + ws.join(', '));
+        } else {
+          ok(/^board bwrap \+0 /.test(ws[0]) && hinted(ws[0]), at + ': under reduced motion the card and its hint marks at once: ' + ws.join(', '));
+          ok(text.length && / H1$/.test(text[0]), at + ': "Hint 1 of 2": ' + ws.join(', '));
+        }
+        budget(at);
+        /* hint 2: the gold ring alone on the piece to move */
+        run(500);
+        const t1 = A.getNow();
+        A.key('?');
+        run(400);
+        const w2 = at0(t1);
+        ok(w2.some((w) => /^board bwrap \+0 /.test(w) && / hint/.test(w) && !/ (ring|arrow|target)/.test(w.replace(/ hint/, ''))), at + ': hint 2 draws its ring alone: ' + w2.join(', '));
+        ok(w2.some((w) => /^text cband/.test(w) && / H3$/.test(w)), at + ': "Hint 2 of 2": ' + w2.join(', '));
+        budget(at + ', hint 2');
+      }
+    }
+    A.ev('(ui.reducedTest = false, playerTier = function () { return 2; }, 1)');
+    ok(n >= 24 && withTried >= 4, 'misses ' + n + ', with a tried line ' + withTried);
     const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
     eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
   });
