@@ -634,7 +634,8 @@ function s0Marks(a, st) {
    holds, else the game move's ghost with its cross, never both */
 function storyMarks(a, S, i) {
   var s = S.steps[i], n = s.line.nodes[s.k], out = {}, fx = a.key + ':st' + i;
-  if (n.captured) out.tokens = [{ sq: n.move.to, p: n.captured, kind: colorW(n.captured) === myPov(a.it) ? 'lost' : 'won', fx: fx }];
+  /* on the square the piece was taken from (en passant: beside the arrival) */
+  if (n.captured) out.tokens = [{ sq: n.move.ep >= 0 ? n.move.ep : n.move.to, p: n.captured, kind: colorW(n.captured) === myPov(a.it) ? 'lost' : 'won', fx: fx }];
   if (s.seg === 'game' && s.k === 0 && S.threat) {
     out.rings = [{ sq: S.threat.from, kind: 'threat' }];
     out.arrows = [{ from: S.threat.from, to: S.threat.to, kind: 'threat', key: 'threat' }];
@@ -740,10 +741,10 @@ function fadeOut(a) {
   if (strip && strip.nlHtml != null && stripWordsOf(strip.nlHtml) !== stripWordsOf(d.strip)) strip.classList.add('stale');
   if (!bar || bar.nlHtml == null) return;
   for (var i = 0; i < slotSig.length; i++) if (slotSig[i] != null) n++;
-  if (n !== d.buttons.length) { bar.classList.add('stale'); return; }
+  if (n !== d.buttons.length) { bar.classList.add('stale'); for (var h = 0; h < Math.max(n, d.buttons.length); h++) hideSlot(h); return; }
   d.buttons.forEach(function (s, j) {
     var b = slotSigOf(s) !== slotSig[j] ? bar.querySelector('[data-slot="' + j + '"]') : null;
-    if (b) b.classList.add('stale');
+    if (b) { b.classList.add('stale'); hideSlot(j); }
   });
 }
 function stripWordsOf(h) { return String(h || '').replace(/<i class="st-dot[^"]*"><\/i>|<span class="st-count">[^<]*<\/span>/g, '').replace(/ on"/g, '"'); }
@@ -951,7 +952,7 @@ function liveWords(a, b) {
   /* a story step says where it is first (S20): "Step 2 of 3, your game." */
   if (a.phase === 'done' && a.view && a.view.mode === 'story') {
     var S = buildStory(a), i = a.view.i;
-    return 'Step ' + (i + 1) + ' of ' + S.steps.length + ', ' + (i < S.g ? 'your game.' : a.alt ? 'your move.' : 'the better move.') + ' ' + b.cap;
+    return 'Step ' + (i + 1) + ' of ' + S.steps.length + ', ' + (i < S.g ? 'your game.' : S.alt ? 'your move.' : 'the better move.') + ' ' + b.cap;
   }
   return [LIVE_PREFIX[b.disc] || '', b.row1 || '', b.row2 || ''].filter(Boolean).join(' ');
 }
@@ -975,11 +976,11 @@ function barSlots(a, ss) {
               { act: 'xpFwd', label: '›', cls: 'nav-btn' + (fwdOff ? ' nav-off' : ''), aria: xe.at >= xe.nodes.length - 1 ? 'Play Stockfish\'s pick' : 'Forward one move' }, cont];
     }
     /* the story (S12): ‹, Next move › in gold until the last step, where it
-       is switched off and Continue turns gold */
+       is switched off (outlined, greyed) and Continue turns gold */
     if (a.view.mode === 'story') {
       var sn = buildStory(a).steps.length, si = a.view.i, end = si >= sn - 1;
       return [{ act: 'storyBack', label: '‹', cls: 'nav-btn', aria: 'Previous move' },
-              { act: 'storyFwd', label: 'Next move ›', cls: 'btn-big', off: end, aria: end ? null : 'Next move, step ' + (si + 2) + ' of ' + sn },
+              { act: 'storyFwd', label: 'Next move ›', cls: end ? 'btn-line' : 'btn-big', off: end, aria: end ? null : 'Next move, step ' + (si + 2) + ' of ' + sn },
               { act: 'next', label: cont.label, cls: end ? 'btn-big' : 'btn-line' }];
     }
     /* the answer shown (S7): Continue, and Play it in gold; switched off
@@ -1131,7 +1132,8 @@ function stripHtml(a, ss) {
 }
 /* the story's strip (S12): "Game ●●● Better ●", a dot per step, the one on
    screen larger with a ring; each name opens its segment's first step. Over
-   9 dots it folds to "Game 2/5 · Better". A tap on a piece puts N1 here for
+   9 dots it folds to "Game 2/5 · Better". An alternative's segment is
+   "Yours" (B1 says "Your X works too."). A tap on a piece puts N1 here for
    a while (S2), in place of the dots */
 function storyStripHtml(a) {
   if (a.note && a.note.key === cardStateKey(a)) return '<p class="story-note">' + esc(CARD_COPY.N1(a)) + '</p>';
@@ -1140,11 +1142,11 @@ function storyStripHtml(a) {
     var dots = '';
     if (n > 9) dots = on ? '<span class="st-count">' + (i - at + 1) + '/' + len + '</span>' : '';
     else for (var k = 0; k < len; k++) dots += '<i class="st-dot' + (at + k === i ? ' on' : '') + '"></i>';
-    return '<button type="button" class="st-seg st-' + key + (on ? ' on' : '') + '" data-act="storyJump" data-k="' + key + '" aria-label="' + (key === 'game' ? 'Your game' : 'The better move') + ', from its first move">'
+    return '<button type="button" class="st-seg st-' + key + (on ? ' on' : '') + '" data-act="storyJump" data-k="' + key + '" aria-label="' + (key === 'game' ? 'Your game' : S.alt ? 'Your move' : 'The better move') + ', from its first move">'
       + '<span class="st-name">' + label + '</span>' + (dots ? '<span class="st-dots" aria-hidden="true">' + dots + '</span>' : '') + '</button>';
   };
   return '<div class="story-strip' + (n > 9 ? ' folded' : '') + '">' + seg('game', 'Game', 0, S.g, inGame)
-    + (n > 9 ? '<span class="st-sep" aria-hidden="true">·</span>' : '') + seg('better', 'Better', S.g, n - S.g, !inGame) + '</div>';
+    + (n > 9 ? '<span class="st-sep" aria-hidden="true">·</span>' : '') + seg('better', S.alt ? 'Yours' : 'Better', S.g, n - S.g, !inGame) + '</div>';
 }
 /* the Details sheet (S13): what the answered card no longer says on its
    face. The game's context, the decisive line, both long sentences (and an

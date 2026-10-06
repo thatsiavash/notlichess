@@ -393,7 +393,7 @@ function showTry(a, m, kind, reply, why, again) {
   a.ghostMove = null;
   /* lost: the piece their reply takes, shown as a token once See it plays it */
   a.tried = { from: m.from, to: m.to, uci: moveUci(m), san: sanOf(a.st, m), kind: kind,
-              reply: r ? reply : null, seen: false, threat: (why && why.threat) || null, lost: took ? { sq: r.to, p: took } : null };
+              reply: r ? reply : null, seen: false, threat: (why && why.threat) || null, lost: took ? { sq: r.ep >= 0 ? r.ep : r.to, p: took } : null };
   a.verdict = triedVerdict(a, a.tried, why, again);
   a.reason = 0;
   a.focusRight = true;
@@ -699,7 +699,7 @@ function miss(m, u, info, inLine) {
    tokens (S6: green tokens on what you won) */
 function noteWon(a, m) {
   var took = m.ep >= 0 ? a.st.b[m.ep] : a.st.b[m.to];
-  if (took) (a.won = a.won || []).push({ sq: m.to, p: took });
+  if (took) (a.won = a.won || []).push({ sq: m.ep >= 0 ? m.ep : m.to, p: took });
 }
 /* the card is solved (S6): the board keeps your move, and the verdict (a
    filled tick, green tints, its sound) lands with the piece */

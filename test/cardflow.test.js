@@ -1022,16 +1022,18 @@ const BAR = `(function () {
     let s = S();
     eq(s.phase, 'guess', 'Enter in tried takes the try back'); eq(s.result, null, 'and shows no answer');
     /* Try again changes both slots once its crossfade is over (the words
-       come 300 ms after the tap): Enter 150 ms after they changed is
-       ignored, 500 ms after shows the answer */
+       come 300 ms after the tap); they faded out at the tap and took no tap
+       since, so their half second runs from it: Enter 400 ms after the tap
+       (100 ms after the bar changed) is ignored, 500 ms after shows the
+       answer */
     A.advance(300);
-    A.advance(150);
+    A.advance(100);
     A.key('Enter');
     s = S();
-    eq(s.phase, 'guess', 'Enter 150 ms after the bar changed'); eq(s.result, null, 'no answer 150 ms after the bar changed');
-    A.advance(350);
+    eq(s.phase, 'guess', 'Enter 100 ms after the bar changed'); eq(s.result, null, 'no answer 100 ms after the bar changed');
+    A.advance(100);
     A.key('Enter');
-    eq(S().result, 'fail', 'Enter 500 ms after the bar changed shows the answer');
+    eq(S().result, 'fail', 'Enter 500 ms after the tap shows the answer');
     /* a good move that is not the best: [Show the answer] [Keep looking];
        Enter keeps looking, as Try again does after a miss, and never shows
        the answer */
@@ -2942,8 +2944,10 @@ const BAR = `(function () {
             var m0 = storyMarks(a, S, 0), th = threatOf(c.gameLine, 1);
             if (!!m0.arrows !== !!S.threat || (th && !m0.arrows) || (m0.arrows && (m0.arrows[0].kind !== 'threat' || m0.rings[0].sq !== m0.arrows[0].from || m0.arrows[0].from !== c.gameLine.nodes[1].move.from))) out.push(at + ': G1 marks ' + JSON.stringify(m0));
             S.steps.forEach(function (x, i) {
+              /* the token stands where the piece was taken: the square it stood on before the ply and left by it (en passant: beside the arrival) */
               var nd = x.line.nodes[x.k], tk = storyMarks(a, S, i).tokens;
-              if (!!tk !== !!nd.captured || (tk && (tk[0].kind !== (isW(nd.captured) === myPov(it) ? 'lost' : 'won') || tk[0].sq !== nd.move.to || tk[0].p !== nd.captured))) out.push(at + ': step ' + i + ' token ' + JSON.stringify(tk));
+              if (tk && nd.move.ep >= 0) n.ep = (n.ep || 0) + 1;
+              if (!!tk !== !!nd.captured || (tk && (tk[0].kind !== (isW(nd.captured) === myPov(it) ? 'lost' : 'won') || nd.before.b[tk[0].sq] !== nd.captured || nd.after.b[tk[0].sq] === nd.captured || tk[0].p !== nd.captured))) out.push(at + ': step ' + i + ' token ' + JSON.stringify(tk));
             });
             for (var j = 0; j < nb; j++) {
               var s = S.steps[S.g + j], nd = s.line.nodes[s.k];
@@ -2981,7 +2985,48 @@ const BAR = `(function () {
         });
       });
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.cards > 500 && r.n.multi > 100 && r.n.alts > 50 && r.n.inLine > 5 && r.n.guard >= 6 && r.n.ghost > 300, JSON.stringify(r.n));
+    ok(r.n.cards > 500 && r.n.multi > 100 && r.n.alts > 50 && r.n.inLine > 5 && r.n.guard >= 6 && r.n.ghost > 300 && r.n.ep >= 2, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
+  });
+
+  await test('the story claims a mate only when its line mates on screen, and calls only your own move\'s line yours', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MATE_AT}
+      var out = [], n = { mateG: 0, mateB: 0, noLine: 0, alts: 0 };
+      var said = function (a, i) { a.view = { mode: 'story', i: i }; return { strip: storyStripHtml(a), live: liveWords(a, { cap: buildStory(a).steps[i].cap }) }; };
+      playerTier = function () { return 2; };
+      allMistakes().filter(trainable).forEach(function (it) {
+        var a = openCard(it);
+        if (!a || a.sol) return;
+        a = answered(a, 'solved');
+        var c = a.cls;
+        /* a mate the classifier names but the line never reaches: the material form, the loss counted at lossAt */
+        if (!c.mateAgainst && !c.mateFor) {
+          c.mateAgainst = 1; a.story = null;
+          var S = buildStory(a);
+          if (S.mateG || /checkmate/i.test(S.steps[0].cap) || S.g !== c.lossAt + 1) out.push(it.key + ': a mate claimed against with none on screen: ' + S.steps[0].cap + ', ' + S.g + ' game steps');
+          c.mateAgainst = null; c.mateFor = 1; a.story = null;
+          S = buildStory(a);
+          if (S.mateB || /checkmate/i.test(S.steps[S.g].cap) || S.steps.length - S.g !== Math.max(1, c.bSettle)) out.push(it.key + ': a mate claimed for with none on screen: ' + S.steps[S.g].cap);
+          c.mateFor = null; a.story = null; n.mateG++; n.mateB++;
+        }
+        /* an alternative whose own line cannot be built: told as the better move, never as yours */
+        var bestSan = sanOf(a.pre, a.best).replace(/[+#]$/, '');
+        a.alt = { uci: 'x' }; a.yours = { uci: [], cp: 0, at: 0 }; a.story = null;
+        var S3 = buildStory(a), w = said(a, S3.g);
+        if (S3.alt || /works too/.test(S3.steps[S3.g].cap) || S3.steps[S3.g].cap.indexOf('Better: ' + bestSan) !== 0 || />Yours</.test(w.strip) || !/>Better</.test(w.strip) || !/the better move\\./.test(w.live)) out.push(it.key + ': the best move called yours: ' + S3.steps[S3.g].cap + ' | ' + w.live);
+        n.noLine++;
+        /* a real alternative: "Yours" in the strip, "your move" for screen readers, "works too" on B1 */
+        var alt = legalMoves(a.pre).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci; })[0];
+        if (!alt) return;
+        a.yours = { uci: [moveUci(alt)], cp: 0, at: 0 }; a.story = null;
+        var S4 = buildStory(a), w4 = said(a, S4.g);
+        if (!S4.alt || S4.steps[S4.g].cap !== 'Your ' + sanOf(a.pre, alt).replace(/[+#]$/, '') + ' works too.' || !/>Yours</.test(w4.strip) || />Better</.test(w4.strip) || !/aria-label="Your move,/.test(w4.strip) || !/your move\\./.test(w4.live)) out.push(it.key + ': the alternative is not yours: ' + S4.steps[S4.g].cap + ' | ' + w4.strip + ' | ' + w4.live);
+        n.alts++;
+        a.alt = null; a.yours = null; a.story = null;
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.mateG > 30 && r.n.noLine > 30 && r.n.alts > 30, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
   });
 
@@ -3016,6 +3061,68 @@ const BAR = `(function () {
       run(1200);
       eq(st().i, 2, key + ': nothing past the last step');
     }
+  });
+
+  await test('a double tap on See why never steps twice, and Next move takes its first visible tap', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    A.ev(BAR);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && a.cls.lossAt + Math.max(1, a.cls.bSettle) >= 3; }).slice(0, 4).map(function (x) { return x.key; }))`));
+    const st = () => JSON.parse(A.ev('JSON.stringify((function (a) { var bar = window.__els.cbar; return { mode: a.view.mode, i: a.view.i, stale: !!bar.cls.stale, fwd: /data-act="storyFwd"/.test(bar.innerHTML) }; })(ui.session.active))'));
+    for (const rm of [false, true]) for (const key of keys) {
+      const at = key + (rm ? ' reduced motion' : '');
+      A.ev('(ui.reducedTest = ' + rm + ', 1)');
+      A.ev(`(function () { window.__show(model().byKey['${key}']); ui.session.keys.push('x'); return 1; })()`);
+      run(1000);
+      A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
+      run(2500);
+      A.click('seeWhy', null, 0);
+      const t0 = A.getNow();
+      /* until the story's bar paints, the old one is faded out (no pointer
+         events on the page), so the second half of a double tap presses
+         nothing */
+      let s = st(), painted = null;
+      for (let t = 0; t < 2000 && painted == null; t += 10) {
+        if (!s.stale && !s.fwd) { ok(false, at + ': the old bar takes taps ' + t + ' ms after See why'); break; }
+        A.advance(10);
+        s = st();
+        if (s.fwd) painted = A.getNow() - t0;
+      }
+      ok(painted != null && !s.stale, at + ': the story bar painted ' + painted);
+      eq(s.mode + ' ' + s.i, 'story 0', at + ': See why is G1');
+      if (!rm) {
+        /* the slots faded out at the tap, so their half second ran from it:
+           Next move takes the first tap it can be seen to take */
+        ok(painted >= 450, at + ': painted ' + painted + ' ms after See why, after the guard');
+        A.click('storyFwd', null, 1);
+        run(1200);
+        eq(st().i, 1, at + ': the first visible tap on Next move steps');
+        /* a key while the bar is faded presses nothing either: Enter 100 ms
+           after See why never reaches the Continue it is about to replace */
+        A.key('Escape'); run(1000);
+        const idx = A.ev('ui.session.idx');
+        A.click('seeWhy', null, 0); run(100);
+        A.key('Enter'); run(1500);
+        s = st();
+        eq(s.mode + ' ' + s.i + ' ' + A.ev('ui.session.idx'), 'story 0 ' + idx, at + ': Enter while the bar is faded');
+      } else {
+        /* under reduced motion the bar paints at once, inside the double
+           tap: its new slots wait out the rest of the half second from the
+           tap, so a second tap on ‹ (where See why was) or on Next move
+           does nothing, and one after it steps */
+        ok(painted < 450, at + ': painted ' + painted);
+        A.click('storyBack', null, 0); A.click('storyFwd', null, 1);
+        s = st();
+        eq(s.mode + ' ' + s.i, 'story 0', at + ': a double tap on See why stays at G1');
+        A.setNow(t0 + 460);
+        A.click('storyFwd', null, 1);
+        run(400);
+        eq(st().i, 1, at + ': Next move steps once the half second from the tap is over');
+      }
+    }
+    A.ev('(ui.reducedTest = false, 1)');
   });
 
   await test('board taps never change the step: a piece tap outlines it and says N1 in the strip; swipes, keys and the bar step it, Esc goes back to S0', () => {
@@ -3175,7 +3282,7 @@ const BAR = `(function () {
         const bar = A.ev('window.__els.cbar.innerHTML');
         ok(/data-act="storyBack"[^>]*aria-label="Previous move"/.test(bar), key + ': ‹ is Previous move');
         if (i < n - 1) ok(new RegExp('aria-label="Next move, step ' + (i + 2) + ' of ' + n + '"').test(bar) && /class="btn-big"[^>]*data-act="storyFwd"/.test(bar) && /class="btn-line"[^>]*data-act="next"/.test(bar), key + ': Next move names the step it goes to, gold, Continue outlined: ' + bar);
-        else ok(/btn-big btn-off[^>]*>Next move/.test(bar) && /class="btn-big"[^>]*data-act="next"/.test(bar), key + ': at the last step Next move is off and Continue gold: ' + bar);
+        else ok(/class="btn-line btn-off"[^>]*>Next move/.test(bar) && /class="btn-big"[^>]*data-act="next"/.test(bar) && (bar.match(/btn-big/g) || []).length === 1, key + ': at the last step Next move is off and outlined, Continue the one gold button: ' + bar);
         if (i < n - 1) { A.key('Enter', false, on()); run(1200); }
       }
       /* Enter at the last step is Continue */

@@ -212,6 +212,9 @@
       await storyLanded(i);
       storyFrame('step ' + (i + 1));
     }
+    /* switched off, Next move is outlined and grey: Continue is the one gold button */
+    const offBg = $('#cbar .btn-off') ? getComputedStyle($('#cbar .btn-off')).backgroundColor : '', goldBg = $('#cbar [data-act=next]') ? getComputedStyle($('#cbar [data-act=next]')).backgroundColor : '';
+    ok('the last step\'s Next move is outlined, not gold', !!$('#cbar .btn-off.btn-line') && offBg !== goldBg && $$('#cbar .btn-big').length === 1, offBg + ' / ' + goldBg);
     ok('a story step moves one ply a tap, and Next move ends at the last step', T.card().story.i === sg.n - 1 && !!$('#cbar .btn-off') && /Next move/.test($('#cbar .btn-off').textContent)
       && document.activeElement === $('#cbar [data-act=next]') && $('#cbar [data-act=next]').classList.contains('btn-big') && $('#cband .card-task').classList.contains(sg.n - 1 >= sg.g ? 'k-sbetter' : 'k-sgame'), focusName());
     ok('every story frame: a caption that fits its band, at most 15 words on screen', W.story.length === 0, W.story.slice(0, 3).join(' | '));
@@ -236,6 +239,20 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(500);
     ok('Esc goes back to the settled result', T.card().view.mode === 's0' && !!$('#cstrip [data-act=details]'), JSON.stringify(T.card().view));
+    /* Next move takes the first tap it can be seen to take: See why, then a click the moment its bar is on screen */
+    await sleep(600);
+    const wr = $('#cbar [data-act=seeWhy]') ? $('#cbar [data-act=seeWhy]').getBoundingClientRect() : null;
+    click('#cbar [data-act=seeWhy]');
+    /* a double tap's second half, 200 ms on, finds the bar faded out: it reaches no button */
+    await sleep(200);
+    const wh = wr && document.elementFromPoint(wr.x + wr.width / 2, wr.y + wr.height / 2), whAct = wh && wh.closest && wh.closest('#cbar [data-act]');
+    ok('a double tap on See why reaches no button with its second tap', !!wr && !whAct && T.card().story && T.card().story.i === 0, whAct ? whAct.getAttribute('data-act') : 'none');
+    await until(() => { const f = $('#cbar [data-act=storyFwd]'); return !!f && !$('#cbar').classList.contains('stale') && !f.classList.contains('stale'); }, 4000, 16);
+    click('#cbar [data-act=storyFwd]');
+    await storyLanded(1).catch(() => {});
+    ok('the first visible tap on Next move steps', !!T.card().story && T.card().story.i === 1, JSON.stringify(T.card().story));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(500);
 
     /* ── exploring: from Details, three rows, one arrow, a sentence, the way back ─ */
     click('#cstrip [data-act=details]');
@@ -357,12 +374,16 @@
         }
         /* miss 3 reveals nothing: See it, then the left button offers the answer */
         if (c3 && c3.phase === 'tried') await sleep(900);
-        const offered = !!c3 && c3.phase === 'tried' && click('[data-act=seeIt]') && !!(await until(() => $('#cpanel [data-act=reveal]'), 3000));
+        /* a second tap on See it's place while the bar changes (faded out, no pointer events) reaches no button;
+           Show the answer then takes taps once its half second from the fade is over */
+        const sr = $('[data-act=seeIt]') ? $('[data-act=seeIt]').getBoundingClientRect() : null;
+        let hitAct = 'none';
+        const offered = !!c3 && c3.phase === 'tried' && click('[data-act=seeIt]') && (await sleep(200), true)
+          && ((hitAct = (() => { const h = sr && document.elementFromPoint(sr.x + sr.width / 2, sr.y + sr.height / 2); const x = h && h.closest && h.closest('#cbar [data-act]'); return x ? x.getAttribute('data-act') : null; })()), true)
+          && !!(await until(() => $('#cpanel [data-act=reveal]'), 3000));
         ok('miss 3 offers Show the answer; result still null', offered && T.card().result === null, c3 && (c3.phase + ' ' + c3.result));
         if (offered) {
-          /* a second tap within 450 ms of See it lands on Show the answer and is ignored */
-          click('#cpanel [data-act=reveal]');
-          ok('a tap on Show the answer right after See it is ignored', T.card().result === null && T.card().phase === 'tried', T.card().phase + ' ' + T.card().result);
+          ok('a second tap on See it\'s place while the bar changes reaches no button', hitAct === null && T.card().result === null && T.card().phase === 'tried', hitAct + ' ' + T.card().phase + ' ' + T.card().result);
           await sleep(500);
         }
         click('#cpanel [data-act=reveal]');
