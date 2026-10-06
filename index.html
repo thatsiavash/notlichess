@@ -310,6 +310,9 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 #bwrap.static .board rect[data-sq],#bwrap.static .board use[data-sq]{cursor:default}
 .board use.drag-src{opacity:.35}
 .anim-piece{transition:transform .22s ease;will-change:transform}
+/* the forcing reply (S10), the one move that plays by itself: slower, and
+   easing in and out, so it is always seen moving */
+.anim-piece.anim-slow{transition:transform .4s ease-in-out}
 /* the marks lie over the board in their own svg and never take a tap; a
    badge pops and a token or ghost fades in once, on its first paint */
 .marks{position:absolute;left:0;top:0;width:100%;height:100%;display:block;pointer-events:none;border-radius:4px;overflow:hidden}
@@ -477,6 +480,12 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;outline:none;font-variant-numeric:lining-nums}
 .bd-r2{margin:0;font-size:15px;line-height:18px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bd-r2:empty{display:none}
+/* a forcing line's pips (2.0): a 7 px dot per move of yours, filled when
+   found, ringed when due */
+.bd-pips{flex:none;margin-left:auto;display:flex;gap:5px;align-items:center;padding-right:2px}
+.bd-pips .pip{width:7px;height:7px;border-radius:50%;box-sizing:border-box;border:1px solid var(--text-3)}
+.bd-pips .pip.done{background:#8fb573;border-color:#8fb573}
+.bd-pips .pip.cur{border:1.5px solid var(--text-1)}
 .bd-chip{flex:none;margin-left:auto;font-size:11.5px;line-height:18px;padding:0 8px;border:1px solid var(--accent);border-radius:9px;color:var(--accent-hover);white-space:nowrap}
 .bd-cap{margin:0;font-size:15px;line-height:20px;color:var(--text-1);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .card-task.k-good{background:rgba(143,181,115,.16);border-left-color:#8fb573}
@@ -497,6 +506,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .card > .panel{align-self:stretch}
 .stakes-tag{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-1);margin:0 0 4px}
 .dot-bad{flex:none;width:7px;height:7px;border-radius:50%;background:var(--bad)}
+.guess-acts .slot-empty{flex:1 1 0;min-height:48px}
 .guess-acts .btn-line,.guess-acts .btn-big{flex:1 1 0;justify-content:center;text-align:center;min-height:48px;display:inline-flex;align-items:center}
 @media (min-width:861px){
   .guess-acts,.done-acts{margin-top:auto;padding-top:12px}
@@ -2208,7 +2218,7 @@ function boardSvg(st, opts) {
         if (opts.anim && opts.anim[1] === sq) {
           var af = opts.anim[0];
           var acol = flip ? 7 - af % 8 : af % 8, arow = flip ? (af >> 3) : 7 - (af >> 3);
-          animAttr = ' class="anim-piece" style="transform:translate('
+          animAttr = ' class="anim-piece' + (opts.animMs === 400 ? ' anim-slow' : '') + '" style="transform:translate('
             + (acol * SZ - x) + 'px,' + (arow * SZ - y) + 'px)"';
         }
         var use = '<use href="#pc-' + PIECE_ID[p] + '" x="' + x + '" y="' + y
@@ -6222,6 +6232,8 @@ function gradeMove(m) {
   a.tapAnim = a.tapped ? [m.from, m.to] : null;
   a.animMove = null;
   a.tapped = false;
+  /* their reply's marks stay only until your next move */
+  a.replyMark = null;
   /* inside a forcing line: later steps must follow it (or mate) */
   if (a.sol && a.solIdx > 0) {
     var want = a.sol[a.solIdx];
@@ -6239,43 +6251,109 @@ function gradeMove(m) {
   if (u === a.playedUci) { sameAsGame(m); return; }
   checkMove(m, u, false);
 }
-/* the forcing line, move by move: my move, then theirs is played for me */
+/* the forcing line, move by move (S10): your move found lands with its
+   tick ("Right"), then their reply plays by itself on its timeline
+   (replyClock); the line's last move is the solve */
 function stepLine(m, u) {
   var a = ui.session.active;
-  var san = sanOf(a.st, m);
   noteWon(a, m);
   applyMove(a.st, m);
   a.lastMove = [m.from, m.to];
   a.animMove = a.tapAnim || null; a.tapAnim = null;
+  a.replyMark = null;
   a.solIdx++;
   /* the line's last move is the solve: its sound comes with its badge */
   if (a.solIdx >= a.sol.length) { solved(null, null, null, true); return; }
   var reply = uciToMove(a.st, a.sol[a.solIdx]);
   if (!reply) { solved(null, null, null, true); return; }
-  snd('good');
   a.phase = 'reply';
-  /* my moves sit at even offsets of the line: the next one is number n */
   a.hintAfter = false;
-  var step = 'Move ' + (Math.ceil(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
-  a.verdict = verdictOf('good', 'Right', [step], '');
-  a.verdict.html = '✓ ' + san + '. ' + step;
+  /* the tick, the green tints and the sound land with the piece */
+  a.cue = 'good';
+  a.verdict = verdictOf('good', CARD_COPY.F1(), [CARD_COPY.F2(a)], '');
+  var rm = reducedMotion(), lands = a.animMove && !rm ? SLIDE_LEAD + 220 : 0;
+  startReply(a, reply, false);
+  /* under reduced motion the reply waits for its button, which gets the keyboard */
+  a.focusRight = rm;
   renderCard();
-  var cardKey = a.key;
-  setTimeout(function () {
-    var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== cardKey || a2.phase !== 'reply') return;
-    applyMove(a2.st, reply);
-    a2.lastMove = [reply.from, reply.to];
-    a2.animMove = [reply.from, reply.to];
-    /* the one move that plays by itself: paintBoard holds its slide so no
-       input jumps it (flushStage) */
-    a2.replySlide = true;
-    a2.solIdx++;
-    snd('move');
-    if (a2.solIdx >= a2.sol.length) { solved(null, null, null, true); return; }
-    a2.phase = 'guess';
-    renderCard();
-  }, 650);
+  replyClock(a, lands);
+}
+/* the forcing reply (S10), the one move that plays by itself, inside a
+   forcing line being solved or shown (show: after Play it). a.reply:
+   {uci, from, to, show, tele (its telegraph is drawn), played} */
+function startReply(a, m, show) {
+  a.reply = { uci: moveUci(m), from: m.from, to: m.to, show: !!show, tele: reducedMotion(), played: false };
+}
+/* its timeline, from t0, when the move before it lands (landIn ms from
+   now): at 600 the telegraph (its piece ringed, a blue-grey dashed arrow),
+   at 1500 the slide (400 ms, so it lands at 1900), at 2050 the words. The
+   slide's board is drawn SLIDE_LEAD before the piece is let go, and a shown
+   line's words fade out 100 ms before that (theirReply). Under reduced
+   motion nothing runs: the telegraph is drawn at once and the reply waits
+   for "Their reply ›" */
+var REPLY_TELE = 600, REPLY_SLIDE = 1500;
+function replyClock(a, landIn) {
+  var rp = a.reply;
+  if (!rp || reducedMotion()) return;
+  stageAt(landIn + REPLY_TELE, function (a2) { if (a2.reply === rp && !rp.played) { rp.tele = true; stage(['marks']); } });
+  stageAt(landIn + REPLY_SLIDE - SLIDE_LEAD - (rp.show ? TEXT_OUT : 0), function (a2) { if (a2.reply === rp && !rp.played) theirReply(a2, false); });
+}
+/* the reply plays: on its timeline, or now (early: an input before 1500
+   starts it at once, its telegraph kept, flushStage; or its own button
+   under reduced motion). It slides 400 ms with its sound, its ring and
+   dashed arrow riding along; as it lands the arrow turns solid, what it
+   took shows as a token and a check glows; 150 ms later (300 under reduced
+   motion) the words, and the board takes moves again. Returns false when
+   there is no reply to play */
+function theirReply(a, early) {
+  var rp = a && a.reply;
+  if (!rp || rp.played) return false;
+  var m = a.sol && a.sol[a.solIdx] === rp.uci ? uciToMove(a.st, rp.uci) : null;
+  if (!m) { a.reply = null; return false; }
+  var before = cloneState(a.st), took = m.ep >= 0 ? a.st.b[m.ep] : a.st.b[m.to];
+  rp.played = true;
+  rp.tele = true;
+  applyMove(a.st, m);
+  a.lastMove = [m.from, m.to];
+  a.solIdx++;
+  a.replyMark = { from: m.from, to: m.to, token: took ? { sq: m.ep >= 0 ? m.ep : m.to, p: took } : null, fx: a.key + ':rp' + a.solIdx };
+  a.replySaid = replyWords(a, before, m, took);
+  var next = a.solIdx < a.sol.length ? uciToMove(a.st, a.sol[a.solIdx]) : null;
+  /* a shown line: the next move of yours is the answer now */
+  if (rp.show) { a.markMove = null; if (next) a.answerSan = sanOf(a.st, next); }
+  /* exploring has the board: the reply is played there unseen, and the
+     frame exploring comes back to is the one it leads to */
+  if (a.explore) {
+    replyDone(a, rp);
+    if (!next) { a.explore.root = { mode: 's0' }; a.settle = 0; a.settleFor = true; }
+    return true;
+  }
+  var rm = reducedMotion();
+  a.animMove = [m.from, m.to];
+  a.animSlow = true;
+  a.animShown = false;
+  /* paintBoard holds its slide: no input jumps it (flushStage) */
+  a.replySlide = true;
+  a.moveCue = true;
+  var fade = rp.show && !early && !rm ? ['fade', TEXT_OUT] : [];
+  stage(fade.concat(['board', 'land', rm ? 300 : TEXT_GAP, { run: function (a2) { replyDone(a2, rp); } }, 'text']));
+  return true;
+}
+/* the reply's words are due (2050): the card asks for your next move (a
+   shown line offers Play it again) */
+function replyDone(a, rp) {
+  if (a.reply !== rp) return;
+  a.reply = null;
+  if (rp.show) {
+    a.showWait = false;
+    if (!(a.solIdx < a.sol.length)) settleShown(a);
+    return;
+  }
+  a.phase = 'guess';
+  a.verdict = null;
+  /* the keyboard goes to the band's "Your move", not to the button that
+     takes the place of the one it was on */
+  a.focusTask = true;
 }
 /* the tried move is the game move: it stays on the board with why it
    failed, and their reply from the game is one tap away (See it) */
@@ -6662,8 +6740,9 @@ function reveal() {
   var a = ui.session && ui.session.active;
   /* not while a move is checked once the band says so: the bar shows Show
      the answer switched off then (S3). Before that (K1, 300 ms after it
-     lands) the guess bar still offers it: the move is taken back first */
-  if (!a || a.phase === 'done' || (a.phase === 'checking' && a.checkSaid)) return;
+     lands) the guess bar still offers it: the move is taken back first.
+     Nor while a forcing reply is on its way (S10: its bar is off) */
+  if (!a || a.phase === 'done' || a.phase === 'reply' || (a.phase === 'checking' && a.checkSaid)) return;
   /* pressed while a try is shown (or a move is checked): it goes first, the
      board crossfading back; from the card itself the green arrow is drawn
      and the words follow 150 ms after it (principle 2) */
@@ -6673,6 +6752,8 @@ function reveal() {
   engineStop('check');
   a.revealed = true;
   a.sel = -1;
+  /* the answer's arrow alone: a landed reply's own marks go */
+  a.replyMark = null;
   /* inside a forcing line the moves already found stay on the board, and
      the answer is the move due now (problem map 4.7) */
   if (!(a.sol && a.solIdx > 0)) { a.st = cloneState(a.pre); a.lastMove = a.preLast; }
@@ -6696,7 +6777,8 @@ function showDue(a) {
    At the end of the line (at once on a one-move card) the card settles:
    S0's marks, then R4 and the bar to the story. Played by hand (byHand)
    it goes at once, as the player's own moves do: tapped it slides, dragged
-   it lands where it was dropped */
+   it lands where it was dropped. Their reply plays on S10's timeline, and
+   waits for "Their reply ›" under reduced motion */
 function playIt(dragged, byHand) {
   var a = ui.session && ui.session.active, m = a && a.phase === 'done' && !a.explore && !a.showWait ? showDue(a) : null;
   if (!m) return;
@@ -6716,33 +6798,15 @@ function playIt(dragged, byHand) {
      it, going off) fade out first (2.2), then it slides */
   var beats = dragged || byHand ? null : ['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text'];
   if (!reply) { settleShown(a); renderCard(beats); return; }
-  /* their reply, on the forcing line's own timing (S10 as it is today) */
+  /* their reply, on the forcing line's timeline (S10), from when this move
+     lands: after the fade and the 320 ms slide from the button, the slide
+     alone by hand, at once dragged or under reduced motion; Play it is off
+     until its words come */
   a.showWait = true;
+  startReply(a, reply, true);
   renderCard(beats);
-  var cardKey = a.key;
-  setTimeout(function () {
-    var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== cardKey || !a2.showWait || a2.phase !== 'done') return;
-    a2.showWait = false;
-    applyMove(a2.st, reply);
-    a2.lastMove = [reply.from, reply.to];
-    a2.markMove = null;
-    a2.solIdx++;
-    /* the next move of yours is the answer now */
-    var next = a2.solIdx < a2.sol.length ? uciToMove(a2.st, a2.sol[a2.solIdx]) : null;
-    if (next) a2.answerSan = sanOf(a2.st, next);
-    /* exploring has the board: the reply is played there unseen, and the
-       frame exploring comes back to is the one it leads to */
-    if (a2.explore) { if (!next) { a2.explore.root = { mode: 's0' }; a2.settle = 0; a2.settleFor = true; } return; }
-    if (!next) settleShown(a2);
-    a2.animMove = [reply.from, reply.to];
-    a2.animShown = false;
-    a2.replySlide = true;
-    a2.moveCue = true;
-    /* the words about to change (the answer's name, Play it coming back)
-       fade out before it slides, as before any move the app shows */
-    renderCard(['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text']);
-  }, 650);
+  var rm = reducedMotion();
+  replyClock(a, (beats && !rm ? TEXT_OUT : 0) + (dragged || rm ? 0 : SLIDE_LEAD + 320));
 }
 /* the shown line is over: the card settles as S0 does (the answer's band
    stays until R4 comes) */
@@ -7604,8 +7668,30 @@ var CARD_COPY = {
   V2: function () { return 'Play the green arrow.'; },
   H1: function () { return 'Hint 1 of 2'; },
   H3: function () { return 'Hint 2 of 2'; },
-  H3b: function () { return 'Move the circled piece.'; }
+  H3b: function () { return 'Move the circled piece.'; },
+  F1: function () { return 'Right'; },
+  F2: function (a) { return sidesOf(a).opp + ' replies next.'; },
+  F3: function () { return 'Your move'; }
 };
+/* F4: their reply in a forcing line, once it has landed, as row 2 says it:
+   what it took, or the check it gives, or the move itself; st is the
+   position before it, took what it captured */
+function replyWords(a, st, m, took) {
+  var opp = sidesOf(a).opp, after = cloneState(st);
+  applyMove(after, m);
+  if (took) return [opp + ' took your ' + PIECE_WORD[pType(took)] + ', as expected.'];
+  if (checkersOf(after).length) return [opp + ' gives check, as expected.'];
+  return [opp + ' played ' + capSan(st, m) + ', as expected.'];
+}
+/* the forcing pips (2.0): one dot per move of yours in the line, from your
+   first move found to the line's end (never before it: the card opens as
+   any other does, with no count). done: the moves found; cur: the move due
+   now, or -1 while their reply is on its way */
+function pipsOf(a) {
+  if (!a.sol || !(a.solIdx > 0) || a.phase === 'done') return null;
+  var found = Math.ceil(a.solIdx / 2);
+  return { n: Math.ceil(a.sol.length / 2), done: found, cur: a.phase === 'reply' ? -1 : found };
+}
 /* a word for a tap that is not a move, as row 2 says it: the full text,
    then (when the words on screen would go over budget) a shorter one */
 var NOTE_COPY = {
@@ -7771,17 +7857,18 @@ function hintText(a) {
   return r;
 }
 /* the band for the state the card is in: {disc, kind, row1, row2, chip,
-   cap, sweep}. disc: king (in the solver's colour), good, bad, close,
+   cap, sweep, pips}. disc: king (in the solver's colour), good, bad, close,
    checking, unchecked or info; kind: neutral, good, bad, close, info, hint
    or explore; cap: one caption instead of two rows; sweep: the thin line
    that runs along the band's foot while a move is checked. A word for a
    tap that is not a move (a.note) takes row 2 for a while, and the chip
-   steps aside for it. Row 2 always fits the word budget (bandFit). The
-   forcing steps keep today's sentences inside the row caps until slice 11
-   gives them their own words */
+   steps aside for it. Row 2 always fits the word budget (bandFit). pips:
+   inside a forcing line, from the first move found, at the right of row 1
+   (a relearn card's chip, shown only before that move, gives way to them) */
 function bandFor(a) {
   var b = bandOf(a), n = a.note && a.note.key === cardStateKey(a) ? a.note : null;
   if (!b.cap && n) { b.cands = NOTE_COPY[n.id](a); b.fall = ''; b.chip = ''; }
+  if (!b.cap) b.pips = pipsOf(a);
   return bandFit(a, b);
 }
 /* row 2 from its ladder: the row's own caps, then, over the word budget,
@@ -8129,7 +8216,8 @@ function bandOf(a) {
     return { disc: t.kind === 'miss' ? 'bad' : t.kind, kind: t.kind === 'miss' ? 'bad' : t.kind === 'unchecked' ? 'info' : 'close',
              row1: tv.row1, cands: wait ? [] : tv.cands, fall: wait ? '' : tv.fall };
   }
-  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: 'Right', cands: v && v.cands ? v.cands : [], fall: '' };
+  /* a move of the forcing line found (S10): right, and their reply comes */
+  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: CARD_COPY.F1(), cands: [CARD_COPY.F2(a)], fall: '' };
   /* a hint says itself on the showing it came with (pressed, or the
      automatic one this Try again brought: S4), and afterwards while its
      marks stand on the board, so band and board agree; a hint in words
@@ -8140,7 +8228,8 @@ function bandOf(a) {
     var h = hintText(a);
     return { disc: 'king', kind: 'hint', row1: h.row1, cands: h.cands, fall: h.fall };
   }
-  if (mid) return { disc: 'king', kind: 'neutral', row1: 'Your move', cands: v && v.cands ? v.cands : [], fall: 'The next move is forcing too.' };
+  /* their reply has landed: your move, and what it did (F4) */
+  if (mid) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: a.replySaid ? a.replySaid.slice() : [], fall: 'The next move is forcing too.' };
   return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '' };
 }
 /* ── Rendering ──────────────────────────────────────────────────────────────
@@ -8612,7 +8701,7 @@ function boardOptsFor(a) {
        forcing line the next one lands with their reply. Once settled, S0's
        marks (s0Marks) */
     view = frameView(a);
-    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animShown ? 320 : 220; }
+    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animSlow ? 400 : a.animShown ? 320 : 220; }
     var mm = a.markMove, sdue = showDue(a), sl = {}, sfx = null;
     if (mm && sameMove([mm.from, mm.to], view.last)) {
       sfx = a.key + ':' + (a.fxn || 0) + mm.kind;
@@ -8624,6 +8713,8 @@ function boardOptsFor(a) {
       if (opts.anim) land = true;
       else { opts.fx = sfx; for (var sk in sl) opts[sk] = sl[sk]; }
     }
+    /* their reply after Play it, on S10's timeline (addReplyMarks) */
+    if (addReplyMarks(a, view, opts)) land = true;
     if (sdue) {
       opts.sel = a.sel;
       if (a.sel === sdue.from) opts.dots = [sdue.to];
@@ -8659,7 +8750,7 @@ function boardOptsFor(a) {
     if (a.phase === 'guess' && a.solIdx === 0 && !a.explore) opts.bad = [a.played.from, a.played.to];
     /* your move slides as you make it; their reply, once See it plays it,
        slides as a move the app shows */
-    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.phase === 'tried' && a.tried.seen ? 320 : 220; }
+    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animSlow ? 400 : a.phase === 'tried' && a.tried.seen ? 320 : 220; }
     /* the move just made, on its squares: checking (a grey dots badge), a
        miss (a red cross), a good move that is not the best (a hollow ring
        with a tick) or one not checked (a question mark); once See it plays
@@ -8669,6 +8760,8 @@ function boardOptsFor(a) {
     var t = a.tried, due = dueMove(a), vk = null, vm = null, fx = null, lands = null;
     if (a.phase === 'checking' && a.ghostMove) { vk = 'checking'; vm = a.ghostMove; }
     else if (a.phase === 'tried' && !t.seen) { vk = t.kind === 'miss' ? 'bad' : t.kind; vm = [t.from, t.to]; }
+    /* a move of a forcing line found (S10): the filled tick, until their reply moves */
+    else if (a.phase === 'reply' && a.reply && !a.reply.played && a.lastMove) { vk = 'good'; vm = a.lastMove; }
     if (vk) {
       fx = a.key + ':' + (a.fxn || 0) + vk;
       lands = { tints: [{ sq: vm[0], kind: vk }, { sq: vm[1], kind: vk }], badges: [{ sq: vm[1], kind: vk, fx: fx }] };
@@ -8703,6 +8796,8 @@ function boardOptsFor(a) {
        once the crossfade back has ended (clearTry) */
     var tm = a.phase === 'guess' && !a.triedHold ? triedMark(a) : null;
     if (tm) { opts.tried = [tm]; opts.fx = tm.fx; }
+    /* the forcing reply (S10): its telegraph, its slide, where it landed */
+    if ((a.phase === 'reply' || a.phase === 'guess') && addReplyMarks(a, view, opts)) land = true;
     /* a hint's marks (S8), while the card asks; after Try again they land
        with the tried line, once the crossfade is over */
     if (a.phase === 'guess' && !a.triedHold) {
@@ -8716,7 +8811,7 @@ function boardOptsFor(a) {
      to one ring (2.1) and the band's T4 says it alone; after an answer the
      outline is the tap's answer (principle 6) */
   if (a.nope && a.nope.key === cardStateKey(a) && (a.phase === 'done' || !(opts.rings || []).length)) opts.rings = (opts.rings || []).concat([{ sq: a.nope.sq, kind: 'nope' }]);
-  if (slideMs === 320) opts.animMs = 320;
+  if (slideMs === 320 || slideMs === 400) opts.animMs = slideMs;
   /* the last-move tint marks a move that has landed: a piece sliding in
      with a verdict to come gets no tint until the verdict's own, so its
      squares change colour once */
@@ -8737,6 +8832,28 @@ function boardOptsFor(a) {
        asked for */
     pending: !(a.phase === 'done' && a.explore) || !!xpSpoil(xpCur(a.explore))
   };
+}
+/* the forcing reply's marks (S10, 2.1) on the frame view: from 600 ms its
+   telegraph, the piece ringed and a blue-grey dashed arrow to where it
+   goes; both ride its slide; as it lands the ring goes, the arrow turns
+   solid and what it took shows as a token. The landed marks stay until
+   your next move (a.replyMark), as the move's own marks (2.3 exempts
+   them). Added to opts; true when they ride a slide (they go as it lands) */
+function addReplyMarks(a, view, opts) {
+  var rp = a.reply, rk = a.replyMark, o = null, sliding = false;
+  if (rp && !rp.played) {
+    if (rp.tele && a.sol && a.sol[a.solIdx] === rp.uci) o = { rings: [{ sq: rp.from, kind: 'reply' }], arrows: [{ from: rp.from, to: rp.to, kind: 'reply', key: 'reply' }] };
+  } else if (rk && sameMove(view.last, [rk.from, rk.to])) {
+    sliding = sameMove(opts.anim, view.last);
+    if (sliding) o = { rings: [{ sq: rk.from, kind: 'reply' }], arrows: [{ from: rk.from, to: rk.to, kind: 'reply', key: 'reply' }] };
+    else {
+      o = { arrows: [{ from: rk.from, to: rk.to, kind: 'reply', key: 'reply', solid: true }] };
+      if (rk.token) { o.tokens = [{ sq: rk.token.sq, p: rk.token.p, kind: colorW(rk.token.p) === myPov(a.it) ? 'lost' : 'won', fx: rk.fx }]; if (!opts.fx) opts.fx = rk.fx; }
+    }
+  }
+  if (!o) return false;
+  for (var k in o) opts[k] = (opts[k] || []).concat(o[k]);
+  return sliding;
 }
 /* the corner of square to that the verdict badge takes, as [x, y] from
    the square's corner: the top-right (36, 9) of 2.1, unless an arrow from
@@ -8837,6 +8954,7 @@ function paintBoard(a, instant) {
   var ms = f.slideMs || 0;
   releaseAnims(bw, ms);
   a.animMove = null;
+  a.animSlow = false;
   a.jump = false;
   /* the badge and tints wait for the piece (the land beat), and the
      verdict's sound comes with them; a move the app shows sounds as it
@@ -8877,7 +8995,7 @@ var XFADE = 150;
 function xfadeHtml(html) {
   var i = html.indexOf('</svg>'), j = i < 0 ? -1 : html.indexOf('</svg>', i + 6);
   if (j < 0) return '';
-  var old = html.slice(0, j + 6).replace(/ data-sq="\d+"/g, '').replace(/ class="anim-piece"/g, '')
+  var old = html.slice(0, j + 6).replace(/ data-sq="\d+"/g, '').replace(/ class="anim-piece[^"]*"/g, '')
     .replace('<svg class="board"', '<svg class="xf-board"').replace('<svg class="marks"', '<svg class="xf-marks"').replace(/ role="img" aria-label="[^"]*"/, '');
   return '<div class="xfade" aria-hidden="true">' + old + '</div>';
 }
@@ -8946,11 +9064,11 @@ function renderCard(beats) {
   stage(beats || ['board', 'land', 'text']);
 }
 /* what the card says and offers, as data: the band (bandFor: disc, kind,
-   row1, row2, chip, cap), forcing pips (a later slice), the action bar as
-   slots, the strip's markup and the live region's words */
+   row1, row2, chip, cap, and inside a forcing line its pips), the action
+   bar as slots, the strip's markup and the live region's words */
 function displayFor(a) {
   var b = bandFor(a), ss = ui.session;
-  return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', sweep: !!b.sweep, pips: null,
+  return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', sweep: !!b.sweep, pips: b.pips || null,
            buttons: barSlots(a, ss), strip: stripHtml(a, ss), live: liveWords(a, b) };
 }
 /* a node's markup, written only when it changed, so a repaint that changes
@@ -9000,7 +9118,10 @@ function paintText(a) {
     if (rh) rh.focus({ preventScroll: true });
   }
   else if (barMoved && !xe && lost && doneFocus(a)) doneFocus(a).focus({ preventScroll: true });
-  else if (a.focusRight && a.phase === 'tried' && barButton(rightSlot())) { a.focusRight = false; barButton(rightSlot()).focus({ preventScroll: true }); }
+  else if (a.focusRight && (a.phase === 'tried' || a.phase === 'reply') && barButton(rightSlot())) { a.focusRight = false; barButton(rightSlot()).focus({ preventScroll: true }); }
+  /* a forcing reply's words: the keyboard on the bar goes to the band's
+     "Your move", never to the button that took its slot */
+  else if (a.focusTask && a.phase === 'guess' && lost && el('task-h')) el('task-h').focus({ preventScroll: true });
   else if (focKey && fp) {
     /* a bar button: the one now in its slot, or the right-hand one (S20)
        when that slot is off or gone */
@@ -9017,6 +9138,7 @@ function paintText(a) {
        control that went falls back to the bar's right-hand button */
     (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : barButton(rightSlot()) || (bar && bar.querySelector('[data-act]'))) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
+  a.focusTask = false;
   paintLive(d);
   /* a miss's verdict is on screen now: its reason's beats run from here;
      so do a settled result's (S0) */
@@ -9076,8 +9198,8 @@ function paintLive(d) {
 }
 /* the band (FINAL-SPEC 2.0): the fixed box above the board. A disc, then
    row 1 (the heading the card focuses: the task before an answer, the
-   result after) with the relearn chip at its right, then row 2; or one
-   caption while exploring */
+   result after) with the relearn chip or a forcing line's pips at its
+   right, then row 2; or one caption while exploring */
 function bandHtml(a, d) {
   /* a story step keeps the card's verdict disc beside its caption; the
      explorer's sentence stands alone (the live region says it) */
@@ -9085,8 +9207,16 @@ function bandHtml(a, d) {
   if (d.cap) return '<div class="card-task k-' + d.kind + ' cap" aria-hidden="true"><p class="bd-cap">' + esc(d.cap) + '</p></div>';
   return '<div class="card-task k-' + d.kind + (d.sweep ? ' sweep' : '') + '">' + discHtml(a, d.disc)
     + '<div class="bd-rows"><div class="bd-top"><h2 class="bd-r1" id="' + (a.phase === 'done' ? 'result-h' : 'task-h') + '" tabindex="-1">' + esc(d.row1) + '</h2>'
-    + (d.chip ? '<span class="bd-chip">' + esc(d.chip) + '</span>' : '') + '</div>'
+    + (d.pips ? pipsHtml(d.pips) : d.chip ? '<span class="bd-chip">' + esc(d.chip) + '</span>' : '') + '</div>'
     + '<p class="bd-r2">' + esc(d.row2) + '</p></div></div>';
+}
+/* the forcing pips (2.0): a 7 px dot per move of yours, filled for each
+   one found, ringed for the one due now; they repeat nothing the band does
+   not say, so a screen reader skips them */
+function pipsHtml(p) {
+  var h = '<span class="bd-pips" aria-hidden="true">';
+  for (var i = 0; i < p.n; i++) h += '<i class="pip' + (i < p.done ? ' done' : '') + (i === p.cur ? ' cur' : '') + '"></i>';
+  return h + '</span>';
 }
 /* the band's disc: a king in the solver's colour while it is your move,
    else the verdict's glyph, drawn as the board's badges are (the close
@@ -9140,7 +9270,7 @@ function barSlots(a, ss) {
     /* the answer shown (S7): Continue, and Play it in gold; switched off
        while their reply plays, and once played until the card settles */
     if (a.view.mode === 'show' || (a.revealed && a.settle < 2))
-      return [{ act: 'next', label: cont.label, cls: 'btn-line' }, { act: 'playIt', label: 'Play it ›', cls: 'btn-big', off: a.showWait || !showDue(a) }];
+      return [{ act: 'next', label: cont.label, cls: 'btn-line' }, replyButton(a) || { act: 'playIt', label: 'Play it ›', cls: 'btn-big', off: a.showWait || !showDue(a) }];
     /* settled (S0): the story, and Continue in gold */
     return [{ act: 'seeWhy', label: 'See why ›', cls: 'btn-line' }, cont];
   }
@@ -9156,7 +9286,16 @@ function barSlots(a, ss) {
             { act: 'reveal', label: 'Show the answer', cls: 'btn-line' }];
   }
   if (a.phase === 'checking') return [{ act: 'takeBack', label: 'Take back', cls: 'btn-line' }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
-  return [{ act: 'hint', label: 'Hint', cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
+  /* their reply on its way (S10): the guess bar, switched off; under
+     reduced motion the reply waits for its button, alone on the right */
+  if (replyButton(a)) return [{ label: '', cls: 'slot-empty', off: true, empty: true }, replyButton(a)];
+  return [{ act: 'hint', label: a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint'), cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
+}
+/* "Their reply ›" (S10, S19): under reduced motion no timer moves a piece,
+   so the forcing reply waits for this gold button; null when no reply waits */
+function replyButton(a) {
+  var rp = a.reply;
+  return rp && !rp.played && reducedMotion() && a.sol && a.sol[a.solIdx] === rp.uci ? { act: 'theirReply', label: 'Their reply ›', cls: 'btn-big' } : null;
 }
 /* the bar while a try is on the board: the gold right-hand button takes it
    back (Try again; Keep looking after a good move that is not the best). On
@@ -9175,9 +9314,10 @@ function triedSlots(a, seen) {
   return [left, { act: 'tryAgain', label: 'Try again', cls: 'btn-big' }];
 }
 /* a slot as a button: its place (data-slot) for the double-tap guard; a
-   switched-off one has no action */
+   switched-off one has no action; an empty one keeps its place */
 function barHtml(slots) {
   return slots.map(function (s, i) {
+    if (s.empty) return '<span class="slot-empty" data-slot="' + i + '" aria-hidden="true"></span>';
     return '<a class="' + s.cls + (s.off ? ' btn-off' : '') + '" data-slot="' + i + '"'
       + (s.off ? ' aria-disabled="true" tabindex="-1"' : ' data-act="' + s.act + '"' + (s.k != null ? ' data-k="' + esc(s.k) + '"' : ''))
       + (s.aria ? ' aria-label="' + esc(s.aria) + '"' : '') + '>' + esc(s.label) + '</a>';
@@ -9668,8 +9808,9 @@ function renderFoot() {
    flushStage() first: a running slide jumps to its end, waiting board and
    marks beats apply at once, and waiting text moves to 150 ms from now.
    The one exception is the forcing reply (S10), the only move that plays
-   by itself: it is always seen moving, so while it slides flushStage
-   leaves everything as it is and says so, and the input is dropped.
+   by itself: it is always seen moving, so an input before it starts it at
+   once, and while it slides (and until its words come) flushStage leaves
+   everything as it is and says so; the input is dropped.
    Beats belong to one card and die with it (Next, leaving the card). So do
    timed beats (stageAt): a change due at a set time (K1 at 300 ms, K2 at
    3 s, the end of a word or an outline for a tap that is not a move), which
@@ -9744,13 +9885,17 @@ function stageAt(ms, run) {
   stageTimers.push(t);
 }
 /* input first: the slide ends, the board catches up, the words wait 150 ms.
-   Returns true when the input must be dropped: the forcing reply is
-   sliding, or a waiting reply was just started (a tap starts it early,
-   never skips it) */
+   Returns true when the input must be dropped: the forcing reply is on its
+   way (S10). Before it slides, an input starts it now (its telegraph kept,
+   a.reply); while it slides, and once landed until its words come (2050),
+   input changes nothing. Under reduced motion it waits for its own button,
+   and input goes on as usual */
 function flushStage() {
   var now = Date.now(), a = ui.session && ui.session.active, moved = false;
   if (motionHold && motionUntil > now) return true;
   motionHold = false;
+  var rp = a && a.reply;
+  if (rp && rp.played && stageQ.indexOf('board') < 0) return true;
   if (motionUntil > now) {
     var bw = el('bwrap'), ps = bw ? bw.querySelectorAll('.anim-piece') : [], xf = bw ? bw.querySelectorAll('.xfade') : [];
     for (var i = 0; i < ps.length; i++) { ps[i].style.transition = 'none'; ps[i].style.transform = 'translate(0px,0px)'; }
@@ -9781,6 +9926,8 @@ function flushStage() {
   /* a board that just changed counts as a slide that ended now */
   if (moved) motionUntil = now;
   if (text) { stageQ.push('text'); textNotBefore = now + TEXT_GAP; stageRun(); }
+  /* the forcing reply not yet played: the input starts it, and is dropped */
+  if (rp && !rp.played && !reducedMotion()) return theirReply(a, true);
   return false;
 }
 function stageReset() {
@@ -10311,6 +10458,8 @@ document.addEventListener('click', function (e) {
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
     case 'playIt': playIt(false); break;
+    /* reduced motion: the forcing reply plays on this tap alone (S10, S19) */
+    case 'theirReply': if (a) theirReply(a, true); break;
     case 'seeWhy': seeWhy(); break;
     /* closing it gives focus back to what opened it: the strip's link, or
        the ••• button whose menu offered it */
@@ -10455,6 +10604,10 @@ document.addEventListener('keydown', function (e) {
        guard of the slot they stand for */
     if (e.key === '?') { e.preventDefault(); if (!slotGuarded(slotOfAct('hint'))) giveHint(); }
     else if (e.key === 'Enter' && !onAct) { e.preventDefault(); pressRight(); }
+  } else if (a.phase === 'reply' && e.key === 'Enter' && !onAct) {
+    /* under reduced motion the forcing reply waits for its button, the
+       right-hand one (otherwise the key started the reply and was dropped) */
+    e.preventDefault(); pressRight();
   } else if (a.phase === 'checking' && e.key === '?') {
     /* a move being checked keeps the guess bar until K1: ? does what its
        Hint button does, while that button is on */
@@ -10741,6 +10894,7 @@ window.__nlTest = {
     return { idx: ss.idx, n: ss.keys.length, key: a.key, phase: a.phase, best: a.bestUci, played: a.playedUci,
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
              hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null, reason: a.reason || 0, settle: a.settle || 0, showWait: !!a.showWait,
+             reply: a.reply ? { uci: a.reply.uci, tele: !!a.reply.tele, played: !!a.reply.played, show: !!a.reply.show } : null,
              story: a.phase === 'done' && a.view && a.view.mode === 'story' ? (function (S) { return { i: a.view.i, n: S.steps.length, g: S.g, cap: S.steps[a.view.i].cap, pre: !!a.view.pre }; })(buildStory(a)) : null,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
              sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null,

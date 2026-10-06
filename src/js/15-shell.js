@@ -485,6 +485,8 @@ document.addEventListener('click', function (e) {
     case 'skip': skipCard(); break;
     case 'next': nextCard(); break;
     case 'playIt': playIt(false); break;
+    /* reduced motion: the forcing reply plays on this tap alone (S10, S19) */
+    case 'theirReply': if (a) theirReply(a, true); break;
     case 'seeWhy': seeWhy(); break;
     /* closing it gives focus back to what opened it: the strip's link, or
        the ••• button whose menu offered it */
@@ -629,6 +631,10 @@ document.addEventListener('keydown', function (e) {
        guard of the slot they stand for */
     if (e.key === '?') { e.preventDefault(); if (!slotGuarded(slotOfAct('hint'))) giveHint(); }
     else if (e.key === 'Enter' && !onAct) { e.preventDefault(); pressRight(); }
+  } else if (a.phase === 'reply' && e.key === 'Enter' && !onAct) {
+    /* under reduced motion the forcing reply waits for its button, the
+       right-hand one (otherwise the key started the reply and was dropped) */
+    e.preventDefault(); pressRight();
   } else if (a.phase === 'checking' && e.key === '?') {
     /* a move being checked keeps the guess bar until K1: ? does what its
        Hint button does, while that button is on */
@@ -915,6 +921,7 @@ window.__nlTest = {
     return { idx: ss.idx, n: ss.keys.length, key: a.key, phase: a.phase, best: a.bestUci, played: a.playedUci,
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
              hints: a.hints, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null, reason: a.reason || 0, settle: a.settle || 0, showWait: !!a.showWait,
+             reply: a.reply ? { uci: a.reply.uci, tele: !!a.reply.tele, played: !!a.reply.played, show: !!a.reply.show } : null,
              story: a.phase === 'done' && a.view && a.view.mode === 'story' ? (function (S) { return { i: a.view.i, n: S.steps.length, g: S.g, cap: S.steps[a.view.i].cap, pre: !!a.view.pre }; })(buildStory(a)) : null,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
              sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null,

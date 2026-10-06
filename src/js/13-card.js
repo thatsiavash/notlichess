@@ -285,6 +285,8 @@ function gradeMove(m) {
   a.tapAnim = a.tapped ? [m.from, m.to] : null;
   a.animMove = null;
   a.tapped = false;
+  /* their reply's marks stay only until your next move */
+  a.replyMark = null;
   /* inside a forcing line: later steps must follow it (or mate) */
   if (a.sol && a.solIdx > 0) {
     var want = a.sol[a.solIdx];
@@ -302,43 +304,109 @@ function gradeMove(m) {
   if (u === a.playedUci) { sameAsGame(m); return; }
   checkMove(m, u, false);
 }
-/* the forcing line, move by move: my move, then theirs is played for me */
+/* the forcing line, move by move (S10): your move found lands with its
+   tick ("Right"), then their reply plays by itself on its timeline
+   (replyClock); the line's last move is the solve */
 function stepLine(m, u) {
   var a = ui.session.active;
-  var san = sanOf(a.st, m);
   noteWon(a, m);
   applyMove(a.st, m);
   a.lastMove = [m.from, m.to];
   a.animMove = a.tapAnim || null; a.tapAnim = null;
+  a.replyMark = null;
   a.solIdx++;
   /* the line's last move is the solve: its sound comes with its badge */
   if (a.solIdx >= a.sol.length) { solved(null, null, null, true); return; }
   var reply = uciToMove(a.st, a.sol[a.solIdx]);
   if (!reply) { solved(null, null, null, true); return; }
-  snd('good');
   a.phase = 'reply';
-  /* my moves sit at even offsets of the line: the next one is number n */
   a.hintAfter = false;
-  var step = 'Move ' + (Math.ceil(a.solIdx / 2) + 1) + ' of ' + Math.ceil(a.sol.length / 2) + ': now finish it.';
-  a.verdict = verdictOf('good', 'Right', [step], '');
-  a.verdict.html = '✓ ' + san + '. ' + step;
+  /* the tick, the green tints and the sound land with the piece */
+  a.cue = 'good';
+  a.verdict = verdictOf('good', CARD_COPY.F1(), [CARD_COPY.F2(a)], '');
+  var rm = reducedMotion(), lands = a.animMove && !rm ? SLIDE_LEAD + 220 : 0;
+  startReply(a, reply, false);
+  /* under reduced motion the reply waits for its button, which gets the keyboard */
+  a.focusRight = rm;
   renderCard();
-  var cardKey = a.key;
-  setTimeout(function () {
-    var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== cardKey || a2.phase !== 'reply') return;
-    applyMove(a2.st, reply);
-    a2.lastMove = [reply.from, reply.to];
-    a2.animMove = [reply.from, reply.to];
-    /* the one move that plays by itself: paintBoard holds its slide so no
-       input jumps it (flushStage) */
-    a2.replySlide = true;
-    a2.solIdx++;
-    snd('move');
-    if (a2.solIdx >= a2.sol.length) { solved(null, null, null, true); return; }
-    a2.phase = 'guess';
-    renderCard();
-  }, 650);
+  replyClock(a, lands);
+}
+/* the forcing reply (S10), the one move that plays by itself, inside a
+   forcing line being solved or shown (show: after Play it). a.reply:
+   {uci, from, to, show, tele (its telegraph is drawn), played} */
+function startReply(a, m, show) {
+  a.reply = { uci: moveUci(m), from: m.from, to: m.to, show: !!show, tele: reducedMotion(), played: false };
+}
+/* its timeline, from t0, when the move before it lands (landIn ms from
+   now): at 600 the telegraph (its piece ringed, a blue-grey dashed arrow),
+   at 1500 the slide (400 ms, so it lands at 1900), at 2050 the words. The
+   slide's board is drawn SLIDE_LEAD before the piece is let go, and a shown
+   line's words fade out 100 ms before that (theirReply). Under reduced
+   motion nothing runs: the telegraph is drawn at once and the reply waits
+   for "Their reply ›" */
+var REPLY_TELE = 600, REPLY_SLIDE = 1500;
+function replyClock(a, landIn) {
+  var rp = a.reply;
+  if (!rp || reducedMotion()) return;
+  stageAt(landIn + REPLY_TELE, function (a2) { if (a2.reply === rp && !rp.played) { rp.tele = true; stage(['marks']); } });
+  stageAt(landIn + REPLY_SLIDE - SLIDE_LEAD - (rp.show ? TEXT_OUT : 0), function (a2) { if (a2.reply === rp && !rp.played) theirReply(a2, false); });
+}
+/* the reply plays: on its timeline, or now (early: an input before 1500
+   starts it at once, its telegraph kept, flushStage; or its own button
+   under reduced motion). It slides 400 ms with its sound, its ring and
+   dashed arrow riding along; as it lands the arrow turns solid, what it
+   took shows as a token and a check glows; 150 ms later (300 under reduced
+   motion) the words, and the board takes moves again. Returns false when
+   there is no reply to play */
+function theirReply(a, early) {
+  var rp = a && a.reply;
+  if (!rp || rp.played) return false;
+  var m = a.sol && a.sol[a.solIdx] === rp.uci ? uciToMove(a.st, rp.uci) : null;
+  if (!m) { a.reply = null; return false; }
+  var before = cloneState(a.st), took = m.ep >= 0 ? a.st.b[m.ep] : a.st.b[m.to];
+  rp.played = true;
+  rp.tele = true;
+  applyMove(a.st, m);
+  a.lastMove = [m.from, m.to];
+  a.solIdx++;
+  a.replyMark = { from: m.from, to: m.to, token: took ? { sq: m.ep >= 0 ? m.ep : m.to, p: took } : null, fx: a.key + ':rp' + a.solIdx };
+  a.replySaid = replyWords(a, before, m, took);
+  var next = a.solIdx < a.sol.length ? uciToMove(a.st, a.sol[a.solIdx]) : null;
+  /* a shown line: the next move of yours is the answer now */
+  if (rp.show) { a.markMove = null; if (next) a.answerSan = sanOf(a.st, next); }
+  /* exploring has the board: the reply is played there unseen, and the
+     frame exploring comes back to is the one it leads to */
+  if (a.explore) {
+    replyDone(a, rp);
+    if (!next) { a.explore.root = { mode: 's0' }; a.settle = 0; a.settleFor = true; }
+    return true;
+  }
+  var rm = reducedMotion();
+  a.animMove = [m.from, m.to];
+  a.animSlow = true;
+  a.animShown = false;
+  /* paintBoard holds its slide: no input jumps it (flushStage) */
+  a.replySlide = true;
+  a.moveCue = true;
+  var fade = rp.show && !early && !rm ? ['fade', TEXT_OUT] : [];
+  stage(fade.concat(['board', 'land', rm ? 300 : TEXT_GAP, { run: function (a2) { replyDone(a2, rp); } }, 'text']));
+  return true;
+}
+/* the reply's words are due (2050): the card asks for your next move (a
+   shown line offers Play it again) */
+function replyDone(a, rp) {
+  if (a.reply !== rp) return;
+  a.reply = null;
+  if (rp.show) {
+    a.showWait = false;
+    if (!(a.solIdx < a.sol.length)) settleShown(a);
+    return;
+  }
+  a.phase = 'guess';
+  a.verdict = null;
+  /* the keyboard goes to the band's "Your move", not to the button that
+     takes the place of the one it was on */
+  a.focusTask = true;
 }
 /* the tried move is the game move: it stays on the board with why it
    failed, and their reply from the game is one tap away (See it) */
@@ -725,8 +793,9 @@ function reveal() {
   var a = ui.session && ui.session.active;
   /* not while a move is checked once the band says so: the bar shows Show
      the answer switched off then (S3). Before that (K1, 300 ms after it
-     lands) the guess bar still offers it: the move is taken back first */
-  if (!a || a.phase === 'done' || (a.phase === 'checking' && a.checkSaid)) return;
+     lands) the guess bar still offers it: the move is taken back first.
+     Nor while a forcing reply is on its way (S10: its bar is off) */
+  if (!a || a.phase === 'done' || a.phase === 'reply' || (a.phase === 'checking' && a.checkSaid)) return;
   /* pressed while a try is shown (or a move is checked): it goes first, the
      board crossfading back; from the card itself the green arrow is drawn
      and the words follow 150 ms after it (principle 2) */
@@ -736,6 +805,8 @@ function reveal() {
   engineStop('check');
   a.revealed = true;
   a.sel = -1;
+  /* the answer's arrow alone: a landed reply's own marks go */
+  a.replyMark = null;
   /* inside a forcing line the moves already found stay on the board, and
      the answer is the move due now (problem map 4.7) */
   if (!(a.sol && a.solIdx > 0)) { a.st = cloneState(a.pre); a.lastMove = a.preLast; }
@@ -759,7 +830,8 @@ function showDue(a) {
    At the end of the line (at once on a one-move card) the card settles:
    S0's marks, then R4 and the bar to the story. Played by hand (byHand)
    it goes at once, as the player's own moves do: tapped it slides, dragged
-   it lands where it was dropped */
+   it lands where it was dropped. Their reply plays on S10's timeline, and
+   waits for "Their reply ›" under reduced motion */
 function playIt(dragged, byHand) {
   var a = ui.session && ui.session.active, m = a && a.phase === 'done' && !a.explore && !a.showWait ? showDue(a) : null;
   if (!m) return;
@@ -779,33 +851,15 @@ function playIt(dragged, byHand) {
      it, going off) fade out first (2.2), then it slides */
   var beats = dragged || byHand ? null : ['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text'];
   if (!reply) { settleShown(a); renderCard(beats); return; }
-  /* their reply, on the forcing line's own timing (S10 as it is today) */
+  /* their reply, on the forcing line's timeline (S10), from when this move
+     lands: after the fade and the 320 ms slide from the button, the slide
+     alone by hand, at once dragged or under reduced motion; Play it is off
+     until its words come */
   a.showWait = true;
+  startReply(a, reply, true);
   renderCard(beats);
-  var cardKey = a.key;
-  setTimeout(function () {
-    var a2 = ui.session && ui.session.active;
-    if (!a2 || a2.key !== cardKey || !a2.showWait || a2.phase !== 'done') return;
-    a2.showWait = false;
-    applyMove(a2.st, reply);
-    a2.lastMove = [reply.from, reply.to];
-    a2.markMove = null;
-    a2.solIdx++;
-    /* the next move of yours is the answer now */
-    var next = a2.solIdx < a2.sol.length ? uciToMove(a2.st, a2.sol[a2.solIdx]) : null;
-    if (next) a2.answerSan = sanOf(a2.st, next);
-    /* exploring has the board: the reply is played there unseen, and the
-       frame exploring comes back to is the one it leads to */
-    if (a2.explore) { if (!next) { a2.explore.root = { mode: 's0' }; a2.settle = 0; a2.settleFor = true; } return; }
-    if (!next) settleShown(a2);
-    a2.animMove = [reply.from, reply.to];
-    a2.animShown = false;
-    a2.replySlide = true;
-    a2.moveCue = true;
-    /* the words about to change (the answer's name, Play it coming back)
-       fade out before it slides, as before any move the app shows */
-    renderCard(['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text']);
-  }, 650);
+  var rm = reducedMotion();
+  replyClock(a, (beats && !rm ? TEXT_OUT : 0) + (dragged || rm ? 0 : SLIDE_LEAD + 320));
 }
 /* the shown line is over: the card settles as S0 does (the answer's band
    stays until R4 comes) */

@@ -263,6 +263,9 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 #bwrap.static .board rect[data-sq],#bwrap.static .board use[data-sq]{cursor:default}
 .board use.drag-src{opacity:.35}
 .anim-piece{transition:transform .22s ease;will-change:transform}
+/* the forcing reply (S10), the one move that plays by itself: slower, and
+   easing in and out, so it is always seen moving */
+.anim-piece.anim-slow{transition:transform .4s ease-in-out}
 /* the marks lie over the board in their own svg and never take a tap; a
    badge pops and a token or ghost fades in once, on its first paint */
 .marks{position:absolute;left:0;top:0;width:100%;height:100%;display:block;pointer-events:none;border-radius:4px;overflow:hidden}
@@ -430,6 +433,12 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;outline:none;font-variant-numeric:lining-nums}
 .bd-r2{margin:0;font-size:15px;line-height:18px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bd-r2:empty{display:none}
+/* a forcing line's pips (2.0): a 7 px dot per move of yours, filled when
+   found, ringed when due */
+.bd-pips{flex:none;margin-left:auto;display:flex;gap:5px;align-items:center;padding-right:2px}
+.bd-pips .pip{width:7px;height:7px;border-radius:50%;box-sizing:border-box;border:1px solid var(--text-3)}
+.bd-pips .pip.done{background:#8fb573;border-color:#8fb573}
+.bd-pips .pip.cur{border:1.5px solid var(--text-1)}
 .bd-chip{flex:none;margin-left:auto;font-size:11.5px;line-height:18px;padding:0 8px;border:1px solid var(--accent);border-radius:9px;color:var(--accent-hover);white-space:nowrap}
 .bd-cap{margin:0;font-size:15px;line-height:20px;color:var(--text-1);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .card-task.k-good{background:rgba(143,181,115,.16);border-left-color:#8fb573}
@@ -450,6 +459,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .card > .panel{align-self:stretch}
 .stakes-tag{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-1);margin:0 0 4px}
 .dot-bad{flex:none;width:7px;height:7px;border-radius:50%;background:var(--bad)}
+.guess-acts .slot-empty{flex:1 1 0;min-height:48px}
 .guess-acts .btn-line,.guess-acts .btn-big{flex:1 1 0;justify-content:center;text-align:center;min-height:48px;display:inline-flex;align-items:center}
 @media (min-width:861px){
   .guess-acts,.done-acts{margin-top:auto;padding-top:12px}

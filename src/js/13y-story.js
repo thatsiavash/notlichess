@@ -42,8 +42,30 @@ var CARD_COPY = {
   V2: function () { return 'Play the green arrow.'; },
   H1: function () { return 'Hint 1 of 2'; },
   H3: function () { return 'Hint 2 of 2'; },
-  H3b: function () { return 'Move the circled piece.'; }
+  H3b: function () { return 'Move the circled piece.'; },
+  F1: function () { return 'Right'; },
+  F2: function (a) { return sidesOf(a).opp + ' replies next.'; },
+  F3: function () { return 'Your move'; }
 };
+/* F4: their reply in a forcing line, once it has landed, as row 2 says it:
+   what it took, or the check it gives, or the move itself; st is the
+   position before it, took what it captured */
+function replyWords(a, st, m, took) {
+  var opp = sidesOf(a).opp, after = cloneState(st);
+  applyMove(after, m);
+  if (took) return [opp + ' took your ' + PIECE_WORD[pType(took)] + ', as expected.'];
+  if (checkersOf(after).length) return [opp + ' gives check, as expected.'];
+  return [opp + ' played ' + capSan(st, m) + ', as expected.'];
+}
+/* the forcing pips (2.0): one dot per move of yours in the line, from your
+   first move found to the line's end (never before it: the card opens as
+   any other does, with no count). done: the moves found; cur: the move due
+   now, or -1 while their reply is on its way */
+function pipsOf(a) {
+  if (!a.sol || !(a.solIdx > 0) || a.phase === 'done') return null;
+  var found = Math.ceil(a.solIdx / 2);
+  return { n: Math.ceil(a.sol.length / 2), done: found, cur: a.phase === 'reply' ? -1 : found };
+}
 /* a word for a tap that is not a move, as row 2 says it: the full text,
    then (when the words on screen would go over budget) a shorter one */
 var NOTE_COPY = {
@@ -209,17 +231,18 @@ function hintText(a) {
   return r;
 }
 /* the band for the state the card is in: {disc, kind, row1, row2, chip,
-   cap, sweep}. disc: king (in the solver's colour), good, bad, close,
+   cap, sweep, pips}. disc: king (in the solver's colour), good, bad, close,
    checking, unchecked or info; kind: neutral, good, bad, close, info, hint
    or explore; cap: one caption instead of two rows; sweep: the thin line
    that runs along the band's foot while a move is checked. A word for a
    tap that is not a move (a.note) takes row 2 for a while, and the chip
-   steps aside for it. Row 2 always fits the word budget (bandFit). The
-   forcing steps keep today's sentences inside the row caps until slice 11
-   gives them their own words */
+   steps aside for it. Row 2 always fits the word budget (bandFit). pips:
+   inside a forcing line, from the first move found, at the right of row 1
+   (a relearn card's chip, shown only before that move, gives way to them) */
 function bandFor(a) {
   var b = bandOf(a), n = a.note && a.note.key === cardStateKey(a) ? a.note : null;
   if (!b.cap && n) { b.cands = NOTE_COPY[n.id](a); b.fall = ''; b.chip = ''; }
+  if (!b.cap) b.pips = pipsOf(a);
   return bandFit(a, b);
 }
 /* row 2 from its ladder: the row's own caps, then, over the word budget,
@@ -567,7 +590,8 @@ function bandOf(a) {
     return { disc: t.kind === 'miss' ? 'bad' : t.kind, kind: t.kind === 'miss' ? 'bad' : t.kind === 'unchecked' ? 'info' : 'close',
              row1: tv.row1, cands: wait ? [] : tv.cands, fall: wait ? '' : tv.fall };
   }
-  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: 'Right', cands: v && v.cands ? v.cands : [], fall: '' };
+  /* a move of the forcing line found (S10): right, and their reply comes */
+  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: CARD_COPY.F1(), cands: [CARD_COPY.F2(a)], fall: '' };
   /* a hint says itself on the showing it came with (pressed, or the
      automatic one this Try again brought: S4), and afterwards while its
      marks stand on the board, so band and board agree; a hint in words
@@ -578,6 +602,7 @@ function bandOf(a) {
     var h = hintText(a);
     return { disc: 'king', kind: 'hint', row1: h.row1, cands: h.cands, fall: h.fall };
   }
-  if (mid) return { disc: 'king', kind: 'neutral', row1: 'Your move', cands: v && v.cands ? v.cands : [], fall: 'The next move is forcing too.' };
+  /* their reply has landed: your move, and what it did (F4) */
+  if (mid) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: a.replySaid ? a.replySaid.slice() : [], fall: 'The next move is forcing too.' };
   return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '' };
 }

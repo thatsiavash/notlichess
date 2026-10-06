@@ -467,7 +467,7 @@ function boardOptsFor(a) {
        forcing line the next one lands with their reply. Once settled, S0's
        marks (s0Marks) */
     view = frameView(a);
-    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animShown ? 320 : 220; }
+    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animSlow ? 400 : a.animShown ? 320 : 220; }
     var mm = a.markMove, sdue = showDue(a), sl = {}, sfx = null;
     if (mm && sameMove([mm.from, mm.to], view.last)) {
       sfx = a.key + ':' + (a.fxn || 0) + mm.kind;
@@ -479,6 +479,8 @@ function boardOptsFor(a) {
       if (opts.anim) land = true;
       else { opts.fx = sfx; for (var sk in sl) opts[sk] = sl[sk]; }
     }
+    /* their reply after Play it, on S10's timeline (addReplyMarks) */
+    if (addReplyMarks(a, view, opts)) land = true;
     if (sdue) {
       opts.sel = a.sel;
       if (a.sel === sdue.from) opts.dots = [sdue.to];
@@ -514,7 +516,7 @@ function boardOptsFor(a) {
     if (a.phase === 'guess' && a.solIdx === 0 && !a.explore) opts.bad = [a.played.from, a.played.to];
     /* your move slides as you make it; their reply, once See it plays it,
        slides as a move the app shows */
-    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.phase === 'tried' && a.tried.seen ? 320 : 220; }
+    if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animSlow ? 400 : a.phase === 'tried' && a.tried.seen ? 320 : 220; }
     /* the move just made, on its squares: checking (a grey dots badge), a
        miss (a red cross), a good move that is not the best (a hollow ring
        with a tick) or one not checked (a question mark); once See it plays
@@ -524,6 +526,8 @@ function boardOptsFor(a) {
     var t = a.tried, due = dueMove(a), vk = null, vm = null, fx = null, lands = null;
     if (a.phase === 'checking' && a.ghostMove) { vk = 'checking'; vm = a.ghostMove; }
     else if (a.phase === 'tried' && !t.seen) { vk = t.kind === 'miss' ? 'bad' : t.kind; vm = [t.from, t.to]; }
+    /* a move of a forcing line found (S10): the filled tick, until their reply moves */
+    else if (a.phase === 'reply' && a.reply && !a.reply.played && a.lastMove) { vk = 'good'; vm = a.lastMove; }
     if (vk) {
       fx = a.key + ':' + (a.fxn || 0) + vk;
       lands = { tints: [{ sq: vm[0], kind: vk }, { sq: vm[1], kind: vk }], badges: [{ sq: vm[1], kind: vk, fx: fx }] };
@@ -558,6 +562,8 @@ function boardOptsFor(a) {
        once the crossfade back has ended (clearTry) */
     var tm = a.phase === 'guess' && !a.triedHold ? triedMark(a) : null;
     if (tm) { opts.tried = [tm]; opts.fx = tm.fx; }
+    /* the forcing reply (S10): its telegraph, its slide, where it landed */
+    if ((a.phase === 'reply' || a.phase === 'guess') && addReplyMarks(a, view, opts)) land = true;
     /* a hint's marks (S8), while the card asks; after Try again they land
        with the tried line, once the crossfade is over */
     if (a.phase === 'guess' && !a.triedHold) {
@@ -571,7 +577,7 @@ function boardOptsFor(a) {
      to one ring (2.1) and the band's T4 says it alone; after an answer the
      outline is the tap's answer (principle 6) */
   if (a.nope && a.nope.key === cardStateKey(a) && (a.phase === 'done' || !(opts.rings || []).length)) opts.rings = (opts.rings || []).concat([{ sq: a.nope.sq, kind: 'nope' }]);
-  if (slideMs === 320) opts.animMs = 320;
+  if (slideMs === 320 || slideMs === 400) opts.animMs = slideMs;
   /* the last-move tint marks a move that has landed: a piece sliding in
      with a verdict to come gets no tint until the verdict's own, so its
      squares change colour once */
@@ -592,6 +598,28 @@ function boardOptsFor(a) {
        asked for */
     pending: !(a.phase === 'done' && a.explore) || !!xpSpoil(xpCur(a.explore))
   };
+}
+/* the forcing reply's marks (S10, 2.1) on the frame view: from 600 ms its
+   telegraph, the piece ringed and a blue-grey dashed arrow to where it
+   goes; both ride its slide; as it lands the ring goes, the arrow turns
+   solid and what it took shows as a token. The landed marks stay until
+   your next move (a.replyMark), as the move's own marks (2.3 exempts
+   them). Added to opts; true when they ride a slide (they go as it lands) */
+function addReplyMarks(a, view, opts) {
+  var rp = a.reply, rk = a.replyMark, o = null, sliding = false;
+  if (rp && !rp.played) {
+    if (rp.tele && a.sol && a.sol[a.solIdx] === rp.uci) o = { rings: [{ sq: rp.from, kind: 'reply' }], arrows: [{ from: rp.from, to: rp.to, kind: 'reply', key: 'reply' }] };
+  } else if (rk && sameMove(view.last, [rk.from, rk.to])) {
+    sliding = sameMove(opts.anim, view.last);
+    if (sliding) o = { rings: [{ sq: rk.from, kind: 'reply' }], arrows: [{ from: rk.from, to: rk.to, kind: 'reply', key: 'reply' }] };
+    else {
+      o = { arrows: [{ from: rk.from, to: rk.to, kind: 'reply', key: 'reply', solid: true }] };
+      if (rk.token) { o.tokens = [{ sq: rk.token.sq, p: rk.token.p, kind: colorW(rk.token.p) === myPov(a.it) ? 'lost' : 'won', fx: rk.fx }]; if (!opts.fx) opts.fx = rk.fx; }
+    }
+  }
+  if (!o) return false;
+  for (var k in o) opts[k] = (opts[k] || []).concat(o[k]);
+  return sliding;
 }
 /* the corner of square to that the verdict badge takes, as [x, y] from
    the square's corner: the top-right (36, 9) of 2.1, unless an arrow from
@@ -692,6 +720,7 @@ function paintBoard(a, instant) {
   var ms = f.slideMs || 0;
   releaseAnims(bw, ms);
   a.animMove = null;
+  a.animSlow = false;
   a.jump = false;
   /* the badge and tints wait for the piece (the land beat), and the
      verdict's sound comes with them; a move the app shows sounds as it
@@ -732,7 +761,7 @@ var XFADE = 150;
 function xfadeHtml(html) {
   var i = html.indexOf('</svg>'), j = i < 0 ? -1 : html.indexOf('</svg>', i + 6);
   if (j < 0) return '';
-  var old = html.slice(0, j + 6).replace(/ data-sq="\d+"/g, '').replace(/ class="anim-piece"/g, '')
+  var old = html.slice(0, j + 6).replace(/ data-sq="\d+"/g, '').replace(/ class="anim-piece[^"]*"/g, '')
     .replace('<svg class="board"', '<svg class="xf-board"').replace('<svg class="marks"', '<svg class="xf-marks"').replace(/ role="img" aria-label="[^"]*"/, '');
   return '<div class="xfade" aria-hidden="true">' + old + '</div>';
 }
@@ -801,11 +830,11 @@ function renderCard(beats) {
   stage(beats || ['board', 'land', 'text']);
 }
 /* what the card says and offers, as data: the band (bandFor: disc, kind,
-   row1, row2, chip, cap), forcing pips (a later slice), the action bar as
-   slots, the strip's markup and the live region's words */
+   row1, row2, chip, cap, and inside a forcing line its pips), the action
+   bar as slots, the strip's markup and the live region's words */
 function displayFor(a) {
   var b = bandFor(a), ss = ui.session;
-  return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', sweep: !!b.sweep, pips: null,
+  return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', sweep: !!b.sweep, pips: b.pips || null,
            buttons: barSlots(a, ss), strip: stripHtml(a, ss), live: liveWords(a, b) };
 }
 /* a node's markup, written only when it changed, so a repaint that changes
@@ -855,7 +884,10 @@ function paintText(a) {
     if (rh) rh.focus({ preventScroll: true });
   }
   else if (barMoved && !xe && lost && doneFocus(a)) doneFocus(a).focus({ preventScroll: true });
-  else if (a.focusRight && a.phase === 'tried' && barButton(rightSlot())) { a.focusRight = false; barButton(rightSlot()).focus({ preventScroll: true }); }
+  else if (a.focusRight && (a.phase === 'tried' || a.phase === 'reply') && barButton(rightSlot())) { a.focusRight = false; barButton(rightSlot()).focus({ preventScroll: true }); }
+  /* a forcing reply's words: the keyboard on the bar goes to the band's
+     "Your move", never to the button that took its slot */
+  else if (a.focusTask && a.phase === 'guess' && lost && el('task-h')) el('task-h').focus({ preventScroll: true });
   else if (focKey && fp) {
     /* a bar button: the one now in its slot, or the right-hand one (S20)
        when that slot is off or gone */
@@ -872,6 +904,7 @@ function paintText(a) {
        control that went falls back to the bar's right-hand button */
     (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : barButton(rightSlot()) || (bar && bar.querySelector('[data-act]'))) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
+  a.focusTask = false;
   paintLive(d);
   /* a miss's verdict is on screen now: its reason's beats run from here;
      so do a settled result's (S0) */
@@ -931,8 +964,8 @@ function paintLive(d) {
 }
 /* the band (FINAL-SPEC 2.0): the fixed box above the board. A disc, then
    row 1 (the heading the card focuses: the task before an answer, the
-   result after) with the relearn chip at its right, then row 2; or one
-   caption while exploring */
+   result after) with the relearn chip or a forcing line's pips at its
+   right, then row 2; or one caption while exploring */
 function bandHtml(a, d) {
   /* a story step keeps the card's verdict disc beside its caption; the
      explorer's sentence stands alone (the live region says it) */
@@ -940,8 +973,16 @@ function bandHtml(a, d) {
   if (d.cap) return '<div class="card-task k-' + d.kind + ' cap" aria-hidden="true"><p class="bd-cap">' + esc(d.cap) + '</p></div>';
   return '<div class="card-task k-' + d.kind + (d.sweep ? ' sweep' : '') + '">' + discHtml(a, d.disc)
     + '<div class="bd-rows"><div class="bd-top"><h2 class="bd-r1" id="' + (a.phase === 'done' ? 'result-h' : 'task-h') + '" tabindex="-1">' + esc(d.row1) + '</h2>'
-    + (d.chip ? '<span class="bd-chip">' + esc(d.chip) + '</span>' : '') + '</div>'
+    + (d.pips ? pipsHtml(d.pips) : d.chip ? '<span class="bd-chip">' + esc(d.chip) + '</span>' : '') + '</div>'
     + '<p class="bd-r2">' + esc(d.row2) + '</p></div></div>';
+}
+/* the forcing pips (2.0): a 7 px dot per move of yours, filled for each
+   one found, ringed for the one due now; they repeat nothing the band does
+   not say, so a screen reader skips them */
+function pipsHtml(p) {
+  var h = '<span class="bd-pips" aria-hidden="true">';
+  for (var i = 0; i < p.n; i++) h += '<i class="pip' + (i < p.done ? ' done' : '') + (i === p.cur ? ' cur' : '') + '"></i>';
+  return h + '</span>';
 }
 /* the band's disc: a king in the solver's colour while it is your move,
    else the verdict's glyph, drawn as the board's badges are (the close
@@ -995,7 +1036,7 @@ function barSlots(a, ss) {
     /* the answer shown (S7): Continue, and Play it in gold; switched off
        while their reply plays, and once played until the card settles */
     if (a.view.mode === 'show' || (a.revealed && a.settle < 2))
-      return [{ act: 'next', label: cont.label, cls: 'btn-line' }, { act: 'playIt', label: 'Play it ›', cls: 'btn-big', off: a.showWait || !showDue(a) }];
+      return [{ act: 'next', label: cont.label, cls: 'btn-line' }, replyButton(a) || { act: 'playIt', label: 'Play it ›', cls: 'btn-big', off: a.showWait || !showDue(a) }];
     /* settled (S0): the story, and Continue in gold */
     return [{ act: 'seeWhy', label: 'See why ›', cls: 'btn-line' }, cont];
   }
@@ -1011,7 +1052,16 @@ function barSlots(a, ss) {
             { act: 'reveal', label: 'Show the answer', cls: 'btn-line' }];
   }
   if (a.phase === 'checking') return [{ act: 'takeBack', label: 'Take back', cls: 'btn-line' }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
-  return [{ act: 'hint', label: 'Hint', cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
+  /* their reply on its way (S10): the guess bar, switched off; under
+     reduced motion the reply waits for its button, alone on the right */
+  if (replyButton(a)) return [{ label: '', cls: 'slot-empty', off: true, empty: true }, replyButton(a)];
+  return [{ act: 'hint', label: a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint'), cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
+}
+/* "Their reply ›" (S10, S19): under reduced motion no timer moves a piece,
+   so the forcing reply waits for this gold button; null when no reply waits */
+function replyButton(a) {
+  var rp = a.reply;
+  return rp && !rp.played && reducedMotion() && a.sol && a.sol[a.solIdx] === rp.uci ? { act: 'theirReply', label: 'Their reply ›', cls: 'btn-big' } : null;
 }
 /* the bar while a try is on the board: the gold right-hand button takes it
    back (Try again; Keep looking after a good move that is not the best). On
@@ -1030,9 +1080,10 @@ function triedSlots(a, seen) {
   return [left, { act: 'tryAgain', label: 'Try again', cls: 'btn-big' }];
 }
 /* a slot as a button: its place (data-slot) for the double-tap guard; a
-   switched-off one has no action */
+   switched-off one has no action; an empty one keeps its place */
 function barHtml(slots) {
   return slots.map(function (s, i) {
+    if (s.empty) return '<span class="slot-empty" data-slot="' + i + '" aria-hidden="true"></span>';
     return '<a class="' + s.cls + (s.off ? ' btn-off' : '') + '" data-slot="' + i + '"'
       + (s.off ? ' aria-disabled="true" tabindex="-1"' : ' data-act="' + s.act + '"' + (s.k != null ? ' data-k="' + esc(s.k) + '"' : ''))
       + (s.aria ? ' aria-label="' + esc(s.aria) + '"' : '') + '>' + esc(s.label) + '</a>';

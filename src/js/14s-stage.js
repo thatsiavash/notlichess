@@ -23,8 +23,9 @@
    flushStage() first: a running slide jumps to its end, waiting board and
    marks beats apply at once, and waiting text moves to 150 ms from now.
    The one exception is the forcing reply (S10), the only move that plays
-   by itself: it is always seen moving, so while it slides flushStage
-   leaves everything as it is and says so, and the input is dropped.
+   by itself: it is always seen moving, so an input before it starts it at
+   once, and while it slides (and until its words come) flushStage leaves
+   everything as it is and says so; the input is dropped.
    Beats belong to one card and die with it (Next, leaving the card). So do
    timed beats (stageAt): a change due at a set time (K1 at 300 ms, K2 at
    3 s, the end of a word or an outline for a tap that is not a move), which
@@ -99,13 +100,17 @@ function stageAt(ms, run) {
   stageTimers.push(t);
 }
 /* input first: the slide ends, the board catches up, the words wait 150 ms.
-   Returns true when the input must be dropped: the forcing reply is
-   sliding, or a waiting reply was just started (a tap starts it early,
-   never skips it) */
+   Returns true when the input must be dropped: the forcing reply is on its
+   way (S10). Before it slides, an input starts it now (its telegraph kept,
+   a.reply); while it slides, and once landed until its words come (2050),
+   input changes nothing. Under reduced motion it waits for its own button,
+   and input goes on as usual */
 function flushStage() {
   var now = Date.now(), a = ui.session && ui.session.active, moved = false;
   if (motionHold && motionUntil > now) return true;
   motionHold = false;
+  var rp = a && a.reply;
+  if (rp && rp.played && stageQ.indexOf('board') < 0) return true;
   if (motionUntil > now) {
     var bw = el('bwrap'), ps = bw ? bw.querySelectorAll('.anim-piece') : [], xf = bw ? bw.querySelectorAll('.xfade') : [];
     for (var i = 0; i < ps.length; i++) { ps[i].style.transition = 'none'; ps[i].style.transform = 'translate(0px,0px)'; }
@@ -136,6 +141,8 @@ function flushStage() {
   /* a board that just changed counts as a slide that ended now */
   if (moved) motionUntil = now;
   if (text) { stageQ.push('text'); textNotBefore = now + TEXT_GAP; stageRun(); }
+  /* the forcing reply not yet played: the input starts it, and is dropped */
+  if (rp && !rp.played && !reducedMotion()) return theirReply(a, true);
   return false;
 }
 function stageReset() {
