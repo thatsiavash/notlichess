@@ -486,7 +486,13 @@ document.addEventListener('click', function (e) {
     case 'next': nextCard(); break;
     case 'playIt': playIt(false); break;
     case 'seeWhy': seeWhy(); break;
-    case 'details': if (a && a.phase === 'done') { if (a.menuOpen) { a.menuOpen = false; renderCard(); } openSheet('details'); } break;
+    /* closing it gives focus back to what opened it: the strip's link, or
+       the ••• button whose menu offered it */
+    case 'details': if (a && a.phase === 'done') {
+      var fromMenu = !!a.menuOpen;
+      if (fromMenu) { a.menuOpen = false; renderCard(); }
+      openSheet('details', fromMenu ? '#ctop [data-act="menu"]' : '#cstrip [data-act="details"]');
+    } break;
     /* these wait out a card's first half second (tooSoon); a slot that
        just changed is ignored above (slotGuarded) */
     case 'dismissStronger': if (!tooSoon(a)) tryAgain(); break;
@@ -664,6 +670,10 @@ document.addEventListener('keydown', function () { document.documentElement.clas
 document.addEventListener('keydown', function (e) {
   if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-act][tabindex]:not(input)')) {
     e.preventDefault();
+    /* Space presses nothing on an answered card's bar (S12): it is never
+       Continue or See why, only Enter is the right-hand button */
+    var sa = ui.session && ui.session.active;
+    if (e.key === ' ' && sa && sa.phase === 'done' && !sa.explore && e.target.closest && e.target.closest('#cbar')) return;
     /* once per press: focus keeps its slot, so a repeat would press the
        button that just took this one's place */
     if (!e.repeat) e.target.click();

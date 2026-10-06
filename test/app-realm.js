@@ -75,7 +75,7 @@ module.exports = function makeApp(opts) {
      document click handler */
   const button = (act, k, slot) => {
     const t = { tagName: 'A', getAttribute: (n) => (n === 'data-act' ? act : n === 'data-k' ? (k == null ? null : String(k)) : n === 'data-slot' ? (slot == null ? null : String(slot)) : null) };
-    t.closest = (sel) => (sel === '[data-act]' ? t : null);
+    t.closest = (sel) => (sel === '[data-act]' || (sel === '#cbar' && slot != null) ? t : null);
     t.matches = (sel) => /^\[data-act\]/.test(sel);
     t.click = () => click(act, k, slot);
     return t;

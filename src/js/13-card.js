@@ -197,7 +197,7 @@ function sessionClick(sq) {
     var due = !a.showWait ? showDue(a) : null;
     if (due && (sq === due.from || a.sel === due.from)) {
       if (sq === due.from) { a.sel = a.sel === sq ? -1 : sq; if (a.sel >= 0) snd('tap'); renderCardBoard(); }
-      else if (sq === due.to) playIt(pointerState.suppressClick);
+      else if (sq === due.to) playIt(pointerState.suppressClick, true);
       else { a.sel = -1; renderCardBoard(); }
       return;
     }
@@ -748,9 +748,10 @@ function showDue(a) {
    and the band stays. Inside a forcing line their reply follows as the
    forcing reply does, and the next move of yours is shown the same way.
    At the end of the line (at once on a one-move card) the card settles:
-   S0's marks, then R4 and the bar to the story. Played by hand (dragged)
+   S0's marks, then R4 and the bar to the story. Played by hand (byHand)
+   it goes at once, as the player's own moves do: tapped it slides, dragged
    it lands where it was dropped */
-function playIt(dragged) {
+function playIt(dragged, byHand) {
   var a = ui.session && ui.session.active, m = a && a.phase === 'done' && !a.explore && !a.showWait ? showDue(a) : null;
   if (!m) return;
   a.sel = -1;
@@ -765,10 +766,13 @@ function playIt(dragged) {
   var reply = null;
   if (a.sol) { a.solIdx++; reply = a.solIdx < a.sol.length ? uciToMove(a.st, a.sol[a.solIdx]) : null; }
   else a.showDone = true;
-  if (!reply) { settleShown(a); renderCard(); return; }
+  /* from Play it, a move the app shows: the words about to change (Play
+     it, going off) fade out first (2.2), then it slides */
+  var beats = dragged || byHand ? null : ['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text'];
+  if (!reply) { settleShown(a); renderCard(beats); return; }
   /* their reply, on the forcing line's own timing (S10 as it is today) */
   a.showWait = true;
-  renderCard();
+  renderCard(beats);
   var cardKey = a.key;
   setTimeout(function () {
     var a2 = ui.session && ui.session.active;
@@ -777,16 +781,21 @@ function playIt(dragged) {
     applyMove(a2.st, reply);
     a2.lastMove = [reply.from, reply.to];
     a2.markMove = null;
+    a2.solIdx++;
+    /* the next move of yours is the answer now */
+    var next = a2.solIdx < a2.sol.length ? uciToMove(a2.st, a2.sol[a2.solIdx]) : null;
+    if (next) a2.answerSan = sanOf(a2.st, next);
+    /* exploring has the board: the reply is played there unseen, and the
+       frame exploring comes back to is the one it leads to */
+    if (a2.explore) { if (!next) { a2.explore.root = { mode: 's0' }; a2.settle = 0; a2.settleFor = true; } return; }
+    if (!next) settleShown(a2);
     a2.animMove = [reply.from, reply.to];
     a2.animShown = false;
     a2.replySlide = true;
-    a2.solIdx++;
-    snd('move');
-    /* the next move of yours is the answer now */
-    var next = showDue(a2);
-    if (next) a2.answerSan = sanOf(a2.st, next);
-    else settleShown(a2);
-    renderCard();
+    a2.moveCue = true;
+    /* the words about to change (the answer's name, Play it coming back)
+       fade out before it slides, as before any move the app shows */
+    renderCard(['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text']);
   }, 650);
 }
 /* the shown line is over: the card settles as S0 does (the answer's band

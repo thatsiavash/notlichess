@@ -386,7 +386,8 @@ function doneHtml(ss) {
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
     /* the result in words, never in colour alone */
-    var word = note === 'left' ? 'Skipped' : note === 'close' ? '◐ close' : r === 'first' ? '✓ first try' : r === 'retry' ? '✓ on the retry' : r === 'fail' ? 'Shown' : '✓ with help';
+    /* a close move then the answer shown: graded hint, noted shown */
+    var word = note === 'left' ? 'Skipped' : note === 'close' || (note === 'shown' && r === 'hint') ? '◐ close' : r === 'first' ? '✓ first try' : r === 'retry' ? '✓ on the retry' : r === 'fail' ? 'Shown' : '✓ with help';
     var pm = uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
     return '<div class="recap-item" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: k, label: 'One position' })) + '">'
       + boardSvg(pre, { flip: it.g.color === 'black', bad: pm ? [pm.from, pm.to] : null, decor: true }) + '<span>' + esc(patternInfo(patternOf(it.b)).name) + '</span>'
@@ -784,6 +785,11 @@ function paintText(a) {
   var focKey = inCard ? (foc.id || ((foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || ''))) : null;
   /* a button of the bar is kept by its place: the bar repaints under it */
   var focSlot = inCard && bar && bar.contains(foc) ? foc.getAttribute('data-slot') : null;
+  /* an answered card's bar changing under a focus in it (or on nothing):
+     the slot's meaning changed, so the keyboard goes where Enter goes */
+  var sig = d.buttons.map(slotSigOf).join('/'), barMoved = a.phase === 'done' && a.barSig != null && a.barSig !== sig;
+  a.barSig = a.phase === 'done' ? sig : null;
+  var lost = !foc || foc === document.body || focSlot != null;
   paintTop(a, ss);
   paintBand(a, d);
   paintBar(d);
@@ -803,6 +809,7 @@ function paintText(a) {
     var rh = barButton(rightSlot()) || el('result-h');
     if (rh) rh.focus({ preventScroll: true });
   }
+  else if (barMoved && !xe && lost && doneFocus(a)) doneFocus(a).focus({ preventScroll: true });
   else if (a.focusRight && a.phase === 'tried' && barButton(rightSlot())) { a.focusRight = false; barButton(rightSlot()).focus({ preventScroll: true }); }
   else if (focKey && fp) {
     /* a bar button: the one now in its slot, or the right-hand one (S20)
@@ -825,6 +832,19 @@ function paintText(a) {
      so do a settled result's (S0) */
   if (a.reasonFor && a.reasonFor === a.tried && a.phase === 'tried') missReason(a);
   if (a.settleFor && a.phase === 'done' && a.view && a.view.mode === 's0') settleBeats(a);
+}
+/* where the keyboard goes when an answered card's bar changes (S7, S15,
+   S20): the right-hand button, the one Enter presses (Play it while the
+   answer is shown, Continue once settled), and while it is switched off
+   (Play it, while their reply plays) that slot itself, so focus never falls
+   to the page or to a slot whose meaning changes under it; See why's lines
+   keep it on › until the last move, then on Continue */
+function doneFocus(a) {
+  var bar = el('cbar');
+  if (!bar) return null;
+  var fwd = !a.view.mode && barButton(1);
+  if (fwd && fwd.getAttribute('data-act') === 'lineFwd' && !/nav-off/.test(fwd.getAttribute('class') || '')) return fwd;
+  return barButton(rightSlot()) || bar.querySelector('[data-slot="' + rightSlot() + '"]');
 }
 /* the bar's button in slot i, if it holds an action now (an off slot has none) */
 function barButton(i) {
@@ -956,7 +976,7 @@ function triedSlots(a, seen) {
 function barHtml(slots) {
   return slots.map(function (s, i) {
     return '<a class="' + s.cls + (s.off ? ' btn-off' : '') + '" data-slot="' + i + '"'
-      + (s.off ? ' aria-disabled="true"' : ' data-act="' + s.act + '"' + (s.k != null ? ' data-k="' + esc(s.k) + '"' : ''))
+      + (s.off ? ' aria-disabled="true" tabindex="-1"' : ' data-act="' + s.act + '"' + (s.k != null ? ' data-k="' + esc(s.k) + '"' : ''))
       + (s.aria ? ' aria-label="' + esc(s.aria) + '"' : '') + '>' + esc(s.label) + '</a>';
   }).join('');
 }
@@ -1077,7 +1097,8 @@ function detailsHtml() {
   if (!a || a.phase !== 'done' || !a.lines) return '';
   var it = a.it, b = it.b, s = a.cls.sentences, best = a.lines.best.san[0] || '', t = patternOf(b), info = patternInfo(t);
   var row = function (cls, text) { return '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
-  var h = '<div class="kicker">Details</div><h3>' + esc(info.name) + '</h3>' + ctxHtml(a);
+  /* the pattern is named once, by its chip (S13) */
+  var h = '<div class="kicker">Details</div>' + ctxHtml(a);
   if (b.d) h += '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(it.g, b) + '.</p>';
   h += '<div class="dt-lines">' + row('tl-bad', esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game))
     + (a.alt && a.lines.yours ? row('tl-alt', esc(altNames(a).mine) + ' also holds.') : '')
@@ -1253,7 +1274,9 @@ function renderInsights() {
   box.innerHTML = h;
 }
 /* ── sheets ──────────────────────────────────────────────────────────────── */
-function openSheet(kind) {
+/* back: where focus returns on closing, as a selector, when the control
+   that opened it may be gone by then (the ••• menu's item) */
+function openSheet(kind, back) {
   var was = ui.sheet;
   ui.sheet = kind;
   var ov = el('overlay');
@@ -1261,7 +1284,7 @@ function openSheet(kind) {
   if (!body) { ui.sheet = was; return; }
   /* the phone's Back gesture closes the sheet, not the page */
   if (!was) { try { history.pushState({ nlSheet: 1, nlSession: history.state && history.state.nlSession }, '', location.href); } catch (e) {} }
-  if (!ui.sheetReturn) ui.sheetReturn = document.activeElement;
+  if (!ui.sheetReturn) { ui.sheetReturn = document.activeElement; ui.sheetBack = back || null; }
   ov.innerHTML = '<div class="scrim" data-act="closeSheet"><div class="sheet" role="dialog" aria-modal="true" aria-label="Details" tabindex="-1">'
     + '<a class="close" data-act="closeSheet" aria-label="Close">×</a>' + body + '</div></div>';
   document.documentElement.style.overflow = 'hidden';
@@ -1278,8 +1301,12 @@ function closeSheet(fromPop) {
   var ov = el('overlay');
   if (ov) ov.innerHTML = '';
   document.documentElement.style.overflow = '';
-  var back = ui.sheetReturn;
-  ui.sheetReturn = null;
+  var back = ui.sheetReturn, sel = ui.sheetBack;
+  ui.sheetReturn = null; ui.sheetBack = null;
+  /* the opener, found again: it may have been repainted, or never had
+     focus (a tap on a phone), and focus never ends on the page itself */
+  var opener = sel && document.querySelector(sel);
+  if (opener) back = opener;
   if (back && back.isConnected && back.focus) back.focus({ preventScroll: true });
 }
 function sheetHtml(kind) {

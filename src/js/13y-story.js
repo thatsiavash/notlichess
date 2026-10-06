@@ -38,7 +38,7 @@ var CARD_COPY = {
   R1: function () { return 'Found it'; },
   R2: function () { return 'You got there'; },
   R3: function () { return 'That works too'; },
-  V1: function (a) { return 'The answer: ' + (a.answerSan || ''); },
+  V1: function (a, san) { return 'The answer: ' + (san || a.answerSan || ''); },
   V2: function () { return 'Play the green arrow.'; }
 };
 /* a word for a tap that is not a move, as row 2 says it: the full text,
@@ -102,6 +102,19 @@ function plainCapture(line, k, from) {
   }
   return 'a rook for a ' + (minors.N && !minors.B ? 'knight' : minors.B && !minors.N ? 'bishop' : 'piece');
 }
+/* a material phrase in one word, the fit ladder's second step, only where
+   that word stays true to what changed hands (n, the net, in pawns): a
+   trade ("a rook for a knight") is "material", never its net ("two
+   pawns"); two kinds of piece taken one way are "a lot of material" when
+   worth that much; a single kind stays as it is. With no phrase (three kinds
+   of piece, a promotion on the way, nothing taken outright) only the words
+   "material" and "a lot of material" are true */
+function oneWord(x, n) {
+  n = Math.abs(n || 0);
+  if (!x) return n >= 6 ? 'a lot of material' : 'material';
+  if (/ for /.test(x)) return 'material';
+  return / and /.test(x) && n >= 6 ? 'a lot of material' : x;
+}
 
 /* why a wrong try fails (M3), as row 2's ladder {cands, fall}: c is the
    classifier on the try (on the game move again, the card's own), win the
@@ -114,8 +127,8 @@ function missWhy(a, c, win, reply, inLine) {
   if (c && c.mateAgainst === 1 && reply) cands = ['Then ' + reply.replace(/#$/, '') + ' is checkmate.', s.opp + ' could checkmate you.'];
   else if (c && c.mateAgainst > 1) cands = [s.opp + ' could checkmate you.'];
   else if (c && c.lossG >= 1) {
-    var w = materialWord(c.lossG);
-    cands = ['You\'d lose ' + (plainCapture(c.gameLine, c.lossAt, 0) || w) + '.', 'You\'d lose ' + w + '.'];
+    var lw = plainCapture(c.gameLine, c.lossAt, 0), w = oneWord(lw, c.lossG);
+    cands = ['You\'d lose ' + (lw || w) + '.', 'You\'d lose ' + w + '.'];
     fall = 'You\'d lose material.';
   }
   else if (inLine) cands = ['Nothing lost, but there\'s a better move.'];
@@ -185,20 +198,34 @@ function buildCompare(a) {
   if (a.alt && a.yours) {
     var alt = buildLine(a.pre, '0000', a.yours.uci, pov);
     if (alt && alt.nodes[(a.yours.at || 0) + 1]) {
+      /* the alternative's own gain, from its own move: the line's moves
+         before it (found as the card asked) are not its doing */
       line = alt; at = (a.yours.at || 0) + 1;
-      settle = settleIndex(alt);
-      gain = matDiff(alt.nodes[settle].after.b, pov) - matDiff(a.pre.b, pov);
+      settle = Math.max(at, settleIndex(alt));
+      gain = matDiff(alt.nodes[settle].after.b, pov) - matDiff(alt.nodes[at].before.b, pov);
       better = sanOf(alt.nodes[at].before, alt.nodes[at].move);
     }
   }
-  var bn = line && line.nodes[at];
+  var bn = line && line.nodes[at], lw = plainCapture(c.gameLine, c.lossAt, 0), gw = gain >= 1 && line ? plainCapture(line, settle, at) : null;
   a.compare = {
     found: !!(gm[1] && ru[0] && gm[1] === ru[0]), betterSan: better, gameSan: gameSan(a),
-    w: c.lossG >= 1 ? plainCapture(c.gameLine, c.lossAt, 0) || materialWord(c.lossG) : '', wn: materialWord(c.lossG),
-    w2: gain >= 1 && line ? plainCapture(line, settle) || materialWord(gain) : '', w2n: materialWord(gain),
-    guard: guardRule(c.gameLine, a.played, bn)
+    w: c.lossG >= 1 ? lw || oneWord(null, c.lossG) : '', wn: c.lossG >= 1 ? oneWord(lw, c.lossG) : '',
+    w2: gain >= 1 && line ? gw || oneWord(null, gain) : '', w2n: gain >= 1 ? oneWord(gw, gain) : '',
+    guard: guardRule(c.gameLine, a.played, bn) && guardMeans(c, a.pre, a.played, bn)
   };
   return a.compare;
+}
+/* "{bestSan} is guarded." says something only when what the game move
+   lost was the piece it moved, taken on the square it went to, and neither
+   move is a king's (a king is never guarded against capture) */
+function guardMeans(c, pre, played, bn) {
+  var g = c.gameLine, mover = pre.b[played.from];
+  if (!g || !mover || pType(mover) === 'K' || pType(bn.before.b[bn.move.from]) === 'K') return false;
+  for (var k = 1; k <= c.lossAt && k < g.nodes.length; k += 2) {
+    var n = g.nodes[k];
+    if (n.move && n.move.to === played.to && n.captured) return pType(n.captured) === pType(played.promo || mover);
+  }
+  return false;
 }
 /* the guard rule (FINAL-SPEC 3): the square the game move went to is not
    defended once it is played, the better move's square is (isDefended
@@ -240,7 +267,11 @@ function r4Of(a) {
     cands = cands.concat(both(mistake, cmp.w, cmp.wn));
   } else if (fam === 'chances') {
     if (c.mateFor) cands = [bs + ' leads to checkmate.'];
-    else if (cmp.w2) cands = both(function (x) { return bs + ' wins ' + x + '. ' + g + ' missed it.'; }, cmp.w2, cmp.w2n);
+    else if (cmp.w2) {
+      var won = function (x) { return bs + ' wins ' + x + '. ' + g + ' missed it.'; };
+      /* a trade said as "material" tells less than its own first sentence */
+      cands = / for /.test(cmp.w2) ? [won(cmp.w2), bs + ' wins ' + cmp.w2 + '.', won(cmp.w2n)] : both(won, cmp.w2, cmp.w2n);
+    }
   } else if (fam === 'conversion') {
     cands = [c.stalemate ? g + ' allowed a draw.' : c.perpetualAgainst ? g + ' allowed endless checks.' : past];
   } else cands = [past];
@@ -278,8 +309,10 @@ function bandOf(a) {
        that follows it); before that the answer shown says how to play it
        (V2), and a solve says nothing more yet */
     var mode = a.view && a.view.mode, said = !mode || (mode === 's0' && a.settle >= 2), r4 = said ? r4Of(a) : null;
+    /* settled, a reveal names the card's own answer, the move R4 is about
+       (inside a forcing line the band named each move as it came) */
     if (a.revealed)
-      return { disc: 'info', kind: 'info', row1: CARD_COPY.V1(a), cands: r4 ? r4.cands : [CARD_COPY.V2()], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null };
+      return { disc: 'info', kind: 'info', row1: CARD_COPY.V1(a, r4 ? sanOf(a.pre, a.best) : ''), cands: r4 ? r4.cands : [CARD_COPY.V2()], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null };
     return { disc: 'good', kind: 'good', row1: a.alt ? CARD_COPY.R3() : a.result === 'first' ? CARD_COPY.R1() : CARD_COPY.R2(),
              cands: r4 ? r4.cands : [], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null };
   }

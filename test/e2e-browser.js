@@ -160,6 +160,17 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(200);
     ok('Escape closes Details', !$('#overlay .sheet'));
+    ok('closing Details gives the keyboard back to its link', document.activeElement === $('#cstrip [data-act=details]'), document.activeElement && document.activeElement.outerHTML.slice(0, 80));
+    /* from the ••• menu: the pattern named once (its chip), and the scrim gives focus back to the ••• button */
+    click('#ctop [data-act=menu]');
+    await until(() => $('#ctop [data-act=details]'), 3000);
+    click('#ctop [data-act=details]');
+    await until(() => $('#overlay .sheet'), 3000);
+    const chip = $('#overlay .sheet .pchip'), pname = chip ? chip.textContent.replace(/ ›$/, '') : '?';
+    ok('the Details sheet names the pattern once, by its chip', !!chip && text('#overlay .sheet').split(pname).length === 2 && !$('#overlay .sheet h3'), text('#overlay .sheet').slice(0, 120));
+    $('#overlay .scrim').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await sleep(200);
+    ok('closing Details from the menu gives the keyboard back to the ••• button', !$('#overlay .sheet') && document.activeElement === $('#ctop [data-act=menu]'), document.activeElement && document.activeElement.outerHTML.slice(0, 80));
     /* nothing moves on its own: after the solving move lands, the board and the band stay */
     await sleep(600);
     const frame = () => ($('#bwrap') ? $('#bwrap').innerHTML : '') + '|' + text('.card-task') + '|' + JSON.stringify(T.card().view);
@@ -304,7 +315,9 @@
         }
         click('#cpanel [data-act=reveal]');
         await until(() => T.card().phase === 'done', 3000);
-        await sleep(300);
+        /* from a try the board crossfades back first, and the words come 300 ms after the tap */
+        await until(() => /^The answer: /.test(text('#cband .bd-r1')), 3000);
+        await sleep(100);
         ok('a revealed card says what the answer is', /^The answer: \S+/.test(text('#cband .bd-r1')) && text('#cband .bd-r2') === 'Play the green arrow.' && !!$('#bwrap .marks .good-arrow') && !$('#bwrap .marks .bad-arrow'), text('#cband'));
         bandFits('the answer shown');
         /* Play it: the answer slides and lands with the grey i, then the card settles under the answer */

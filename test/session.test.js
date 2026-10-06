@@ -401,12 +401,13 @@ const OPEN = `function openCard(it) {
     eq(fit(['This sentence is far too long to fit in row two at all.'], 'row2', 'A fallback that is also far too long for row two.'), '', 'a fallback over the cap leaves the row empty');
     eq(fit(['Too long a first sentence for the twenty-six.', 'Found it'], 'row1', 'F'), 'Found it', 'the first candidate that fits wins');
     /* M3 (c): when what changed hands is three kinds of piece, captureWord
-       says "material", which names nothing: the ladder's material word comes
-       next ("You'd lose the queen."), never "You'd lose material." */
+       says "material", which names nothing: a net word ("the queen") would
+       claim one piece, so the row says "a lot of material" (worth 6 or more),
+       and "material" below that */
     eq(A.ev(`(function () { ${OPEN} var it = allMistakes().filter(trainable)[0], a = openCard(it), cw = captureWord;
       captureWord = function () { return 'material'; };
       try { return plainCapture({ nodes: [] }, 1, 0) + ' / ' + missWhy(a, { lossG: 9, lossAt: 1, gameLine: { nodes: [] } }, 30, null, false).cands[0]; } finally { captureWord = cw; } })()`),
-    "null / You'd lose the queen.", 'three kinds of piece: the material word');
+    "null / You'd lose a lot of material.", 'three kinds of piece: the material word');
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       /* the band's caps (FINAL-SPEC 3): row 1 26 characters, row 2 40 and 7
          words, a caption 60 and 8; the chip one short label */
@@ -443,19 +444,21 @@ const OPEN = `function openCard(it) {
           if (nx) a.answerSan = sanOf(a.st, nx); else settleShown(a);
         }
       };
-      var R4 = /^(\\S+ is guarded\\. |\\S+ wins [a-z ]+\\. )?\\S+ (lost|could lose) (a|an|the|two|three) [a-z ]+\\.$|^\\S+ (is guarded|wins [a-z ]+)\\.$|^\\S+ allowed checkmate\\.( They missed it\\.)?$|^\\S+ wins [a-z ]+\\. \\S+ missed it\\.$|^\\S+ leads to checkmate\\.$|^\\S+ allowed (a draw|endless checks)\\.$|^After \\S+, (you were still better|the game was even|(White|Black) was on top)\\.$|^\\S+ was a mistake\\.$/;
+      var R4 = /^(\\S+ is guarded\\. |\\S+ wins [a-z ]+\\. )?\\S+ (lost|could lose) ((a|an|the|two|three) [a-z ]+|material)\\.$|^\\S+ (is guarded|wins [a-z ]+)\\.$|^\\S+ allowed checkmate\\.( They missed it\\.)?$|^\\S+ wins [a-z ]+\\. \\S+ missed it\\.$|^\\S+ leads to checkmate\\.$|^\\S+ allowed (a draw|endless checks)\\.$|^After \\S+, (you were still better|the game was even|(White|Black) was on top)\\.$|^\\S+ was a mistake\\.$/;
       /* a word for a tap that is not a move, shown as the page shows it */
       var note = function (a, id) { a.note = { id: id, key: cardStateKey(a), seq: 0 }; return a; };
       /* a miss's reason (M3), in one of its forms or its fallbacks, in plain
          words ("the exchange" is spelled out as the rook and what it went for) */
       var plain = function (what, s) { if (/exchange/.test(s)) out.push(what + ' says ' + s); };
       var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (a|an|the|two|three) [a-z ]+\\.|You'd lose material\\.|Most of your advantage is gone\\.|After \\S+, (the game is even|(White|Black) is on top)\\.|That helps (White|Black)\\.|There's a stronger move here\\.)$/;
-      /* "You'd lose material." only as the fallback: when the ladder's
-         material word ("a rook", "the queen") does not fit beside row 1 and
-         the widest bar this miss shows */
+      /* "You'd lose material." only when no form before it fits beside row
+         1 and the widest bar this miss shows: as the ladder's one word for a
+         trade ("a rook for a knight" is never said as its net), or as the
+         fallback */
       var lossFall = function (what, a, row2) {
         if (row2 !== 'You\\'d lose material.') return;
-        var room = rowRoom(a, { row1: a.verdict.row1, chip: '' }), fit = a.verdict.cands.filter(function (c) { return fitsRow(c, { ch: 40, words: room }); });
+        var room = rowRoom(a, { row1: a.verdict.row1, chip: '' }), at = a.verdict.cands.indexOf(row2);
+        var fit = a.verdict.cands.slice(0, at < 0 ? a.verdict.cands.length : at).filter(function (c) { return fitsRow(c, { ch: 40, words: room }); });
         if (fit.length) out.push(what + ' says ' + row2 + ' where ' + fit[0] + ' fits');
       };
       var theirs = function (a) { for (var q = 0; q < 64; q++) if (a.st.b[q] && isW(a.st.b[q]) !== !!a.st.w) return q; return -1; };
@@ -592,13 +595,16 @@ const OPEN = `function openCard(it) {
              once played, then V1 over R4 when settled; found (S6): R1 alone,
              then R1 over R4; found after a miss (R2), works too (R3); a
              mid-line reveal names the move due now; See why keeps R4 */
-          var settled = function (what, a, r1) {
+          var settled = function (what, a, r1, r1early) {
             a.settle = 1; d = band(what + ', S0 marks', a);
-            if (d.row1 !== r1 || (d.row2 && !a.revealed)) out.push(what + ' at V+700 reads ' + d.row1 + ' / ' + d.row2);
+            if (d.row1 !== (r1early || r1) || (d.row2 && !a.revealed)) out.push(what + ' at V+700 reads ' + d.row1 + ' / ' + d.row2);
             a.settle = 2; d = band(what + ', settled', a);
             if (d.row1 !== r1 || !R4.test(d.row2)) out.push(what + ' settled reads ' + d.row1 + ' / ' + d.row2);
             plain(what + ', R4', r4Of(a).cands.join(' | '));
             if (!/data-act="details"/.test(d.strip)) out.push(what + ': no Details once settled');
+            /* the strip's Details is a word of the budget: row 2 has that much less room */
+            var room = 15 - words(d.row1) - d.buttons.reduce(function (x, b) { return x + words(b.label); }, 0) - 1;
+            if (rowRoom(a, { row1: d.row1, chip: '' }) !== room) out.push(what + ': row 2 has ' + rowRoom(a, { row1: d.row1, chip: '' }) + ' words of room, not ' + room);
             if (!/^See why › \| (Continue|Finish)$/.test(d.buttons.map(function (b) { return b.label; }).join(' | '))) out.push(what + ' settled bar ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
             d = band(what + ', settled, N1', note(a, 'N1'));
             if (d.row2 !== 'To try moves, open Details.') out.push(what + ' N1 reads ' + d.row2);
@@ -613,15 +619,17 @@ const OPEN = `function openCard(it) {
           a.note = null;
           if (!a.sol) { playIt(false); d = band(at + ' shown, played', a); if (d.row1 + ' / ' + d.row2 !== v1 + ' / Play the green arrow.') out.push(at + ' played reads ' + d.row1 + ' / ' + d.row2); }
           else playLine(a);
-          settled(at + ' shown', a, a.sol ? displayFor(a).row1 : v1);
+          /* settled, a reveal names the card's own answer (R4's), also after
+             a line whose band named each move as it came */
+          settled(at + ' shown', a, v1, displayFor(a).row1);
           a = openCard(it); a.foundGood = { san: sanOf(a.st, mine), win: 60 }; reveal(); band(at + ' shown after a close move', a);
-          playLine(a); settled(at + ' shown after a close move', a, displayFor(a).row1);
+          playLine(a); settled(at + ' shown after a close move', a, v1, displayFor(a).row1);
           if (a.sol && a.sol.length >= 3) {
             a = openCard(it);
             applyMove(a.st, uciToMove(a.st, a.sol[0])); applyMove(a.st, uciToMove(a.st, a.sol[1])); a.solIdx = 2;
             reveal(); d = band(at + ' mid-line shown', a);
             if (d.row1 !== 'The answer: ' + sanOf(a.st, uciToMove(a.st, a.sol[2])) || d.row2 !== 'Play the green arrow.') out.push(at + ' mid-line shown reads ' + d.row1 + ' / ' + d.row2);
-            playLine(a); settled(at + ' mid-line shown', a, displayFor(a).row1);
+            playLine(a); settled(at + ' mid-line shown', a, v1, displayFor(a).row1);
           }
           if (!a.sol) {
             a = openCard(it); solved(uciToMove(a.st, a.bestUci), a.bestUci, null); d = band(at + ' found', a);
@@ -690,6 +698,66 @@ const OPEN = `function openCard(it) {
       return JSON.stringify({ out: out, n: n }); })()`));
     ok(r.n.found > 50 && r.n.missed > 100 && r.n.doctored > 500 && r.n.long >= 6, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' found forms, first: ' + r.out.slice(0, 3).join(' | '));
+  });
+
+  await test('R4 and M3 name only what changed hands: a material word is the line\'s own captures, "material", or "a lot of material" worth 6 or more; "is guarded" only where it means it', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = { r4: 0, m3: 0, word: 0, trade: 0, guard: 0 };
+      /* every material phrase a form says ("lost X", "could lose X", "wins
+         X", "You'd lose X"), against what the line took: its own captures
+         (plainCapture), or the two words that claim no piece */
+      var phrases = function (s) { var m, re = /(?:lost|could lose|wins|You'd lose) ([a-z ]+?)\\./g, got = []; while ((m = re.exec(s))) got.push(m[1]); return got; };
+      var check = function (what, cands, line, k, from, net) {
+        var own = plainCapture(line, k, from);
+        if (own && / for /.test(own)) n.trade++;
+        cands.forEach(function (c) {
+          phrases(c).forEach(function (p) {
+            n.word++;
+            if (p === own || p === 'material' || (p === 'a lot of material' && Math.abs(net) >= 6)) return;
+            out.push(what + ': "' + c + '" where the line took ' + (own || 'no one phrase') + ' (net ' + net + ')');
+          });
+        });
+      };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var at = 'tier ' + tier + ' ' + it.key;
+          [false, true].forEach(function (shown) {
+            var a = openCard(it);
+            if (!a) return;
+            if (shown) { reveal(); a.view = { mode: 's0' }; }
+            else if (a.sol) { while (a.solIdx < a.sol.length) { var m = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.solIdx++; } finishCard('first'); }
+            else solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+            a.settle = 2;
+            var c = a.cls, r4 = r4Of(a), row2 = displayFor(a).row2, cands = r4.cands.concat([row2]);
+            n.r4++;
+            /* the game move's words against the game line, the better move's against its own */
+            var game = cands.map(function (x) { return x.split(/(?<=\\.) /).filter(function (y) { return y.indexOf(buildCompare(a).gameSan + ' ') === 0; }).join(' '); });
+            var best = cands.map(function (x) { return x.split(/(?<=\\.) /).filter(function (y) { return y.indexOf(buildCompare(a).betterSan + ' wins') === 0; }).join(' '); });
+            check(at + ' R4', game, c.gameLine, c.lossAt, 0, c.lossG);
+            check(at + ' R4', best, c.bestLine, c.bSettle, 1, c.matBest);
+            /* "is guarded" only where the guard rule holds and means it: the
+               game move's own piece taken on its square, no king's move */
+            if (cands.some(function (x) { return / is guarded\./.test(x); })) {
+              n.guard++;
+              var bn = c.bestLine.nodes[1], g0 = c.gameLine.nodes[0];
+              if (isDefended(g0.after.b, a.played.to) || !isDefended(bn.after.b, bn.move.to) || pType(a.pre.b[a.played.from]) === 'K' || pType(bn.before.b[bn.move.from]) === 'K'
+                || !c.gameLine.nodes.slice(1, c.lossAt + 1).some(function (x, i) { return i % 2 === 0 && x.move.to === a.played.to && x.captured && pType(x.captured) === pType(a.pre.b[a.played.from]); }))
+                out.push(at + ': "is guarded" where it means nothing: ' + cands.join(' | '));
+            } else if (c.lossG >= 1 && !c.mateAgainst && /safety|king/.test(familyOf(patternOf(it.b)).key) && guardRule(c.gameLine, a.played, c.bestLine.nodes[1]) && guardMeans(c, a.pre, a.played, c.bestLine.nodes[1])) out.push(at + ': the guard holds, no guard form');
+          });
+          /* M3: the game move again, its reason from the card's own refutation */
+          var a2 = openCard(it);
+          if (!a2 || familyOf(patternOf(it.b)).key === 'chances') return;
+          var w = gameMoveWhy(a2);
+          n.m3++;
+          check(at + ' M3', w.cands.concat([w.fall]), a2.cls.gameLine, a2.cls.lossAt, 0, a2.cls.lossG);
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.r4 > 400 && r.n.m3 > 150 && r.n.word > 300 && r.n.trade > 50 && r.n.guard >= 6, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' untrue material words, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
   await test('one format by default: the most played among those played in the last 90 days', () => {

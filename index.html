@@ -6104,7 +6104,7 @@ function sessionClick(sq) {
     var due = !a.showWait ? showDue(a) : null;
     if (due && (sq === due.from || a.sel === due.from)) {
       if (sq === due.from) { a.sel = a.sel === sq ? -1 : sq; if (a.sel >= 0) snd('tap'); renderCardBoard(); }
-      else if (sq === due.to) playIt(pointerState.suppressClick);
+      else if (sq === due.to) playIt(pointerState.suppressClick, true);
       else { a.sel = -1; renderCardBoard(); }
       return;
     }
@@ -6655,9 +6655,10 @@ function showDue(a) {
    and the band stays. Inside a forcing line their reply follows as the
    forcing reply does, and the next move of yours is shown the same way.
    At the end of the line (at once on a one-move card) the card settles:
-   S0's marks, then R4 and the bar to the story. Played by hand (dragged)
+   S0's marks, then R4 and the bar to the story. Played by hand (byHand)
+   it goes at once, as the player's own moves do: tapped it slides, dragged
    it lands where it was dropped */
-function playIt(dragged) {
+function playIt(dragged, byHand) {
   var a = ui.session && ui.session.active, m = a && a.phase === 'done' && !a.explore && !a.showWait ? showDue(a) : null;
   if (!m) return;
   a.sel = -1;
@@ -6672,10 +6673,13 @@ function playIt(dragged) {
   var reply = null;
   if (a.sol) { a.solIdx++; reply = a.solIdx < a.sol.length ? uciToMove(a.st, a.sol[a.solIdx]) : null; }
   else a.showDone = true;
-  if (!reply) { settleShown(a); renderCard(); return; }
+  /* from Play it, a move the app shows: the words about to change (Play
+     it, going off) fade out first (2.2), then it slides */
+  var beats = dragged || byHand ? null : ['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text'];
+  if (!reply) { settleShown(a); renderCard(beats); return; }
   /* their reply, on the forcing line's own timing (S10 as it is today) */
   a.showWait = true;
-  renderCard();
+  renderCard(beats);
   var cardKey = a.key;
   setTimeout(function () {
     var a2 = ui.session && ui.session.active;
@@ -6684,16 +6688,21 @@ function playIt(dragged) {
     applyMove(a2.st, reply);
     a2.lastMove = [reply.from, reply.to];
     a2.markMove = null;
+    a2.solIdx++;
+    /* the next move of yours is the answer now */
+    var next = a2.solIdx < a2.sol.length ? uciToMove(a2.st, a2.sol[a2.solIdx]) : null;
+    if (next) a2.answerSan = sanOf(a2.st, next);
+    /* exploring has the board: the reply is played there unseen, and the
+       frame exploring comes back to is the one it leads to */
+    if (a2.explore) { if (!next) { a2.explore.root = { mode: 's0' }; a2.settle = 0; a2.settleFor = true; } return; }
+    if (!next) settleShown(a2);
     a2.animMove = [reply.from, reply.to];
     a2.animShown = false;
     a2.replySlide = true;
-    a2.solIdx++;
-    snd('move');
-    /* the next move of yours is the answer now */
-    var next = showDue(a2);
-    if (next) a2.answerSan = sanOf(a2.st, next);
-    else settleShown(a2);
-    renderCard();
+    a2.moveCue = true;
+    /* the words about to change (the answer's name, Play it coming back)
+       fade out before it slides, as before any move the app shows */
+    renderCard(['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text']);
   }, 650);
 }
 /* the shown line is over: the card settles as S0 does (the answer's band
@@ -7490,7 +7499,7 @@ var CARD_COPY = {
   R1: function () { return 'Found it'; },
   R2: function () { return 'You got there'; },
   R3: function () { return 'That works too'; },
-  V1: function (a) { return 'The answer: ' + (a.answerSan || ''); },
+  V1: function (a, san) { return 'The answer: ' + (san || a.answerSan || ''); },
   V2: function () { return 'Play the green arrow.'; }
 };
 /* a word for a tap that is not a move, as row 2 says it: the full text,
@@ -7554,6 +7563,19 @@ function plainCapture(line, k, from) {
   }
   return 'a rook for a ' + (minors.N && !minors.B ? 'knight' : minors.B && !minors.N ? 'bishop' : 'piece');
 }
+/* a material phrase in one word, the fit ladder's second step, only where
+   that word stays true to what changed hands (n, the net, in pawns): a
+   trade ("a rook for a knight") is "material", never its net ("two
+   pawns"); two kinds of piece taken one way are "a lot of material" when
+   worth that much; a single kind stays as it is. With no phrase (three kinds
+   of piece, a promotion on the way, nothing taken outright) only the words
+   "material" and "a lot of material" are true */
+function oneWord(x, n) {
+  n = Math.abs(n || 0);
+  if (!x) return n >= 6 ? 'a lot of material' : 'material';
+  if (/ for /.test(x)) return 'material';
+  return / and /.test(x) && n >= 6 ? 'a lot of material' : x;
+}
 
 /* why a wrong try fails (M3), as row 2's ladder {cands, fall}: c is the
    classifier on the try (on the game move again, the card's own), win the
@@ -7566,8 +7588,8 @@ function missWhy(a, c, win, reply, inLine) {
   if (c && c.mateAgainst === 1 && reply) cands = ['Then ' + reply.replace(/#$/, '') + ' is checkmate.', s.opp + ' could checkmate you.'];
   else if (c && c.mateAgainst > 1) cands = [s.opp + ' could checkmate you.'];
   else if (c && c.lossG >= 1) {
-    var w = materialWord(c.lossG);
-    cands = ['You\'d lose ' + (plainCapture(c.gameLine, c.lossAt, 0) || w) + '.', 'You\'d lose ' + w + '.'];
+    var lw = plainCapture(c.gameLine, c.lossAt, 0), w = oneWord(lw, c.lossG);
+    cands = ['You\'d lose ' + (lw || w) + '.', 'You\'d lose ' + w + '.'];
     fall = 'You\'d lose material.';
   }
   else if (inLine) cands = ['Nothing lost, but there\'s a better move.'];
@@ -7637,20 +7659,34 @@ function buildCompare(a) {
   if (a.alt && a.yours) {
     var alt = buildLine(a.pre, '0000', a.yours.uci, pov);
     if (alt && alt.nodes[(a.yours.at || 0) + 1]) {
+      /* the alternative's own gain, from its own move: the line's moves
+         before it (found as the card asked) are not its doing */
       line = alt; at = (a.yours.at || 0) + 1;
-      settle = settleIndex(alt);
-      gain = matDiff(alt.nodes[settle].after.b, pov) - matDiff(a.pre.b, pov);
+      settle = Math.max(at, settleIndex(alt));
+      gain = matDiff(alt.nodes[settle].after.b, pov) - matDiff(alt.nodes[at].before.b, pov);
       better = sanOf(alt.nodes[at].before, alt.nodes[at].move);
     }
   }
-  var bn = line && line.nodes[at];
+  var bn = line && line.nodes[at], lw = plainCapture(c.gameLine, c.lossAt, 0), gw = gain >= 1 && line ? plainCapture(line, settle, at) : null;
   a.compare = {
     found: !!(gm[1] && ru[0] && gm[1] === ru[0]), betterSan: better, gameSan: gameSan(a),
-    w: c.lossG >= 1 ? plainCapture(c.gameLine, c.lossAt, 0) || materialWord(c.lossG) : '', wn: materialWord(c.lossG),
-    w2: gain >= 1 && line ? plainCapture(line, settle) || materialWord(gain) : '', w2n: materialWord(gain),
-    guard: guardRule(c.gameLine, a.played, bn)
+    w: c.lossG >= 1 ? lw || oneWord(null, c.lossG) : '', wn: c.lossG >= 1 ? oneWord(lw, c.lossG) : '',
+    w2: gain >= 1 && line ? gw || oneWord(null, gain) : '', w2n: gain >= 1 ? oneWord(gw, gain) : '',
+    guard: guardRule(c.gameLine, a.played, bn) && guardMeans(c, a.pre, a.played, bn)
   };
   return a.compare;
+}
+/* "{bestSan} is guarded." says something only when what the game move
+   lost was the piece it moved, taken on the square it went to, and neither
+   move is a king's (a king is never guarded against capture) */
+function guardMeans(c, pre, played, bn) {
+  var g = c.gameLine, mover = pre.b[played.from];
+  if (!g || !mover || pType(mover) === 'K' || pType(bn.before.b[bn.move.from]) === 'K') return false;
+  for (var k = 1; k <= c.lossAt && k < g.nodes.length; k += 2) {
+    var n = g.nodes[k];
+    if (n.move && n.move.to === played.to && n.captured) return pType(n.captured) === pType(played.promo || mover);
+  }
+  return false;
 }
 /* the guard rule (FINAL-SPEC 3): the square the game move went to is not
    defended once it is played, the better move's square is (isDefended
@@ -7692,7 +7728,11 @@ function r4Of(a) {
     cands = cands.concat(both(mistake, cmp.w, cmp.wn));
   } else if (fam === 'chances') {
     if (c.mateFor) cands = [bs + ' leads to checkmate.'];
-    else if (cmp.w2) cands = both(function (x) { return bs + ' wins ' + x + '. ' + g + ' missed it.'; }, cmp.w2, cmp.w2n);
+    else if (cmp.w2) {
+      var won = function (x) { return bs + ' wins ' + x + '. ' + g + ' missed it.'; };
+      /* a trade said as "material" tells less than its own first sentence */
+      cands = / for /.test(cmp.w2) ? [won(cmp.w2), bs + ' wins ' + cmp.w2 + '.', won(cmp.w2n)] : both(won, cmp.w2, cmp.w2n);
+    }
   } else if (fam === 'conversion') {
     cands = [c.stalemate ? g + ' allowed a draw.' : c.perpetualAgainst ? g + ' allowed endless checks.' : past];
   } else cands = [past];
@@ -7730,8 +7770,10 @@ function bandOf(a) {
        that follows it); before that the answer shown says how to play it
        (V2), and a solve says nothing more yet */
     var mode = a.view && a.view.mode, said = !mode || (mode === 's0' && a.settle >= 2), r4 = said ? r4Of(a) : null;
+    /* settled, a reveal names the card's own answer, the move R4 is about
+       (inside a forcing line the band named each move as it came) */
     if (a.revealed)
-      return { disc: 'info', kind: 'info', row1: CARD_COPY.V1(a), cands: r4 ? r4.cands : [CARD_COPY.V2()], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null };
+      return { disc: 'info', kind: 'info', row1: CARD_COPY.V1(a, r4 ? sanOf(a.pre, a.best) : ''), cands: r4 ? r4.cands : [CARD_COPY.V2()], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null };
     return { disc: 'good', kind: 'good', row1: a.alt ? CARD_COPY.R3() : a.result === 'first' ? CARD_COPY.R1() : CARD_COPY.R2(),
              cands: r4 ? r4.cands : [], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null };
   }
@@ -8147,7 +8189,8 @@ function doneHtml(ss) {
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
     /* the result in words, never in colour alone */
-    var word = note === 'left' ? 'Skipped' : note === 'close' ? '◐ close' : r === 'first' ? '✓ first try' : r === 'retry' ? '✓ on the retry' : r === 'fail' ? 'Shown' : '✓ with help';
+    /* a close move then the answer shown: graded hint, noted shown */
+    var word = note === 'left' ? 'Skipped' : note === 'close' || (note === 'shown' && r === 'hint') ? '◐ close' : r === 'first' ? '✓ first try' : r === 'retry' ? '✓ on the retry' : r === 'fail' ? 'Shown' : '✓ with help';
     var pm = uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
     return '<div class="recap-item" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: k, label: 'One position' })) + '">'
       + boardSvg(pre, { flip: it.g.color === 'black', bad: pm ? [pm.from, pm.to] : null, decor: true }) + '<span>' + esc(patternInfo(patternOf(it.b)).name) + '</span>'
@@ -8545,6 +8588,11 @@ function paintText(a) {
   var focKey = inCard ? (foc.id || ((foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || ''))) : null;
   /* a button of the bar is kept by its place: the bar repaints under it */
   var focSlot = inCard && bar && bar.contains(foc) ? foc.getAttribute('data-slot') : null;
+  /* an answered card's bar changing under a focus in it (or on nothing):
+     the slot's meaning changed, so the keyboard goes where Enter goes */
+  var sig = d.buttons.map(slotSigOf).join('/'), barMoved = a.phase === 'done' && a.barSig != null && a.barSig !== sig;
+  a.barSig = a.phase === 'done' ? sig : null;
+  var lost = !foc || foc === document.body || focSlot != null;
   paintTop(a, ss);
   paintBand(a, d);
   paintBar(d);
@@ -8564,6 +8612,7 @@ function paintText(a) {
     var rh = barButton(rightSlot()) || el('result-h');
     if (rh) rh.focus({ preventScroll: true });
   }
+  else if (barMoved && !xe && lost && doneFocus(a)) doneFocus(a).focus({ preventScroll: true });
   else if (a.focusRight && a.phase === 'tried' && barButton(rightSlot())) { a.focusRight = false; barButton(rightSlot()).focus({ preventScroll: true }); }
   else if (focKey && fp) {
     /* a bar button: the one now in its slot, or the right-hand one (S20)
@@ -8586,6 +8635,19 @@ function paintText(a) {
      so do a settled result's (S0) */
   if (a.reasonFor && a.reasonFor === a.tried && a.phase === 'tried') missReason(a);
   if (a.settleFor && a.phase === 'done' && a.view && a.view.mode === 's0') settleBeats(a);
+}
+/* where the keyboard goes when an answered card's bar changes (S7, S15,
+   S20): the right-hand button, the one Enter presses (Play it while the
+   answer is shown, Continue once settled), and while it is switched off
+   (Play it, while their reply plays) that slot itself, so focus never falls
+   to the page or to a slot whose meaning changes under it; See why's lines
+   keep it on › until the last move, then on Continue */
+function doneFocus(a) {
+  var bar = el('cbar');
+  if (!bar) return null;
+  var fwd = !a.view.mode && barButton(1);
+  if (fwd && fwd.getAttribute('data-act') === 'lineFwd' && !/nav-off/.test(fwd.getAttribute('class') || '')) return fwd;
+  return barButton(rightSlot()) || bar.querySelector('[data-slot="' + rightSlot() + '"]');
 }
 /* the bar's button in slot i, if it holds an action now (an off slot has none) */
 function barButton(i) {
@@ -8717,7 +8779,7 @@ function triedSlots(a, seen) {
 function barHtml(slots) {
   return slots.map(function (s, i) {
     return '<a class="' + s.cls + (s.off ? ' btn-off' : '') + '" data-slot="' + i + '"'
-      + (s.off ? ' aria-disabled="true"' : ' data-act="' + s.act + '"' + (s.k != null ? ' data-k="' + esc(s.k) + '"' : ''))
+      + (s.off ? ' aria-disabled="true" tabindex="-1"' : ' data-act="' + s.act + '"' + (s.k != null ? ' data-k="' + esc(s.k) + '"' : ''))
       + (s.aria ? ' aria-label="' + esc(s.aria) + '"' : '') + '>' + esc(s.label) + '</a>';
   }).join('');
 }
@@ -8838,7 +8900,8 @@ function detailsHtml() {
   if (!a || a.phase !== 'done' || !a.lines) return '';
   var it = a.it, b = it.b, s = a.cls.sentences, best = a.lines.best.san[0] || '', t = patternOf(b), info = patternInfo(t);
   var row = function (cls, text) { return '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
-  var h = '<div class="kicker">Details</div><h3>' + esc(info.name) + '</h3>' + ctxHtml(a);
+  /* the pattern is named once, by its chip (S13) */
+  var h = '<div class="kicker">Details</div>' + ctxHtml(a);
   if (b.d) h += '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(it.g, b) + '.</p>';
   h += '<div class="dt-lines">' + row('tl-bad', esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game))
     + (a.alt && a.lines.yours ? row('tl-alt', esc(altNames(a).mine) + ' also holds.') : '')
@@ -9014,7 +9077,9 @@ function renderInsights() {
   box.innerHTML = h;
 }
 /* ── sheets ──────────────────────────────────────────────────────────────── */
-function openSheet(kind) {
+/* back: where focus returns on closing, as a selector, when the control
+   that opened it may be gone by then (the ••• menu's item) */
+function openSheet(kind, back) {
   var was = ui.sheet;
   ui.sheet = kind;
   var ov = el('overlay');
@@ -9022,7 +9087,7 @@ function openSheet(kind) {
   if (!body) { ui.sheet = was; return; }
   /* the phone's Back gesture closes the sheet, not the page */
   if (!was) { try { history.pushState({ nlSheet: 1, nlSession: history.state && history.state.nlSession }, '', location.href); } catch (e) {} }
-  if (!ui.sheetReturn) ui.sheetReturn = document.activeElement;
+  if (!ui.sheetReturn) { ui.sheetReturn = document.activeElement; ui.sheetBack = back || null; }
   ov.innerHTML = '<div class="scrim" data-act="closeSheet"><div class="sheet" role="dialog" aria-modal="true" aria-label="Details" tabindex="-1">'
     + '<a class="close" data-act="closeSheet" aria-label="Close">×</a>' + body + '</div></div>';
   document.documentElement.style.overflow = 'hidden';
@@ -9039,8 +9104,12 @@ function closeSheet(fromPop) {
   var ov = el('overlay');
   if (ov) ov.innerHTML = '';
   document.documentElement.style.overflow = '';
-  var back = ui.sheetReturn;
-  ui.sheetReturn = null;
+  var back = ui.sheetReturn, sel = ui.sheetBack;
+  ui.sheetReturn = null; ui.sheetBack = null;
+  /* the opener, found again: it may have been repainted, or never had
+     focus (a tap on a phone), and focus never ends on the page itself */
+  var opener = sel && document.querySelector(sel);
+  if (opener) back = opener;
   if (back && back.isConnected && back.focus) back.focus({ preventScroll: true });
 }
 function sheetHtml(kind) {
@@ -9819,7 +9888,13 @@ document.addEventListener('click', function (e) {
     case 'next': nextCard(); break;
     case 'playIt': playIt(false); break;
     case 'seeWhy': seeWhy(); break;
-    case 'details': if (a && a.phase === 'done') { if (a.menuOpen) { a.menuOpen = false; renderCard(); } openSheet('details'); } break;
+    /* closing it gives focus back to what opened it: the strip's link, or
+       the ••• button whose menu offered it */
+    case 'details': if (a && a.phase === 'done') {
+      var fromMenu = !!a.menuOpen;
+      if (fromMenu) { a.menuOpen = false; renderCard(); }
+      openSheet('details', fromMenu ? '#ctop [data-act="menu"]' : '#cstrip [data-act="details"]');
+    } break;
     /* these wait out a card's first half second (tooSoon); a slot that
        just changed is ignored above (slotGuarded) */
     case 'dismissStronger': if (!tooSoon(a)) tryAgain(); break;
@@ -9997,6 +10072,10 @@ document.addEventListener('keydown', function () { document.documentElement.clas
 document.addEventListener('keydown', function (e) {
   if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-act][tabindex]:not(input)')) {
     e.preventDefault();
+    /* Space presses nothing on an answered card's bar (S12): it is never
+       Continue or See why, only Enter is the right-hand button */
+    var sa = ui.session && ui.session.active;
+    if (e.key === ' ' && sa && sa.phase === 'done' && !sa.explore && e.target.closest && e.target.closest('#cbar')) return;
     /* once per press: focus keeps its slot, so a repeat would press the
        button that just took this one's place */
     if (!e.repeat) e.target.click();
