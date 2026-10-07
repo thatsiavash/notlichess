@@ -717,11 +717,21 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
             var pairs = [[/class="bad-arrow"/g, /Red arrow: your game move, /g, 'game arrow'], [/class="threat-arrow"/g, /Dashed red arrow: /g, 'threat arrow'],
               [/class="reply-arrow"(?![^>]*stroke-dasharray)/g, /Blue arrow: /g, 'landed reply'], [/class="good-arrow"/g, /Green arrow: /g, 'green arrow'],
               [/class="ghost-arrow"/g, /Gold arrow: /g, 'gold arrow'], [/class="hint-ring"/g, /Gold ring: /g, 'hint ring'], [/class="ring-target"/g, /Dashed gold ring: /g, 'prize ring'],
-              [/token-lost/g, / was taken on /g, 'lost token'], [/token-won/g, /You won a /g, 'won token'], [/class="guard-line"/g, /Green dots: /g, 'guard dots'],
+              [/token-lost/g, / was taken on |They could have taken your /g, 'lost token'], [/token-won/g, /You won a |@s0won@/g, 'won token'], [/class="guard-line"/g, /Green dots: /g, 'guard dots'],
               [/<g class="tried"/g, /Faint red line: |Red cross: a move /g, 'tried move'], [/url[(]#checkglow/g, / king is in check[.]/g, 'check'],
               [/badge-good/g, /Green tick: /g, 'tick'], [/badge-bad/g, /Red cross: your move/g, 'cross'], [/badge-close/g, /Ring with a tick: /g, 'close'], [/badge-info/g, /Grey i: /g, 'i'],
               [/badge-checking/g, /Grey dots: /g, 'checking'], [/badge-unchecked/g, /Question mark: /g, 'unchecked']];
-            pairs.forEach(function (p) { var d = cnt(svg, p[0]), w = cnt(lab, p[1]); if (d !== w) bad.push(p[2] + ' drawn ' + d + ', said ' + w); if (w) by[p[2]] = (by[p[2]] || 0) + 1; });
+            /* after a forcing line S0's won tokens are read in its one sentence (final fixes 3): each drawn one named there */
+            var along = (/Along the line you took ([^.]*)[.]/.exec(lab) || [])[1] || '', lab0 = lab;
+            (o.tokens || []).forEach(function (t) { if (t.s0 && along.indexOf('a ' + PIECE_WORD[pType(t.p)] + ' on ' + sqName(t.sq)) >= 0) lab0 += ' @s0won@'; });
+            if (along) by['line read whole'] = (by['line read whole'] || 0) + 1;
+            if (!!along !== !!(o.tokens || []).filter(function (t) { return t.s0; }).length) bad.push('the line sentence ' + (along ? 'without its tokens' : 'missing'));
+            pairs.forEach(function (p) { var d = cnt(svg, p[0]), w = cnt(lab0, p[1]); if (d !== w) bad.push(p[2] + ' drawn ' + d + ', said ' + w); if (w) by[p[2]] = (by[p[2]] || 0) + 1; });
+            /* "could have taken" only on the move they could have played (final fixes 2), "was taken" never there */
+            var couldNow = !!(a.view && a.view.mode === 'story' && a.view.i === 1 && buildStory(a).could);
+            if (/They could have taken /.test(lab) && !couldNow) bad.push('could have taken on a step played');
+            if (couldNow && / was taken on /.test(lab)) bad.push('was taken on the move they could have played');
+            if (couldNow && /They could have taken /.test(lab)) by['could token'] = 1;
             var faded = (o.ghosts || []).length; if (cnt(lab, /: where your game move went[.]/g) !== faded) bad.push('ghost');
             if (faded) by.ghost = (by.ghost || 0) + 1;
             /* the ghost faded where its square is empty; on a piece, only its cross is drawn and said */
@@ -768,7 +778,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       return JSON.stringify({ out: out, n: n, by: Object.keys(by).sort() }); })()`));
     ok(r.n > 2000, 'frames ' + r.n);
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' || '));
-    ['game arrow', 'threat arrow', 'landed reply', 'green arrow', 'hint ring', 'lost token', 'won token', 'guard dots', 'tried move', 'tried cross', 'tick', 'cross', 'i', 'ghost', 'ghost on a piece', 'S0 pair'].forEach((k) => ok(r.by.indexOf(k) >= 0, 'never said: ' + k + ' (' + r.by.join(', ') + ')'));
+    ['game arrow', 'threat arrow', 'landed reply', 'green arrow', 'hint ring', 'lost token', 'won token', 'guard dots', 'tried move', 'tried cross', 'tick', 'cross', 'i', 'ghost', 'ghost on a piece', 'S0 pair', 'could token'].forEach((k) => ok(r.by.indexOf(k) >= 0, 'never said: ' + k + ' (' + r.by.join(', ') + ')'));
   });
 
   await test('LABELS_ON false: no label on any frame, first sight included, and none painted or remembered', () => {

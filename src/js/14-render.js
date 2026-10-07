@@ -519,6 +519,7 @@ function boardOptsFor(a) {
       /* the ghost and the tokens fade in once, as this beat's effect */
       var s0 = s0Marks(a, view.st);
       ['ghosts', 'rings', 'arrows', 'tokens'].forEach(function (k) { if (s0[k].length) opts[k] = (opts[k] || []).concat(s0[k]); });
+      if (s0.lineTakes) opts.lineTakes = s0.lineTakes;
       if (s0.ghosts.length || s0.tokens.length) opts.fx = a.key + ':s0';
       /* the threat arrow into the square of the tick: the badge yields its corner */
       var s0t = s0.arrows[0];
@@ -696,8 +697,18 @@ function boardAria(a, st, o) {
     else if (r.kind === 'hint') out.push('Gold ring: move the ' + pw(r.sq) + ' on ' + sqName(r.sq) + '.');
     else if (r.kind === 'target') out.push('Dashed gold ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is there to win.');
   });
+  /* after a forcing line, S0's tokens stand for what the line changed: it
+     is read whole, what you took and what they took (final fixes 3) */
+  var took = function (xs, w) { return xs.map(function (x) { return w + PIECE_WORD[pType(x.p)] + ' on ' + sqName(x.sq); }); };
+  var and = function (xs) { return xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1]; };
+  if (o.lineTakes) {
+    var lt = o.lineTakes;
+    out.push('Along the line you took ' + and(took(lt.won, 'a ')) + (lt.lost.length ? '; they took ' + and(took(lt.lost, 'your ')) : '') + '.');
+  }
   (o.tokens || []).forEach(function (t) {
-    out.push(t.kind === 'lost' ? 'Your ' + PIECE_WORD[pType(t.p)] + ' was taken on ' + sqName(t.sq) + '.' : 'You won a ' + PIECE_WORD[pType(t.p)] + ' on ' + sqName(t.sq) + '.');
+    if (o.lineTakes && t.s0) return;
+    out.push(t.could ? 'They could have taken your ' + PIECE_WORD[pType(t.p)] + ' on ' + sqName(t.sq) + '.'
+      : t.kind === 'lost' ? 'Your ' + PIECE_WORD[pType(t.p)] + ' was taken on ' + sqName(t.sq) + '.' : 'You won a ' + PIECE_WORD[pType(t.p)] + ' on ' + sqName(t.sq) + '.');
   });
   (o.ghosts || []).forEach(function (g) { out.push((b[g.sq] ? 'Red cross on ' : 'Faded ' + PIECE_WORD[pType(g.p)] + ' on ') + sqName(g.sq) + ': where your game move went.'); });
   (o.guards || []).forEach(function (g) { out.push('Green dots: the ' + pw(g.from) + ' on ' + sqName(g.from) + ' guards ' + sqName(g.to) + '.'); });
@@ -953,9 +964,13 @@ function s0Marks(a, st) {
     out.rings.push({ sq: th.from, kind: 'threat' });
     out.arrows.push({ from: th.from, to: th.to, kind: 'threat', key: 'threat' });
   }
-  if (line) (a.won || []).slice(-2).forEach(function (w) { out.tokens.push({ sq: w.sq, p: w.p, kind: 'won', fx: a.key + ':s0' }); });
+  if (line) (a.won || []).slice(-2).forEach(function (w) { out.tokens.push({ sq: w.sq, p: w.p, kind: 'won', fx: a.key + ':s0', s0: true }); });
+  if (line && out.tokens.length) out.lineTakes = lineTakes(a);
   return out;
 }
+/* what a forcing line changed hands up to the board on screen: {won,
+   lost}, each [{sq, p}] in the line's order (noteWon, and their replies) */
+function lineTakes(a) { return { won: a.won || [], lost: a.lineLost || [] }; }
 /* the game line's threat still holds on S0's board (fresh-eyes T1), or it
    is not drawn there: a beginner reads it as "my right move still loses".
    It holds when it is their move, the move is legal on this board and it
@@ -995,6 +1010,8 @@ function storyMarks(a, S, i) {
   var s = S.steps[i], n = s.line.nodes[s.k], out = {}, fx = a.key + ':st' + i;
   /* on the square the piece was taken from (en passant: beside the arrival) */
   if (n.captured) out.tokens = [{ sq: n.move.ep >= 0 ? n.move.ep : n.move.to, p: n.captured, kind: colorW(n.captured) === myPov(a.it) ? 'lost' : 'won', fx: fx }];
+  /* the move they could have played took nothing in your game: read as such */
+  if (out.tokens && S.could && s.seg === 'game' && s.k === 1) out.tokens[0].could = true;
   if (s.seg === 'game' && s.k === 0 && S.threat) {
     out.rings = [{ sq: S.threat.from, kind: 'threat' }];
     out.arrows = [{ from: S.threat.from, to: S.threat.to, kind: 'threat', key: 'threat' }];

@@ -4041,19 +4041,44 @@ const BAR = `(function () {
     for (var k = 1; k < ref.nodes.length; k++) if (isMate(ref.nodes[k].after)) return { line: ref, k: k };
     return { line: ref, k: ref.nodes.length - 1 };
   }
-  /* the game segment as fresh-eyes T4 has it: the refutation (to the loss,
-     or to the mate) while the game really went that way; where the game
-     left it, the last move really played, or (their first reply missing a
-     blow) one step more, the move they could have played */
+  /* the game segment as fresh-eyes T4 and final fixes 1 have it: the
+     refutation (to the loss, or to the mate) while the game really went
+     that way; where they left it and the game's own moves still lost, those
+     moves to where that loss stands (no later than the refutation's end);
+     else the last move really played, or (their first reply missing a blow)
+     one step more, the move they could have played */
   function gameEnd(a) {
     var c = a.cls, mi = c.mateAgainst ? mateIdx(a) : null, end = mi && isMate(mi.line.nodes[mi.k].after) ? mi : { line: c.gameLine, k: c.lossAt };
     var k0 = Math.min(end.k, end.line.nodes.length - 1), toks = a.it.g.mv.split(' '), st = cloneState(a.pre), real = [];
-    for (var i = a.it.b.p; i < toks.length && real.length <= k0; i++) { var m = sanToMove(st, toks[i]); if (!m) break; real.push(moveUci(m)); applyMove(st, m); }
+    for (var i = a.it.b.p; i < toks.length && real.length <= k0 + 2; i++) { var m = sanToMove(st, toks[i]); if (!m) break; real.push(moveUci(m)); applyMove(st, m); }
     for (var k = 1; k <= k0; k++) if (real[k] !== moveUci(end.line.nodes[k].move)) {
+      var rl = k % 2 ? buildLine(a.pre, a.playedUci, real.slice(1), !myPov(a.it)) : null, rk = rl ? realLossIdx(a, rl, toks) : -1;
+      if (rk >= 1 && rk <= k0) return { line: rl, k: rk, could: false, cut: true, real: real, realSeg: true };
       var could = k === 1 && real.length > 1 && (!!c.mateAgainst || c.lossG >= 1);
       return { line: end.line, k: could ? 1 : k - 1, could: could, cut: true, real: real };
     }
     return { line: end.line, k: k0, could: false, cut: false, real: real };
+  }
+  /* the test's own reading of where the game's own loss stands: a mate
+     against you; a count with no capture or check on it or in the next two
+     plies (on the game's last move, none on it), lost by more than the best
+     line loses and no more than 3 pawns over the score's drop unless lost
+     anyway; or the game's last move, when the game ended on it having lost
+     more than the best line. Never past your next flagged mistake */
+  function realLossIdx(a, rl, toks) {
+    var c = a.cls, it = a.it, pov = myPov(it), N = rl.nodes, last = N.length - 1, ended = it.b.p + last === toks.length - 1;
+    var calm = function (x) { return !x || (!x.captured && !x.move.promo && !checkersOf(x.after).length); };
+    var base = matDiff(N[0].before.b, pov), bl = bestLossFrom(a, 0), hz = last;
+    var after = it.b.ea != null ? it.b.ea : it.b.ma != null ? (it.b.ma > 0 ? 1500 : -1500) : cpFromWin(it.b.wa), drop = (it.b.eb - after) / 100;
+    (it.g.bl || []).forEach(function (b) { if (!b.x && b.p > it.b.p) hz = Math.min(hz, b.p - it.b.p - 1); });
+    for (var k = 1; k <= hz; k++) {
+      if (isMate(N[k].after)) return N[k].byWhite !== pov ? k : -1;
+      if (!(c.lossG >= 1 || c.mateAgainst)) continue;
+      var n = base - matDiff(N[k].after.b, pov), still = k === last ? calm(N[k]) : calm(N[k + 1]) && calm(N[k + 2]);
+      if (n >= 1 && n > bl && still && (after <= -900 || n <= drop + 3)) return k;
+      if (k === last && ended && n >= 1 && n > bl) return k;
+    }
+    return -1;
   }
   /* where a better line's steps end (fresh-eyes T12): never on their
      capture, but on your recapture just after it or before it, unless the
@@ -4095,7 +4120,9 @@ const BAR = `(function () {
             if (e.could) n.could++;
             if (S.g !== e.k + 1) out.push(at + ': ' + S.g + ' game steps, the game segment ends at ' + e.k + (e.cut ? ' (cut)' : ''));
             if (!!S.could !== e.could) out.push(at + ': S.could ' + S.could + ', expected ' + e.could);
-            var ref = a.lines.refute.uci;
+            var ref = e.realSeg ? e.real : a.lines.refute.uci;
+            if (e.realSeg) n.realSeg = (n.realSeg || 0) + 1;
+            if (!!S.real !== !!e.realSeg) out.push(at + ': S.real ' + S.real + ', expected ' + !!e.realSeg);
             for (var i = 0; i < S.g; i++) {
               var s = S.steps[i], nd = s.line.nodes[s.k], u = moveUci(nd.move);
               if (s.seg !== 'game' || s.k !== i || u !== ref[i]) out.push(at + ': game step ' + i + ' is ' + s.seg + ' node ' + s.k + ' ' + u + ', not ' + ref[i]);
@@ -4107,7 +4134,19 @@ const BAR = `(function () {
             if (!c.mateAgainst && !e.cut && last.k !== c.lossAt) out.push(at + ': the game segment ends at ' + last.k + ', not lossAt ' + c.lossAt);
             if (S.steps[0].line.nodes[0].move.from !== a.played.from || S.steps[0].line.nodes[0].move.to !== a.played.to) out.push(at + ': G1 is not the game move');
             /* the move they could have played says so, and nothing comes after it */
-            if (e.could && !/could take|They missed it/.test(S.steps[1].cap)) out.push(at + ': the step they could have played reads ' + S.steps[1].cap);
+            if (e.could && !/could take|could give|could play|would be checkmate/.test(S.steps[1].cap)) out.push(at + ': the step they could have played reads ' + S.steps[1].cap);
+            /* "They missed it." only on the move they could have played (on the game's own moves they replied with the move shown) */
+            if (/They missed it/.test(S.steps.slice(0, S.g).map(function (x) { return x.cap; }).join(' ')) !== !!(e.could && /They missed it/.test(S.steps[1].cap))) out.push(at + ': They missed it on a step played');
+            /* the last game step's loss claim is the real game's material there (final fixes 1) */
+            if (!e.could) {
+              var lm = /You lose ([a-z ]+)[.]$/.exec(last.cap), rg = buildLine(a.pre, a.playedUci, e.real.slice(1, S.g), !myPov(a.it));
+              var pv = myPov(a.it), net = matDiff(rg.nodes[0].before.b, pv) - matDiff(rg.nodes[S.g - 1].after.b, pv), own = plainCapture(rg, S.g - 1, 0);
+              if (rg.nodes.length !== S.g) out.push(at + ': the game segment runs past the game');
+              else if (lm) {
+                n.claims = (n.claims || 0) + 1;
+                if (!(net >= 1 && (lm[1] === own || (lm[1] === 'material' && (!own || / for /.test(own))) || (lm[1] === 'a lot of material' && net >= 6)))) out.push(at + ': the last game step claims ' + lm[1] + ', the game lost ' + net + ' (' + own + ')');
+              }
+            }
             /* a mate is stepped to the mate on the stored refutation, whatever lossAt says (the classifier keeps 8 plies) */
             if (c.mateAgainst && !e.cut && e.k >= 1) {
               var keep = c.lossAt; c.lossAt = 0; a.story = null;
@@ -4117,6 +4156,21 @@ const BAR = `(function () {
             }
           });
         });
+      });
+      /* doctored: no drop in the score after the game move, so a count over 3 pawns is out of line with it and only a smaller one (or the game's end) ends the game's own moves */
+      playerTier = function () { return 2; };
+      allMistakes().filter(trainable).forEach(function (it) {
+        var a0 = openCard(it);
+        if (!a0) return;
+        var a = answered(a0, 'solved');
+        if (!gameEnd(a).realSeg) return;
+        var keep = it.b.eb, ea = it.b.ea != null ? it.b.ea : it.b.ma != null ? (it.b.ma > 0 ? 1500 : -1500) : cpFromWin(it.b.wa);
+        it.b.eb = ea; a.story = null;
+        try {
+          var S = buildStory(a), e = gameEnd(a);
+          n.noDrop = (n.noDrop || 0) + 1;
+          if (S.g !== e.k + 1 || !!S.real !== !!e.realSeg) out.push('no drop ' + it.key + ': ' + S.g + ' game steps' + (S.real ? ' (real)' : '') + ', expected ' + (e.k + 1) + (e.realSeg ? ' (real)' : ''));
+        } finally { it.b.eb = keep; a.story = null; }
       });
       /* doctored: the game's own moves as the refutation's, the segment runs to the loss */
       playerTier = function () { return 1; };
@@ -4135,8 +4189,45 @@ const BAR = `(function () {
         } finally { it.g.mv = keep; }
       });
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.cards > 500 && r.n.long > 80 && r.n.mates > 10 && r.n.mateLong > 5 && r.n.cut > 100 && r.n.could > 50 && r.n.whole > 100 && r.n.doctored > 50, JSON.stringify(r.n));
+    ok(r.n.cards > 500 && r.n.long > 80 && r.n.mates > 10 && r.n.mateLong > 5 && r.n.cut > 100 && r.n.could > 50 && r.n.whole > 100 && r.n.doctored > 50 && r.n.realSeg >= 12 && r.n.claims > 50 && r.n.noDrop >= 3, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
+  });
+
+  await test('final fixes: 184455333378:68 steps the game\'s own moves to the queen it lost (Rg1 cxd3+ cxd3 Rxf5), never the engine\'s Qd2+; the move they could have played is read as one on the board; a forcing line\'s board reads both sides\' captures', () => {
+    const A = boot();
+    A.ev(DOM);
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MATE_AT}
+      playerTier = function () { return 2; };
+      var story = function (key, how) {
+        var a = answered(openCard(model().byKey[key]), how), S = buildStory(a);
+        return { a: a, S: S, caps: S.steps.slice(0, S.g).map(function (x) { return x.cap; }), moves: S.steps.slice(0, S.g).map(function (x) { return moveUci(x.line.nodes[x.k].move); }) };
+      };
+      var q = story('184455333378:68', 'solved'), qs = story('184455333378:68', 'shown');
+      /* the could step's board (184205946040:62 step 2) */
+      var c = story('184205946040:62', 'solved');
+      c.a.view = { mode: 'story', i: 1 }; c.a.settle = 2;
+      var cl = boardOptsFor(c.a).opts.label;
+      /* doctored: a best line that loses as much as the game ended having lost, so the game's end claims nothing of its own */
+      var blf = bestLossFrom, dq;
+      bestLossFrom = function () { return 11; };
+      try { dq = story('184455333378:68', 'solved'); } finally { bestLossFrom = blf; }
+      return JSON.stringify({ caps: q.caps, moves: q.moves, real: q.S.real, could: q.S.could, shown: qs.caps, ccap: c.caps[1], cl: cl, cs: c.S.could, dq: dq.moves.length + ' ' + !!dq.S.real }); })()`));
+    eq(r.dq, '3 false', 'with the best line losing as much, the game\'s moves to where it left the line');
+    eq(JSON.stringify(r.moves), JSON.stringify(['d1g1', 'c4d3', 'c2d3', 'f8f5']), 'the game\'s own four moves');
+    eq(JSON.stringify(r.caps), JSON.stringify(['Rg1. Their pawn can take your bishop.', 'cxd3 takes your bishop with check.', 'cxd3 takes their pawn.', 'Rxf5 takes your queen.']), 'its captions');
+    eq(JSON.stringify(r.shown), JSON.stringify(r.caps), 'the same when shown');
+    ok(r.real && !r.could, 'the game\'s own moves, nothing they could have played');
+    ok(r.cs && r.ccap === 'Kxa3 could take your pawn. They missed it.', 'the could step: ' + r.ccap);
+    ok(r.cl.indexOf('They could have taken your pawn on a3.') >= 0 && r.cl.indexOf(' was taken on ') < 0, 'the could step\'s board: ' + r.cl);
+    /* a forcing line played through (184215516284:63: Nxc2 Bxc2 Bxf4): its settled board reads what each side took */
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    A.ev(`(window.__show(model().byKey['184215516284:63']), 1)`);
+    run(1000);
+    for (let g = 0; g < 6 && A.ev('ui.session.active.phase') !== 'done'; g++) { A.ev('(function (a) { gradeMove(uciToMove(a.st, a.sol[a.solIdx])); return 1; })(ui.session.active)'); run(2500); }
+    run(4000);
+    const l = A.ev('boardOptsFor(ui.session.active).opts.label');
+    ok(l.indexOf('Along the line you took a bishop on c2 and a bishop on f4; they took your knight on c2.') >= 0, 'the line read whole: ' + l);
+    ok(l.indexOf('You won a ') < 0, 'its tokens not read as wins alone: ' + l);
   });
 
   await test('the better segment has bSettle steps: the best line from its first move to where it settles (the whole line to a mate; an alternative\'s own line from its move)', () => {

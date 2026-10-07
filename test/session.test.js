@@ -1274,7 +1274,10 @@ const PLAIN = `function unplain(s, tier) {
           /* "yours" only for your own move's line, never the engine's best */
           if (/works too/.test(cap) !== !!S.alt || (S.alt && (!a.alt || line === c.bestLine || moveUci(nd.move) !== a.yours.uci[a.yours.at]))) fail('works too on a card that is ' + (a.alt ? '' : 'not ') + 'an alternative');
         }
-        else if (cap.indexOf(bare(san)) !== 0 && cap.indexOf('You play ' + bare(san)) !== 0 && cap.indexOf('They play ' + bare(san)) !== 0) fail('does not start with its ply ' + san);
+        else if (cap.indexOf(bare(san)) !== 0 && cap.indexOf('You play ' + bare(san)) !== 0 && cap.indexOf('They play ' + bare(san)) !== 0 && cap.indexOf('They could play ' + bare(san)) !== 0) fail('does not start with its ply ' + san);
+        /* the move they could have played is said as one, never as played (final fixes 2) */
+        var couldStep = game && s.k === 1 && !!S.could;
+        if (couldStep && !/^(\\S+ could (take|give)|They could play|\\S+ would be checkmate)/.test(cap)) fail('the move they could have played said as played');
         /* no other move of the line is named, except the reply G1 warns of */
         line.nodes.forEach(function (x, k) {
           if (!x.move || k === s.k) return;
@@ -1290,7 +1293,10 @@ const PLAIN = `function unplain(s, tier) {
             form = 'takes'; var cp = nd.captured;
             ok = !!cp && pType(cp) === PW[m[3]] && (isW(cp) === pov) === (m[2] === 'your') && (!m[5] || (game && s.k === 1 && found)) && (!m[4] || checkersOf(nd.after).length > 0);
             if (m[4]) n.withCheck = (n.withCheck || 0) + 1;
-          } else if (j === 0 && (m = /^(\\S+) could take your (\\w+)( with check)?\\.$/.exec(x))) { form = 'could take'; ok = game && s.k === 1 && blow && !!nd.captured && isW(nd.captured) === pov && pType(nd.captured) === PW[m[2]] && (!m[3] || checkersOf(nd.after).length > 0); }
+          } else if (j === 0 && (m = /^(\\S+) could take your (\\w+)( with check)?\\.$/.exec(x))) { form = 'could take'; ok = couldStep && blow && !!nd.captured && isW(nd.captured) === pov && pType(nd.captured) === PW[m[2]] && (!m[3] || checkersOf(nd.after).length > 0); }
+          else if (j === 0 && /^\\S+ could give check\\.$/.test(x)) { form = 'could check'; ok = couldStep && blow && !nd.captured && checkersOf(nd.after).length > 0 && !isMate(nd.after); }
+          else if (j === 0 && /^\\S+ would be checkmate\\.$/.test(x)) { form = 'could mate'; ok = couldStep && isMate(nd.after); }
+          else if (j === 0 && (m = /^They could play (\\S+)\\.$/.exec(x))) { form = 'could play'; ok = couldStep && blow && m[1] === bare(san) && !nd.captured && !checkersOf(nd.after).length; }
           else if (j === 0 && /^\\S+, check\\.$/.test(x)) { form = 'check'; ok = checkersOf(nd.after).length > 0 && !isMate(nd.after); }
           else if (j === 0 && /^\\S+$/.test(x.replace(/\\.$/, '')) && sents.length > 1 && /^Checkmate\\.$/.test(sents[1].trim())) { form = 'mate'; ok = isMate(nd.after); }
           else if (/^Checkmate\\.$/.test(x)) { form = 'mate'; ok = isMate(nd.after); }
@@ -1298,7 +1304,7 @@ const PLAIN = `function unplain(s, tier) {
           /* a quiet move says whose it is (C3), and only of a quiet move */
           else if (j === 0 && (m = /^(You|They) play (\\S+)\\.$/.exec(x))) { form = 'whose'; ok = m[2] === bare(san) && (m[1] === 'You') === (!!nd.byWhite === pov) && !nd.captured && !checkersOf(nd.after).length && !isMate(nd.after); }
           else if (/^As in your game\\.$/.test(x)) { form = 'found'; ok = game && s.k === 1 && found; }
-          else if (/^They missed it\\.$/.test(x)) { form = 'missed'; ok = game && s.k === 1 && blow; if (!nd.captured && !checkersOf(nd.after).length) n.quietMissed = (n.quietMissed || 0) + 1; }
+          else if (/^They missed it\\.$/.test(x)) { form = 'missed'; ok = couldStep && blow; if (!nd.captured && !checkersOf(nd.after).length) n.quietMissed = (n.quietMissed || 0) + 1; }
           else if ((m = /^Nothing guards the (\\w+) on ([a-h][1-8])\\.$/.exec(x))) { form = 'unguarded'; var q = sqNum(m[2]); ok = !!n1 && mine(q, PW[m[1]]) && !isDefended(b, q) && n1.move.to === q && !!n1.captured; }
           else if ((m = /^Their (\\w+) can take your (\\w+)\\.$/.exec(x))) { form = 'can take'; ok = !!n1 && pType(n1.before.b[n1.move.from]) === PW[m[1]] && !!n1.captured && pType(n1.captured) === PW[m[2]] && isW(n1.captured) === pov
             && MOTIF_VAL[PW[m[1]]] < MOTIF_VAL[PW[m[2]]] && isDefended(b, n1.move.to); }
@@ -1368,7 +1374,7 @@ const PLAIN = `function unplain(s, tier) {
       return JSON.stringify({ out: out, n: n }); })()`));
     const f = r.n.forms;
     ok(r.n.caps > 3000 && f.takes > 500 && f['you lose'] > 50 && f.unguarded > 20 && f['can take'] > 10 && f.fork > 5 && f['gives check'] > 20 && f['mate against'] > 5 && f.guard >= 6
-      && f['it wins'] > 20 && f['you win'] > 10 && r.n.lineWins > 5 && f['still comes'] >= 4 && f.found > 50 && f.missed > 50 && f['could take'] > 10 && f.mate > 5 && r.n.withCheck >= 5 && f.whose > 100, JSON.stringify(r.n));
+      && f['it wins'] > 20 && f['you win'] > 10 && r.n.lineWins > 5 && f['still comes'] >= 4 && f.found > 50 && f.missed > 50 && f['could take'] > 10 && f['could play'] > 20 && f.mate > 5 && r.n.withCheck >= 5 && f.whose > 100, JSON.stringify(r.n));
     /* S-same on a capture never falls back to the bare "still comes" (184216981622:46's better line loses the same knight: it names it) */
     ok(!r.n.sameBare, 'S-same fallback used ' + r.n.sameBare);
     eq(r.out.length, 0, r.out.length + ' untrue captions, first: ' + r.out.slice(0, 4).join(' | '));
@@ -1399,7 +1405,8 @@ const PLAIN = `function unplain(s, tier) {
     eq(r.c57[5], 'Qd5, check. You lose the pawn.', 'a checking move on the loss rung, without its sign');
     /* a capture that checks says both (fresh-eyes T7), and drops the check before the game's words */
     eq(r.c57[3], 'Qxd6 takes your bishop with check.', 'a capture that checks');
-    eq(r.c68[1], 'cxd3 takes your bishop, as in your game.', 'a capture that checks, without its sign, where "with check" does not fit');
+    /* the check is a board fact, "as in your game" context: the check is kept when both do not fit (final fixes 4) */
+    eq(r.c68[1], 'cxd3 takes your bishop with check.', 'a capture that checks, its check kept over "as in your game"');
     eq(r.quiet.length, 0, 'They missed it with nothing to miss: ' + r.quiet.slice(0, 3).join(' | '));
   });
 

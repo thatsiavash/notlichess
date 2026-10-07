@@ -226,6 +226,32 @@ function realGame(a, n) {
   return out;
 }
 
+/* where the game's own loss stands on its own moves (final fixes 1), when
+   it left the engine's line: rl, the game's moves from the card's position
+   (node 0 the game move). The first ply that mates you, or whose loss is
+   claimed by the same rule as every other (lossClaim: it stands there, in
+   line with the score, more than the best line loses), or the game's last
+   move when the game ended on it with more lost than the best line loses
+   (nothing was played after it). Only up to your next flagged mistake in
+   that game: what comes after it is that mistake's. -1 when the game lost
+   nothing so (or the card is not about material) */
+function realLossAt(a, rl) {
+  var c = a.cls, it = a.it, pov = myPov(it), last = rl.nodes.length - 1;
+  var base = matDiff(rl.nodes[0].before.b, pov), bl = bestLossFrom(a, 0);
+  var ended = it.b.p + last === it.g.mv.split(' ').length - 1;
+  var hz = last;
+  (it.g.bl || []).forEach(function (b) { if (!b.x && b.p > it.b.p) hz = Math.min(hz, b.p - it.b.p - 1); });
+  for (var k = 1; k <= hz; k++) {
+    var nd = rl.nodes[k];
+    if (isMate(nd.after)) return nd.byWhite !== pov ? k : -1;
+    if (!(c.lossG >= 1 || c.mateAgainst)) continue;
+    if (lossClaim(a, rl, k, 0, gameCpAfter(it.b), it.b.eb, bl, true)) return k;
+    var n = base - matDiff(nd.after.b, pov);
+    if (k === last && ended && n >= 1 && n > bl) return k;
+  }
+  return -1;
+}
+
 /* why a wrong try fails (M3), as row 2's ladder {cands, fall}: c is the
    classifier on the try (on the game move again, the card's own), win the
    solver's win chance after it, reply their answer in SAN. Checkmate first,
@@ -488,9 +514,15 @@ function buildStory(a) {
    ends on the last move really played; when that is their first reply and
    it missed a blow, one step more shows the move they could have played
    ("could take ... They missed it."), and nothing after it */
-  var real = realGame(a, gEnd + 1), could = false;
+  var real = realGame(a, Math.max(gEnd, 8) + 3), could = false, realSeg = false, threat = storyThreat(c, gl);
   for (var k = 1; k <= gEnd; k++) {
     if (real[k] === moveUci(gl.nodes[k].move)) continue;
+    /* they went their own way and the game still lost (final fixes 1): its
+       own moves to where its own loss stands, no later than the engine's
+       line has it. Only where they left the line (where you did, what
+       follows is your own choice, told as now) */
+    var rl = k % 2 ? buildLine(a.pre, a.playedUci, real.slice(1), !pov) : null, lk = rl ? realLossAt(a, rl) : -1;
+    if (lk >= 1 && lk <= gEnd) { gl = rl; gEnd = lk; realSeg = true; break; }
     var cmp0 = buildCompare(a);
     could = k === 1 && !cmp0.found && cmp0.replied && (!!c.mateAgainst || c.lossG >= 1);
     gEnd = could ? 1 : k - 1;
@@ -512,7 +544,7 @@ function buildStory(a) {
   var same = !alt && bl === c.bestLine && bEnd === 2 && !!g1 && !!b2 && sameMove([b2.move.from, b2.move.to], [g1.move.from, g1.move.to]);
   bEnd = betterEnd(bl, from, bEnd, pov, same || (!alt && !!c.mateFor && isMate(bl.nodes[bEnd].after)));
   for (k = from; k <= bEnd; k++) steps.push({ seg: 'better', line: bl, k: k, from: from });
-  var S = a.story = { steps: steps, g: gEnd + 1, could: could, threat: storyThreat(c, gl), guard: null, alt: !!alt,
+  var S = a.story = { steps: steps, g: gEnd + 1, could: could, real: realSeg, threat: threat, guard: null, alt: !!alt,
                       mateG: isMate(gl.nodes[gEnd].after), mateB: isMate(bl.nodes[bEnd].after) };
   /* the guard dots and words of B1: the better move's own square guarded
      once it is played, the game move's not (the guard rule, read as R4 reads
@@ -624,14 +656,25 @@ function storyCaption(a, S, i) {
        blows nothing is just its ply. That missed step is the move they
        could have played, the segment's last (S.could) */
     var cmp0 = buildCompare(a), found = s.k === 1 && cmp0.found;
-    var missed = s.k === 1 && !found && cmp0.replied && (!!c.mateAgainst || c.lossG >= 1);
-    var heads = says;
-    if (s.k === 1 && n.captured && !isMate(n.after) && (found || missed)) {
-      var pw = PIECE_WORD[pType(n.captured)], ck = checkersOf(n.after).length ? ' with check' : '';
-      heads = (found ? [san + ' takes your ' + pw + ck + ', as in your game.', san + ' takes your ' + pw + ', as in your game.']
-        : [san + ' could take your ' + pw + ck + '. They missed it.', san + ' could take your ' + pw + '. They missed it.']).concat(says);
-    } else if (found) heads = [say + ' As in your game.', say0 + ' As in your game.'].concat(says);
-    else if (missed) heads = [say + ' They missed it.', say0 + ' They missed it.'].concat(says);
+    /* on the game's own moves past where it left the engine's line (S.real)
+       their reply is the move played: nothing to have missed there */
+    var missed = s.k === 1 && !found && !S.real && cmp0.replied && (!!c.mateAgainst || c.lossG >= 1);
+    var heads = says, ck = checkersOf(n.after).length ? ' with check' : '';
+    /* a check is on the board, "as in your game" is context: the check is
+       kept first when both do not fit (final fixes 4) */
+    if (found && n.captured && !isMate(n.after)) {
+      var pw = PIECE_WORD[pType(n.captured)];
+      heads = (ck ? [san + ' takes your ' + pw + ck + ', as in your game.', say] : []).concat([san + ' takes your ' + pw + ', as in your game.']).concat(says);
+    } else if (found) heads = [say + ' As in your game.', say, say0 + ' As in your game.'].concat(says);
+    else if (missed) {
+      /* the move they could have played, said as one (never "takes"): with
+         its check first, then "They missed it." */
+      var cp = n.captured ? san + ' could take your ' + PIECE_WORD[pType(n.captured)] : null;
+      var cw = isMate(n.after) ? [san + ' would be checkmate'] : cp ? (ck ? [cp + ck, cp] : [cp]) : ck ? [san + ' could give check'] : ['They could play ' + san];
+      heads = [];
+      cw.forEach(function (w) { heads.push(w + '. They missed it.', w + '.'); });
+      fall = cw[cw.length - 1] + '.';
+    }
     heads = heads.filter(function (h, j) { return heads.indexOf(h) === j; });
     /* the net loss on the last step, only where it stands on this board
        (lossClaim, with nothing past this ply counted), never on a move they

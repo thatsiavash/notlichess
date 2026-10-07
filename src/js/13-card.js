@@ -389,6 +389,8 @@ function theirReply(a, early) {
   var before = cloneState(a.st), took = m.ep >= 0 ? a.st.b[m.ep] : a.st.b[m.to];
   rp.played = true;
   rp.tele = true;
+  /* and what their reply took, so the settled board reads the line whole */
+  if (took) (a.lineLost = a.lineLost || []).push({ sq: m.ep >= 0 ? m.ep : m.to, p: took });
   applyMove(a.st, m);
   a.lastMove = [m.from, m.to];
   a.solIdx++;
