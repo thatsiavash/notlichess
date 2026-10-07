@@ -4284,6 +4284,134 @@ const BAR = `(function () {
     });
   });
 
+  /* exploring on the page as painted (DOM, BAR) with the fake clock: the
+     engine's explore searches answered by hand, three legal lines each */
+  const XANS = `(window.__xans = function () { var n = 0;
+    window.__evals.slice().forEach(function (j) {
+      if (!j.res || j.done || j.opts.tag !== 'explore') return;
+      j.done = 1; n++;
+      var st = stateFromFen(j.fen), lines = legalMoves(st).slice(0, 3).map(function (m, i) { var cp = 50 - 40 * i; return { cp: st.w ? cp : -cp, mate: null, pv: [moveUci(m)] }; });
+      j.res({ cp: lines[0].cp, mate: null, bestUci: lines[0].pv[0], pv: lines[0].pv, lines: lines, depth: 18, stopped: false });
+    });
+    return n; }, 1)`;
+  const xpOpenPainted = async (A, tier) => {
+    A.ev(DOM); A.ev(BAR); A.ev(XANS);
+    A.ev(`(playerTier = function () { return ${tier || 2}; }, window.readyEngine(), 1)`);
+    A.ev(`(function () { var it = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol; })[0]; window.__show(it); return 1; })()`);
+    for (let t = 0; t < 1000; t += 10) A.advance(10);
+    A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
+    for (let t = 0; t < 3000; t += 10) A.advance(10);
+    A.click('explore');
+  };
+  /* answer every search asked for, as many rounds as it takes, then let the paint come */
+  const xpSettle = async (A) => {
+    for (let i = 0; i < 4; i++) { A.ev('window.__xans()'); await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r)); }
+    for (let t = 0; t < 1000; t += 10) A.advance(10);
+  };
+
+  await test('exploring opens with the keyboard on its band: Enter is Continue, Space plays nothing, the rows take no focus by themselves', async () => {
+    const A = boot();
+    await xpOpenPainted(A);
+    ok(A.ev('!!ui.session.active.explore'), 'exploring');
+    for (let t = 0; t < 600; t += 10) A.advance(10);
+    eq(A.ev('document.activeElement && document.activeElement.id'), 'result-h', 'focus at entry');
+    await xpSettle(A);
+    eq(A.ev('document.activeElement && document.activeElement.id'), 'result-h', 'focus once the rows came');
+    eq(A.ev('ui.session.active.explore.wantRow'), null, 'no row asked for the keyboard');
+    A.key(' ');
+    eq(A.ev('ui.session.active.explore.nodes.length'), 1, 'Space played nothing');
+    A.key('Enter');
+    eq(A.ev('!!(ui.session.active && ui.session.active.explore)') + ' ' + A.ev('!!ui.session.finished || ui.session.idx > 0'), 'false true', 'Enter is Continue');
+  });
+
+  await test("exploring's forward button: dead from the moment it comes to mean a new move until that label has shown 450 ms; live at once after ‹; a held → never plays a pick", async () => {
+    const A = boot();
+    await xpOpenPainted(A);
+    await xpSettle(A);
+    const X = () => JSON.parse(A.ev('JSON.stringify({ at: ui.session.active.explore.at, n: ui.session.active.explore.nodes.length })'));
+    const fwd = () => ((/data-slot="1"[^>]*>([^<]*)</.exec(A.ev('window.__els.cbar.innerHTML')) || [])[1] || '').replace(/&#39;/g, "'");
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const untilLabel = (want) => { for (let t = 0; t < 2000 && fwd() !== want; t += 10) A.advance(10); eq(fwd(), want, 'the label ' + want); return A.getNow(); };
+    /* a trail of two picks, then back to its start */
+    eq(fwd(), "Play Stockfish's pick", 'at the start, the end of an empty trail');
+    A.click('xpFwd', null, 1); await xpSettle(A);
+    A.click('xpFwd', null, 1); await xpSettle(A);
+    eq(JSON.stringify(X()), '{"at":2,"n":3}', 'two picks');
+    A.click('xpBack', null, 0); run(600); A.click('xpBack', null, 0); run(600);
+    eq(JSON.stringify(X()) + ' ' + fwd(), '{"at":0,"n":3} ›', 'back at the start');
+    /* rapid taps on ›: the one that reaches the end changes its meaning;
+       the next, while it still reads ›, and for 450 ms once it reads Play
+       Stockfish's pick, play nothing */
+    A.click('xpFwd', null, 1); run(100);
+    A.click('xpFwd', null, 1);
+    eq(JSON.stringify(X()), '{"at":2,"n":3}', 'the second tap reaches the end');
+    run(50);
+    eq(fwd(), '›', 'the button still reads ›');
+    A.click('xpFwd', null, 1);
+    eq(JSON.stringify(X()), '{"at":2,"n":3}', 'a tap on the old label plays nothing');
+    const tp = untilLabel("Play Stockfish's pick");
+    A.setNow(tp + 440); A.click('xpFwd', null, 1);
+    eq(JSON.stringify(X()), '{"at":2,"n":3}', 'a tap 440 ms after the new label');
+    A.setNow(tp + 460); A.click('xpFwd', null, 1);
+    eq(JSON.stringify(X()), '{"at":3,"n":4}', 'a tap 460 ms after it plays the pick');
+    await xpSettle(A);
+    /* ‹ leaves the end: › means a step again, and takes a tap as soon as it reads › */
+    A.click('xpBack', null, 0);
+    eq(JSON.stringify(X()), '{"at":2,"n":4}', '‹ leaves the end');
+    const tq = untilLabel('›');
+    A.setNow(tq + 10); A.click('xpFwd', null, 1);
+    eq(JSON.stringify(X()), '{"at":3,"n":4}', '› 10 ms after ‹ left the end');
+    run(1000);
+    /* a held →: it walks the trail to its end and stops there */
+    A.click('xpBack', null, 0); run(600); A.click('xpBack', null, 0); run(600); A.click('xpBack', null, 0); run(600);
+    eq(JSON.stringify(X()), '{"at":0,"n":4}', 'the trail\'s start');
+    A.key('ArrowRight');
+    for (let t = 0; t < 2000; t += 30) { A.key('ArrowRight', true); run(30); }
+    eq(JSON.stringify(X()), '{"at":3,"n":4}', 'a held → stops at the end');
+    /* a slow key repeat, which lets the label paint and its half second pass, too */
+    for (let t = 0; t < 2000; t += 250) { A.key('ArrowRight', true); run(250); }
+    eq(JSON.stringify(X()) + ' ' + fwd(), '{"at":3,"n":4} Play Stockfish\'s pick', 'a slow held → stops at the end');
+    /* a fresh → there plays the pick, but only once its label has shown 450 ms */
+    A.key('ArrowLeft'); run(1000);
+    A.key('ArrowRight');
+    eq(JSON.stringify(X()), '{"at":3,"n":4}', '→ to the end');
+    run(50); A.key('ArrowRight');
+    eq(JSON.stringify(X()), '{"at":3,"n":4}', 'a fresh → before the label shows');
+    const tk = untilLabel("Play Stockfish's pick");
+    A.setNow(tk + 440); A.key('ArrowRight');
+    eq(JSON.stringify(X()), '{"at":3,"n":4}', 'a fresh → 440 ms after the label');
+    A.setNow(tk + 460); A.key('ArrowRight');
+    eq(JSON.stringify(X()), '{"at":4,"n":5}', 'a fresh → 460 ms after the label plays the pick');
+    run(1000);
+    /* a held ← walks back to the start and stays in exploring */
+    A.key('ArrowLeft');
+    for (let t = 0; t < 2000; t += 30) { A.key('ArrowLeft', true); run(30); }
+    eq(A.ev('!!ui.session.active.explore') + ' ' + JSON.stringify(X()), 'true {"at":0,"n":5}', 'a held ← stops at the start');
+    A.key('ArrowLeft');
+    eq(A.ev('!!ui.session.active.explore'), false, 'a fresh ← there goes back to the lesson');
+  });
+
+  await test("a shown line's reply on its way: no ••• item for exploring (a tap then is input to the reply); back once it is said", () => {
+    const A = boot();
+    A.ev(DOM); A.ev(BAR);
+    A.ev('(playerTier = function () { return 2; }, window.readyEngine(), 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const key = JSON.parse(A.ev(FORCING))[0];
+    A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+    run(1000);
+    A.ev('(reveal(), 1)'); run(2500);
+    const item = () => A.ev('menuHtml(ui.session.active).indexOf(\'data-act="explore"\') >= 0');
+    ok(item(), 'the item with the answer shown');
+    A.click('playIt', null, 1);
+    let seen = false;
+    for (let t = 0; t < 4000; t += 10) {
+      A.advance(10);
+      if (A.ev('!!ui.session.active.reply')) { seen = true; ok(!item(), 'the item while their reply is on its way, ' + t + ' ms'); }
+    }
+    ok(seen, 'their reply came');
+    ok(item(), 'the item once the reply is said');
+  });
+
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'card flow: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));
   process.exit(failed ? 1 : 0);

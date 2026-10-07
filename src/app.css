@@ -405,7 +405,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .kb-move{position:absolute;left:-9999px;top:auto}
 .kb-move:focus-within{position:static;display:flex;gap:8px;align-items:center;margin:10px 0 0;font-size:13px;color:var(--secondary)}
 .kb-move input{background:var(--raised);border:1px solid var(--edge);border-radius:5px;color:var(--primary);padding:7px 9px;font:inherit;width:9em}
-.sr-live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.sr-live{position:absolute;top:0;left:0;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:600px){
   .ratings{display:none}
   .brand-name{font-size:20px}
@@ -489,9 +489,10 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .done-acts .btn-big{flex:1 1 auto;justify-content:center;min-height:48px}
 /* the story's bar: [56 px] [1fr] [1fr], the gold one the suggested step */
 .done-acts .btn-line,.done-acts .btn-big{flex:1 1 0;min-width:0;justify-content:center;text-align:center;min-height:48px;display:inline-flex;align-items:center;white-space:nowrap}
-/* exploring's forward slot: "Play Stockfish's pick" at the trail's end may
-   take two lines rather than overflow its column */
-.done-acts .xp-fwd{white-space:normal;line-height:17px;padding:0 8px}
+/* exploring's forward slot: "Play Stockfish's pick" at the trail's end
+   takes the wider column, so it stays on one line beside Continue from a
+   360 px phone to the desktop panel */
+.done-acts .xp-fwd{flex-grow:1.4;padding:0 8px}
 /* the story's strip: each segment's name and its dots, the step on screen
    larger with a ring; folded to a count over 9 steps */
 .story-strip{display:flex;align-items:center;gap:14px;min-height:44px;flex-wrap:wrap}
@@ -817,7 +818,14 @@ a.lg-row{color:inherit}
   .xp-say{margin:0 0 4px;padding:0 var(--gutter)}
   .xp-cap{margin:0;padding:0 var(--gutter)}
   .xp-rows{margin:0}
-  .xp-row{padding:0 var(--gutter)}
+  .xp-row{padding:0 var(--gutter);height:var(--xp-row,44px)}
+  /* the panel ends at the bar, so the page never scrolls under it */
+  .card.xp-card{padding-bottom:0}
+  .card.xp-card .panel{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+  /* a short phone: the trail and the way back in 28 px, so one row fits */
+  .xp.tight .xp-head{height:28px}
+  .xp.tight .xp-back{min-height:28px}
+  .xp.tight .xp-say{margin-bottom:0}
 }
 /* text out (2.2): words about to change fade out in 100 ms before the board
    moves, and take no tap meanwhile; the next words take the class off. The

@@ -94,6 +94,10 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
     ok(A.ev('detailsHtml().indexOf(\'data-act="explore"\')') < 0 && A.ev('menuHtml(ui.session.active).indexOf(\'data-act="explore"\')') < 0, 'offered with no engine');
     A.click('explore'); A.click('explore', 'menu'); A.ev('startExplore({})');
     eq(A.ev('!!ui.session.active.explore'), false, 'exploring with no engine');
+    /* and a tap on a piece gets the outline alone: N1 would point at a way in that is not there */
+    A.ev('ui.session.active.note = null; ui.session.active.nope = null');
+    A.tap(any);
+    eq(A.ev('JSON.stringify([ui.session.active.note, ui.session.active.nope && ui.session.active.nope.sq])'), JSON.stringify([null, any]), 'a tap with no engine');
   });
 
   await test('starts at the card position with the solver to move, and asks for three lines', () => {
@@ -126,7 +130,8 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
     ok(A.ev('window.__jobs.some(function (j) { return j.nodes === 1000000 && j.opts.tag === "explore"; })'), 'the 1M step is asked');
     A.ev(`window.__answer(window.__jobs.filter(function (j) { return j.nodes === 1000000; })[0])`); await flush(A);
     const say = A.ev('sayAt(ui.session.active, ui.session.active.explore, 0)');
-    ok(/Stockfish's pick is .+, the gold arrow\. › plays it\.$/.test(say), say);
+    /* the sentence names no control: the button under it says how to play it */
+    ok(/^Your move\. Stockfish's pick is .+, the gold arrow\.$/.test(say), say);
     ok(A.ev('xpRows(ui.session.active, ui.session.active.explore).length') >= 2, 'rows');
   });
 
@@ -344,20 +349,25 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
       let b = bar();
       eq(b.map((x) => x.act).join(' '), 'xpBack xpFwd next', 'the bar');
       eq(b[0].label + '|' + b[0].aria, '‹|Back to the lesson', '‹ at the start');
-      eq(b[1].label, "Play Stockfish's pick", '› at the end of the trail');
+      /* the button, the band and the sentence name the same one: the computer at tier 1 */
+      const pickLabel = tier === 1 ? 'Play its pick' : "Play Stockfish's pick";
+      eq(b[1].label, pickLabel, '› at the end of the trail');
       ok(/nav-off/.test(b[1].cls), '› waits for Stockfish');
       ok(/^(Continue|Finish)$/.test(b[2].label) && /btn-big/.test(b[2].cls), 'Continue in gold');
       for (let i = 0; i < 2; i++) { A.ev(`window.__answer(window.__jobs[0], [60, 20, -300])`); await flush(A); }
       b = bar();
-      ok(!/nav-off/.test(b[1].cls) && b[1].label === "Play Stockfish's pick", 'Play Stockfish\'s pick once it answers');
+      ok(!/nav-off/.test(b[1].cls) && b[1].label === pickLabel, 'Play Stockfish\'s pick once it answers');
+      const say0 = A.ev('sayAt(ui.session.active, ui.session.active.explore, 0)');
+      ok(tier === 1 ? /^Your move\. The computer's pick is \S+, the gold arrow\.$/.test(say0) : /^Your move\. Stockfish's pick is \S+, the gold arrow\.$/.test(say0), 'tier ' + tier + ' sentence: ' + say0);
       const strip = A.ev('stripHtml(ui.session.active, ui.session)');
       ok(strip.indexOf('<p class="xp-say">' + A.ev('esc(sayAt(ui.session.active, ui.session.active.explore, 0))') + '</p>') >= 0, 'the sentence in the panel');
-      ok(/xp-trail/.test(strip) && /data-act="exploreOff"/.test(strip) && (strip.match(/data-act="xpRow"/g) || []).length === (tier === 1 ? 2 : 3), 'trail, way back and rows');
+      ok(/xp-trail/.test(strip) && /data-act="exploreOff"/.test(strip) && (strip.match(/data-act="xpRow"/g) || []).length === 3, 'trail, way back and rows');
       ok(/Your best moves/.test(strip), 'the solver\'s best moves');
       /* › plays Stockfish's pick; then ‹ and the trail's own › */
       const pick = A.ev('ui.session.active.explore.res[xpCur(ui.session.active.explore).key].lines[0].pv[0]');
       A.click('xpFwd', null, 1);
       eq(A.ev('ui.session.active.explore.at + " " + ui.session.active.explore.nodes[1].mv.uci + " " + ui.session.active.explore.nodes[1].mv.pick'), '1 ' + pick + ' true', 'Play Stockfish\'s pick plays it');
+      ok(A.ev('sayAt(ui.session.active, ui.session.active.explore, 1)').endsWith(tier === 1 ? '. The computer is thinking…' : '. Stockfish is thinking…'), 'tier ' + tier + ' thinking');
       A.ev('exploreStep(-1)');
       b = bar();
       eq(b[1].label + '|' + b[1].aria + '|' + /nav-off/.test(b[1].cls), '›|Forward one move|false', '› inside the trail');

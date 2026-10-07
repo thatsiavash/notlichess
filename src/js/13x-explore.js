@@ -14,6 +14,9 @@ function xpCur(ex) { return ex.nodes[ex.at]; }
 function xpSync(ex) { var n = xpCur(ex); ex.st = n.st; ex.last = n.last; }
 function xpTouch() { return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches; }
 function sideName(w) { return w ? 'White' : 'Black'; }
+/* who answers, as the band says it (X2): "the computer" at tier 1, in the
+   sentence and on the button alike, "Stockfish" above it */
+function xpWho(a, cap) { return a.tier === 1 ? (cap ? 'The computer' : 'the computer') : 'Stockfish'; }
 
 /* S14: opened only from an answered card's Details row or its ••• item
    (never by a board tap, never while the engine is down), at the card's
@@ -31,7 +34,7 @@ function startExplore(o) {
   delete from.pre;
   a.xpRes = a.xpRes || {};
   a.explore = { root: from, nodes: [xpNode(a.pre, a.preLast, null)],
-                at: 0, sel: -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null, wantRow: 0 };
+                at: 0, sel: -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null, wantRow: null, focusHead: true };
   xpSync(a.explore);
   xpSpoilIndex();
   track('explore_start_' + (o.via || 'link'));
@@ -58,11 +61,12 @@ function explorePlay(m, dragged) {
   if (!ex) return;
   var P = xpCur(ex), uci = moveUci(m);
   var pr = ex.res[P.key], pick = !!(pr && pr.lines[0] && pr.lines[0].pv[0] === uci);
-  var san = sanOf(P.st, m), st = cloneState(P.st);
+  var san = sanOf(P.st, m), st = cloneState(P.st), wasEnd = xpEnd(ex);
   applyMove(st, m);
   ex.nodes = ex.nodes.slice(0, ex.at + 1);
   ex.nodes.push(xpNode(st, [m.from, m.to], { san: san, uci: uci, byYou: P.st.w === myPov(a.it), pick: pick, ply: xpPly(P.st) }));
   ex.at++;
+  xpFwdMeaning(ex, wasEnd);
   Object.keys(ex.say).forEach(function (k) { if (+k >= ex.at) delete ex.say[k]; });
   ex.sel = -1; ex.hot = 0; ex.flash = null; ex.hover = null;
   xpThaw(ex);
@@ -77,8 +81,9 @@ function xpPly(st) { return (st.full - 1) * 2 + (st.w ? 0 : 1); }
 function exploreGo(i) {
   var a = ui.session && ui.session.active, ex = a && a.explore;
   if (!ex || i < 0 || i >= ex.nodes.length || i === ex.at) return;
-  var fwd = i === ex.at + 1;
+  var fwd = i === ex.at + 1, wasEnd = xpEnd(ex);
   ex.at = i; ex.sel = -1; ex.hot = 0; ex.flash = null; ex.hover = null;
+  xpFwdMeaning(ex, wasEnd);
   xpThaw(ex);
   xpSync(ex);
   var n = xpCur(ex);
@@ -86,6 +91,21 @@ function exploreGo(i) {
   if (fwd) snd('move');
   renderCard();
   exploreAnalyse(false);
+}
+/* at the trail's end the forward button plays Stockfish's pick, inside it
+   it steps: when that meaning changes, the button takes nothing until its
+   new label is painted, and then waits out the slot guard (2.2) unless the
+   change came from the other button (‹ leaving the end) */
+function xpEnd(ex) { return ex.at >= ex.nodes.length - 1; }
+function xpFwdMeaning(ex, wasEnd) { if (xpEnd(ex) !== wasEnd) pendSlot(slotOfAct('xpFwd')); }
+/* ← and → stand for ‹ and ›: a held key steps along the trail but never
+   past either end (out of exploring, or into a new move), and → plays the
+   pick only as a fresh press once its label has been on screen 450 ms */
+function xpArrow(ex, d, repeat) {
+  var i = slotOfAct(d < 0 ? 'xpBack' : 'xpFwd');
+  if (d < 0 ? ex.at === 0 && repeat : xpEnd(ex) && (repeat || slotGuarded(i))) return false;
+  pressSlot(i);
+  return true;
 }
 function exploreStep(d) {
   var a = ui.session && ui.session.active, ex = a && a.explore;
@@ -352,8 +372,8 @@ function xpVerdict(a, ex, at) {
     /* the count the rows show: the child's own search, plus this move */
     var cm = cr && cr.lines[0] ? mateOf(cr.lines[0], s) : null;
     if (cm != null && mateIn != null && (cm > 0) === (mateIn > 0)) mateIn = cm > 0 ? cm + 1 : cm;
-    text = fitLine([C.mv.san + ' is Stockfish\'s pick.' + (mateIn > 0 ? ' It mates in ' + mateIn + '.' : mateIn < 0 ? ' It allows mate in ' + (-mateIn) + '.' : (mw ? ' It ' + mw + '.' : '')),
-      C.mv.san + ' is Stockfish\'s pick.']);
+    text = fitLine([C.mv.san + ' is ' + xpWho(a) + '\'s pick.' + (mateIn > 0 ? ' It mates in ' + mateIn + '.' : mateIn < 0 ? ' It allows mate in ' + (-mateIn) + '.' : (mw ? ' It ' + mw + '.' : '')),
+      C.mv.san + ' is ' + xpWho(a) + '\'s pick.']);
   } else {
     var decided = Math.abs(cpBest) >= 1000 && Math.abs(cpX) >= 1000 && (cpBest > 0) === (cpX > 0);
     var mateBoth = best.mate != null && ((row && row.mate != null) || !!(cr && cr.lines[0] && cr.lines[0].mate != null)) && (cpBest > 0) === (cpX > 0);
@@ -402,14 +422,15 @@ function sayAt(a, ex, at) {
     var winnerW = !n.st.w;
     return 'Checkmate. ' + (winnerW === myPov(a.it) ? 'You win.' : sideName(winnerW) + ' wins.');
   }
-  if (xpSpoil(n)) return 'This is one of your own positions. Stockfish stays quiet so it can test you.';
-  if (n.down) return 'Stockfish is not answering right now. Try again, or go back to the lesson.';
+  if (xpSpoil(n)) return 'This is one of your own positions. ' + xpWho(a, true) + ' stays quiet so it can test you.';
+  if (n.down) return xpWho(a, true) + ' is not answering right now. Try again, or go back to the lesson.';
   var P = at > 0 ? ex.nodes[at - 1] : null;
   if (at === 0 || (P && xpSpoil(P))) {
     var r = { lines: xpShown(ex, n) || [] }, who = n.st.w === myPov(a.it) ? 'Your move.' : sideName(n.st.w) + ' to move.';
-    if (!r.lines[0]) return who + ' Stockfish is thinking…';
+    if (!r.lines[0]) return who + ' ' + xpWho(a, true) + ' is thinking…';
     var pick = sanOf(n.st, uciToMove(n.st, r.lines[0].pv[0]));
-    return who + ' Stockfish\'s pick is ' + pick + ', the gold arrow. › plays it.';
+    /* the button under it says how to play it (Play Stockfish's pick) */
+    return who + ' ' + xpWho(a, true) + '\'s pick is ' + pick + ', the gold arrow.';
   }
   if (n.mv && n.mv.pick) {
     /* walking Stockfish's line keeps the explanation of the move that started it */
@@ -422,14 +443,14 @@ function sayAt(a, ex, at) {
   var v = xpVerdict(a, ex, at), sh = xpShown(ex, n), lv = ex.res[n.key];
   if (v && v.cat === 'little' && sh && sh[0] && lv && lv.lines[0] && sh[0].pv[0] !== lv.lines[0].pv[0])
     return v.text.replace(/ Best reply: [^,]+, the gold arrow\./, '');
-  return v ? v.text : n.mv.san + '. Stockfish is thinking…';
+  return v ? v.text : n.mv.san + '. ' + xpWho(a, true) + ' is thinking…';
 }
 
 /* what a screen reader hears: the move before a kept sentence, and only the
    move while Stockfish thinks */
 function xpLive(a, ex, at) {
   var s = sayAt(a, ex, at), n = ex.nodes[at];
-  if (/ Stockfish is thinking…$/.test(s)) return s.replace(/ Stockfish is thinking…$/, '');
+  if (/ (Stockfish|The computer) is thinking…$/.test(s)) return s.replace(/ (Stockfish|The computer) is thinking…$/, '');
   if (ex.flash || at === 0 || !n.mv || xpSpoil(n) || s.indexOf(n.mv.san + ' ') === 0) return s;
   return n.mv.san + (checkedKingSq(n.st) != null ? ', check. ' : '. ') + s;
 }
@@ -470,8 +491,8 @@ function xpRows(a, ex) {
   var tier = a.tier || 2, me = myPov(a.it), touch = window.innerWidth <= 860;
   var lines = shown.slice(0, 3), idx = [0, 1, 2].filter(function (i) { return lines[i]; }), ws = null;
   if (tier === 1) {
-    /* two rows: the best, and the line that teaches something different,
-       a tactic before a plain standing, never the same words twice */
+    /* the best, then the line that teaches something different, a tactic
+       before a plain standing, never the same words twice */
     ws = lines.map(function (l) { return xpRowWords(a, n, l, lines[0], 1); });
     var tac = /^(allows a fork|walks into a pin|allows a hidden attack|allows mate|loses the|misses )/;
     var two = [1, 2].filter(function (i) { return lines[i] && tac.test(ws[i]); })[0];
@@ -481,6 +502,8 @@ function xpRows(a, ex) {
       if (alt != null) two = alt;
     }
     idx = two > 0 ? [0, two] : [0];
+    /* a third, last, where a phone has the room for it (fitRows) */
+    [1, 2].forEach(function (i) { if (lines[i] && idx.indexOf(i) < 0) idx.push(i); });
   }
   return idx.map(function (li) {
     var l = lines[li];

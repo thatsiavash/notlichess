@@ -446,6 +446,7 @@ document.addEventListener('click', function (e) {
   if (!(a1 && a1.reply && REPLY_FREE.test(act)) && flushStage()) return;
   var slot = t.getAttribute('data-slot');
   if (slot != null && slotGuarded(parseInt(slot, 10))) return;
+  if (slot != null) pressSlot(parseInt(slot, 10));
   var a = ui.session && ui.session.active;
   switch (act) {
     case 'view': closeSheet(); if (ui.session && ui.session.finished && k === 'train') endSession(); setView(k); break;
@@ -633,8 +634,8 @@ document.addEventListener('keydown', function (e) {
   if (a.phase === 'done') {
     /* ← → step the story (→ from S0 opens it), or the exploration's trail */
     var step = a.explore ? exploreStep : storyStep, inStory = !a.explore && a.view && a.view.mode === 'story';
-    if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
-    else if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); if (!(a.explore && !xpArrow(a.explore, -1, e.repeat))) step(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); if (!(a.explore && !xpArrow(a.explore, 1, e.repeat))) step(1); }
     /* Enter is the right-hand button. Space steps the story forward (from
        the page or the bar, never in place of a strip name); elsewhere on an
        answered card it does nothing (S12) */

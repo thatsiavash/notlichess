@@ -156,6 +156,8 @@ function stageReset() {
   motionHold = false;
   textNotBefore = 0;
   slotHidAt = [];
+  slotPend = [];
+  slotPress = null;
 }
 
 /* the double-tap guard (2.2): a bar slot whose label or action just changed
@@ -164,25 +166,40 @@ function stageReset() {
    notes every slot it paints. A slot that faded out for its change (text
    out, fadeOut) could take no tap from then on, so its half second runs
    from the fade, not from the paint: the story's bar, hidden from See why
-   until its caption, takes its first visible tap (taps and keys alike) */
+   until its caption, takes its first visible tap (taps and keys alike).
+   A press on a button that stays as it was (‹ stepping back) leaves the
+   other slots it changes live: the hand is still on that button, and a tap
+   elsewhere is deliberate. A slot whose meaning changed before its new
+   label is painted (pendSlot) takes nothing until it is painted */
 var SLOT_GUARD = 450;
-var slotSig = [], slotAct = [], slotChangedAt = [], slotHidAt = [];
+var slotSig = [], slotAct = [], slotChangedAt = [], slotHidAt = [], slotPend = [], slotPress = null;
 function hideSlot(i) { if (slotHidAt[i] == null) slotHidAt[i] = Date.now(); }
+function pendSlot(i) { slotPend[i] = true; }
+/* a bar slot pressed (a click on it, or the key that stands for it) */
+function pressSlot(i) { if (i != null && i >= 0) slotPress = { i: i, sig: slotSig[i], t: Date.now() }; }
 /* a slot as the guard sees it: its label, its action (none when off), its key */
 function slotSigOf(s) { return (s.label || '') + '|' + (s.off ? '' : s.act || '') + '|' + (s.k == null ? '' : s.k); }
 function noteSlots(slots) {
-  var now = Date.now();
+  var now = Date.now(), pr = slotPress;
+  /* the pressed button is still there, as it was (this paint is the one
+     the press asked for: a press that changed nothing is forgotten) */
+  var kept = !!(pr && now - pr.t < 1000 && slots[pr.i] && slotSigOf(slots[pr.i]) === pr.sig);
   slots.forEach(function (s, i) {
-    var sig = slotSigOf(s);
-    if (slotSig[i] !== sig) { slotSig[i] = sig; slotChangedAt[i] = slotHidAt[i] != null ? slotHidAt[i] : now; }
+    var sig = slotSig[i], nsig = slotSigOf(s);
+    if (sig !== nsig) {
+      slotSig[i] = nsig;
+      slotChangedAt[i] = slotHidAt[i] != null ? slotHidAt[i] : kept && i !== pr.i ? 0 : now;
+    }
     slotAct[i] = s.off ? null : s.act || null;
   });
   for (var j = slots.length; j < slotSig.length; j++) { slotSig[j] = null; slotAct[j] = null; slotChangedAt[j] = now; }
   slotHidAt = [];
+  slotPend = [];
+  slotPress = null;
 }
 /* a slot faded out and not yet repainted presses nothing either (a key
    would otherwise reach the button it is about to lose) */
-function slotGuarded(i) { return i != null && i >= 0 && (slotHidAt[i] != null || Date.now() - (slotChangedAt[i] || 0) < SLOT_GUARD); }
+function slotGuarded(i) { return i != null && i >= 0 && (slotHidAt[i] != null || !!slotPend[i] || Date.now() - (slotChangedAt[i] || 0) < SLOT_GUARD); }
 /* the slot that holds an action now, -1 if none; the right-hand one */
 function slotOfAct(act) { return slotAct.indexOf(act); }
 function rightSlot() { for (var i = slotSig.length - 1; i >= 0; i--) if (slotSig[i] != null) return i; return -1; }

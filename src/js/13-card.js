@@ -203,8 +203,9 @@ function sessionClick(sq) {
     }
     if (a.sel >= 0) { a.sel = -1; renderCardBoard(); }
     /* after an answer the board takes no moves: a tap on any piece says
-       where to try them (N1), and nothing changes */
-    if (doneBoard(a).b[sq]) tapNote(a, 'N1', 2500, sq);
+       where to try them (N1), and nothing changes; with the engine down
+       there is nowhere to try them (S11), so the outline answers alone */
+    if (doneBoard(a).b[sq]) { if (SF.state === 'failed') nopeAt(a, sq); else tapNote(a, 'N1', 2500, sq); }
     return;
   }
   if (a.phase !== 'guess') return;

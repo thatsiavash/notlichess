@@ -452,7 +452,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .kb-move{position:absolute;left:-9999px;top:auto}
 .kb-move:focus-within{position:static;display:flex;gap:8px;align-items:center;margin:10px 0 0;font-size:13px;color:var(--secondary)}
 .kb-move input{background:var(--raised);border:1px solid var(--edge);border-radius:5px;color:var(--primary);padding:7px 9px;font:inherit;width:9em}
-.sr-live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.sr-live{position:absolute;top:0;left:0;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (max-width:600px){
   .ratings{display:none}
   .brand-name{font-size:20px}
@@ -536,9 +536,10 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .done-acts .btn-big{flex:1 1 auto;justify-content:center;min-height:48px}
 /* the story's bar: [56 px] [1fr] [1fr], the gold one the suggested step */
 .done-acts .btn-line,.done-acts .btn-big{flex:1 1 0;min-width:0;justify-content:center;text-align:center;min-height:48px;display:inline-flex;align-items:center;white-space:nowrap}
-/* exploring's forward slot: "Play Stockfish's pick" at the trail's end may
-   take two lines rather than overflow its column */
-.done-acts .xp-fwd{white-space:normal;line-height:17px;padding:0 8px}
+/* exploring's forward slot: "Play Stockfish's pick" at the trail's end
+   takes the wider column, so it stays on one line beside Continue from a
+   360 px phone to the desktop panel */
+.done-acts .xp-fwd{flex-grow:1.4;padding:0 8px}
 /* the story's strip: each segment's name and its dots, the step on screen
    larger with a ring; folded to a count over 9 steps */
 .story-strip{display:flex;align-items:center;gap:14px;min-height:44px;flex-wrap:wrap}
@@ -864,7 +865,14 @@ a.lg-row{color:inherit}
   .xp-say{margin:0 0 4px;padding:0 var(--gutter)}
   .xp-cap{margin:0;padding:0 var(--gutter)}
   .xp-rows{margin:0}
-  .xp-row{padding:0 var(--gutter)}
+  .xp-row{padding:0 var(--gutter);height:var(--xp-row,44px)}
+  /* the panel ends at the bar, so the page never scrolls under it */
+  .card.xp-card{padding-bottom:0}
+  .card.xp-card .panel{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+  /* a short phone: the trail and the way back in 28 px, so one row fits */
+  .xp.tight .xp-head{height:28px}
+  .xp.tight .xp-back{min-height:28px}
+  .xp.tight .xp-say{margin-bottom:0}
 }
 /* text out (2.2): words about to change fade out in 100 ms before the board
    moves, and take no tap meanwhile; the next words take the class off. The
@@ -6159,8 +6167,9 @@ function sessionClick(sq) {
     }
     if (a.sel >= 0) { a.sel = -1; renderCardBoard(); }
     /* after an answer the board takes no moves: a tap on any piece says
-       where to try them (N1), and nothing changes */
-    if (doneBoard(a).b[sq]) tapNote(a, 'N1', 2500, sq);
+       where to try them (N1), and nothing changes; with the engine down
+       there is nowhere to try them (S11), so the outline answers alone */
+    if (doneBoard(a).b[sq]) { if (SF.state === 'failed') nopeAt(a, sq); else tapNote(a, 'N1', 2500, sq); }
     return;
   }
   if (a.phase !== 'guess') return;
@@ -7132,6 +7141,9 @@ function xpCur(ex) { return ex.nodes[ex.at]; }
 function xpSync(ex) { var n = xpCur(ex); ex.st = n.st; ex.last = n.last; }
 function xpTouch() { return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches; }
 function sideName(w) { return w ? 'White' : 'Black'; }
+/* who answers, as the band says it (X2): "the computer" at tier 1, in the
+   sentence and on the button alike, "Stockfish" above it */
+function xpWho(a, cap) { return a.tier === 1 ? (cap ? 'The computer' : 'the computer') : 'Stockfish'; }
 
 /* S14: opened only from an answered card's Details row or its ••• item
    (never by a board tap, never while the engine is down), at the card's
@@ -7149,7 +7161,7 @@ function startExplore(o) {
   delete from.pre;
   a.xpRes = a.xpRes || {};
   a.explore = { root: from, nodes: [xpNode(a.pre, a.preLast, null)],
-                at: 0, sel: -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null, wantRow: 0 };
+                at: 0, sel: -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null, wantRow: null, focusHead: true };
   xpSync(a.explore);
   xpSpoilIndex();
   track('explore_start_' + (o.via || 'link'));
@@ -7176,11 +7188,12 @@ function explorePlay(m, dragged) {
   if (!ex) return;
   var P = xpCur(ex), uci = moveUci(m);
   var pr = ex.res[P.key], pick = !!(pr && pr.lines[0] && pr.lines[0].pv[0] === uci);
-  var san = sanOf(P.st, m), st = cloneState(P.st);
+  var san = sanOf(P.st, m), st = cloneState(P.st), wasEnd = xpEnd(ex);
   applyMove(st, m);
   ex.nodes = ex.nodes.slice(0, ex.at + 1);
   ex.nodes.push(xpNode(st, [m.from, m.to], { san: san, uci: uci, byYou: P.st.w === myPov(a.it), pick: pick, ply: xpPly(P.st) }));
   ex.at++;
+  xpFwdMeaning(ex, wasEnd);
   Object.keys(ex.say).forEach(function (k) { if (+k >= ex.at) delete ex.say[k]; });
   ex.sel = -1; ex.hot = 0; ex.flash = null; ex.hover = null;
   xpThaw(ex);
@@ -7195,8 +7208,9 @@ function xpPly(st) { return (st.full - 1) * 2 + (st.w ? 0 : 1); }
 function exploreGo(i) {
   var a = ui.session && ui.session.active, ex = a && a.explore;
   if (!ex || i < 0 || i >= ex.nodes.length || i === ex.at) return;
-  var fwd = i === ex.at + 1;
+  var fwd = i === ex.at + 1, wasEnd = xpEnd(ex);
   ex.at = i; ex.sel = -1; ex.hot = 0; ex.flash = null; ex.hover = null;
+  xpFwdMeaning(ex, wasEnd);
   xpThaw(ex);
   xpSync(ex);
   var n = xpCur(ex);
@@ -7204,6 +7218,21 @@ function exploreGo(i) {
   if (fwd) snd('move');
   renderCard();
   exploreAnalyse(false);
+}
+/* at the trail's end the forward button plays Stockfish's pick, inside it
+   it steps: when that meaning changes, the button takes nothing until its
+   new label is painted, and then waits out the slot guard (2.2) unless the
+   change came from the other button (‹ leaving the end) */
+function xpEnd(ex) { return ex.at >= ex.nodes.length - 1; }
+function xpFwdMeaning(ex, wasEnd) { if (xpEnd(ex) !== wasEnd) pendSlot(slotOfAct('xpFwd')); }
+/* ← and → stand for ‹ and ›: a held key steps along the trail but never
+   past either end (out of exploring, or into a new move), and → plays the
+   pick only as a fresh press once its label has been on screen 450 ms */
+function xpArrow(ex, d, repeat) {
+  var i = slotOfAct(d < 0 ? 'xpBack' : 'xpFwd');
+  if (d < 0 ? ex.at === 0 && repeat : xpEnd(ex) && (repeat || slotGuarded(i))) return false;
+  pressSlot(i);
+  return true;
 }
 function exploreStep(d) {
   var a = ui.session && ui.session.active, ex = a && a.explore;
@@ -7470,8 +7499,8 @@ function xpVerdict(a, ex, at) {
     /* the count the rows show: the child's own search, plus this move */
     var cm = cr && cr.lines[0] ? mateOf(cr.lines[0], s) : null;
     if (cm != null && mateIn != null && (cm > 0) === (mateIn > 0)) mateIn = cm > 0 ? cm + 1 : cm;
-    text = fitLine([C.mv.san + ' is Stockfish\'s pick.' + (mateIn > 0 ? ' It mates in ' + mateIn + '.' : mateIn < 0 ? ' It allows mate in ' + (-mateIn) + '.' : (mw ? ' It ' + mw + '.' : '')),
-      C.mv.san + ' is Stockfish\'s pick.']);
+    text = fitLine([C.mv.san + ' is ' + xpWho(a) + '\'s pick.' + (mateIn > 0 ? ' It mates in ' + mateIn + '.' : mateIn < 0 ? ' It allows mate in ' + (-mateIn) + '.' : (mw ? ' It ' + mw + '.' : '')),
+      C.mv.san + ' is ' + xpWho(a) + '\'s pick.']);
   } else {
     var decided = Math.abs(cpBest) >= 1000 && Math.abs(cpX) >= 1000 && (cpBest > 0) === (cpX > 0);
     var mateBoth = best.mate != null && ((row && row.mate != null) || !!(cr && cr.lines[0] && cr.lines[0].mate != null)) && (cpBest > 0) === (cpX > 0);
@@ -7520,14 +7549,15 @@ function sayAt(a, ex, at) {
     var winnerW = !n.st.w;
     return 'Checkmate. ' + (winnerW === myPov(a.it) ? 'You win.' : sideName(winnerW) + ' wins.');
   }
-  if (xpSpoil(n)) return 'This is one of your own positions. Stockfish stays quiet so it can test you.';
-  if (n.down) return 'Stockfish is not answering right now. Try again, or go back to the lesson.';
+  if (xpSpoil(n)) return 'This is one of your own positions. ' + xpWho(a, true) + ' stays quiet so it can test you.';
+  if (n.down) return xpWho(a, true) + ' is not answering right now. Try again, or go back to the lesson.';
   var P = at > 0 ? ex.nodes[at - 1] : null;
   if (at === 0 || (P && xpSpoil(P))) {
     var r = { lines: xpShown(ex, n) || [] }, who = n.st.w === myPov(a.it) ? 'Your move.' : sideName(n.st.w) + ' to move.';
-    if (!r.lines[0]) return who + ' Stockfish is thinking…';
+    if (!r.lines[0]) return who + ' ' + xpWho(a, true) + ' is thinking…';
     var pick = sanOf(n.st, uciToMove(n.st, r.lines[0].pv[0]));
-    return who + ' Stockfish\'s pick is ' + pick + ', the gold arrow. › plays it.';
+    /* the button under it says how to play it (Play Stockfish's pick) */
+    return who + ' ' + xpWho(a, true) + '\'s pick is ' + pick + ', the gold arrow.';
   }
   if (n.mv && n.mv.pick) {
     /* walking Stockfish's line keeps the explanation of the move that started it */
@@ -7540,14 +7570,14 @@ function sayAt(a, ex, at) {
   var v = xpVerdict(a, ex, at), sh = xpShown(ex, n), lv = ex.res[n.key];
   if (v && v.cat === 'little' && sh && sh[0] && lv && lv.lines[0] && sh[0].pv[0] !== lv.lines[0].pv[0])
     return v.text.replace(/ Best reply: [^,]+, the gold arrow\./, '');
-  return v ? v.text : n.mv.san + '. Stockfish is thinking…';
+  return v ? v.text : n.mv.san + '. ' + xpWho(a, true) + ' is thinking…';
 }
 
 /* what a screen reader hears: the move before a kept sentence, and only the
    move while Stockfish thinks */
 function xpLive(a, ex, at) {
   var s = sayAt(a, ex, at), n = ex.nodes[at];
-  if (/ Stockfish is thinking…$/.test(s)) return s.replace(/ Stockfish is thinking…$/, '');
+  if (/ (Stockfish|The computer) is thinking…$/.test(s)) return s.replace(/ (Stockfish|The computer) is thinking…$/, '');
   if (ex.flash || at === 0 || !n.mv || xpSpoil(n) || s.indexOf(n.mv.san + ' ') === 0) return s;
   return n.mv.san + (checkedKingSq(n.st) != null ? ', check. ' : '. ') + s;
 }
@@ -7588,8 +7618,8 @@ function xpRows(a, ex) {
   var tier = a.tier || 2, me = myPov(a.it), touch = window.innerWidth <= 860;
   var lines = shown.slice(0, 3), idx = [0, 1, 2].filter(function (i) { return lines[i]; }), ws = null;
   if (tier === 1) {
-    /* two rows: the best, and the line that teaches something different,
-       a tactic before a plain standing, never the same words twice */
+    /* the best, then the line that teaches something different, a tactic
+       before a plain standing, never the same words twice */
     ws = lines.map(function (l) { return xpRowWords(a, n, l, lines[0], 1); });
     var tac = /^(allows a fork|walks into a pin|allows a hidden attack|allows mate|loses the|misses )/;
     var two = [1, 2].filter(function (i) { return lines[i] && tac.test(ws[i]); })[0];
@@ -7599,6 +7629,8 @@ function xpRows(a, ex) {
       if (alt != null) two = alt;
     }
     idx = two > 0 ? [0, two] : [0];
+    /* a third, last, where a phone has the room for it (fitRows) */
+    [1, 2].forEach(function (i) { if (lines[i] && idx.indexOf(i) < 0) idx.push(i); });
   }
   return idx.map(function (li) {
     var l = lines[li];
@@ -9137,6 +9169,10 @@ function paintText(a) {
   /* a forcing reply's words: the keyboard on the bar goes to the band's
      "Your move", never to the button that took its slot */
   else if (a.focusTask && a.phase === 'guess' && lost && el('task-h')) el('task-h').focus({ preventScroll: true });
+  /* exploring opens with the keyboard on its band's heading (S20): Enter
+     is the right-hand button, Space plays nothing, a row takes a key only
+     once Tab or a tap has put the focus there */
+  else if (xe && xe.focusHead && el('result-h')) { xe.focusHead = false; el('result-h').focus({ preventScroll: true }); }
   else if (focKey && fp) {
     /* a bar button: the one now in its slot, or the right-hand one (S20)
        when that slot is off or gone */
@@ -9271,10 +9307,11 @@ function barSlots(a, ss) {
     if (a.explore) {
       var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
       var fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
-      /* at the trail's end › plays Stockfish's pick, and says so (S14) */
+      /* at the trail's end › plays Stockfish's pick, and says so (S14; at
+         tier 1 "its pick", the computer's, as the band and sentence say) */
       var xEnd = xe.at >= xe.nodes.length - 1;
       return [{ act: 'xpBack', label: '‹', cls: 'nav-btn', aria: xe.at === 0 ? 'Back to the lesson' : 'Back one move' },
-              { act: 'xpFwd', label: xEnd ? 'Play Stockfish\'s pick' : '›', cls: 'btn-line xp-fwd' + (fwdOff ? ' nav-off' : ''), aria: xEnd ? null : 'Forward one move' }, cont];
+              { act: 'xpFwd', label: xEnd ? (a.tier === 1 ? 'Play its pick' : 'Play Stockfish\'s pick') : '›', cls: 'btn-line xp-fwd' + (fwdOff ? ' nav-off' : ''), aria: xEnd ? null : 'Forward one move' }, cont];
     }
     /* the story (S12): ‹, Next move › in gold until the last step, where it
        is switched off (outlined, greyed) and Continue turns gold */
@@ -9404,8 +9441,10 @@ function menuHtml(a) {
     + '<a data-act="dispute" data-k="engine">Not a real mistake: I think the engine is wrong</a>'
     + '<span class="sep"></span>'
     + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '<a data-act="details">Details</a>')
-    /* exploring, on an answered card while the engine works (S14, S11) */
-    + (xpOpen(a) ? '<a data-act="explore" data-k="menu">Try your own moves</a>' : '')
+    /* exploring, on an answered card while the engine works (S14, S11);
+       not while a shown line's reply is on its way, when a tap is input to
+       the reply (S10) */
+    + (xpOpen(a) && !a.reply ? '<a data-act="explore" data-k="menu">Try your own moves</a>' : '')
     + '<span class="menu-keys">Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>'
     + '</div>';
 }
@@ -9517,7 +9556,7 @@ function xpHtml(a) {
         + '<span class="xp-first">' + esc(tier === 1 ? r.first : r.num + r.first) + '</span>'
         + '<span class="xp-cont' + (tier === 1 ? ' t1' : '') + '">' + esc(tier === 1 ? '· ' + r.words : r.cont) + '</span></button>';
     }).join('');
-    else for (var s2 = 0; s2 < (tier === 1 ? 2 : 3); s2++) h += '<div class="xp-row skel" aria-hidden="true">' + (tier === 1 ? '' : '<span class="xp-chip">You 00%</span>') + '<span class="xp-first">00.Nxd3</span><span class="xp-cont">00.Ke2 Rd5</span></div>';
+    else for (var s2 = 0; s2 < 3; s2++) h += '<div class="xp-row skel" aria-hidden="true">' + (tier === 1 ? '' : '<span class="xp-chip">You 00%</span>') + '<span class="xp-first">00.Nxd3</span><span class="xp-cont">00.Ke2 Rd5</span></div>';
     h += '</div>';
   }
   h += '<label class="kb-move xp-kb">Type a move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type a move"></label></div>';
@@ -9529,28 +9568,47 @@ function engineLine() {
   return name + ' runs in this tab, on your device.';
 }
 /* rows that fit: never a half row above the phone bar or below the board */
+var XP_ROW = 44, XP_ROW_MAX = 60;
 function fitRows() {
   var a = ui.session && ui.session.active, ex = a && a.explore, rowsEl = document.querySelector('#xp .xp-rows');
   if (!ex || !rowsEl) return;
   var bar = document.querySelector('.done-acts'), board = document.querySelector('#bwrap .board');
   if (!bar || !board) return;
-  var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap');
+  var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap'), rh = '';
   if (window.innerWidth <= 860) {
     /* on a phone the panel runs from the board's foot to the bar (S14):
-       the rows take the room under the trail and the sentence, and the
-       caption above them only when a row does not need its place */
-    if (cap) cap.style.display = '';
-    var capH = (cap && cap.offsetHeight) || 0;
-    var room = bar.getBoundingClientRect().top - rowsEl.getBoundingClientRect().top + capH - 4;
-    k = Math.max(1, Math.min(3, Math.floor(room / 44)));
-    if (cap) cap.style.display = room - 44 * k >= capH ? '' : 'none';
+       under the trail and the sentence, as many whole rows as fit (on a
+       short phone the head tightens so one does; none if even that is too
+       short, and the bar's Play Stockfish's pick still plays the gold
+       arrow), the caption only when a row does not need its
+       place, and what is left shared out among the rows, up to 60 px each,
+       so the panel ends at the bar */
+    if (cap) cap.style.display = 'none';
+    rowsEl.style.display = '';
+    var xpEl = el('xp'), barTop = bar.getBoundingClientRect().top, capH = 18;
+    var roomOf = function () { return barTop - rowsEl.getBoundingClientRect().top; };
+    xpEl.classList.remove('tight');
+    var room = roomOf();
+    /* no room for a row: the head gives up 16 px and the sentence its 4 */
+    if (room < XP_ROW) { xpEl.classList.add('tight'); room = roomOf(); if (room < XP_ROW) { xpEl.classList.remove('tight'); room = roomOf(); } }
+    k = Math.max(0, Math.min(3, Math.floor(room / XP_ROW)));
+    var withCap = k > 0 && room - XP_ROW * k >= capH;
+    if (withCap) room -= capH;
+    if (cap) cap.style.display = withCap ? '' : 'none';
+    rowsEl.style.display = k ? '' : 'none';
+    if (k) rh = Math.min(XP_ROW_MAX, Math.floor(room / k)) + 'px';
   } else {
     if (cap) cap.style.display = '';
-    rowsEl.className = 'xp-rows k3';
+    rowsEl.style.display = '';
+    el('xp').classList.remove('tight');
+    /* tier 1 keeps its two rows beside the board */
+    k = a.tier === 1 ? 2 : 3;
+    rowsEl.className = 'xp-rows k' + k;
     while (k > 1 && bar.getBoundingClientRect().bottom > br.bottom + 1) { k--; rowsEl.className = 'xp-rows k' + k; }
   }
   ex.k = k;
   rowsEl.className = 'xp-rows k' + k;
+  if (rowsEl.style.getPropertyValue('--xp-row') !== rh) { if (rh) rowsEl.style.setProperty('--xp-row', rh); else rowsEl.style.removeProperty('--xp-row'); }
 }
 /* what the opponent did with it, only when that adds something */
 function opponentLine(a) {
@@ -9964,6 +10022,8 @@ function stageReset() {
   motionHold = false;
   textNotBefore = 0;
   slotHidAt = [];
+  slotPend = [];
+  slotPress = null;
 }
 
 /* the double-tap guard (2.2): a bar slot whose label or action just changed
@@ -9972,25 +10032,40 @@ function stageReset() {
    notes every slot it paints. A slot that faded out for its change (text
    out, fadeOut) could take no tap from then on, so its half second runs
    from the fade, not from the paint: the story's bar, hidden from See why
-   until its caption, takes its first visible tap (taps and keys alike) */
+   until its caption, takes its first visible tap (taps and keys alike).
+   A press on a button that stays as it was (‹ stepping back) leaves the
+   other slots it changes live: the hand is still on that button, and a tap
+   elsewhere is deliberate. A slot whose meaning changed before its new
+   label is painted (pendSlot) takes nothing until it is painted */
 var SLOT_GUARD = 450;
-var slotSig = [], slotAct = [], slotChangedAt = [], slotHidAt = [];
+var slotSig = [], slotAct = [], slotChangedAt = [], slotHidAt = [], slotPend = [], slotPress = null;
 function hideSlot(i) { if (slotHidAt[i] == null) slotHidAt[i] = Date.now(); }
+function pendSlot(i) { slotPend[i] = true; }
+/* a bar slot pressed (a click on it, or the key that stands for it) */
+function pressSlot(i) { if (i != null && i >= 0) slotPress = { i: i, sig: slotSig[i], t: Date.now() }; }
 /* a slot as the guard sees it: its label, its action (none when off), its key */
 function slotSigOf(s) { return (s.label || '') + '|' + (s.off ? '' : s.act || '') + '|' + (s.k == null ? '' : s.k); }
 function noteSlots(slots) {
-  var now = Date.now();
+  var now = Date.now(), pr = slotPress;
+  /* the pressed button is still there, as it was (this paint is the one
+     the press asked for: a press that changed nothing is forgotten) */
+  var kept = !!(pr && now - pr.t < 1000 && slots[pr.i] && slotSigOf(slots[pr.i]) === pr.sig);
   slots.forEach(function (s, i) {
-    var sig = slotSigOf(s);
-    if (slotSig[i] !== sig) { slotSig[i] = sig; slotChangedAt[i] = slotHidAt[i] != null ? slotHidAt[i] : now; }
+    var sig = slotSig[i], nsig = slotSigOf(s);
+    if (sig !== nsig) {
+      slotSig[i] = nsig;
+      slotChangedAt[i] = slotHidAt[i] != null ? slotHidAt[i] : kept && i !== pr.i ? 0 : now;
+    }
     slotAct[i] = s.off ? null : s.act || null;
   });
   for (var j = slots.length; j < slotSig.length; j++) { slotSig[j] = null; slotAct[j] = null; slotChangedAt[j] = now; }
   slotHidAt = [];
+  slotPend = [];
+  slotPress = null;
 }
 /* a slot faded out and not yet repainted presses nothing either (a key
    would otherwise reach the button it is about to lose) */
-function slotGuarded(i) { return i != null && i >= 0 && (slotHidAt[i] != null || Date.now() - (slotChangedAt[i] || 0) < SLOT_GUARD); }
+function slotGuarded(i) { return i != null && i >= 0 && (slotHidAt[i] != null || !!slotPend[i] || Date.now() - (slotChangedAt[i] || 0) < SLOT_GUARD); }
 /* the slot that holds an action now, -1 if none; the right-hand one */
 function slotOfAct(act) { return slotAct.indexOf(act); }
 function rightSlot() { for (var i = slotSig.length - 1; i >= 0; i--) if (slotSig[i] != null) return i; return -1; }
@@ -10442,6 +10517,7 @@ document.addEventListener('click', function (e) {
   if (!(a1 && a1.reply && REPLY_FREE.test(act)) && flushStage()) return;
   var slot = t.getAttribute('data-slot');
   if (slot != null && slotGuarded(parseInt(slot, 10))) return;
+  if (slot != null) pressSlot(parseInt(slot, 10));
   var a = ui.session && ui.session.active;
   switch (act) {
     case 'view': closeSheet(); if (ui.session && ui.session.finished && k === 'train') endSession(); setView(k); break;
@@ -10629,8 +10705,8 @@ document.addEventListener('keydown', function (e) {
   if (a.phase === 'done') {
     /* ← → step the story (→ from S0 opens it), or the exploration's trail */
     var step = a.explore ? exploreStep : storyStep, inStory = !a.explore && a.view && a.view.mode === 'story';
-    if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
-    else if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); if (!(a.explore && !xpArrow(a.explore, -1, e.repeat))) step(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); if (!(a.explore && !xpArrow(a.explore, 1, e.repeat))) step(1); }
     /* Enter is the right-hand button. Space steps the story forward (from
        the page or the bar, never in place of a strip name); elsewhere on an
        answered card it does nothing (S12) */

@@ -265,7 +265,12 @@
     ok('exploring starts at the card position, with you to move', !!xr && xr.at === 0 && xr.fens[0] === T.ev('stateFen(ui.session.active.pre)') && T.ev('ui.session.active.explore.st.w === myPov(ui.session.active.it)'), xr && xr.fens[0]);
     ok('the band reads Try your own moves / Stockfish answers each one.', text('#cband .bd-r1') === 'Try your own moves' && text('#cband .bd-r2') === (T.ev('ui.session.active.tier') === 1 ? 'The computer' : 'Stockfish') + ' answers each one.' && !!$('#cband .d-king'), text('#cband'));
     await sleep(400);
-    ok('the bar is ‹, Play Stockfish\'s pick at the trail\'s end, Continue', /^‹\s*Play Stockfish's pick\s*(Continue|Finish)$/.test(text('#cbar').replace(/\n/g, ' ').trim()), text('#cbar'));
+    const pickL = T.ev('ui.session.active.tier') === 1 ? 'Play its pick' : 'Play Stockfish\'s pick';
+    ok('the bar is ‹, ' + pickL + ' at the trail\'s end, Continue', new RegExp('^‹\\s*' + pickL + '\\s*(Continue|Finish)$').test(text('#cbar').replace(/\n/g, ' ').trim()), text('#cbar'));
+    const fr = $('#cbar .xp-fwd'), rg = document.createRange();
+    if (fr) rg.selectNodeContents(fr);
+    ok('its label stays on one line', !!fr && rg.getClientRects().length === 1, fr && rg.getClientRects().length);
+    ok('the keyboard starts on the band\'s heading, not on a row', document.activeElement && document.activeElement.id === 'result-h', document.activeElement && (document.activeElement.id || document.activeElement.className));
     ok('exploring shows Stockfish\'s best moves', !!xr && document.querySelectorAll('#xp .xp-row:not(.skel)').length >= 2);
     ok('the panel says Stockfish\'s sentence and keeps Back to the lesson', text('#xp .xp-say') === T.explore().say && !!$('#xp [data-act=exploreOff]'), text('#xp .xp-say'));
     ok('exploring makes the board live', !$('#bwrap').classList.contains('static'));
@@ -274,7 +279,8 @@
     if (innerWidth <= 860) {
       const bb = $('#bwrap .board').getBoundingClientRect(), xb = $('#xp').getBoundingClientRect(), cb = $('#cbar').getBoundingClientRect();
       const rws = [].filter.call($$('#xp .xp-row'), (r) => r.offsetParent !== null), lb = rws.length ? rws[rws.length - 1].getBoundingClientRect().bottom : 0;
-      ok('on a phone the panel runs from the board\'s foot to the bar, nothing under the bar', xb.top >= bb.bottom - 1 && lb <= cb.top + 0.5 && cb.top - lb < 62 + (T.ev('ui.session.active.tier') === 1 ? 44 : 0), [bb.bottom, xb.top, lb, cb.top].map(Math.round).join(' / '));
+      ok('on a phone the panel runs from the board\'s foot to the bar, nothing under the bar', xb.top >= bb.bottom - 1 && rws.length >= 1 && lb <= cb.top + 0.5 && cb.top - lb < 62, [bb.bottom, xb.top, lb, cb.top].map(Math.round).join(' / '));
+      ok('the page does not scroll under the bar', document.documentElement.scrollHeight <= innerHeight + 1, document.documentElement.scrollHeight + ' / ' + innerHeight);
     }
     if (xr) {
       const legal = T.ev(`(function () { var ex = ui.session.active.explore; return legalMoves(ex.st).map(moveUci); })()`);

@@ -892,6 +892,10 @@ function paintText(a) {
   /* a forcing reply's words: the keyboard on the bar goes to the band's
      "Your move", never to the button that took its slot */
   else if (a.focusTask && a.phase === 'guess' && lost && el('task-h')) el('task-h').focus({ preventScroll: true });
+  /* exploring opens with the keyboard on its band's heading (S20): Enter
+     is the right-hand button, Space plays nothing, a row takes a key only
+     once Tab or a tap has put the focus there */
+  else if (xe && xe.focusHead && el('result-h')) { xe.focusHead = false; el('result-h').focus({ preventScroll: true }); }
   else if (focKey && fp) {
     /* a bar button: the one now in its slot, or the right-hand one (S20)
        when that slot is off or gone */
@@ -1026,10 +1030,11 @@ function barSlots(a, ss) {
     if (a.explore) {
       var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
       var fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
-      /* at the trail's end › plays Stockfish's pick, and says so (S14) */
+      /* at the trail's end › plays Stockfish's pick, and says so (S14; at
+         tier 1 "its pick", the computer's, as the band and sentence say) */
       var xEnd = xe.at >= xe.nodes.length - 1;
       return [{ act: 'xpBack', label: '‹', cls: 'nav-btn', aria: xe.at === 0 ? 'Back to the lesson' : 'Back one move' },
-              { act: 'xpFwd', label: xEnd ? 'Play Stockfish\'s pick' : '›', cls: 'btn-line xp-fwd' + (fwdOff ? ' nav-off' : ''), aria: xEnd ? null : 'Forward one move' }, cont];
+              { act: 'xpFwd', label: xEnd ? (a.tier === 1 ? 'Play its pick' : 'Play Stockfish\'s pick') : '›', cls: 'btn-line xp-fwd' + (fwdOff ? ' nav-off' : ''), aria: xEnd ? null : 'Forward one move' }, cont];
     }
     /* the story (S12): ‹, Next move › in gold until the last step, where it
        is switched off (outlined, greyed) and Continue turns gold */
@@ -1159,8 +1164,10 @@ function menuHtml(a) {
     + '<a data-act="dispute" data-k="engine">Not a real mistake: I think the engine is wrong</a>'
     + '<span class="sep"></span>'
     + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '<a data-act="details">Details</a>')
-    /* exploring, on an answered card while the engine works (S14, S11) */
-    + (xpOpen(a) ? '<a data-act="explore" data-k="menu">Try your own moves</a>' : '')
+    /* exploring, on an answered card while the engine works (S14, S11);
+       not while a shown line's reply is on its way, when a tap is input to
+       the reply (S10) */
+    + (xpOpen(a) && !a.reply ? '<a data-act="explore" data-k="menu">Try your own moves</a>' : '')
     + '<span class="menu-keys">Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>'
     + '</div>';
 }
@@ -1272,7 +1279,7 @@ function xpHtml(a) {
         + '<span class="xp-first">' + esc(tier === 1 ? r.first : r.num + r.first) + '</span>'
         + '<span class="xp-cont' + (tier === 1 ? ' t1' : '') + '">' + esc(tier === 1 ? '· ' + r.words : r.cont) + '</span></button>';
     }).join('');
-    else for (var s2 = 0; s2 < (tier === 1 ? 2 : 3); s2++) h += '<div class="xp-row skel" aria-hidden="true">' + (tier === 1 ? '' : '<span class="xp-chip">You 00%</span>') + '<span class="xp-first">00.Nxd3</span><span class="xp-cont">00.Ke2 Rd5</span></div>';
+    else for (var s2 = 0; s2 < 3; s2++) h += '<div class="xp-row skel" aria-hidden="true">' + (tier === 1 ? '' : '<span class="xp-chip">You 00%</span>') + '<span class="xp-first">00.Nxd3</span><span class="xp-cont">00.Ke2 Rd5</span></div>';
     h += '</div>';
   }
   h += '<label class="kb-move xp-kb">Type a move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type a move"></label></div>';
@@ -1284,28 +1291,47 @@ function engineLine() {
   return name + ' runs in this tab, on your device.';
 }
 /* rows that fit: never a half row above the phone bar or below the board */
+var XP_ROW = 44, XP_ROW_MAX = 60;
 function fitRows() {
   var a = ui.session && ui.session.active, ex = a && a.explore, rowsEl = document.querySelector('#xp .xp-rows');
   if (!ex || !rowsEl) return;
   var bar = document.querySelector('.done-acts'), board = document.querySelector('#bwrap .board');
   if (!bar || !board) return;
-  var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap');
+  var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap'), rh = '';
   if (window.innerWidth <= 860) {
     /* on a phone the panel runs from the board's foot to the bar (S14):
-       the rows take the room under the trail and the sentence, and the
-       caption above them only when a row does not need its place */
-    if (cap) cap.style.display = '';
-    var capH = (cap && cap.offsetHeight) || 0;
-    var room = bar.getBoundingClientRect().top - rowsEl.getBoundingClientRect().top + capH - 4;
-    k = Math.max(1, Math.min(3, Math.floor(room / 44)));
-    if (cap) cap.style.display = room - 44 * k >= capH ? '' : 'none';
+       under the trail and the sentence, as many whole rows as fit (on a
+       short phone the head tightens so one does; none if even that is too
+       short, and the bar's Play Stockfish's pick still plays the gold
+       arrow), the caption only when a row does not need its
+       place, and what is left shared out among the rows, up to 60 px each,
+       so the panel ends at the bar */
+    if (cap) cap.style.display = 'none';
+    rowsEl.style.display = '';
+    var xpEl = el('xp'), barTop = bar.getBoundingClientRect().top, capH = 18;
+    var roomOf = function () { return barTop - rowsEl.getBoundingClientRect().top; };
+    xpEl.classList.remove('tight');
+    var room = roomOf();
+    /* no room for a row: the head gives up 16 px and the sentence its 4 */
+    if (room < XP_ROW) { xpEl.classList.add('tight'); room = roomOf(); if (room < XP_ROW) { xpEl.classList.remove('tight'); room = roomOf(); } }
+    k = Math.max(0, Math.min(3, Math.floor(room / XP_ROW)));
+    var withCap = k > 0 && room - XP_ROW * k >= capH;
+    if (withCap) room -= capH;
+    if (cap) cap.style.display = withCap ? '' : 'none';
+    rowsEl.style.display = k ? '' : 'none';
+    if (k) rh = Math.min(XP_ROW_MAX, Math.floor(room / k)) + 'px';
   } else {
     if (cap) cap.style.display = '';
-    rowsEl.className = 'xp-rows k3';
+    rowsEl.style.display = '';
+    el('xp').classList.remove('tight');
+    /* tier 1 keeps its two rows beside the board */
+    k = a.tier === 1 ? 2 : 3;
+    rowsEl.className = 'xp-rows k' + k;
     while (k > 1 && bar.getBoundingClientRect().bottom > br.bottom + 1) { k--; rowsEl.className = 'xp-rows k' + k; }
   }
   ex.k = k;
   rowsEl.className = 'xp-rows k' + k;
+  if (rowsEl.style.getPropertyValue('--xp-row') !== rh) { if (rh) rowsEl.style.setProperty('--xp-row', rh); else rowsEl.style.removeProperty('--xp-row'); }
 }
 /* what the opponent did with it, only when that adds something */
 function opponentLine(a) {
