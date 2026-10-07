@@ -205,7 +205,7 @@ function latestGamesHtml() {
   }).join('');
   return '<aside class="latest" id="latest"><div class="latest-head"><div class="kicker">Your latest games</div>'
     + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>' + rows
-    + '<p class="lg-foot dim">Tap a game to go through its mistakes in order.</p></aside>';
+    + '<p class="lg-foot dim">' + tapWord() + ' a game to go through its mistakes in order.</p></aside>';
 }
 function agoWords(ts) {
   var d0 = new Date(); d0.setHours(0, 0, 0, 0);
@@ -375,6 +375,8 @@ function recapHabit(ss) {
   if (!fam) { var f = currentFocus(); fam = f && FAMILIES.filter(function (x) { return x.key === f.fam; })[0]; }
   return fam ? fam.habit : '';
 }
+/* "Tap" on a touch screen, "Click" where a mouse points (pointer: fine) */
+function tapWord() { return window.matchMedia && window.matchMedia('(pointer: fine)').matches ? 'Click' : 'Tap'; }
 /* the summary's word for a card (S17, copy Q): the note first, since it
    carries what the result cannot (the answer shown, a worked example, a
    card left), then the result. A close move then the answer shown is
@@ -387,6 +389,8 @@ function recapWord(note, r) {
   var w = RECAP_NOTE[note] || RECAP_RESULT[r] || '';
   return { word: w, solved: w === 'Found' || w === 'With help' || w === 'Found after a miss' || w === 'First look', counted: !!w && w !== 'Skipped' };
 }
+/* a one-more-try's word after the first showing's ("Shown, then found") */
+var RECAP_AGAIN = { 'Found': 'found', 'With help': 'found with help', 'Found after a miss': 'found after a miss', 'Shown': 'shown again', 'Missed': 'missed again' };
 function doneHtml(ss) {
   var solved = 0, answered = 0, fams = [];
   var uniq = [];
@@ -397,10 +401,16 @@ function doneHtml(ss) {
     if (!it || !r) return '';
     var rw = recapWord(note, r);
     if (!rw.word) return '';
+    /* a card that came back for one more try says how that went too (a
+       try left untouched adds nothing), and counts as solved only when
+       both showings were (T10: an answer shown on the retry is no solve) */
+    var r2 = ss.results[k + '#r'], rw2 = r2 ? recapWord((ss.notes || {})[k + '#r'], r2) : null;
+    if (rw2 && RECAP_AGAIN[rw2.word]) rw = { word: rw.word + ', then ' + RECAP_AGAIN[rw2.word], solved: rw.solved && rw2.solved, counted: rw.counted || rw2.counted };
     if (rw.counted) { answered++; if (rw.solved) solved++; }
-    /* the habit of each family seen today, once, in the order met */
+    /* the habit of each family seen today, once, in the order met; a card
+       skipped untouched taught nothing, so its family gives none */
     var fam = familyOf(patternOf(it.b));
-    if (fams.indexOf(fam) === -1) fams.push(fam);
+    if (rw.counted && fams.indexOf(fam) === -1) fams.push(fam);
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
     var pm = uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
@@ -418,11 +428,12 @@ function doneHtml(ss) {
     + ladderHtml(ss, uniq)
     + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
-    + (habits.length ? '<div class="focus recap-habit">' + habits.map(function (h) { return '<p class="plan">For your next game: ' + esc(h) + '</p>'; }).join('') + '</div>' : '')
+    + (habits.length === 1 ? '<div class="focus recap-habit"><p class="plan">For your next game: ' + esc(habits[0]) + '</p></div>'
+      : habits.length ? '<div class="focus recap-habit"><p class="plan">For your next game:</p><ul class="plans">' + habits.map(function (h) { return '<li class="plan">' + esc(h) + '</li>'; }).join('') + '</ul></div>' : '')
     + (recap ? '<div class="recap">' + recap + '</div>' : '')
     + '<div class="acts-row recap-acts">'
       + '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>'
-      + (more ? '<a class="btn-line" data-act="keepGoing">Practise 5 more</a>' : '')
+      + (more ? '<a class="btn-line" data-act="keepGoing">Practise ' + Math.min(5, more) + ' more</a>' : '')
       + '<a class="btn-quiet" data-act="endSession">Back to Today</a>'
     + '</div></div>';
 }
@@ -713,7 +724,8 @@ function badgeCorner(from, to, flip) {
   var ux = dx / len, uy = dy / len, tip = 45 * (len < 45 * 1.6 ? 0.22 : 0.34) - 6.3;
   var spots = [[36, 9], [9, 9], [36, 36], [9, 36]];
   for (var i = 0; i < spots.length; i++) {
-    var bx = spots[i][0] - 22.5, by = spots[i][1] - 22.5, clear = true;
+    /* where the badge really sits there (pulled in on an edge square, badgeXY) */
+    var c0 = [q[0] - 22.5, q[1] - 22.5], at = badgeXY(c0, spots[i]), bx = at[0] - q[0], by = at[1] - q[1], clear = true;
     for (var s = 0; s <= 40 && clear; s++) {
       var px = ux * (tip + s) - bx, py = uy * (tip + s) - by, half = s < 21 ? 10.5 * s / 21 : 3.7;
       if (Math.sqrt(px * px + py * py) < 8.6 + half) clear = false;
@@ -789,7 +801,7 @@ function labelGeom(f, px, c, avoid) {
     g.segs.push({ x1: ex - ux * 2.94 * w * s, y1: ey - uy * 2.94 * w * s, x2: ex + ux * 1.26 * w * s, y2: ey + uy * 1.26 * w * s, r: 2.1 * w * s + 4 });
   });
   (o.ghosts || []).forEach(function (gh) { var k = cell(gh.sq); g.pieces.push(sqBox(gh.sq)); g.boxes.push(disc((k[0] * 45 + 37.5) * s, (k[1] * 45 + 7.5) * s, 7 * s)); });
-  (o.badges || []).forEach(function (bd) { var k = cell(bd.sq), at = bd.at || [36, 9]; g.boxes.push(disc((k[0] * 45 + at[0]) * s, (k[1] * 45 + at[1]) * s, 9.8 * s)); });
+  (o.badges || []).forEach(function (bd) { var k = cell(bd.sq), xy = badgeXY([k[0] * 45, k[1] * 45], bd.at); g.boxes.push(disc(xy[0] * s, xy[1] * s, BADGE_HALO * s)); });
   (o.tokens || []).forEach(function (tk) { var k = cell(tk.sq); g.boxes.push(disc((k[0] * 45 + 12.5) * s, (k[1] * 45 + 32.5) * s, 13.7 * s)); });
   (o.hint != null ? [{ sq: o.hint }] : []).concat(o.rings || []).forEach(function (rg) { var m = ctr(rg.sq); g.boxes.push(disc(m[0], m[1], 23.25 * s)); });
   (o.guards || []).forEach(function (gd) { var a0 = ctr(gd.from), b0 = ctr(gd.to); g.segs.push({ x1: a0[0], y1: a0[1], x2: b0[0], y2: b0[1], r: 3.5 * s + 4 }); });
@@ -1173,27 +1185,61 @@ function displayFor(a) {
 }
 /* the desktop key line under the panel (2.0): only the keys that do
    something in this state, as the keydown handler (15-shell.js) reads
-   them. Enter names the right-hand button it presses, when that button is
-   on (not while a move is checked, where Enter does nothing, nor during a
-   forcing reply but for its own button); ? while a hint is left to give
-   (over a try too: the try goes first); → opens See why from the settled
-   result; ← → step the story or the exploration, and Esc goes back; Esc
-   takes back a move being checked */
-function keyLine(a, slots) {
+   them. Enter presses the bar's or the strip's control that has the
+   keyboard (foc: its label, reached by Tab or handed to it by the card), so
+   the line names that one; with no control focused (a pointer's click
+   hands focus back to the band, 15-shell.js) it is the right-hand button,
+   when that button is on (not while a move is checked, where Enter does
+   nothing, nor during a forcing reply but for its own button); any other
+   control focused (foc.other): Enter presses that, so the line names no
+   Enter. ? while a hint is left to give (over a try too: the try goes
+   first); → opens See why from the settled result; ← → step the story (and
+   Space steps it forward) or the exploration, where ← on its first move
+   goes back to the lesson, as Esc does; Esc takes back a move being checked */
+function keyLine(a, slots, foc) {
   var k = [], right = null, has = function (act) { return slots.filter(function (s) { return s.act === act && !s.off && !/nav-off/.test(s.cls || ''); })[0]; };
   for (var i = slots.length - 1; i >= 0 && !right; i--) if (!slots[i].empty) right = slots[i];
-  if (right && right.act && !right.off && a.phase !== 'checking' && (a.phase !== 'reply' || right.act === 'theirReply')) k.push('Enter: ' + right.label.replace(/ ›$/, ''));
+  if (foc && foc.label && (a.phase !== 'reply' || foc.act === 'theirReply')) k.push('Enter: ' + foc.label.replace(/ ›$/, ''));
+  else if (!foc && right && right.act && !right.off && a.phase !== 'checking' && (a.phase !== 'reply' || right.act === 'theirReply')) k.push('Enter: ' + right.label.replace(/ ›$/, ''));
   if (a.phase === 'done' && a.explore) {
-    k.push(has('xpFwd') ? '← → step' : '← step');
-    k.push('Esc: back to the lesson');
+    if (a.explore.at === 0) { if (has('xpFwd')) k.push('→ step'); k.push('← or Esc: back to the lesson'); }
+    else { k.push(has('xpFwd') ? '← → step' : '← step'); k.push('Esc: back to the lesson'); }
   } else if (a.phase === 'done' && a.view && a.view.mode === 'story') {
-    k.push(has('storyFwd') ? '← → step' : '← step');
+    k.push(has('storyFwd') ? '← → step · Space: next' : '← step');
     k.push('Esc: back');
   } else if (a.phase === 'done') {
     if (has('seeWhy')) k.push('→ see why');
   } else if ((a.phase === 'guess' || a.phase === 'tried' || (a.phase === 'checking' && !a.checkSaid)) && a.hints < 2) k.push('? hint');
   if (a.phase === 'checking') k.push('Esc: take back');
   return k.join(' · ');
+}
+/* the control that has the keyboard, as the key line reads it: a bar or
+   strip control Enter would press ({act, label}), any other control
+   ({other}), or null (nothing focused, the band's heading, a switched-off
+   slot: Enter is the right-hand button) */
+function keyFocus() {
+  var f = document.activeElement, act = f && f.getAttribute && f.getAttribute('data-act');
+  if (!act || f.tagName === 'INPUT' || !f.closest) return null;
+  if (f.closest('#cbar') || f.closest('#cstrip')) {
+    /* its visible words; a lone arrow (‹) by its spoken name */
+    var lab = String(f.textContent || '').replace(/\s+/g, ' ').trim();
+    if (lab.replace(/[‹›\s]/g, '').length < 2) lab = f.getAttribute('aria-label') || lab;
+    return lab && lab.length <= 24 ? { act: act, label: lab } : { other: true };
+  }
+  return { other: true };
+}
+/* the key line, painted with the words (the text beat) and again whenever
+   the keyboard moves; between a change and the words that go with it the
+   line is blank (keysStale), never the last state's keys (blankKeys) */
+var keysStale = false;
+function paintKeys(a) {
+  var kl = el('ckeys');
+  if (!kl || !a || keysStale) return;
+  setHtml(kl, esc(keyLine(a, barSlots(a, ui.session), keyFocus())));
+}
+function blankKeys() {
+  keysStale = true;
+  setHtml(el('ckeys'), '');
 }
 /* a node's markup, written only when it changed, so a repaint that changes
    nothing writes nothing (and keeps focus and a running fade) */
@@ -1224,7 +1270,6 @@ function paintText(a) {
   paintBand(a, d);
   paintBar(d);
   paintStrip(d);
-  setHtml(el('ckeys'), esc(d.keys));
   /* the new words are in: whatever faded out for them (fadeOut) is back */
   if (band.classList) band.classList.remove('stale');
   var sp = el('cstrip');
@@ -1268,6 +1313,9 @@ function paintText(a) {
     (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : barButton(rightSlot()) || (bar && bar.querySelector('[data-act]'))) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
   a.focusTask = false;
+  /* the keys once the keyboard has settled (2.0) */
+  keysStale = false;
+  paintKeys(a);
   paintLive(d);
   /* the label beside the new words: it goes first when they take its room,
      and a frame whose piece slid in gets its label now */
@@ -1321,6 +1369,12 @@ function paintBar(d) {
   if (bar.className !== cls) bar.className = cls;
   ui.repainting = true;
   try { setHtml(bar, barHtml(d.buttons)); } finally { ui.repainting = false; }
+}
+/* a session over: its last words leave the live region, so the next
+   session never starts with them (C11) */
+function clearLive() {
+  var live = el('sr-live');
+  if (live && live.textContent) live.textContent = '';
 }
 /* the live region repeats the band for screen readers, once per change */
 function paintLive(d) {
@@ -1600,6 +1654,19 @@ function storyStripHtml(a) {
    face. The game's context, the decisive line, both long sentences (and an
    alternative's), what the opponent did, the pattern and the schedule, the
    habit, and the way into exploring */
+/* the better move's sentence in Details: the classifier's, unless it
+   claims safety ("keeps everything safe", "out of danger") while the
+   card's own rule (fresh-eyes A, bestLossFrom) says the better line loses
+   material itself, where it would be false (184455333378:68: Qe6 still
+   loses the bishop); then only that it was the better move. Sentences about
+   the game's balance or what a move stops stay. The classifier is left as
+   it is */
+var SAFE_CLAIM = /\bsafe\b|out of danger|keeps your position together/;
+function detailsBest(a, s, best) {
+  var say = s.best || best + ' keeps your position together.';
+  if (SAFE_CLAIM.test(say) && a.cls && a.cls.bestLine && !a.cls.mateFor && bestLossFrom(a, 0) >= 1) return best + ' was the better move.';
+  return say;
+}
 function detailsHtml() {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'done' || !a.lines) return '';
@@ -1610,7 +1677,7 @@ function detailsHtml() {
   if (b.d) h += '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(it.g, b) + '.</p>';
   h += '<div class="dt-lines">' + row('tl-bad', esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game))
     + (a.alt && a.lines.yours ? row('tl-alt', esc(altNames(a).mine) + ' also holds.') : '')
-    + row('tl-good', esc(s.best || best + ' keeps your position together.'));
+    + row('tl-good', esc(detailsBest(a, s, best)));
   var opp = opponentLine(a);
   if (opp) h += row('tl-opp', opp);
   h += '</div><div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'

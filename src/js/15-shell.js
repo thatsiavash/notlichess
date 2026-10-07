@@ -448,6 +448,9 @@ document.addEventListener('click', function (e) {
   if (slot != null && slotGuarded(parseInt(slot, 10))) return;
   if (slot != null) pressSlot(parseInt(slot, 10));
   var a = ui.session && ui.session.active;
+  /* a real click (a mouse or a finger: detail 1 and up) on the bar or the
+     strip, not a key's (Enter clicks with detail 0) */
+  var byPointer = e.detail > 0 && !!(t.closest && (t.closest('#cbar') || t.closest('#cstrip')) && !t.closest('#xp'));
   switch (act) {
     case 'view': closeSheet(); if (ui.session && ui.session.finished && k === 'train') endSession(); setView(k); break;
     case 'home': closeSheet(); if (cfg.user) setView('train'); break;
@@ -582,7 +585,21 @@ document.addEventListener('click', function (e) {
     }
     case 'coffee': notice('Thank you. A tip jar is coming soon.'); break;
   }
+  if (byPointer) pointerFocusBack(t);
 });
+/* a pointer's click on the bar or the strip leaves no focus on that control
+   (I2): the keyboard goes back to the band's heading (or nowhere, where the
+   band has none), so Enter is the right-hand button, as the key line says,
+   never the control just clicked again. A control reached by Tab keeps it,
+   and the key line names it (keyLine). Focus already moved by the action (a
+   sheet, a verdict's right-hand button) stays where it went */
+function pointerFocusBack(t) {
+  var f = document.activeElement, bar = el('cbar'), sp = el('cstrip');
+  if (!f || !((bar && bar.contains(f)) || (sp && sp.contains(f)) || f === t)) return;
+  var h = el('task-h') || el('result-h');
+  if (h) h.focus({ preventScroll: true });
+  else if (f.blur) f.blur();
+}
 document.addEventListener('change', function (e) {
   var t = e.target;
   if (!t || !t.getAttribute) return;
@@ -677,7 +694,13 @@ function typedMove(txt) {
   var st = xp ? a.explore.st : a.st;
   var t = String(txt || '').trim().replace(/0/g, 'O');
   var m = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(t) ? uciToMove(st, t.toLowerCase()) : null;
+  /* a piece letter typed small ("qf3", "o-o") is read capitalised (I5): a
+     small b is a bishop before a file letter ("bc4"), else first a pawn on
+     the b-file ("b3", "bxc3") and then a bishop */
+  var big = /^[kqrbno]/.test(t) ? (/^o-o/i.test(t) ? t.toUpperCase() : t[0].toUpperCase() + t.slice(1)) : null;
+  if (!m && big && !/^b([1-8]|x)/.test(t)) m = sanToMove(st, big);
   if (!m && t) m = sanToMove(st, t);
+  if (!m && big) m = sanToMove(st, big);
   if (!m) { notice('That move is not legal here. Try a move like Nf3, exd5, O-O or g1f3.'); return; }
   if (xp) { explorePlay(m, false); var kb = el('kbmove'); if (kb) { kb.value = ''; kb.focus(); } }
   else { if (a.phase === 'tried') clearTry(a); gradeMove(m); }
@@ -773,6 +796,9 @@ document.addEventListener('pointerdown', function (e) {
      is answered by the click this press makes (sessionClick) */
   if (e.button === 0 && !a.pendingPromo && (bs.checking || bs.tried)) {
     var pick = bs.checking ? checkingPick(a, sq) : triedPick(a, sq);
+    /* the tried piece itself: the try goes and nothing is picked up, and the
+       click this press makes is not a tap on the card's position (I1) */
+    if (pick === TRY_ONLY) { tryAgain(); pointerState.held = true; return; }
     if (pick < 0) return;
     if (bs.checking) takeBack(pick); else tryAgain(pick);
     bs = boardState(a);
@@ -884,6 +910,9 @@ function xpHover(k, byFocus) {
   /* rows held while pointed at: the latest lines show once the pointer leaves */
   if (k == null && xpThaw(ex)) renderCard();
 }
+/* the key line names what Enter presses: it follows the keyboard (2.0) */
+document.addEventListener('focusin', function () { if (ui.session && ui.session.active) paintKeys(ui.session.active); });
+document.addEventListener('focusout', function () { if (ui.session && ui.session.active) setTimeout(function () { if (ui.session && ui.session.active) paintKeys(ui.session.active); }, 0); });
 document.addEventListener('focusin', function (e) {
   var r = e.target.closest && e.target.closest('#xp .xp-row[data-act="xpRow"]');
   if (r) xpHover(parseInt(r.getAttribute('data-k'), 10), true);

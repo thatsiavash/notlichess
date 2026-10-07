@@ -235,6 +235,82 @@ const PLAIN = `function unplain(s, tier) {
     eq(r.d, 1, 'fresh count');
   });
 
+  await test('a card that came back for one more try reads both showings ("Shown, then found") and counts as solved only when both were; a first look needs no miss; a family met only on a card skipped untouched gives no habit (T10, slice 14 nits)', () => {
+    const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
+    const r = JSON.parse(A.ev(`(function () {
+      playerTier = function () { return 1; };
+      var its = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && unpackUci(x.b.ru).length; });
+      var we = its.filter(function (x) { var a = cardFor(x); ui.session = { keys: [x.key], idx: 0, results: {}, relearn: [], relearnOf: {} }; return workedExample(a); })[0];
+      var rest = its.filter(function (x) { return x !== we; });
+      var famOf = function (x) { return familyOf(patternOf(x.b)).key; };
+      var pick = [rest[0], rest[1], rest[2], we];
+      /* one more card, of a family none of the others has, left untouched */
+      var odd = rest.filter(function (x) { return pick.every(function (y) { return famOf(y) !== famOf(x); }); })[0];
+      pick.push(odd);
+      ui.session = { mode: 'today', label: 't', keys: pick.map(function (x) { return x.key; }), idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} };
+      var ss = ui.session, act = function (i, fn) { ss.idx = i; var a = cardFor(pick[i]); ss.active = a; fn(a); return a; };
+      var best = function (a) { solved(uciToMove(a.st, a.bestUci), a.bestUci, null); };
+      var miss = function (a) { a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); };
+      act(0, function (a) { reveal(); });                                     /* Shown, comes back */
+      act(1, function (a) { miss(a); tryAgain(); best(a); });                 /* Found after a miss, comes back */
+      act(2, function (a) { reveal(); });                                     /* Shown, comes back, skipped then */
+      act(3, function (a) { workedExample(a); miss(a); tryAgain(); best(a); }); /* a worked example missed first */
+      act(4, function (a) { settleLeft(a); });                                /* skipped untouched */
+      queueRelearn(ss);
+      var at = function (k) { return ss.keys.lastIndexOf(k); };
+      ss.idx = at(pick[0].key); var r0 = cardFor(pick[0]); ss.active = r0; best(r0);           /* then found */
+      ss.idx = at(pick[1].key); var r1 = cardFor(pick[1]); ss.active = r1; reveal();           /* then shown */
+      ss.idx = at(pick[2].key); var r2 = cardFor(pick[2]); ss.active = r2; settleLeft(r2);     /* then left untouched */
+      ss.active = null; ss.finished = true;
+      var h = doneHtml(ss), words = [];
+      h.replace(/class="res[^"]*">([^<]*)</g, function (m, w) { words.push(w); return m; });
+      var habits = []; h.replace(/<li class="plan">([^<]*)</g, function (m, t) { habits.push(t); return m; });
+      if (!habits.length) h.replace(/<p class="plan">For your next game: ([^<]*)</g, function (m, t) { habits.push(t); return m; });
+      var fams = []; pick.slice(0, 4).forEach(function (x) { var f = familyOf(patternOf(x.b)); if (fams.indexOf(f) < 0) fams.push(f); });
+      return JSON.stringify({ words: words, head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], note3: ss.notes[pick[3].key] || null, notes: ss.notes,
+        habits: habits, want: fams.map(function (f) { return esc(f.habit); }), odd: !!odd, oddHabit: odd && fams.every(function (f) { return f.key !== famOf(odd); }) ? esc(familyOf(patternOf(odd.b)).habit) : null }); })()`));
+    eq(r.words.join(' | '), 'Shown, then found | Found after a miss, then shown again | Shown | Found after a miss | Skipped', 'the words: ' + JSON.stringify(r.notes));
+    eq(r.note3, null, 'a worked example missed first is no first look');
+    eq(r.head, '1 of 4 solved.', 'solved only where both showings were (a found retry after an answer shown is not; an answer shown on the retry undoes a find)');
+    ok(r.odd, 'a card of another family');
+    eq(JSON.stringify(r.habits), JSON.stringify(r.want), 'habits of the cards played only');
+    if (r.oddHabit) ok(r.habits.indexOf(r.oddHabit) < 0, 'no habit for the family met only on the skipped card');
+  });
+
+  await test('small words: "Practise N more" says how many it gives, "Click a game" where a mouse points, and a session over leaves nothing in the live region (C2, C9, C11)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var its = allMistakes().filter(trainable), res = {}, real = morePracticeKeys;
+      ui.session = { mode: 'today', label: 't', keys: [its[0].key], idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {}, finished: true };
+      morePracticeKeys = function () { return its.slice(0, 3).map(function (x) { return x.key; }); };
+      res.three = (/data-act="keepGoing">([^<]*)</.exec(doneHtml(ui.session)) || [])[1];
+      morePracticeKeys = function () { return its.slice(0, 8).map(function (x) { return x.key; }); };
+      res.eight = (/data-act="keepGoing">([^<]*)</.exec(doneHtml(ui.session)) || [])[1];
+      morePracticeKeys = real;
+      res.touch = /Tap a game to go through/.test(latestGamesHtml());
+      var mm = window.matchMedia;
+      window.matchMedia = function (q) { return { matches: q === '(pointer: fine)' }; };
+      res.mouse = latestGamesHtml().indexOf('Click a game to go through') >= 0;
+      res.word = tapWord();
+      window.matchMedia = mm;
+      /* the live region: emptied as a session ends and as it finishes */
+      var live = { textContent: '' }, g0 = document.getElementById;
+      document.getElementById = function (id) { return id === 'sr-live' ? live : g0(id); };
+      startSession('t', [its[0].key, its[1].key], 't');
+      live.textContent = 'Correct. Found it';
+      endSession();
+      res.ended = live.textContent;
+      startSession('t', [its[0].key], 't');
+      live.textContent = 'Correct. Found it';
+      finishSession();
+      res.finished = live.textContent;
+      document.getElementById = g0;
+      return JSON.stringify(res); })()`));
+    eq(r.three, 'Practise 3 more', 'three to give'); eq(r.eight, 'Practise 5 more', 'five of eight');
+    ok(r.touch, 'Tap on a touch screen'); ok(r.mouse, 'Click where a mouse points'); eq(r.word, 'Click', 'tapWord with a fine pointer');
+    eq(r.ended, '', 'nothing left in the live region when a session ends'); eq(r.finished, '', 'nor when it finishes');
+  });
+
   await test('a card left after a hint is captioned Skipped and not counted solved', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
@@ -267,15 +343,18 @@ const PLAIN = `function unplain(s, tier) {
       ss.active = null; ss.finished = true;
       var h = doneHtml(ss), words = [];
       h.replace(/class="res[^"]*">([^<]*)</g, function (m, w) { words.push(w); return m; });
+      /* the families of the cards played (the one skipped untouched taught nothing) */
       var fams = [];
-      pick.slice(0, 7).forEach(function (x) { var f = familyOf(patternOf(x.b)); if (fams.indexOf(f) < 0) fams.push(f); });
-      var habits = []; h.replace(/<p class="plan">([^<]*)</g, function (m, t) { habits.push(t); return m; });
+      pick.slice(0, 6).forEach(function (x) { var f = familyOf(patternOf(x.b)); if (fams.indexOf(f) < 0) fams.push(f); });
+      var habits = []; h.replace(/<li class="plan">([^<]*)</g, function (m, t) { habits.push(t); return m; });
+      if (!habits.length) h.replace(/<p class="plan">For your next game: ([^<]*)</g, function (m, t) { habits.push(t); return m; });
       return JSON.stringify({ words: words, head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], notes: [ss.notes[pick[0].key], ss.notes[pick[4].key], ss.notes[pick[5].key], ss.notes[pick[6].key]],
-        habits: habits, want: fams.map(function (f) { return 'For your next game: ' + esc(f.habit); }), spotted: /spotted/i.test(h), glyphs: /[✓◐]/.test(h) }); })()`));
+        habits: habits, heads: (h.match(/For your next game:/g) || []).length, want: fams.map(function (f) { return esc(f.habit); }), spotted: /spotted/i.test(h), glyphs: /[✓◐]/.test(h) }); })()`));
     eq(r.words.join(' | '), 'First look | Found | With help | Found after a miss | Shown | Missed | Skipped', 'the words, in session order, the removed card gone');
     eq(r.notes.join(' | '), 'firstlook | shown | leftMiss | left', 'the notes');
     eq(r.head, '4 of 6 solved.', 'solved: found, with help, after a miss, a first look; counted: and shown, missed; a skip neither');
     eq(JSON.stringify(r.habits), JSON.stringify(r.want), 'one habit per family seen, in the order met');
+    eq(r.heads, 1, '"For your next game:" once, the habits under it (C9)');
     ok(r.habits.length >= 2, 'families ' + r.habits.length);
     ok(!r.spotted && !r.glyphs, 'no "spotted" recap line, no glyphs: words only');
   });
@@ -987,7 +1066,7 @@ const PLAIN = `function unplain(s, tier) {
               a.view = { mode: 'story', i: si }; a.note = null;
               d = band(what + ', story step', a);
               var last = si === S.steps.length - 1, bl = d.buttons.map(function (b) { return b.label + (b.off ? ' (off)' : ''); }).join(' | ');
-              if (!d.cap || d.row1 || d.row2 || d.disc !== (a.revealed ? 'info' : 'good') || d.kind !== (si < S.g ? 'sgame' : 'sbetter')) out.push(what + ', story step ' + si + ': ' + JSON.stringify([d.cap, d.row1, d.disc, d.kind]));
+              if (!d.cap || d.row1 || d.row2 || d.disc !== (si < S.g ? 'king' : a.revealed ? 'info' : 'good') || d.kind !== (si < S.g ? 'sgame' : 'sbetter')) out.push(what + ', story step ' + si + ': ' + JSON.stringify([d.cap, d.row1, d.disc, d.kind]));
               var want = '‹ | Next move ›' + (last ? ' (off)' : '') + ' | ';
               if (bl.indexOf(want) !== 0 || !/^(Continue|Finish)$/.test(bl.slice(want.length))) out.push(what + ', story step ' + si + ' bar ' + bl);
               var sw = words(String(d.strip).replace(/<[^>]*>/g, ' '));
@@ -1195,7 +1274,7 @@ const PLAIN = `function unplain(s, tier) {
           /* "yours" only for your own move's line, never the engine's best */
           if (/works too/.test(cap) !== !!S.alt || (S.alt && (!a.alt || line === c.bestLine || moveUci(nd.move) !== a.yours.uci[a.yours.at]))) fail('works too on a card that is ' + (a.alt ? '' : 'not ') + 'an alternative');
         }
-        else if (cap.indexOf(bare(san)) !== 0) fail('does not start with its ply ' + san);
+        else if (cap.indexOf(bare(san)) !== 0 && cap.indexOf('You play ' + bare(san)) !== 0 && cap.indexOf('They play ' + bare(san)) !== 0) fail('does not start with its ply ' + san);
         /* no other move of the line is named, except the reply G1 warns of */
         line.nodes.forEach(function (x, k) {
           if (!x.move || k === s.k) return;
@@ -1216,6 +1295,8 @@ const PLAIN = `function unplain(s, tier) {
           else if (j === 0 && /^\\S+$/.test(x.replace(/\\.$/, '')) && sents.length > 1 && /^Checkmate\\.$/.test(sents[1].trim())) { form = 'mate'; ok = isMate(nd.after); }
           else if (/^Checkmate\\.$/.test(x)) { form = 'mate'; ok = isMate(nd.after); }
           else if (j === 0 && x === bare(san) + '.') { form = 'quiet'; }
+          /* a quiet move says whose it is (C3), and only of a quiet move */
+          else if (j === 0 && (m = /^(You|They) play (\\S+)\\.$/.exec(x))) { form = 'whose'; ok = m[2] === bare(san) && (m[1] === 'You') === (!!nd.byWhite === pov) && !nd.captured && !checkersOf(nd.after).length && !isMate(nd.after); }
           else if (/^As in your game\\.$/.test(x)) { form = 'found'; ok = game && s.k === 1 && found; }
           else if (/^They missed it\\.$/.test(x)) { form = 'missed'; ok = game && s.k === 1 && blow; if (!nd.captured && !checkersOf(nd.after).length) n.quietMissed = (n.quietMissed || 0) + 1; }
           else if ((m = /^Nothing guards the (\\w+) on ([a-h][1-8])\\.$/.exec(x))) { form = 'unguarded'; var q = sqNum(m[2]); ok = !!n1 && mine(q, PW[m[1]]) && !isDefended(b, q) && n1.move.to === q && !!n1.captured; }
@@ -1287,7 +1368,7 @@ const PLAIN = `function unplain(s, tier) {
       return JSON.stringify({ out: out, n: n }); })()`));
     const f = r.n.forms;
     ok(r.n.caps > 3000 && f.takes > 500 && f['you lose'] > 50 && f.unguarded > 20 && f['can take'] > 10 && f.fork > 5 && f['gives check'] > 20 && f['mate against'] > 5 && f.guard >= 6
-      && f['it wins'] > 20 && f['you win'] > 10 && r.n.lineWins > 5 && f['still comes'] >= 4 && f.found > 50 && f.missed > 50 && f['could take'] > 10 && f.mate > 5 && r.n.withCheck >= 5, JSON.stringify(r.n));
+      && f['it wins'] > 20 && f['you win'] > 10 && r.n.lineWins > 5 && f['still comes'] >= 4 && f.found > 50 && f.missed > 50 && f['could take'] > 10 && f.mate > 5 && r.n.withCheck >= 5 && f.whose > 100, JSON.stringify(r.n));
     /* S-same on a capture never falls back to the bare "still comes" (184216981622:46's better line loses the same knight: it names it) */
     ok(!r.n.sameBare, 'S-same fallback used ' + r.n.sameBare);
     eq(r.out.length, 0, r.out.length + ' untrue captions, first: ' + r.out.slice(0, 4).join(' | '));
@@ -1420,6 +1501,39 @@ const PLAIN = `function unplain(s, tier) {
     ok(r.three <= 1, r.three + ' forcing in the first three'); eq(r.n, 4, 'one card fewer');
     eq(r.saved, true, 'the session remembers it is a first one');
     ok(r.other && r.other !== r.want, 'a later session keeps its order: ' + r.other);
+  });
+
+  await test('a first session keeps its head from its first card: the rule is known as it starts, and a card 1 that asks for a forcing line goes behind a one-move card (slice 14 #5, #6)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      playerTier = function () { return 2; };
+      SF.state = 'failed';
+      var its = allMistakes().filter(trainable), m = model();
+      var asks = function (it) { var a = cardFor(it); return !!(a && a.sol); };
+      var plain = its.filter(function (it) { return !asks(it); }), forcing = its.filter(asks);
+      var res = {}, real = todayPlan;
+      /* card 1 drops out at the very first load: the next one-move card leads */
+      todayPlan = function () { return { keys: [plain[0], forcing[0], forcing[1], plain[1], plain[2]].map(function (x) { return x.key; }), firstTime: true }; };
+      plain[0].b.x = 'deep';
+      startToday();
+      res.drop = ui.session.active && ui.session.active.key; res.dropWant = plain[1].key; res.first = !!ui.session.firstTime; res.saved = !!(savedSession() || {}).firstTime;
+      plain[0].b.x = null;
+      /* card 1 asks for a forcing line once built (the deeper look made it one): a one-move card leads */
+      todayPlan = function () { return { keys: [forcing[0], plain[1], forcing[1], plain[2]].map(function (x) { return x.key; }), firstTime: true }; };
+      startToday();
+      var ss = ui.session;
+      res.lead = ss.active && ss.active.key; res.leadWant = plain[1].key;
+      res.three = ss.keys.slice(0, 3).filter(function (k) { return asks(m.byKey[k]); }).length; res.n = ss.keys.length;
+      /* not a first session: left as it was */
+      todayPlan = function () { return { keys: [forcing[0], plain[1], forcing[1], plain[2]].map(function (x) { return x.key; }), firstTime: false }; };
+      startToday();
+      res.later = ui.session.active && ui.session.active.key; res.laterWant = forcing[0].key;
+      todayPlan = real;
+      return JSON.stringify(res); })()`));
+    eq(r.drop, r.dropWant, 'card 1 dropped at the first load: the next one-move card leads');
+    eq(r.first, true, 'the session knows it is a first one'); eq(r.saved, true, 'and saved it');
+    eq(r.lead, r.leadWant, 'a forcing card 1 goes behind a one-move card'); ok(r.three <= 1, r.three + ' forcing in the first three'); eq(r.n, 4, 'no card lost');
+    eq(r.later, r.laterWant, 'a later session keeps its order');
   });
 
   await test('the cheap forcing check runs once per card and line, as the ease check does', () => {

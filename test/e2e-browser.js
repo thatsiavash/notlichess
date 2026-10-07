@@ -196,8 +196,9 @@
     /* the Details sheet: both long sentences, the game, the pattern, the way to explore */
     click('#cstrip [data-act=details]');
     await until(() => $('#overlay .sheet'), 3000);
-    const sn = T.card().sentences;
-    ok('the Details sheet holds both sentences', !!sn && text('#overlay .sheet').indexOf(sn.best) !== -1 && text('#overlay .sheet').indexOf(sn.game.replace(/ \(\d+% to \d+%\)/g, '')) !== -1 && !!$('#overlay .sheet .ctx'),
+    /* the better move's sentence as Details says it (no safety claim where its own line loses material) */
+    const sn = T.card().sentences, snBest = sn && T.ev('(function (a) { return detailsBest(a, a.cls.sentences, a.lines.best.san[0]); })(ui.session.active)');
+    ok('the Details sheet holds both sentences', !!sn && text('#overlay .sheet').indexOf(snBest) !== -1 && text('#overlay .sheet').indexOf(sn.game.replace(/ \(\d+% to \d+%\)/g, '')) !== -1 && !!$('#overlay .sheet .ctx'),
       text('#overlay .sheet').slice(0, 200));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(200);
@@ -284,7 +285,7 @@
     if (inv) { recOff(); inv.click(); }
     const xr = await until(() => { const x = T.explore(); return x && x.lines && x.lines.length ? x : null; }, 10000);
     ok('exploring starts at the card position, with you to move', !!xr && xr.at === 0 && xr.fens[0] === T.ev('stateFen(ui.session.active.pre)') && T.ev('ui.session.active.explore.st.w === myPov(ui.session.active.it)'), xr && xr.fens[0]);
-    ok('the band reads Try your own moves / Stockfish answers each one.', text('#cband .bd-r1') === 'Try your own moves' && text('#cband .bd-r2') === (T.ev('ui.session.active.tier') === 1 ? 'The computer' : 'Stockfish') + ' answers each one.' && !!$('#cband .d-king'), text('#cband'));
+    ok('the band reads Try your own moves / Stockfish rates each move.', text('#cband .bd-r1') === 'Try your own moves' && text('#cband .bd-r2') === (T.ev('ui.session.active.tier') === 1 ? 'The computer' : 'Stockfish') + ' rates each move.' && !!$('#cband .d-king'), text('#cband'));
     await sleep(400);
     const pickL = T.ev('ui.session.active.tier') === 1 ? 'Play its pick' : 'Play Stockfish\'s pick';
     ok('the bar is ‹, ' + pickL + ' at the trail\'s end, Continue', new RegExp('^‹\\s*' + pickL + '\\s*(Continue|Finish)$').test(text('#cbar').replace(/\n/g, ' ').trim()), text('#cbar'));
@@ -556,6 +557,39 @@
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       await sleep(2600);
     }
+    /* I2 (desktop): a mouse's click on the bar leaves no focus there, so Enter is the right-hand
+       button the key line names; a button reached from the keyboard keeps the focus, and the key
+       line names it, so Enter does what the line says either way */
+    if (innerWidth > 860) {
+      const toGuess = async () => { for (let g = 0; g < 12; g++) { const x = T.card(); if (x.finished || x.phase === 'guess') return x; if (x.phase === 'tried') click('[data-act=tryAgain]'); else if (x.phase === 'done') click('[data-act=next]'); await sleep(1200); } return T.card(); };
+      let x = await toGuess();
+      if (x.phase === 'guess') {
+        await sleep(600);
+        const hb = $('#cbar [data-act=hint]');
+        if (hb) { hb.focus(); hb.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })); }
+        await sleep(1200);
+        ok('I2: a clicked Hint hands the focus back to the band', !!hb && document.activeElement && document.activeElement.id === 'task-h', document.activeElement && (document.activeElement.id || document.activeElement.textContent));
+        ok('I2: the key line then names the right-hand button', text('#ckeys') === 'Enter: Show the answer · ? hint', text('#ckeys'));
+        (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await sleep(1200);
+        ok('I2: Enter after a clicked Hint shows the answer, never hint 2', T.card().phase === 'done' && T.card().hints === 1, T.card().phase + ' ' + T.card().hints);
+        x = await toGuess();
+        /* the new card's words (and its focus on the task) are in before the keyboard moves */
+        await until(() => T.card().phase === 'guess' && text('#ckeys') !== '' && document.activeElement && document.activeElement.id === 'task-h', 8000);
+        if (x.phase === 'guess') {
+          await sleep(600);
+          const hb2 = $('#cbar [data-act=hint]');
+          document.documentElement.classList.remove('by-pointer');
+          /* focus() in a tab without the window's focus sends no focus event: one is sent as Tab would */
+          if (hb2) { hb2.focus(); hb2.dispatchEvent(new FocusEvent('focusin', { bubbles: true })); }
+          await sleep(100);
+          ok('I2: Hint focused from the keyboard: the key line names it', text('#ckeys') === 'Enter: Hint · ? hint', text('#ckeys'));
+          if (hb2) hb2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          await sleep(1200);
+          ok('I2: Enter on it gives the hint, and the line names what its slot holds now', T.card().hints === 1 && text('#ckeys') === 'Enter: Hint 2 · ? hint', T.card().hints + ' ' + text('#ckeys'));
+        }
+      }
+    }
     /* finish quickly: reveal the rest */
     for (let guard = 0; guard < 40; guard++) {
       const x = T.card();
@@ -571,13 +605,15 @@
     /* S17: each card in words, the note first (Shown, First look, Missed, Skipped), then the result;
        no "spotted" line; one habit per family seen, "For your next game: ..." */
     const words = [].map.call($$('.recap-item .res'), (e) => e.textContent);
-    ok('the recap says each card in words', words.length > 0 && words.every((w) => /^(Found|With help|First look|Found after a miss|Shown|Missed|Skipped)$/.test(w)), words.join(', '));
-    ok('the cards revealed to finish read Shown', words.indexOf('Shown') >= 0, words.join(', '));
+    ok('the recap says each card in words', words.length > 0 && words.every((w) => /^(Found|With help|First look|Found after a miss|Shown|Missed|Skipped)(, then (found|found with help|found after a miss|shown again|missed again))?$/.test(w)), words.join(', '));
+    ok('the cards revealed to finish read Shown', words.some((w) => /^Shown/.test(w)), words.join(', '));
     ok('the card skipped after its miss reads Missed', words.indexOf('Missed') >= 0, words.join(', '));
-    const head = text('#recap-h'), solvedN = words.filter((w) => /^(Found|With help|First look|Found after a miss)$/.test(w)).length, countedN = words.filter((w) => w !== 'Skipped').length;
+    /* a card that came back counts as solved only when both showings were */
+    const head = text('#recap-h'), solvedN = words.filter((w) => /^(Found|With help|First look|Found after a miss)(, then found.*)?$/.test(w)).length, countedN = words.filter((w) => w !== 'Skipped').length;
     ok('the recap counts what it says', head === (countedN ? solvedN + ' of ' + countedN + ' solved.' : 'Done.'), head + ' / ' + words.join(', '));
-    const habits = [].map.call($$('.recap-habit .plan'), (e) => e.textContent);
-    ok('one habit per family seen, for the next game', habits.length >= 1 && habits.every((h) => /^For your next game: /.test(h)) && new Set(habits).size === habits.length, habits.join(' | '));
+    /* "For your next game:" once, the habits under it when there are more than one (C9) */
+    const habits = $$('.recap-habit li.plan').length ? [].map.call($$('.recap-habit li.plan'), (e) => e.textContent) : [].map.call($$('.recap-habit .plan'), (e) => e.textContent.replace(/^For your next game: /, ''));
+    ok('one habit per family seen, for the next game, said once', habits.length >= 1 && (text('.recap-habit').match(/For your next game:/g) || []).length === 1 && new Set(habits).size === habits.length && habits.every((h) => h.length > 10), habits.join(' | '));
     ok('no "spotted" line on the recap', !/spotted/i.test(text('#trainbox')));
     ok('the recap offers to play a game', !!$('.recap-acts .btn-big'));
     ok('reveal-only cards do not earn the day on their own', T.ev('ui.session ? (ui.session.attempted || 0) + (ui.session.carried || 0) >= 3 : false') || T.ev('dayLoad().sessions || 0') === sessionsBefore);

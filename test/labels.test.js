@@ -182,6 +182,34 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       .forEach((t) => ok(r.texts.indexOf(t) >= 0, 'no "' + t + '" label in any frame (' + r.texts.join(', ') + ')'));
   });
 
+  await test('a verdict badge stays inside the board on every square, as drawn and flipped, at every corner an arrow may give it: its halo (r 9.8) never crosses an edge, and the label geometry keeps the same disc', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var out = [], n = 0, st = stateFromFen('4k3/8/8/8/8/8/8/4K3 w - - 0 1');
+      [false, true].forEach(function (flip) {
+        [null, [36, 9], [9, 9], [36, 36], [9, 36]].forEach(function (at) {
+          for (var sq = 0; sq < 64; sq++) {
+            var bd = { sq: sq, kind: 'bad' };
+            if (at) bd.at = at;
+            var svg = boardSvg(st, { flip: flip, badges: [bd] });
+            var m = /class="badge badge-bad" transform="translate\\(([-\\d.]+) ([-\\d.]+)\\)"/.exec(svg);
+            n++;
+            if (!m) { out.push(sqName(sq) + ' no badge'); continue; }
+            var x = +m[1], y = +m[2];
+            if (x - 9.8 < 0 || x + 9.8 > 360 || y - 9.8 < 0 || y + 9.8 > 360) out.push(sqName(sq) + (flip ? ' flipped' : '') + ' at ' + JSON.stringify(at) + ': ' + x + ',' + y);
+            /* away from the edges it sits exactly where 2.1 puts it */
+            var c = [(flip ? 7 - sq % 8 : sq % 8) * 45, (flip ? sq >> 3 : 7 - (sq >> 3)) * 45], a0 = at || [36, 9];
+            if (c[0] + a0[0] >= 10 && c[0] + a0[0] <= 350 && c[1] + a0[1] >= 10 && c[1] + a0[1] <= 350 && (x !== c[0] + a0[0] || y !== c[1] + a0[1])) out.push(sqName(sq) + ' moved off its corner');
+            var d = labelGeom({ st: st, opts: { flip: flip, badges: [bd] } }, 360, { head: sq }).boxes[0];
+            if (!d || Math.abs(d.x + d.w / 2 - x) > 0.01 || Math.abs(d.y + d.h / 2 - y) > 0.01 || Math.abs(d.w - 19.6) > 0.01) out.push(sqName(sq) + ' label geometry ' + JSON.stringify(d));
+          }
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    eq(r.n, 640, 'badges drawn');
+    eq(r.out.length, 0, r.out.slice(0, 6).join(' | '));
+  });
+
   await test('placeLabel, by itself: the head\'s neighbours nearest first, then the tail\'s; centred, then flush left, then flush right; no room, no label; a first-sight label may cover one piece no arrow starts or ends on, only where no place is clear', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
@@ -574,7 +602,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       /* the family is seen: its next card is a card like any other */
       var next = allMistakes().filter(trainable).filter(function (x) { return x.key !== it.key && familyOf(patternOf(x.b)).key === fam; })[0];
       res.next = next ? workedExample(openCard(next)) : null;
-      /* a miss before the solve: retry, still a first look; a reveal: Shown */
+      /* a reveal: Shown; a miss before the solve: retry, and no first look (T10) */
       var it2 = allMistakes().filter(trainable).filter(function (x) { var b = openCard(x); return b && !b.sol && familyOf(patternOf(x.b)).key !== fam && workedExample(b); })[0], fam2 = familyOf(patternOf(it2.b)).key;
       a = openCard(it2); workedExample(a); reveal();
       res.shown = [ui.session.results[it2.key], ui.session.notes[it2.key], localStorage.getItem('nl:seen:' + fam2)].join(' / ');
@@ -583,7 +611,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       a = openCard(it2); workedExample(a); a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain(); a.triedHold = false;
       res.afterMiss = [a.hints, displayFor(a).row1, displayFor(a).buttons[0].label].join(' / ');
       solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
-      res.afterMissResult = ui.session.results[it2.key] + ' / ' + ui.session.notes[it2.key];
+      res.afterMissResult = ui.session.results[it2.key] + ' / ' + ((ui.session.notes || {})[it2.key] || 'no note');
       /* never at tiers 2 and 3, never on a relearn card */
       store.del('nl:seen:' + fam2);
       res.tiers = [2, 3].map(function (t) { playerTier = function () { return t; }; return workedExample(openCard(it2)); });
@@ -616,7 +644,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
     eq(r.next, false, 'the family\'s next card');
     eq(r.shown, 'fail / shown / 1', 'a worked example revealed: Shown, and counted');
     eq(r.afterMiss, '1 / Hint 1 of 2 / Hint 2', 'after a miss the band names the drawn hint, and the button the next');
-    eq(r.afterMissResult, 'retry / firstlook', 'a solve after a miss');
+    eq(r.afterMissResult, 'retry / no note', 'a solve after a miss is found after a miss, not a first look (T10)');
     eq(JSON.stringify(r.tiers), '[false,false]', 'tiers 2 and 3');
     eq(r.relearn, false, 'a relearn card');
     eq(r.unreadable, false, 'unreadable storage counts as seen');

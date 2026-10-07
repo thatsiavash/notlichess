@@ -344,7 +344,7 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
       A.ev(ANSWERED);
       A.ev(`(function () { var a = ui.session.active; a.view = { mode: 's0' }; startExplore({}); return 1; })()`);
       const d = JSON.parse(A.ev('JSON.stringify(displayFor(ui.session.active))'));
-      eq(d.disc + '|' + d.kind + '|' + d.row1 + '|' + d.row2 + '|' + d.cap, 'king|explore|Try your own moves|' + (tier === 1 ? 'The computer' : 'Stockfish') + ' answers each one.|', 'tier ' + tier + ' band');
+      eq(d.disc + '|' + d.kind + '|' + d.row1 + '|' + d.row2 + '|' + d.cap, 'king|explore|Try your own moves|' + (tier === 1 ? 'The computer' : 'Stockfish') + ' rates each move.|', 'tier ' + tier + ' band');
       const bar = () => JSON.parse(A.ev('JSON.stringify(barSlots(ui.session.active, ui.session))'));
       let b = bar();
       eq(b.map((x) => x.act).join(' '), 'xpBack xpFwd next', 'the bar');

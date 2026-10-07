@@ -55,6 +55,8 @@ function stage(beats) {
   if (beats.indexOf('text') >= 0) {
     stageQ = stageQ.filter(function (b) { return b !== 'text'; });
     textNotBefore = 0;
+    /* the keys of the last state go now; the text beat paints this one's */
+    blankKeys();
   }
   beats.forEach(function (b) {
     /* two board beats in a row paint the same card: one is enough */

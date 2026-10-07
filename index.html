@@ -261,9 +261,10 @@ button{font-family:inherit}
 .find{font-size:14px;color:var(--body);animation:narr-in .35s ease}
 .find b{color:var(--display);font-weight:400}
 .done-big{font-family:var(--font-display);font-weight:400;font-size:clamp(28px,6vw,36px);color:var(--display);margin:2px 0 6px}
-.recap{display:flex;gap:10px;overflow-x:auto;padding:8px 0 4px;margin:10px 0 16px}
-.recap-item{flex:none;width:118px;cursor:pointer}
-.recap-item .board{width:118px;box-shadow:none;border-radius:4px}
+/* the positions in rows, each caption whole (never cut by a scroller) */
+.recap{display:flex;flex-wrap:wrap;gap:14px 10px;padding:8px 0 4px;margin:10px 0 16px}
+.recap-item{flex:none;width:calc((100% - 20px) / 3);max-width:118px;cursor:pointer}
+.recap-item .board{width:100%;box-shadow:none;border-radius:4px}
 .recap-item span{display:block;font-size:11.5px;color:var(--secondary);margin-top:4px;line-height:1.3}
 .recap-item .res{font-size:11px;color:var(--text-2)}
 .recap-item .res.shown{color:var(--text-3)}
@@ -523,7 +524,13 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 }
 /* the keys that work now, under the bar, on the desktop only (2.0) */
 .keyline{display:none}
-@media (min-width:861px){.keyline{display:block;margin:6px 0 0;min-height:16px;font-size:12px;line-height:16px;color:var(--text-3)}}
+/* it hangs below the panel, in the card's bottom padding, so the buttons
+   stay level with the board's bottom edge (2.0) */
+@media (min-width:861px){
+  .card > .panel{position:relative}
+  .card > .panel > .sticky-acts{margin-bottom:0}
+  .keyline{display:block;position:absolute;left:0;right:0;top:100%;margin:6px 0 0;min-height:16px;font-size:12px;line-height:16px;color:var(--text-3)}
+}
 
 /* the card, answered: the result, and both halves of the lesson ────────── */
 .result{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r2);padding:16px 18px;margin:6px 0 12px}
@@ -556,6 +563,10 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .story-strip{display:flex;align-items:center;gap:14px;min-height:44px;flex-wrap:wrap}
 .st-seg{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 4px;margin:0 -4px;background:none;border:0;font:inherit;font-size:14px;color:var(--text-2);cursor:pointer;border-radius:var(--r1)}
 .st-seg.on{color:var(--text-1)}
+/* the names read as things to tap (C4): each in a chip */
+.st-name{display:inline-flex;align-items:center;min-height:26px;padding:0 10px;border:1px solid var(--line-strong);border-radius:13px}
+.st-seg:hover .st-name{border-color:var(--text-3)}
+.st-seg.on .st-name{border-color:var(--text-2)}
 .st-seg:focus-visible{outline:2px solid var(--text-1);outline-offset:2px}
 .st-dots{display:inline-flex;align-items:center;gap:6px}
 .st-dot{display:block;width:7px;height:7px;border-radius:50%;background:var(--line-strong)}
@@ -587,10 +598,12 @@ body.in-session{padding-bottom:0}
 .dot{height:6px;border-radius:3px;background:transparent;box-shadow:inset 0 0 0 1.5px var(--line-strong);transition:background var(--dur-3) var(--ease)}
 .dot.on{height:10px;background:transparent;box-shadow:inset 0 0 0 2px var(--accent)}
 .dot.done{background:var(--accent);box-shadow:none}
-/* a card coming back (S16): its segment in the chip's gold, from the moment it is queued */
-.dot.relearn{box-shadow:inset 0 0 0 1.5px var(--gold)}
-.dot.relearn.on{box-shadow:inset 0 0 0 2px var(--gold)}
-.dot.relearn.done{background:var(--gold);box-shadow:none}
+/* a card coming back (S16): its segment in the chip's gold, striped, from
+   the moment it is queued, still striped while it is the card on screen
+   and once done, so it never reads as an ordinary segment */
+.dot.relearn{background:repeating-linear-gradient(135deg,var(--gold) 0 2px,transparent 2px 5px);box-shadow:inset 0 0 0 1.5px var(--gold)}
+.dot.relearn.on{background:repeating-linear-gradient(135deg,var(--gold) 0 3px,transparent 3px 6px);box-shadow:inset 0 0 0 2px var(--gold)}
+.dot.relearn.done{background:repeating-linear-gradient(135deg,var(--gold) 0 3px,rgba(182,130,53,.45) 3px 5px);box-shadow:none}
 .card-menu > a{display:inline-flex;min-width:44px;min-height:44px;align-items:center;justify-content:center;color:var(--text-2)}
 .menu-keys{display:block;padding:8px 10px 4px;font-size:12px;color:var(--text-3);border-top:1px solid var(--line);margin-top:4px}
 .recap-top{display:flex;align-items:center;max-width:680px;margin:0 auto}
@@ -692,6 +705,8 @@ body.in-session{padding-bottom:0}
 .recap-habit{background:var(--surface-1);margin:0 0 20px}
 .recap-habit .plan{font-size:17px;line-height:1.5;border:0;padding:0;margin:8px 0 0}
 .recap-habit .plan:first-child{margin-top:0}
+.recap-habit .plans{margin:6px 0 0;padding-left:20px}
+.recap-habit .plans .plan{margin-top:6px}
 .recap-acts{margin-top:24px}
 @media (max-width:860px){.recap-acts .btn-big,.recap-acts .btn-line{width:100%;min-height:52px}}
 
@@ -2180,6 +2195,16 @@ function markRing(x, y, kind) {
      arrow is no hint at all */
   return '<circle' + c + ' stroke="rgba(20,14,8,.55)" stroke-width="6"/><circle class="hint-ring"' + c + ' stroke="rgba(182,130,53,.95)" stroke-width="3.5"/>';
 }
+/* where a verdict badge sits: corner c of its square plus at (the top-right
+   [36, 9] of 2.1 unless an arrow's head chose another corner), pulled in so
+   its halo (r 9.8) stays inside the board on an edge square, in either
+   orientation (a badge on the h-file or the top rank would be clipped) */
+var BADGE_HALO = 9.8;
+function badgeXY(c, at) {
+  at = at || [36, 9];
+  var lo = BADGE_HALO + 0.2, hi = 360 - lo, k = function (v) { return Math.min(hi, Math.max(lo, v)); };
+  return [k(c[0] + at[0]), k(c[1] + at[1])];
+}
 /* the board: squares, tints and pieces in one svg, and the marks (FINAL-SPEC
    2.1, z 8 to 12) in a second one laid over it, so marks can change without
    touching a piece. Both are drawn bottom to top in the spec's z order.
@@ -2347,8 +2372,8 @@ function boardSvg(st, opts) {
      corner at, [x, y] from the square's corner, when an arrow's head needs
      that one); it pops once per effect id */
   (opts.badges || []).forEach(function (bd) {
-    var c = corner(bd.sq), col = MARK_BADGE[bd.kind] || MARK_BADGE.info, hollow = bd.kind === 'close', at = bd.at || [36, 9];
-    marks += '<g class="badge badge-' + bd.kind + '" transform="translate(' + (c[0] + at[0]) + ' ' + (c[1] + at[1]) + ')">' + fxOpen(bd, 'mk-pop')
+    var c = corner(bd.sq), col = MARK_BADGE[bd.kind] || MARK_BADGE.info, hollow = bd.kind === 'close', xy = badgeXY(c, bd.at);
+    marks += '<g class="badge badge-' + bd.kind + '" transform="translate(' + xy[0] + ' ' + xy[1] + ')">' + fxOpen(bd, 'mk-pop')
       + '<circle r="9.8" fill="rgba(0,0,0,.28)"/>'
       + '<circle r="8.6" fill="' + (hollow ? '#161512' : col) + '"' + (hollow ? ' stroke="' + col + '" stroke-width="2.2"' : '') + '/>'
       + '<path d="' + (BADGE_GLYPH[bd.kind] || BADGE_GLYPH.info) + '" fill="none" stroke="' + (hollow ? col : '#fff')
@@ -5829,7 +5854,9 @@ function todayPlan() {
   return { keys: keys, due: due.length, dueTaken: dueTake.length + (keys.length > fresh.length + dueTake.length ? 1 : 0),
            fresh: fresh.length, decisive: decisiveNew, firstTime: firstTime };
 }
-function startSession(mode, keys, label, spec) {
+/* opts.firstTime: a first session, whose head rule (section 4) the first
+   card loaded already keeps */
+function startSession(mode, keys, label, spec, opts) {
   if (!keys.length) return false;
   var prev = savedSession();
   if (prev) {
@@ -5839,6 +5866,7 @@ function startSession(mode, keys, label, spec) {
   var d0 = dayLoad(), carried = d0.carry || 0;
   if (carried) { d0.carry = 0; daySave(d0); }
   ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, carried: carried };
+  if (opts && opts.firstTime) ui.session.firstTime = true;
   data.freshOnboard = false;
   saveSession();
   setView('train', false);
@@ -5855,9 +5883,9 @@ function pushSessionState() {
 function startToday() {
   var plan = todayPlan();
   if (!plan.keys.length) { notice('Nothing to practise yet. Your mistakes are still being found.'); return; }
-  startSession('today', plan.keys, 'Today');
-  /* its head rule is kept if a card drops out before it is shown */
-  if (ui.session && plan.firstTime) { ui.session.firstTime = true; saveSession(); }
+  /* its head rule is kept if a card drops out before it is shown, from the
+     first card on */
+  startSession('today', plan.keys, 'Today', null, { firstTime: !!plan.firstTime });
 }
 /* more practice: due reviews first, then new positions within the day's
    cap, so extra taps never pile up future reviews */
@@ -5943,6 +5971,7 @@ function finishSession() {
   if (!ss) return;
   ss.finished = true;
   ss.active = null;
+  clearLive();
   /* the day counts on real tries only (DAY_RULE) */
   var day = dayLoad(), tried = ss.attempted || 0, n = 0, seen = {};
   ss.keys.forEach(function (k) { if (!seen[k]) { seen[k] = 1; n++; } });
@@ -5977,6 +6006,7 @@ function endSession(fromPop) {
   if (open && open.phase === 'checking') { open.checkTok = ++checkSeq; open.phase = 'guess'; open.attempts = Math.max(open.attempts || 0, 1); }
   engineStop('check');
   stageReset();
+  clearLive();
   if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints || open.attempts)) keepProgress(open);
   var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints || open.attempts)));
   if (keep) saveSession(); else store.del(sessKey());
@@ -6163,6 +6193,12 @@ function loadCard() {
     if (it.b.x) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
     var a = cardFor(it);
     if (!a) { it.b.x = 'moves'; ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
+    /* a first session's head card that the deeper look turned into a
+       forcing line goes back behind one that asks for one move, if any */
+    if (a.sol && ss.firstTime && ss.idx < 3) {
+      keepFirstThree(ss);
+      if (ss.keys[ss.idx] !== key) { saveSession(); loadCard(); return; }
+    }
     ss.active = a;
     if (workedExample(a)) keepProgress(a);
     a.shownAt = Date.now();
@@ -6206,7 +6242,7 @@ function sessionClick(sq) {
     /* a try on the board: a tap on one of your pieces takes it back and
        picks that piece up; a tap on one of theirs says which side you are */
     var pick = triedPick(a, sq), tp = triedFrame(a).st.b[sq];
-    if (pick >= 0) tryAgain(pick);
+    if (pick >= 0 || pick === TRY_ONLY) tryAgain(pick);
     else if (tp && isW(tp) !== a.st.w) tapNote(a, 'T4', 2500, sq);
     return;
   }
@@ -6563,20 +6599,21 @@ function triedFrame(a) {
   if (r) { applyMove(st, r); last = [r.from, r.to]; }
   return { st: st, last: last };
 }
-/* the piece a tap picks up while a try is on the board: one of yours where
-   it stands now, the tried piece from where it came (a castled rook from its
-   corner); -1 for anything else */
+/* what a tap on the board does while a try is on it: one of your pieces
+   that stands on the same square in the card's position is picked up there
+   (its square); the tried piece itself (a castled rook too), or anything of
+   yours that is not where it stands in the card's position, only takes the
+   try back with nothing picked up (TRY_ONLY), since picking it up on its old
+   square would play from a board the player is not looking at (I1); -1 for
+   anything else */
+var TRY_ONLY = -2;
 function triedPick(a, sq) {
   var p = triedFrame(a).st.b[sq], t = a.tried;
   if (!p || isW(p) !== a.st.w) return -1;
-  var m = uciToMove(a.st, t.uci), at = sq;
-  if (sq === t.to) at = t.from;
-  else if (m && m.castle) {
-    var short_ = m.castle === 'O-O';
-    if (sq === t.to + (short_ ? -1 : 1)) at = t.to + (short_ ? 1 : -2);
-  }
-  var q = a.st.b[at];
-  return q && isW(q) === a.st.w ? at : -1;
+  var m = uciToMove(a.st, t.uci);
+  if (sq === t.to) return TRY_ONLY;
+  if (m && m.castle && sq === t.to + (m.castle === 'O-O' ? -1 : 1)) return TRY_ONLY;
+  return a.st.b[sq] === p ? sq : TRY_ONLY;
 }
 /* the move being checked, as a move from the position before it */
 function checkingMove(a) {
@@ -6673,6 +6710,11 @@ function seeIt() {
      comes (a token). The bar changes after that */
   a.animMove = triedFrame(a).last;
   a.moveCue = true;
+  /* pressed from the keyboard: its slot turns into Hint 2 (or Show the
+     answer) as the reply lands, so the keyboard goes where Enter goes, the
+     right-hand Try again (S20); a pointer's click left no focus there */
+  var bar = el('cbar'), f = document.activeElement;
+  if (bar && f && bar.contains && bar.contains(f)) a.focusRight = true;
   renderCard(['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text']);
 }
 /* the engine could not answer: the try stays where it is, and is not counted */
@@ -6847,7 +6889,7 @@ function reveal() {
      the answer is the move due now (problem map 4.7) */
   if (!(a.sol && a.solIdx > 0)) { a.st = cloneState(a.pre); a.lastMove = a.preLast; }
   /* the summary says it was shown (S17); a relearn card keeps its first note */
-  if (!ss_relearn(a)) (ui.session.notes = ui.session.notes || {})[a.key] = 'shown';
+  (ui.session.notes = ui.session.notes || {})[a.key + (ss_relearn(a) ? '#r' : '')] = 'shown';
   /* graded at once (a close move found first makes it a hint), so leaving
      the card from here never grades it again; then the answer is shown */
   finishCard(a.foundGood && !a.misses ? 'hint' : 'fail', still && !a.jump ? MARKS_THEN_WORDS : null);
@@ -6991,14 +7033,15 @@ function storyGo(a, j, play) {
 function tooSoon(a) { return !!a && Date.now() - (a.shownAt || 0) < 450; }
 function giveHint() {
   var a = ui.session && ui.session.active;
-  if (!a) return;
+  /* no hint left: nothing at all, a try on the board stays (? pressed then) */
+  if (!a || a.hints >= 2) return;
   /* pressed while a try is shown, or over a move being checked while the
      guess bar still offers Hint (before K1): it goes first, the board
      crossfading back, the words after it */
   var cleared = a.phase === 'tried' || (a.phase === 'checking' && !a.checkSaid);
   if (a.phase === 'tried') clearTry(a);
   else if (cleared) dropCheck(a);
-  if (a.phase !== 'guess' || a.hints >= 2) { if (cleared) renderCard(); return; }
+  if (a.phase !== 'guess') { if (cleared) renderCard(); return; }
   a.hints = a.hints + 1;
   a.hintAt = a.misses;
   a.hintAfter = true;
@@ -7121,7 +7164,7 @@ function finishCard(result, beats) {
   if (a.predraw) {
     var fam = familyOf(patternOf(a.it.b)).key;
     store.set('nl:seen:' + fam, familySeen(fam) + 1);
-    if (!a.revealed && !relearn) (ss.notes = ss.notes || {})[a.key] = 'firstlook';
+    if (!a.revealed && !relearn && !a.misses) (ss.notes = ss.notes || {})[a.key] = 'firstlook';
   }
   a.lines = cardLines(a);
   /* the habit is in Details and, once per family, on the summary (S17) */
@@ -7178,7 +7221,7 @@ function settleLeft(a) {
   if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
   if (ss.progress) delete ss.progress[a.key];
   ss.results[a.key + (again ? '#r' : '')] = result;
-  if (!again) (ss.notes = ss.notes || {})[a.key] = a.misses ? 'leftMiss' : 'left';
+  (ss.notes = ss.notes || {})[a.key + (again ? '#r' : '')] = a.misses ? 'leftMiss' : 'left';
   a.phase = 'done';
 }
 function skipCard() {
@@ -7772,7 +7815,7 @@ var CARD_COPY = {
   /* exploring (S14): its band, and at tier 1 a row's standing in words
      (X3) from the learner's winning chances w; tiers 2 and 3 keep numbers */
   X1: function () { return 'Try your own moves'; },
-  X2: function (a) { return (a.tier === 1 ? 'The computer' : 'Stockfish') + ' answers each one.'; },
+  X2: function (a) { return (a.tier === 1 ? 'The computer' : 'Stockfish') + ' rates each move.'; },
   X3: function (a, w) {
     var opp = sidesOf(a).opp;
     return w >= 80 ? 'you are winning' : w >= 60 ? 'you are better' : w >= 40 ? 'even game' : w >= 20 ? opp + ' is better' : opp + ' is winning';
@@ -8315,7 +8358,8 @@ function plySay(a, n, bare) {
      capture alone, the next rung when that does not fit */
   if (n.captured) return san + ' takes ' + (byMe ? 'their ' : 'your ') + PIECE_WORD[pType(n.captured)] + (!bare && checkersOf(n.after).length ? ' with check.' : '.');
   if (checkersOf(n.after).length) return san + ', check.';
-  return san + '.';
+  /* a quiet move says whose it is (C3): "They play Qh3." / "You play Qe6." */
+  return (byMe ? 'You play ' : 'They play ') + san + '.';
 }
 /* what changed hands from node `from` to node k, as the caption names it:
    the line's own captures, else (only when the count really moved) the
@@ -8460,11 +8504,13 @@ function bandOf(a) {
   /* exploring (S14): what it is, in two fixed rows; Stockfish's sentence
      is in the panel */
   if (a.phase === 'done' && a.explore) return { disc: 'king', kind: 'explore', row1: CARD_COPY.X1(), row2: CARD_COPY.X2(a) };
-  /* the story: one caption for the ply on the board, the card's verdict
-     disc kept, a red border on your game's steps, green on the better ones */
+  /* the story: one caption for the ply on the board, a red border on your
+     game's steps, green on the better ones. The better steps keep the
+     card's verdict disc; your game's steps take your king (C4: a green tick
+     never sits beside a move that went wrong) */
   if (a.phase === 'done' && a.view && a.view.mode === 'story') {
     var sp = buildStory(a).steps[a.view.i];
-    return { disc: a.revealed ? 'info' : 'good', kind: sp.seg === 'game' ? 'sgame' : 'sbetter', cap: sp.cap };
+    return { disc: sp.seg === 'game' ? 'king' : a.revealed ? 'info' : 'good', kind: sp.seg === 'game' ? 'sgame' : 'sbetter', cap: sp.cap };
   }
   if (a.phase === 'done') {
     /* row 2: R4 once the result has settled (S0 at V+850, and the story
@@ -8830,7 +8876,7 @@ function latestGamesHtml() {
   }).join('');
   return '<aside class="latest" id="latest"><div class="latest-head"><div class="kicker">Your latest games</div>'
     + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>' + rows
-    + '<p class="lg-foot dim">Tap a game to go through its mistakes in order.</p></aside>';
+    + '<p class="lg-foot dim">' + tapWord() + ' a game to go through its mistakes in order.</p></aside>';
 }
 function agoWords(ts) {
   var d0 = new Date(); d0.setHours(0, 0, 0, 0);
@@ -9000,6 +9046,8 @@ function recapHabit(ss) {
   if (!fam) { var f = currentFocus(); fam = f && FAMILIES.filter(function (x) { return x.key === f.fam; })[0]; }
   return fam ? fam.habit : '';
 }
+/* "Tap" on a touch screen, "Click" where a mouse points (pointer: fine) */
+function tapWord() { return window.matchMedia && window.matchMedia('(pointer: fine)').matches ? 'Click' : 'Tap'; }
 /* the summary's word for a card (S17, copy Q): the note first, since it
    carries what the result cannot (the answer shown, a worked example, a
    card left), then the result. A close move then the answer shown is
@@ -9012,6 +9060,8 @@ function recapWord(note, r) {
   var w = RECAP_NOTE[note] || RECAP_RESULT[r] || '';
   return { word: w, solved: w === 'Found' || w === 'With help' || w === 'Found after a miss' || w === 'First look', counted: !!w && w !== 'Skipped' };
 }
+/* a one-more-try's word after the first showing's ("Shown, then found") */
+var RECAP_AGAIN = { 'Found': 'found', 'With help': 'found with help', 'Found after a miss': 'found after a miss', 'Shown': 'shown again', 'Missed': 'missed again' };
 function doneHtml(ss) {
   var solved = 0, answered = 0, fams = [];
   var uniq = [];
@@ -9022,10 +9072,16 @@ function doneHtml(ss) {
     if (!it || !r) return '';
     var rw = recapWord(note, r);
     if (!rw.word) return '';
+    /* a card that came back for one more try says how that went too (a
+       try left untouched adds nothing), and counts as solved only when
+       both showings were (T10: an answer shown on the retry is no solve) */
+    var r2 = ss.results[k + '#r'], rw2 = r2 ? recapWord((ss.notes || {})[k + '#r'], r2) : null;
+    if (rw2 && RECAP_AGAIN[rw2.word]) rw = { word: rw.word + ', then ' + RECAP_AGAIN[rw2.word], solved: rw.solved && rw2.solved, counted: rw.counted || rw2.counted };
     if (rw.counted) { answered++; if (rw.solved) solved++; }
-    /* the habit of each family seen today, once, in the order met */
+    /* the habit of each family seen today, once, in the order met; a card
+       skipped untouched taught nothing, so its family gives none */
     var fam = familyOf(patternOf(it.b));
-    if (fams.indexOf(fam) === -1) fams.push(fam);
+    if (rw.counted && fams.indexOf(fam) === -1) fams.push(fam);
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
     var pm = uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
@@ -9043,11 +9099,12 @@ function doneHtml(ss) {
     + ladderHtml(ss, uniq)
     + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
-    + (habits.length ? '<div class="focus recap-habit">' + habits.map(function (h) { return '<p class="plan">For your next game: ' + esc(h) + '</p>'; }).join('') + '</div>' : '')
+    + (habits.length === 1 ? '<div class="focus recap-habit"><p class="plan">For your next game: ' + esc(habits[0]) + '</p></div>'
+      : habits.length ? '<div class="focus recap-habit"><p class="plan">For your next game:</p><ul class="plans">' + habits.map(function (h) { return '<li class="plan">' + esc(h) + '</li>'; }).join('') + '</ul></div>' : '')
     + (recap ? '<div class="recap">' + recap + '</div>' : '')
     + '<div class="acts-row recap-acts">'
       + '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>'
-      + (more ? '<a class="btn-line" data-act="keepGoing">Practise 5 more</a>' : '')
+      + (more ? '<a class="btn-line" data-act="keepGoing">Practise ' + Math.min(5, more) + ' more</a>' : '')
       + '<a class="btn-quiet" data-act="endSession">Back to Today</a>'
     + '</div></div>';
 }
@@ -9338,7 +9395,8 @@ function badgeCorner(from, to, flip) {
   var ux = dx / len, uy = dy / len, tip = 45 * (len < 45 * 1.6 ? 0.22 : 0.34) - 6.3;
   var spots = [[36, 9], [9, 9], [36, 36], [9, 36]];
   for (var i = 0; i < spots.length; i++) {
-    var bx = spots[i][0] - 22.5, by = spots[i][1] - 22.5, clear = true;
+    /* where the badge really sits there (pulled in on an edge square, badgeXY) */
+    var c0 = [q[0] - 22.5, q[1] - 22.5], at = badgeXY(c0, spots[i]), bx = at[0] - q[0], by = at[1] - q[1], clear = true;
     for (var s = 0; s <= 40 && clear; s++) {
       var px = ux * (tip + s) - bx, py = uy * (tip + s) - by, half = s < 21 ? 10.5 * s / 21 : 3.7;
       if (Math.sqrt(px * px + py * py) < 8.6 + half) clear = false;
@@ -9414,7 +9472,7 @@ function labelGeom(f, px, c, avoid) {
     g.segs.push({ x1: ex - ux * 2.94 * w * s, y1: ey - uy * 2.94 * w * s, x2: ex + ux * 1.26 * w * s, y2: ey + uy * 1.26 * w * s, r: 2.1 * w * s + 4 });
   });
   (o.ghosts || []).forEach(function (gh) { var k = cell(gh.sq); g.pieces.push(sqBox(gh.sq)); g.boxes.push(disc((k[0] * 45 + 37.5) * s, (k[1] * 45 + 7.5) * s, 7 * s)); });
-  (o.badges || []).forEach(function (bd) { var k = cell(bd.sq), at = bd.at || [36, 9]; g.boxes.push(disc((k[0] * 45 + at[0]) * s, (k[1] * 45 + at[1]) * s, 9.8 * s)); });
+  (o.badges || []).forEach(function (bd) { var k = cell(bd.sq), xy = badgeXY([k[0] * 45, k[1] * 45], bd.at); g.boxes.push(disc(xy[0] * s, xy[1] * s, BADGE_HALO * s)); });
   (o.tokens || []).forEach(function (tk) { var k = cell(tk.sq); g.boxes.push(disc((k[0] * 45 + 12.5) * s, (k[1] * 45 + 32.5) * s, 13.7 * s)); });
   (o.hint != null ? [{ sq: o.hint }] : []).concat(o.rings || []).forEach(function (rg) { var m = ctr(rg.sq); g.boxes.push(disc(m[0], m[1], 23.25 * s)); });
   (o.guards || []).forEach(function (gd) { var a0 = ctr(gd.from), b0 = ctr(gd.to); g.segs.push({ x1: a0[0], y1: a0[1], x2: b0[0], y2: b0[1], r: 3.5 * s + 4 }); });
@@ -9798,27 +9856,61 @@ function displayFor(a) {
 }
 /* the desktop key line under the panel (2.0): only the keys that do
    something in this state, as the keydown handler (15-shell.js) reads
-   them. Enter names the right-hand button it presses, when that button is
-   on (not while a move is checked, where Enter does nothing, nor during a
-   forcing reply but for its own button); ? while a hint is left to give
-   (over a try too: the try goes first); → opens See why from the settled
-   result; ← → step the story or the exploration, and Esc goes back; Esc
-   takes back a move being checked */
-function keyLine(a, slots) {
+   them. Enter presses the bar's or the strip's control that has the
+   keyboard (foc: its label, reached by Tab or handed to it by the card), so
+   the line names that one; with no control focused (a pointer's click
+   hands focus back to the band, 15-shell.js) it is the right-hand button,
+   when that button is on (not while a move is checked, where Enter does
+   nothing, nor during a forcing reply but for its own button); any other
+   control focused (foc.other): Enter presses that, so the line names no
+   Enter. ? while a hint is left to give (over a try too: the try goes
+   first); → opens See why from the settled result; ← → step the story (and
+   Space steps it forward) or the exploration, where ← on its first move
+   goes back to the lesson, as Esc does; Esc takes back a move being checked */
+function keyLine(a, slots, foc) {
   var k = [], right = null, has = function (act) { return slots.filter(function (s) { return s.act === act && !s.off && !/nav-off/.test(s.cls || ''); })[0]; };
   for (var i = slots.length - 1; i >= 0 && !right; i--) if (!slots[i].empty) right = slots[i];
-  if (right && right.act && !right.off && a.phase !== 'checking' && (a.phase !== 'reply' || right.act === 'theirReply')) k.push('Enter: ' + right.label.replace(/ ›$/, ''));
+  if (foc && foc.label && (a.phase !== 'reply' || foc.act === 'theirReply')) k.push('Enter: ' + foc.label.replace(/ ›$/, ''));
+  else if (!foc && right && right.act && !right.off && a.phase !== 'checking' && (a.phase !== 'reply' || right.act === 'theirReply')) k.push('Enter: ' + right.label.replace(/ ›$/, ''));
   if (a.phase === 'done' && a.explore) {
-    k.push(has('xpFwd') ? '← → step' : '← step');
-    k.push('Esc: back to the lesson');
+    if (a.explore.at === 0) { if (has('xpFwd')) k.push('→ step'); k.push('← or Esc: back to the lesson'); }
+    else { k.push(has('xpFwd') ? '← → step' : '← step'); k.push('Esc: back to the lesson'); }
   } else if (a.phase === 'done' && a.view && a.view.mode === 'story') {
-    k.push(has('storyFwd') ? '← → step' : '← step');
+    k.push(has('storyFwd') ? '← → step · Space: next' : '← step');
     k.push('Esc: back');
   } else if (a.phase === 'done') {
     if (has('seeWhy')) k.push('→ see why');
   } else if ((a.phase === 'guess' || a.phase === 'tried' || (a.phase === 'checking' && !a.checkSaid)) && a.hints < 2) k.push('? hint');
   if (a.phase === 'checking') k.push('Esc: take back');
   return k.join(' · ');
+}
+/* the control that has the keyboard, as the key line reads it: a bar or
+   strip control Enter would press ({act, label}), any other control
+   ({other}), or null (nothing focused, the band's heading, a switched-off
+   slot: Enter is the right-hand button) */
+function keyFocus() {
+  var f = document.activeElement, act = f && f.getAttribute && f.getAttribute('data-act');
+  if (!act || f.tagName === 'INPUT' || !f.closest) return null;
+  if (f.closest('#cbar') || f.closest('#cstrip')) {
+    /* its visible words; a lone arrow (‹) by its spoken name */
+    var lab = String(f.textContent || '').replace(/\s+/g, ' ').trim();
+    if (lab.replace(/[‹›\s]/g, '').length < 2) lab = f.getAttribute('aria-label') || lab;
+    return lab && lab.length <= 24 ? { act: act, label: lab } : { other: true };
+  }
+  return { other: true };
+}
+/* the key line, painted with the words (the text beat) and again whenever
+   the keyboard moves; between a change and the words that go with it the
+   line is blank (keysStale), never the last state's keys (blankKeys) */
+var keysStale = false;
+function paintKeys(a) {
+  var kl = el('ckeys');
+  if (!kl || !a || keysStale) return;
+  setHtml(kl, esc(keyLine(a, barSlots(a, ui.session), keyFocus())));
+}
+function blankKeys() {
+  keysStale = true;
+  setHtml(el('ckeys'), '');
 }
 /* a node's markup, written only when it changed, so a repaint that changes
    nothing writes nothing (and keeps focus and a running fade) */
@@ -9849,7 +9941,6 @@ function paintText(a) {
   paintBand(a, d);
   paintBar(d);
   paintStrip(d);
-  setHtml(el('ckeys'), esc(d.keys));
   /* the new words are in: whatever faded out for them (fadeOut) is back */
   if (band.classList) band.classList.remove('stale');
   var sp = el('cstrip');
@@ -9893,6 +9984,9 @@ function paintText(a) {
     (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : barButton(rightSlot()) || (bar && bar.querySelector('[data-act]'))) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
   a.focusTask = false;
+  /* the keys once the keyboard has settled (2.0) */
+  keysStale = false;
+  paintKeys(a);
   paintLive(d);
   /* the label beside the new words: it goes first when they take its room,
      and a frame whose piece slid in gets its label now */
@@ -9946,6 +10040,12 @@ function paintBar(d) {
   if (bar.className !== cls) bar.className = cls;
   ui.repainting = true;
   try { setHtml(bar, barHtml(d.buttons)); } finally { ui.repainting = false; }
+}
+/* a session over: its last words leave the live region, so the next
+   session never starts with them (C11) */
+function clearLive() {
+  var live = el('sr-live');
+  if (live && live.textContent) live.textContent = '';
 }
 /* the live region repeats the band for screen readers, once per change */
 function paintLive(d) {
@@ -10225,6 +10325,19 @@ function storyStripHtml(a) {
    face. The game's context, the decisive line, both long sentences (and an
    alternative's), what the opponent did, the pattern and the schedule, the
    habit, and the way into exploring */
+/* the better move's sentence in Details: the classifier's, unless it
+   claims safety ("keeps everything safe", "out of danger") while the
+   card's own rule (fresh-eyes A, bestLossFrom) says the better line loses
+   material itself, where it would be false (184455333378:68: Qe6 still
+   loses the bishop); then only that it was the better move. Sentences about
+   the game's balance or what a move stops stay. The classifier is left as
+   it is */
+var SAFE_CLAIM = /\bsafe\b|out of danger|keeps your position together/;
+function detailsBest(a, s, best) {
+  var say = s.best || best + ' keeps your position together.';
+  if (SAFE_CLAIM.test(say) && a.cls && a.cls.bestLine && !a.cls.mateFor && bestLossFrom(a, 0) >= 1) return best + ' was the better move.';
+  return say;
+}
 function detailsHtml() {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'done' || !a.lines) return '';
@@ -10235,7 +10348,7 @@ function detailsHtml() {
   if (b.d) h += '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(it.g, b) + '.</p>';
   h += '<div class="dt-lines">' + row('tl-bad', esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game))
     + (a.alt && a.lines.yours ? row('tl-alt', esc(altNames(a).mine) + ' also holds.') : '')
-    + row('tl-good', esc(s.best || best + ' keeps your position together.'));
+    + row('tl-good', esc(detailsBest(a, s, best)));
   var opp = opponentLine(a);
   if (opp) h += row('tl-opp', opp);
   h += '</div><div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
@@ -10639,6 +10752,8 @@ function stage(beats) {
   if (beats.indexOf('text') >= 0) {
     stageQ = stageQ.filter(function (b) { return b !== 'text'; });
     textNotBefore = 0;
+    /* the keys of the last state go now; the text beat paints this one's */
+    blankKeys();
   }
   beats.forEach(function (b) {
     /* two board beats in a row paint the same card: one is enough */
@@ -11237,6 +11352,9 @@ document.addEventListener('click', function (e) {
   if (slot != null && slotGuarded(parseInt(slot, 10))) return;
   if (slot != null) pressSlot(parseInt(slot, 10));
   var a = ui.session && ui.session.active;
+  /* a real click (a mouse or a finger: detail 1 and up) on the bar or the
+     strip, not a key's (Enter clicks with detail 0) */
+  var byPointer = e.detail > 0 && !!(t.closest && (t.closest('#cbar') || t.closest('#cstrip')) && !t.closest('#xp'));
   switch (act) {
     case 'view': closeSheet(); if (ui.session && ui.session.finished && k === 'train') endSession(); setView(k); break;
     case 'home': closeSheet(); if (cfg.user) setView('train'); break;
@@ -11371,7 +11489,21 @@ document.addEventListener('click', function (e) {
     }
     case 'coffee': notice('Thank you. A tip jar is coming soon.'); break;
   }
+  if (byPointer) pointerFocusBack(t);
 });
+/* a pointer's click on the bar or the strip leaves no focus on that control
+   (I2): the keyboard goes back to the band's heading (or nowhere, where the
+   band has none), so Enter is the right-hand button, as the key line says,
+   never the control just clicked again. A control reached by Tab keeps it,
+   and the key line names it (keyLine). Focus already moved by the action (a
+   sheet, a verdict's right-hand button) stays where it went */
+function pointerFocusBack(t) {
+  var f = document.activeElement, bar = el('cbar'), sp = el('cstrip');
+  if (!f || !((bar && bar.contains(f)) || (sp && sp.contains(f)) || f === t)) return;
+  var h = el('task-h') || el('result-h');
+  if (h) h.focus({ preventScroll: true });
+  else if (f.blur) f.blur();
+}
 document.addEventListener('change', function (e) {
   var t = e.target;
   if (!t || !t.getAttribute) return;
@@ -11466,7 +11598,13 @@ function typedMove(txt) {
   var st = xp ? a.explore.st : a.st;
   var t = String(txt || '').trim().replace(/0/g, 'O');
   var m = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(t) ? uciToMove(st, t.toLowerCase()) : null;
+  /* a piece letter typed small ("qf3", "o-o") is read capitalised (I5): a
+     small b is a bishop before a file letter ("bc4"), else first a pawn on
+     the b-file ("b3", "bxc3") and then a bishop */
+  var big = /^[kqrbno]/.test(t) ? (/^o-o/i.test(t) ? t.toUpperCase() : t[0].toUpperCase() + t.slice(1)) : null;
+  if (!m && big && !/^b([1-8]|x)/.test(t)) m = sanToMove(st, big);
   if (!m && t) m = sanToMove(st, t);
+  if (!m && big) m = sanToMove(st, big);
   if (!m) { notice('That move is not legal here. Try a move like Nf3, exd5, O-O or g1f3.'); return; }
   if (xp) { explorePlay(m, false); var kb = el('kbmove'); if (kb) { kb.value = ''; kb.focus(); } }
   else { if (a.phase === 'tried') clearTry(a); gradeMove(m); }
@@ -11562,6 +11700,9 @@ document.addEventListener('pointerdown', function (e) {
      is answered by the click this press makes (sessionClick) */
   if (e.button === 0 && !a.pendingPromo && (bs.checking || bs.tried)) {
     var pick = bs.checking ? checkingPick(a, sq) : triedPick(a, sq);
+    /* the tried piece itself: the try goes and nothing is picked up, and the
+       click this press makes is not a tap on the card's position (I1) */
+    if (pick === TRY_ONLY) { tryAgain(); pointerState.held = true; return; }
     if (pick < 0) return;
     if (bs.checking) takeBack(pick); else tryAgain(pick);
     bs = boardState(a);
@@ -11673,6 +11814,9 @@ function xpHover(k, byFocus) {
   /* rows held while pointed at: the latest lines show once the pointer leaves */
   if (k == null && xpThaw(ex)) renderCard();
 }
+/* the key line names what Enter presses: it follows the keyboard (2.0) */
+document.addEventListener('focusin', function () { if (ui.session && ui.session.active) paintKeys(ui.session.active); });
+document.addEventListener('focusout', function () { if (ui.session && ui.session.active) setTimeout(function () { if (ui.session && ui.session.active) paintKeys(ui.session.active); }, 0); });
 document.addEventListener('focusin', function (e) {
   var r = e.target.closest && e.target.closest('#xp .xp-row[data-act="xpRow"]');
   if (r) xpHover(parseInt(r.getAttribute('data-k'), 10), true);

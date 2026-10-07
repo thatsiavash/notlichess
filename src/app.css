@@ -214,9 +214,10 @@ button{font-family:inherit}
 .find{font-size:14px;color:var(--body);animation:narr-in .35s ease}
 .find b{color:var(--display);font-weight:400}
 .done-big{font-family:var(--font-display);font-weight:400;font-size:clamp(28px,6vw,36px);color:var(--display);margin:2px 0 6px}
-.recap{display:flex;gap:10px;overflow-x:auto;padding:8px 0 4px;margin:10px 0 16px}
-.recap-item{flex:none;width:118px;cursor:pointer}
-.recap-item .board{width:118px;box-shadow:none;border-radius:4px}
+/* the positions in rows, each caption whole (never cut by a scroller) */
+.recap{display:flex;flex-wrap:wrap;gap:14px 10px;padding:8px 0 4px;margin:10px 0 16px}
+.recap-item{flex:none;width:calc((100% - 20px) / 3);max-width:118px;cursor:pointer}
+.recap-item .board{width:100%;box-shadow:none;border-radius:4px}
 .recap-item span{display:block;font-size:11.5px;color:var(--secondary);margin-top:4px;line-height:1.3}
 .recap-item .res{font-size:11px;color:var(--text-2)}
 .recap-item .res.shown{color:var(--text-3)}
@@ -476,7 +477,13 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 }
 /* the keys that work now, under the bar, on the desktop only (2.0) */
 .keyline{display:none}
-@media (min-width:861px){.keyline{display:block;margin:6px 0 0;min-height:16px;font-size:12px;line-height:16px;color:var(--text-3)}}
+/* it hangs below the panel, in the card's bottom padding, so the buttons
+   stay level with the board's bottom edge (2.0) */
+@media (min-width:861px){
+  .card > .panel{position:relative}
+  .card > .panel > .sticky-acts{margin-bottom:0}
+  .keyline{display:block;position:absolute;left:0;right:0;top:100%;margin:6px 0 0;min-height:16px;font-size:12px;line-height:16px;color:var(--text-3)}
+}
 
 /* the card, answered: the result, and both halves of the lesson ────────── */
 .result{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r2);padding:16px 18px;margin:6px 0 12px}
@@ -509,6 +516,10 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .story-strip{display:flex;align-items:center;gap:14px;min-height:44px;flex-wrap:wrap}
 .st-seg{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 4px;margin:0 -4px;background:none;border:0;font:inherit;font-size:14px;color:var(--text-2);cursor:pointer;border-radius:var(--r1)}
 .st-seg.on{color:var(--text-1)}
+/* the names read as things to tap (C4): each in a chip */
+.st-name{display:inline-flex;align-items:center;min-height:26px;padding:0 10px;border:1px solid var(--line-strong);border-radius:13px}
+.st-seg:hover .st-name{border-color:var(--text-3)}
+.st-seg.on .st-name{border-color:var(--text-2)}
 .st-seg:focus-visible{outline:2px solid var(--text-1);outline-offset:2px}
 .st-dots{display:inline-flex;align-items:center;gap:6px}
 .st-dot{display:block;width:7px;height:7px;border-radius:50%;background:var(--line-strong)}
@@ -540,10 +551,12 @@ body.in-session{padding-bottom:0}
 .dot{height:6px;border-radius:3px;background:transparent;box-shadow:inset 0 0 0 1.5px var(--line-strong);transition:background var(--dur-3) var(--ease)}
 .dot.on{height:10px;background:transparent;box-shadow:inset 0 0 0 2px var(--accent)}
 .dot.done{background:var(--accent);box-shadow:none}
-/* a card coming back (S16): its segment in the chip's gold, from the moment it is queued */
-.dot.relearn{box-shadow:inset 0 0 0 1.5px var(--gold)}
-.dot.relearn.on{box-shadow:inset 0 0 0 2px var(--gold)}
-.dot.relearn.done{background:var(--gold);box-shadow:none}
+/* a card coming back (S16): its segment in the chip's gold, striped, from
+   the moment it is queued, still striped while it is the card on screen
+   and once done, so it never reads as an ordinary segment */
+.dot.relearn{background:repeating-linear-gradient(135deg,var(--gold) 0 2px,transparent 2px 5px);box-shadow:inset 0 0 0 1.5px var(--gold)}
+.dot.relearn.on{background:repeating-linear-gradient(135deg,var(--gold) 0 3px,transparent 3px 6px);box-shadow:inset 0 0 0 2px var(--gold)}
+.dot.relearn.done{background:repeating-linear-gradient(135deg,var(--gold) 0 3px,rgba(182,130,53,.45) 3px 5px);box-shadow:none}
 .card-menu > a{display:inline-flex;min-width:44px;min-height:44px;align-items:center;justify-content:center;color:var(--text-2)}
 .menu-keys{display:block;padding:8px 10px 4px;font-size:12px;color:var(--text-3);border-top:1px solid var(--line);margin-top:4px}
 .recap-top{display:flex;align-items:center;max-width:680px;margin:0 auto}
@@ -645,6 +658,8 @@ body.in-session{padding-bottom:0}
 .recap-habit{background:var(--surface-1);margin:0 0 20px}
 .recap-habit .plan{font-size:17px;line-height:1.5;border:0;padding:0;margin:8px 0 0}
 .recap-habit .plan:first-child{margin-top:0}
+.recap-habit .plans{margin:6px 0 0;padding-left:20px}
+.recap-habit .plans .plan{margin-top:6px}
 .recap-acts{margin-top:24px}
 @media (max-width:860px){.recap-acts .btn-big,.recap-acts .btn-line{width:100%;min-height:52px}}
 

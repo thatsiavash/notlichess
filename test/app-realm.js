@@ -1,7 +1,7 @@
 // Boots the whole built app (index.html's main script) in Node with a small DOM stub, and reaches its
 // internals through window.__nlTest.ev (enabled because location.hostname is 'localhost').
 // Usage: const A = require('./app-realm')({ now, storage: {...}, session: {...} });
-//        A.ev('todayPlan()'); A.setNow(ms); A.storage; A.click('tryAgain') (a button click, through the page's handler)
+//        A.ev('todayPlan()'); A.setNow(ms); A.storage; A.click('tryAgain', k, slot, { detail: 1 }) (a button click, through the page's handler)
 //        A.key('Enter', repeat, on): a key through the page's keydown handlers (on a focused button when on = { act, k, slot })
 //        A.tap(sq), A.drag(from, to, mouse): the board by hand, through the page's pointer and click handlers
 //        A.advance(ms): the clock moves on, and each timer runs when it falls due (A.flush runs them all, whatever their delay)
@@ -81,9 +81,10 @@ module.exports = function makeApp(opts) {
     t.click = () => click(act, k, slot);
     return t;
   };
-  const click = (act, k, slot) => {
+  /* o: more of the event (detail 1 for a mouse's or a finger's click; a key's has 0) */
+  const click = (act, k, slot, o) => {
     const t = button(act, k, slot);
-    (listeners.click || []).forEach((fn) => fn({ target: t, preventDefault() {} }));
+    (listeners.click || []).forEach((fn) => fn(Object.assign({ target: t, preventDefault() {} }, o || {})));
   };
   /* stubbed nodes inside the page (a bar button's click()) reach the click handler through this */
   window.__realmClick = click;

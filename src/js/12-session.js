@@ -239,7 +239,9 @@ function todayPlan() {
   return { keys: keys, due: due.length, dueTaken: dueTake.length + (keys.length > fresh.length + dueTake.length ? 1 : 0),
            fresh: fresh.length, decisive: decisiveNew, firstTime: firstTime };
 }
-function startSession(mode, keys, label, spec) {
+/* opts.firstTime: a first session, whose head rule (section 4) the first
+   card loaded already keeps */
+function startSession(mode, keys, label, spec, opts) {
   if (!keys.length) return false;
   var prev = savedSession();
   if (prev) {
@@ -249,6 +251,7 @@ function startSession(mode, keys, label, spec) {
   var d0 = dayLoad(), carried = d0.carry || 0;
   if (carried) { d0.carry = 0; daySave(d0); }
   ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, carried: carried };
+  if (opts && opts.firstTime) ui.session.firstTime = true;
   data.freshOnboard = false;
   saveSession();
   setView('train', false);
@@ -265,9 +268,9 @@ function pushSessionState() {
 function startToday() {
   var plan = todayPlan();
   if (!plan.keys.length) { notice('Nothing to practise yet. Your mistakes are still being found.'); return; }
-  startSession('today', plan.keys, 'Today');
-  /* its head rule is kept if a card drops out before it is shown */
-  if (ui.session && plan.firstTime) { ui.session.firstTime = true; saveSession(); }
+  /* its head rule is kept if a card drops out before it is shown, from the
+     first card on */
+  startSession('today', plan.keys, 'Today', null, { firstTime: !!plan.firstTime });
 }
 /* more practice: due reviews first, then new positions within the day's
    cap, so extra taps never pile up future reviews */
@@ -353,6 +356,7 @@ function finishSession() {
   if (!ss) return;
   ss.finished = true;
   ss.active = null;
+  clearLive();
   /* the day counts on real tries only (DAY_RULE) */
   var day = dayLoad(), tried = ss.attempted || 0, n = 0, seen = {};
   ss.keys.forEach(function (k) { if (!seen[k]) { seen[k] = 1; n++; } });
@@ -387,6 +391,7 @@ function endSession(fromPop) {
   if (open && open.phase === 'checking') { open.checkTok = ++checkSeq; open.phase = 'guess'; open.attempts = Math.max(open.attempts || 0, 1); }
   engineStop('check');
   stageReset();
+  clearLive();
   if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints || open.attempts)) keepProgress(open);
   var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints || open.attempts)));
   if (keep) saveSession(); else store.del(sessKey());

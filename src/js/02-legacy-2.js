@@ -181,6 +181,16 @@ function markRing(x, y, kind) {
      arrow is no hint at all */
   return '<circle' + c + ' stroke="rgba(20,14,8,.55)" stroke-width="6"/><circle class="hint-ring"' + c + ' stroke="rgba(182,130,53,.95)" stroke-width="3.5"/>';
 }
+/* where a verdict badge sits: corner c of its square plus at (the top-right
+   [36, 9] of 2.1 unless an arrow's head chose another corner), pulled in so
+   its halo (r 9.8) stays inside the board on an edge square, in either
+   orientation (a badge on the h-file or the top rank would be clipped) */
+var BADGE_HALO = 9.8;
+function badgeXY(c, at) {
+  at = at || [36, 9];
+  var lo = BADGE_HALO + 0.2, hi = 360 - lo, k = function (v) { return Math.min(hi, Math.max(lo, v)); };
+  return [k(c[0] + at[0]), k(c[1] + at[1])];
+}
 /* the board: squares, tints and pieces in one svg, and the marks (FINAL-SPEC
    2.1, z 8 to 12) in a second one laid over it, so marks can change without
    touching a piece. Both are drawn bottom to top in the spec's z order.
@@ -348,8 +358,8 @@ function boardSvg(st, opts) {
      corner at, [x, y] from the square's corner, when an arrow's head needs
      that one); it pops once per effect id */
   (opts.badges || []).forEach(function (bd) {
-    var c = corner(bd.sq), col = MARK_BADGE[bd.kind] || MARK_BADGE.info, hollow = bd.kind === 'close', at = bd.at || [36, 9];
-    marks += '<g class="badge badge-' + bd.kind + '" transform="translate(' + (c[0] + at[0]) + ' ' + (c[1] + at[1]) + ')">' + fxOpen(bd, 'mk-pop')
+    var c = corner(bd.sq), col = MARK_BADGE[bd.kind] || MARK_BADGE.info, hollow = bd.kind === 'close', xy = badgeXY(c, bd.at);
+    marks += '<g class="badge badge-' + bd.kind + '" transform="translate(' + xy[0] + ' ' + xy[1] + ')">' + fxOpen(bd, 'mk-pop')
       + '<circle r="9.8" fill="rgba(0,0,0,.28)"/>'
       + '<circle r="8.6" fill="' + (hollow ? '#161512' : col) + '"' + (hollow ? ' stroke="' + col + '" stroke-width="2.2"' : '') + '/>'
       + '<path d="' + (BADGE_GLYPH[bd.kind] || BADGE_GLYPH.info) + '" fill="none" stroke="' + (hollow ? col : '#fff')

@@ -30,7 +30,7 @@ var CARD_COPY = {
   /* exploring (S14): its band, and at tier 1 a row's standing in words
      (X3) from the learner's winning chances w; tiers 2 and 3 keep numbers */
   X1: function () { return 'Try your own moves'; },
-  X2: function (a) { return (a.tier === 1 ? 'The computer' : 'Stockfish') + ' answers each one.'; },
+  X2: function (a) { return (a.tier === 1 ? 'The computer' : 'Stockfish') + ' rates each move.'; },
   X3: function (a, w) {
     var opp = sidesOf(a).opp;
     return w >= 80 ? 'you are winning' : w >= 60 ? 'you are better' : w >= 40 ? 'even game' : w >= 20 ? opp + ' is better' : opp + ' is winning';
@@ -573,7 +573,8 @@ function plySay(a, n, bare) {
      capture alone, the next rung when that does not fit */
   if (n.captured) return san + ' takes ' + (byMe ? 'their ' : 'your ') + PIECE_WORD[pType(n.captured)] + (!bare && checkersOf(n.after).length ? ' with check.' : '.');
   if (checkersOf(n.after).length) return san + ', check.';
-  return san + '.';
+  /* a quiet move says whose it is (C3): "They play Qh3." / "You play Qe6." */
+  return (byMe ? 'You play ' : 'They play ') + san + '.';
 }
 /* what changed hands from node `from` to node k, as the caption names it:
    the line's own captures, else (only when the count really moved) the
@@ -718,11 +719,13 @@ function bandOf(a) {
   /* exploring (S14): what it is, in two fixed rows; Stockfish's sentence
      is in the panel */
   if (a.phase === 'done' && a.explore) return { disc: 'king', kind: 'explore', row1: CARD_COPY.X1(), row2: CARD_COPY.X2(a) };
-  /* the story: one caption for the ply on the board, the card's verdict
-     disc kept, a red border on your game's steps, green on the better ones */
+  /* the story: one caption for the ply on the board, a red border on your
+     game's steps, green on the better ones. The better steps keep the
+     card's verdict disc; your game's steps take your king (C4: a green tick
+     never sits beside a move that went wrong) */
   if (a.phase === 'done' && a.view && a.view.mode === 'story') {
     var sp = buildStory(a).steps[a.view.i];
-    return { disc: a.revealed ? 'info' : 'good', kind: sp.seg === 'game' ? 'sgame' : 'sbetter', cap: sp.cap };
+    return { disc: sp.seg === 'game' ? 'king' : a.revealed ? 'info' : 'good', kind: sp.seg === 'game' ? 'sgame' : 'sbetter', cap: sp.cap };
   }
   if (a.phase === 'done') {
     /* row 2: R4 once the result has settled (S0 at V+850, and the story

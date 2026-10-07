@@ -144,6 +144,12 @@ function loadCard() {
     if (it.b.x) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
     var a = cardFor(it);
     if (!a) { it.b.x = 'moves'; ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
+    /* a first session's head card that the deeper look turned into a
+       forcing line goes back behind one that asks for one move, if any */
+    if (a.sol && ss.firstTime && ss.idx < 3) {
+      keepFirstThree(ss);
+      if (ss.keys[ss.idx] !== key) { saveSession(); loadCard(); return; }
+    }
     ss.active = a;
     if (workedExample(a)) keepProgress(a);
     a.shownAt = Date.now();
@@ -187,7 +193,7 @@ function sessionClick(sq) {
     /* a try on the board: a tap on one of your pieces takes it back and
        picks that piece up; a tap on one of theirs says which side you are */
     var pick = triedPick(a, sq), tp = triedFrame(a).st.b[sq];
-    if (pick >= 0) tryAgain(pick);
+    if (pick >= 0 || pick === TRY_ONLY) tryAgain(pick);
     else if (tp && isW(tp) !== a.st.w) tapNote(a, 'T4', 2500, sq);
     return;
   }
@@ -544,20 +550,21 @@ function triedFrame(a) {
   if (r) { applyMove(st, r); last = [r.from, r.to]; }
   return { st: st, last: last };
 }
-/* the piece a tap picks up while a try is on the board: one of yours where
-   it stands now, the tried piece from where it came (a castled rook from its
-   corner); -1 for anything else */
+/* what a tap on the board does while a try is on it: one of your pieces
+   that stands on the same square in the card's position is picked up there
+   (its square); the tried piece itself (a castled rook too), or anything of
+   yours that is not where it stands in the card's position, only takes the
+   try back with nothing picked up (TRY_ONLY), since picking it up on its old
+   square would play from a board the player is not looking at (I1); -1 for
+   anything else */
+var TRY_ONLY = -2;
 function triedPick(a, sq) {
   var p = triedFrame(a).st.b[sq], t = a.tried;
   if (!p || isW(p) !== a.st.w) return -1;
-  var m = uciToMove(a.st, t.uci), at = sq;
-  if (sq === t.to) at = t.from;
-  else if (m && m.castle) {
-    var short_ = m.castle === 'O-O';
-    if (sq === t.to + (short_ ? -1 : 1)) at = t.to + (short_ ? 1 : -2);
-  }
-  var q = a.st.b[at];
-  return q && isW(q) === a.st.w ? at : -1;
+  var m = uciToMove(a.st, t.uci);
+  if (sq === t.to) return TRY_ONLY;
+  if (m && m.castle && sq === t.to + (m.castle === 'O-O' ? -1 : 1)) return TRY_ONLY;
+  return a.st.b[sq] === p ? sq : TRY_ONLY;
 }
 /* the move being checked, as a move from the position before it */
 function checkingMove(a) {
@@ -654,6 +661,11 @@ function seeIt() {
      comes (a token). The bar changes after that */
   a.animMove = triedFrame(a).last;
   a.moveCue = true;
+  /* pressed from the keyboard: its slot turns into Hint 2 (or Show the
+     answer) as the reply lands, so the keyboard goes where Enter goes, the
+     right-hand Try again (S20); a pointer's click left no focus there */
+  var bar = el('cbar'), f = document.activeElement;
+  if (bar && f && bar.contains && bar.contains(f)) a.focusRight = true;
   renderCard(['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text']);
 }
 /* the engine could not answer: the try stays where it is, and is not counted */
@@ -828,7 +840,7 @@ function reveal() {
      the answer is the move due now (problem map 4.7) */
   if (!(a.sol && a.solIdx > 0)) { a.st = cloneState(a.pre); a.lastMove = a.preLast; }
   /* the summary says it was shown (S17); a relearn card keeps its first note */
-  if (!ss_relearn(a)) (ui.session.notes = ui.session.notes || {})[a.key] = 'shown';
+  (ui.session.notes = ui.session.notes || {})[a.key + (ss_relearn(a) ? '#r' : '')] = 'shown';
   /* graded at once (a close move found first makes it a hint), so leaving
      the card from here never grades it again; then the answer is shown */
   finishCard(a.foundGood && !a.misses ? 'hint' : 'fail', still && !a.jump ? MARKS_THEN_WORDS : null);
@@ -972,14 +984,15 @@ function storyGo(a, j, play) {
 function tooSoon(a) { return !!a && Date.now() - (a.shownAt || 0) < 450; }
 function giveHint() {
   var a = ui.session && ui.session.active;
-  if (!a) return;
+  /* no hint left: nothing at all, a try on the board stays (? pressed then) */
+  if (!a || a.hints >= 2) return;
   /* pressed while a try is shown, or over a move being checked while the
      guess bar still offers Hint (before K1): it goes first, the board
      crossfading back, the words after it */
   var cleared = a.phase === 'tried' || (a.phase === 'checking' && !a.checkSaid);
   if (a.phase === 'tried') clearTry(a);
   else if (cleared) dropCheck(a);
-  if (a.phase !== 'guess' || a.hints >= 2) { if (cleared) renderCard(); return; }
+  if (a.phase !== 'guess') { if (cleared) renderCard(); return; }
   a.hints = a.hints + 1;
   a.hintAt = a.misses;
   a.hintAfter = true;
@@ -1102,7 +1115,7 @@ function finishCard(result, beats) {
   if (a.predraw) {
     var fam = familyOf(patternOf(a.it.b)).key;
     store.set('nl:seen:' + fam, familySeen(fam) + 1);
-    if (!a.revealed && !relearn) (ss.notes = ss.notes || {})[a.key] = 'firstlook';
+    if (!a.revealed && !relearn && !a.misses) (ss.notes = ss.notes || {})[a.key] = 'firstlook';
   }
   a.lines = cardLines(a);
   /* the habit is in Details and, once per family, on the summary (S17) */
@@ -1159,7 +1172,7 @@ function settleLeft(a) {
   if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
   if (ss.progress) delete ss.progress[a.key];
   ss.results[a.key + (again ? '#r' : '')] = result;
-  if (!again) (ss.notes = ss.notes || {})[a.key] = a.misses ? 'leftMiss' : 'left';
+  (ss.notes = ss.notes || {})[a.key + (again ? '#r' : '')] = a.misses ? 'leftMiss' : 'left';
   a.phase = 'done';
 }
 function skipCard() {
