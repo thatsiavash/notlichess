@@ -613,11 +613,129 @@ function bandOf(a) {
      only, from before the last miss, gives the task back (T1, T2). A
      hint set with no showing recorded (hintAt) counts as this one's */
   var mid = a.sol && a.solIdx > 0, hm = a.hints >= 1 ? hintMarks(a) : null;
-  if (a.hints >= 1 && (a.hintAfter || !mid) && (a.hintAt == null || a.hintAt === a.misses || hm.rings.length + hm.arrows.length > 0)) {
+  /* the worked example (S9) opens as any card does, its hint's marks
+     already drawn and named by their label: the task until a miss */
+  var worked = a.predraw && a.hints === 1 && !a.misses;
+  if (a.hints >= 1 && !worked && (a.hintAfter || !mid) && (a.hintAt == null || a.hintAt === a.misses || hm.rings.length + hm.arrows.length > 0)) {
     var h = hintText(a);
     return { disc: 'king', kind: 'hint', row1: h.row1, cands: h.cands, fall: h.fall };
   }
   /* their reply has landed: your move, and what it did (F4) */
   if (mid) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: a.replySaid ? a.replySaid.slice() : [], fall: 'The next move is forcing too.', budget: LINE_BUDGET };
   return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '' };
+}
+
+/* ── the board's labels (FINAL-SPEC 2.1, copy L) ─────────────────────────
+   One pill a frame names one mark, in words read from what is drawn, never
+   from the pattern tag. The first time a kind of mark ever shows on this
+   device its label teaches it (first sight: the game arrow, a threat, a
+   lost piece, the ghost); after that the short words. Labels are the first
+   words to go when a frame is over its budget (principle 5): a label shows
+   only where the words on screen leave it room. LABELS_ON false takes every
+   label away, first sight too, and the band carries the meaning alone */
+var LABELS_ON = true;
+var TIP_KINDS = ['game', 'threat', 'token', 'ghost'];
+/* what a move does on the position it is played from: what it takes (and
+   whether that piece was guarded), a check, a mate, a draw (no move left,
+   no check), a fork (mFork on the board after it) and a pin it makes (mPin,
+   a pin that was not there before it, never of a pawn). null when it is no
+   legal move there */
+function moveDoes(pos, from, to) {
+  var m = legalMoves(pos).filter(function (x) { return x.from === from && x.to === to; })[0];
+  if (!m) return null;
+  var after = cloneState(pos);
+  applyMove(after, m);
+  var tsq = m.ep >= 0 ? m.ep : to, took = pos.b[tsq] || null, check = checkersOf(after).length > 0, none = !legalMoves(after).length;
+  var mover = !!pos.w, node = { after: after, move: m, piece: pType(pos.b[from]) };
+  var fork = mFork({ nodes: [{}, node, {}, { piece: 'K' }], povWhite: mover });
+  var pin = mPin({ nodes: [{}, node], povWhite: mover }), was = pin && mPin({ nodes: [{}, { after: pos }], povWhite: mover });
+  return { took: took, free: !!took && !isDefended(pos.b, tsq), check: check, mate: check && none, draw: !check && none,
+           fork: !!fork, pin: !!pin && pin.piece !== 'P' && !(was && was.sq === pin.sq) };
+}
+/* a threat arrow in words (L): checkmate, a draw, what it takes ("free
+   knight" when nothing guards it), a fork ("hits two", "fork" at tier 3),
+   a check, a pin ("stuck", "pinned" at tier 3); and its first-sight words,
+   "{Opp} can take" or "{Opp} can check". Hint 1's danger (the arrow keyed
+   hint) is drawn on the card position before the game move that allows it,
+   so it reads from the position after that move, as "takes". S0's pair is
+   the game's reply, read where it was played: only while the piece it took
+   is still drawn on its square (or as the ghost there). null: nothing true
+   to say */
+function threatSay(a, f, ar) {
+  var gl = a.cls && a.cls.gameLine, n1 = gl && gl.nodes[1];
+  var s0 = a.phase === 'done' && a.view && a.view.mode === 's0';
+  var pos = ar.key === 'hint' || s0 ? n1 && n1.before : f.st;
+  var d = pos && moveDoes(pos, ar.from, ar.to);
+  if (!d) return null;
+  if (s0 && d.took) {
+    var gh = (f.opts.ghosts || []).filter(function (g) { return g.sq === ar.to; })[0];
+    if (f.st.b[ar.to] !== d.took && !(gh && gh.p === d.took && !f.st.b[ar.to])) return null;
+  }
+  var t = a.tier, opp = sidesOf(a).opp, say;
+  if (ar.key === 'hint') say = d.mate ? 'mate' : d.took ? 'takes' : d.check ? 'check' : '';
+  else say = d.mate ? 'mate' : d.draw ? 'draw' : d.took ? (d.free ? 'free ' + PIECE_WORD[pType(d.took)] : 'takes')
+    : d.fork ? (t === 3 ? 'fork' : 'hits two') : d.check ? 'check' : d.pin ? (t === 3 ? 'pinned' : 'stuck') : '';
+  return { say: say, teach: d.took ? opp + ' can take' : d.check ? opp + ' can check' : '', does: d };
+}
+/* the labels a frame could show, in the order they take the one place:
+   first-sight labels first (game arrow, threat, lost piece, ghost), then
+   the short ones (their reply, a threat, the piece See it took, the better
+   move or the answer, a hint's prize, Stockfish's pick). seen(kind): that
+   kind of mark has taught itself already. Each: {text, role (red, green,
+   blue, gold), tip (its first-sight kind), head, tail (the squares it sits
+   beside: an arrow's head and tail, or the marked square), mark (what it
+   names)}. Nothing while a piece slides: words never change in a slide */
+function labelCands(a, f, seen) {
+  var o = f.opts, first = {}, short = [], answered = a.phase === 'done';
+  if (!LABELS_ON || o.anim || o.decor) return [];
+  var cand = function (text, role, tip, head, tail, mark, order) { return { text: text, role: role, tip: tip, head: head, tail: tail, mark: mark, order: order }; };
+  var arrows = [];
+  if (o.ghost) arrows.push({ from: o.ghost[0], to: o.ghost[1], kind: 'explore' });
+  if (o.good) arrows.push({ from: o.good[0], to: o.good[1], kind: 'better', key: 'good' });
+  if (o.bad) arrows.push({ from: o.bad[0], to: o.bad[1], kind: 'game' });
+  arrows.concat(o.arrows || []).forEach(function (ar) {
+    var mk = { kind: ar.kind, key: ar.key || null, from: ar.from, to: ar.to };
+    if (ar.kind === 'game') { if (!seen('game') && !first.game) first.game = cand('Your game move', 'red', 'game', ar.to, ar.from, mk); }
+    else if (ar.kind === 'threat') {
+      var w = threatSay(a, f, ar);
+      if (!w) return;
+      mk.does = w.does;
+      if (w.teach && !seen('threat') && !first.threat) first.threat = cand(w.teach, 'red', 'threat', ar.to, ar.from, mk);
+      if (w.say) short.push(cand(w.say, 'red', null, ar.to, ar.from, mk, 1));
+    }
+    else if (ar.kind === 'reply') short.push(cand('their reply', 'blue', null, ar.to, ar.from, mk, 0));
+    else if (ar.kind === 'better' && answered) short.push(cand(ar.key === 'answer' ? 'the answer' : 'better', 'green', null, ar.to, ar.from, mk, 3));
+    else if (ar.kind === 'explore') short.push(cand(a.tier === 1 ? 'the computer' : 'Stockfish', 'gold', null, ar.to, ar.from, mk, 5));
+  });
+  (o.tokens || []).forEach(function (tk) {
+    if (tk.kind === 'won') return;
+    var mk = { kind: 'token', sq: tk.sq, p: tk.p };
+    if (!seen('token') && !first.token) first.token = cand('Lost piece', 'red', 'token', tk.sq, null, mk);
+    /* "lost": the piece See it's reply took, as it lands (S4) */
+    if (a.phase === 'tried' && a.tried && a.tried.seen) short.push(cand('lost', 'red', null, tk.sq, null, mk, 2));
+  });
+  (o.ghosts || []).forEach(function (g) {
+    if (!seen('ghost') && !first.ghost) first.ghost = cand(gameSan(a) + ' in your game', 'red', 'ghost', g.sq, null, { kind: 'ghost', sq: g.sq, p: g.p });
+  });
+  /* a hint's prize (S8): "free {piece}" when nothing of theirs guards it */
+  (o.rings || []).forEach(function (rg) {
+    var p = f.st.b[rg.sq];
+    if (rg.kind === 'target' && p && !isDefended(f.st.b, rg.sq)) short.push(cand('free ' + PIECE_WORD[pType(p)], 'gold', null, rg.sq, null, { kind: 'prize', sq: rg.sq, p: p }, 4));
+  });
+  short.sort(function (x, y) { return x.order - y.order; });
+  return TIP_KINDS.map(function (k) { return first[k]; }).filter(Boolean).concat(short);
+}
+/* the words a label may take beside the band, the bar and the strip
+   (principle 5: 15, the label going first). Read on the frame's words as
+   they settle, so a label never comes and goes within one state: a miss
+   with its reason said (S4), S0 with R4 and Details (S6). Exploring is
+   exempt (S14) */
+function labelRoom(a) {
+  var ss = ui.session;
+  if (a.phase === 'done' && a.explore) return 99;
+  var v = Object.create(a);
+  if (a.phase === 'tried' && a.tried && a.tried.kind === 'miss') v.reason = 2;
+  if (a.phase === 'done' && a.view && a.view.mode === 's0' && a.settle >= 1) v.settle = 2;
+  var b = bandFor(v);
+  return WORD_BUDGET - bandWords(b, ss ? barSlots(v, ss) : []) - stripWords(v);
 }

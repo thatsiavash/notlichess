@@ -89,7 +89,7 @@ function cardFor(it) {
     firstSight: !rec, tier: playerTier(), view: null
   };
   var kept = ui.session && ui.session.progress && ui.session.progress[it.key];
-  if (kept) { a.misses = kept.m || 0; a.hints = kept.h || 0; a.triedGameMove = !!kept.g; a.foundGood = kept.f || null; a.attempts = kept.a || 0; }
+  if (kept) { a.misses = kept.m || 0; a.hints = kept.h || 0; a.triedGameMove = !!kept.g; a.foundGood = kept.f || null; a.attempts = kept.a || 0; a.predraw = !!kept.p; }
   /* prior move, to show how the position arose */
   if (b.p > 0) {
     var before = stateAtPly(g.mv, b.p - 1);
@@ -145,6 +145,7 @@ function loadCard() {
     var a = cardFor(it);
     if (!a) { it.b.x = 'moves'; ss.keys.splice(ss.idx, 1); saveSession(); loadCard(); return; }
     ss.active = a;
+    if (workedExample(a)) keepProgress(a);
     a.shownAt = Date.now();
     renderCard();
     setTimeout(scrollTrainerTop, 60);
@@ -449,7 +450,7 @@ function keepProgress(a) {
   var ss = ui.session;
   if (!ss || !a) return;
   ss.progress = ss.progress || {};
-  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts };
+  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts, p: a.predraw ? 1 : 0 };
   saveSession();
 }
 /* a miss is kept at once, and brings the first hint for players who need
@@ -1048,6 +1049,26 @@ function hintPrize(a) {
   }
   return best;
 }
+/* S9, the worked example: a tier-1 player's first card of a pattern family
+   (nl:seen:<family> still 0) opens with hint 1's marks drawn, so Hint gives
+   hint 2 and a solve records hint. Never at tiers 2 and 3, on a relearn
+   card, on a card already tried or helped, or when hint 1 draws nothing
+   there (words only: that family waits for a card that can show it).
+   Storage that cannot be read counts as seen. True when it applies */
+function familySeen(fam) {
+  try { var v = localStorage.getItem('nl:seen:' + fam); return v == null ? 0 : +JSON.parse(v) || 0; }
+  catch (e) { return 1; }
+}
+function workedExample(a) {
+  if (!a || a.tier !== 1 || a.hints || a.misses || a.attempts || ss_relearn(a)) return false;
+  if (familySeen(familyOf(patternOf(a.it.b)).key) > 0) return false;
+  a.hints = 1;
+  var hm = hintMarks(a);
+  if (!hm.rings.length && !hm.arrows.length) { a.hints = 0; return false; }
+  a.predraw = true;
+  a.hintAt = 0;
+  return true;
+}
 function finishCard(result, beats) {
   var ss = ui.session, a = ss.active;
   a.phase = 'done';
@@ -1068,6 +1089,13 @@ function finishCard(result, beats) {
   } else {
     a.rec = srsRec(a.it);
     ss.results[a.key + '#r'] = result;
+  }
+  /* the worked example done (S9): the family counts as seen, and the
+     summary says it was a first look (a shown answer stays "Shown") */
+  if (a.predraw) {
+    var fam = familyOf(patternOf(a.it.b)).key;
+    store.set('nl:seen:' + fam, familySeen(fam) + 1);
+    if (!a.revealed && !relearn) (ss.notes = ss.notes || {})[a.key] = 'firstlook';
   }
   a.lines = cardLines(a);
   /* the habit line: every card for newer players, otherwise once a week

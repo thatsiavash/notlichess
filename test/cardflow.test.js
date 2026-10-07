@@ -134,6 +134,17 @@ const SPOILER = `function spoilerFaults(a, f) {
   if (mover && isW(mover) === myPov(a.it) && !sameMove(own, o.anim)) out.push('replays a move of yours, ' + o.anim.map(sqName).join('-'));
   if (!f.pending) out.push('the bar shows the score');
   if (String(o.label || '').split(/[\\s.]+/).indexOf(sanOf(a.st, due)) >= 0) out.push('the board name says ' + sanOf(a.st, due));
+  /* the label (2.1), as a first-sight label and as a short one, on a 384
+     px board: never "better" or "the answer", never over the answer's
+     square (its rectangle as drawn, flipped or not) */
+  var Q = 48, fl = !!o.flip, cx = fl ? 7 - due.to % 8 : due.to % 8, cy = fl ? due.to >> 3 : 7 - (due.to >> 3);
+  [function () { return false; }, function () { return true; }].forEach(function (seen) {
+    var lb = frameLabel(a, f, 384, false, seen);
+    if (!lb) return;
+    window.__labelled = (window.__labelled || 0) + 1;
+    if (lb.text === 'better' || lb.text === 'the answer') out.push('the label "' + lb.text + '" before an answer');
+    if (lb.x < (cx + 1) * Q - 0.5 && lb.x + lb.w > cx * Q + 0.5 && lb.y < (cy + 1) * Q - 0.5 && lb.y + lb.h > cy * Q + 0.5) out.push('the label "' + lb.text + '" on the answer square ' + sqName(due.to));
+  });
   return out;
 }`;
 /* the frames after a miss: the try on the board, then its reason (S4: the
@@ -269,7 +280,7 @@ const BAR = `(function () {
   return 1; })()`;
 
 (async () => {
-  await test('the spoiler rule holds on every card before an answer, tiers 1 to 3 (open, hints 0 to 2, inside a forcing line, after a miss, a hint pressed over a try)', async () => {
+  await test('the spoiler rule holds on every card before an answer, tiers 1 to 3 (open, hints 0 to 2, inside a forcing line, after a miss, a hint pressed over a try), labels included', async () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${SPOILER} ${AFTER}
       var out = [], cards = 0, frames = 0, hinted = 0, its = allMistakes().filter(trainable);
@@ -349,10 +360,11 @@ const BAR = `(function () {
           for (var q = 0; q < 64; q++) if (a.st.b[q] && isW(a.st.b[q]) !== !!a.st.w) { tapNote(a, 'T4', 2500, q); check('T4 on ' + sqName(q)); }
         });
       });
-      return JSON.stringify({ out: out, cards: cards, frames: frames, hinted: hinted, trainable: its.length }); })()`));
+      return JSON.stringify({ out: out, cards: cards, frames: frames, hinted: hinted, trainable: its.length, labelled: window.__labelled || 0 }); })()`));
     ok(r.trainable >= 90 && r.cards === 3 * r.trainable, r.cards + ' cards of ' + r.trainable);
     ok(r.frames >= 20 * r.cards, 'frames ' + r.frames);
     ok(r.hinted >= 3 * r.cards, 'frames with hint marks ' + r.hinted);
+    ok(r.labelled >= r.cards, 'frames with a label ' + r.labelled);
     eq(r.out.length, 0, r.out.length + ' spoilers, first: ' + r.out.slice(0, 3).join(' | '));
     /* a try off the card's lines, tapped: the checking frame, then the
        engine's miss (the stub answers on the next tick) */
@@ -509,7 +521,13 @@ const BAR = `(function () {
         threatOnToInTried: (a.phase = 'tried', doctor(function (g) { g.opts.arrows = [{ from: a.played.to, to: b.to, kind: 'threat' }]; })),
         /* a red game arrow is exempt only as the move played in the game */
         gameElsewhere: (a.phase = 'guess', a.tried = null, doctor(function (g) { g.opts.arrows = [{ from: b.from, to: b.to, kind: 'game' }]; })),
-        gameItself: doctor(function (g) { g.opts.arrows = [{ from: a.played.from, to: a.played.to, kind: 'game' }]; })
+        gameItself: doctor(function (g) { g.opts.arrows = [{ from: a.played.from, to: a.played.to, kind: 'game' }]; }),
+        /* a label: the green words, or any label over the answer's square */
+        labelAnswer: (function () { var fl = frameLabel; frameLabel = function () { return { text: 'the answer', x: 0, y: 0, w: 10, h: 10 }; };
+          try { return doctor(function () {}); } finally { frameLabel = fl; } })(),
+        labelOnTo: (function () { var fl = frameLabel, Q = 48, fp = !!f.opts.flip, cx = fp ? 7 - b.to % 8 : b.to % 8, cy = fp ? b.to >> 3 : 7 - (b.to >> 3);
+          frameLabel = function () { return { text: 'takes', x: cx * Q + 40, y: cy * Q + 10, w: 50, h: 18 }; };
+          try { return doctor(function () {}); } finally { frameLabel = fl; } })()
       }); })()`));
     eq(r.clean, 0, 'the real frame');
     eq(r.allowed, 0, 'marks the rule allows after a miss');
@@ -517,7 +535,7 @@ const BAR = `(function () {
     eq(r.gameItself, 0, 'the red arrow of the game move, as a list arrow');
     ['green', 'gold', 'ringEarly', 'ringOnTo', 'slide', 'bar', 'label', 'greenList', 'goldList', 'ringList', 'threatOnTo', 'prizeOnFrom',
       'ringOnToList', 'token', 'guard', 'tried', 'badge', 'tint', 'threatFromOnFrom', 'threatToOnFrom', 'threatRingOnFrom', 'replyArrowOnTo',
-      'replyRingOnTo', 'threatOnToInTried', 'gameElsewhere'].forEach((k) => ok(r[k] > 0, k + ' not caught'));
+      'replyRingOnTo', 'threatOnToInTried', 'gameElsewhere', 'labelAnswer', 'labelOnTo'].forEach((k) => ok(r[k] > 0, k + ' not caught'));
     /* the forcing reply's own marks, in phase reply: allowed on the reply's
        squares (while it is still to play, it is the move due now), and only
        there */
@@ -4257,7 +4275,7 @@ const BAR = `(function () {
     ok(Math.abs(cut[1] - (74 - 0.34 * 45)) < 1e-6, '74 units stops 0.34 of a square short: ' + cut[1]);
   });
 
-  await test('the board svg is #bwrap\'s first child, the marks svg over it', () => {
+  await test('the board svg is #bwrap\'s first child, the marks svg over it, the labels after them', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       var stub = function () { return { innerHTML: '', textContent: '', style: {}, classList: { toggle: function () {} }, querySelectorAll: function () { return []; } }; };
@@ -4279,7 +4297,9 @@ const BAR = `(function () {
       ok(/^<svg class="board" /.test(p.board), name + ': the board svg comes first');
       ok(/^<svg class="marks" viewBox="0 0 360 360" aria-hidden="true" style="pointer-events:none">/.test(p.marks), name + ': the marks svg comes next, ' + p.marks.slice(0, 60));
       ok(/<use [^>]*data-sq=/.test(p.board) && !/<line|<marker/.test(p.board), name + ': pieces in the board, no arrows');
-      if (f.what === 'promotion') ok(p.marks.indexOf('</svg><div class="promo-card">') > 0, name + ': the promotion card after both');
+      /* the labels (2.1) come third, right after the marks svg */
+      ok(/<\/svg><div class="blabels" aria-hidden="true">(<span class="blabel [^"]*" style="[^"]*">[^<]*<\/span>)?<\/div>/.test(p.marks), name + ': the labels after the marks svg');
+      if (f.what === 'promotion') ok(/<\/svg><div class="blabels"[^>]*>(<span[^>]*>[^<]*<\/span>)?<\/div><div class="promo-card">/.test(p.marks), name + ': the promotion card after all three');
       if (f.what === 'hint 2') ok(/class="hint-ring"/.test(p.marks), name + ': the hint ring in the marks');
     });
   });

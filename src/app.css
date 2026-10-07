@@ -276,6 +276,14 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .mk-fade.fx-in{animation:mk-fade .15s ease-out}
 @keyframes mk-pop{from{transform:scale(.4)}to{transform:none}}
 @keyframes mk-fade{from{opacity:0}to{opacity:1}}
+/* a label names one mark (2.1): a dark pill in its mark's colour, placed in
+   px beside it (placeLabel); it never takes a tap, and fades in once */
+.blabels{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:hidden}
+.blabel{position:absolute;box-sizing:border-box;padding:1px 7px;border:1px solid currentColor;border-radius:5px;background:rgba(22,21,18,.92);
+  font-family:var(--font-body);font-weight:600;font-size:12px;line-height:14px;white-space:nowrap;text-align:center}
+.blabel.fx-in{animation:mk-fade .15s ease-out}
+.bl-red{color:#f0a493}.bl-green{color:#a9d98f}.bl-blue{color:#b9c9dc}.bl-gold{color:#e8c27a}
+@media (min-width:861px){.blabel{font-size:14px;line-height:16px}}
 /* a jump to another position: the old board, laid over the new one, fades
    out in 150 ms; it never takes a tap */
 .xfade{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;animation:xfade-out .15s ease-out forwards}

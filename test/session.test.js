@@ -623,7 +623,7 @@ const PLAIN = `function unplain(s, tier) {
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
-  await test('S1 to S8, S10, S11 and the answered frame fit 26 / 40 / 60 characters and 15 words at every tier, in plain words', () => {
+  await test('S1 to S8, S10, S11 and the answered frame fit 26 / 40 / 60 characters and 15 words at every tier, the board\'s label included, in plain words', () => {
     const A = boot();
     /* the fit ladder's own steps: a row that fits stays as it is; a longer
        one falls to its first sentence; then to the fallback; and a fallback
@@ -645,7 +645,7 @@ const PLAIN = `function unplain(s, tier) {
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       /* the band's caps (FINAL-SPEC 3): row 1 26 characters, row 2 40 and 7
          words, a caption 60 and 8; the chip one short label */
-      var out = [], frames = 0, seen = {}, plainSeen = 0;
+      var out = [], frames = 0, seen = {}, plainSeen = 0, labelled = {};
       ${PLAIN}
       var cap = function (what, s, ch, words) {
         s = String(s || '');
@@ -671,6 +671,19 @@ const PLAIN = `function unplain(s, tier) {
         var strip = String(d.strip || '').replace(/<label class="kb-move">[\\s\\S]*?<\\/label>/g, '').replace(/<[^>]*>/g, ' ');
         var n = [d.row1, d.row2, d.chip, d.cap, strip].concat(d.buttons.map(function (b) { return b.label; })).reduce(function (x, y) { return x + words(y); }, 0);
         if (n > 15) out.push(what + ': ' + n + ' words, ' + [d.row1, d.row2, d.chip, strip.trim()].join(' / ') + ' | ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
+        /* the board's label counts too (principle 5), as a first-sight
+           label or a short one, on a phone's board and the desktop's; it is
+           the first word to go, so the band never shrinks for it */
+        if (!a.explore) [false, true].forEach(function (sn) {
+          [[384, false], [720, true]].forEach(function (sz) {
+            var lb = frameLabel(a, boardOptsFor(a), sz[0], sz[1], function () { return sn; });
+            if (!lb) return;
+            labelled[lb.tip ? 'tip' : 'short'] = (labelled[lb.tip ? 'tip' : 'short'] || 0) + 1;
+            if (n + words(lb.text) > 15) out.push(what + ': ' + (n + words(lb.text)) + ' words with the label "' + lb.text + '"');
+            var badL = unplain(lb.text, a.tier);
+            if (badL) out.push(what + ': the label "' + lb.text + '" at tier ' + a.tier);
+          });
+        });
         return d;
       };
       /* the rest of a line shown (S7), their replies played at once, to the
@@ -963,8 +976,9 @@ const PLAIN = `function unplain(s, tier) {
           }
         });
       });
-      return JSON.stringify({ out: out, frames: frames, seen: seen, plain: plainSeen }); })()`));
+      return JSON.stringify({ out: out, frames: frames, seen: seen, plain: plainSeen, labelled: labelled }); })()`));
     ok(r.frames > 6000 && r.plain > 6 * r.frames, 'frames ' + r.frames + ', strings read for plain words ' + r.plain);
+    ok(r.labelled.tip > 1000 && r.labelled.short > 1000, 'frames with a label, counted in the words: ' + JSON.stringify(r.labelled));
     eq(r.out.length, 0, r.out.length + ' too long or not plain, first: ' + r.out.slice(0, 3).join(' | '));
     ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss outside a line', 'a miss with a reply', 'game move again, its reason', 'a miss that loses nothing, in a line', 'shown, N1',
      'shown, played', 'mid-line shown, settled', 'found, settled', 'works too, settled', 'line found, settled', 'story step', 'story step, N1',

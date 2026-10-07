@@ -646,6 +646,180 @@ function badgeCorner(from, to, flip) {
   }
   return spots[0];
 }
+/* ── labels (FINAL-SPEC 2.1): one pill a frame, beside the mark it names ──
+   The pill's size from a width table: 12 px Lora (about 6.6 px a
+   character) on a phone, 14 px (7.7) on the desktop, 14 px of padding and
+   the 1 px border, 18 or 20 px tall */
+function labelBox(text, desk) {
+  var n = String(text || '').length;
+  return desk ? { w: Math.ceil(n * 7.7 + 16), h: 20 } : { w: Math.ceil(n * 6.6 + 16), h: 18 };
+}
+/* what a label must keep clear of, in px on a board px wide, as drawn
+   (flipped or not): the squares holding pieces (and ghosts), each flagged
+   when an arrow starts or ends there; badges, tokens, rings, crosses and
+   legal dots as boxes; arrow shafts and heads, guard dots, tried lines and
+   drawn shapes as thick segments (their stroke and halo, plus 4 px each
+   side); avoid, squares no label may touch (the answer's square before an
+   answer, 2.3). head, tail: the cells (column, row on screen) the label
+   sits beside; soft: pieces it may cover (a first-sight label, one) */
+function labelGeom(f, px, c, avoid) {
+  var o = f.opts, flip = !!o.flip, s = px / 360, Q = 45 * s;
+  var cell = function (sq) { return [flip ? 7 - sq % 8 : sq % 8, flip ? sq >> 3 : 7 - (sq >> 3)]; };
+  var ctr = function (sq) { var k = cell(sq); return [(k[0] + 0.5) * Q, (k[1] + 0.5) * Q]; };
+  var sqBox = function (sq) { var k = cell(sq); return { x: k[0] * Q, y: k[1] * Q, w: Q, h: Q }; };
+  var disc = function (cx, cy, r) { return { x: cx - r, y: cy - r, w: 2 * r, h: 2 * r }; };
+  var g = { size: px, sq: Q, boxes: [], segs: [], pieces: [], head: cell(c.head), tail: c.tail != null ? cell(c.tail) : null, soft: c.tip ? 1 : 0 };
+  var arrows = [];
+  if (o.ghost) arrows.push({ from: o.ghost[0], to: o.ghost[1], kind: 'explore' });
+  if (o.good) arrows.push({ from: o.good[0], to: o.good[1], kind: 'better' });
+  if (o.bad) arrows.push({ from: o.bad[0], to: o.bad[1], kind: 'game' });
+  arrows = arrows.concat(o.arrows || []);
+  var ends = {}, heads = {};
+  arrows.forEach(function (ar) { ends[ar.from] = ends[ar.to] = 1; });
+  for (var sq = 0; sq < 64; sq++) if (f.st.b[sq]) { var pb = sqBox(sq); pb.end = !!ends[sq]; g.pieces.push(pb); }
+  /* arrows as markArrow draws them: the shaft to its inset end, the head
+     4.2 strokes long and wide around that end (a shy one stops short) */
+  arrows.forEach(function (ar) {
+    var w = (MARK_ARROW[ar.kind] || MARK_ARROW.game).w, a0 = ctr(ar.from), b0 = ctr(ar.to);
+    var dx = b0[0] - a0[0], dy = b0[1] - a0[1], len = Math.sqrt(dx * dx + dy * dy) || 1, ux = dx / len, uy = dy / len;
+    var inset = Q * (heads[ar.to] ? 0.58 : len < Q * 1.6 ? 0.22 : 0.34), ex = b0[0] - ux * inset, ey = b0[1] - uy * inset;
+    heads[ar.to] = 1;
+    g.segs.push({ x1: a0[0], y1: a0[1], x2: ex, y2: ey, r: (w + 2.4) / 2 * s + 4 });
+    g.segs.push({ x1: ex - ux * 2.94 * w * s, y1: ey - uy * 2.94 * w * s, x2: ex + ux * 1.26 * w * s, y2: ey + uy * 1.26 * w * s, r: 2.1 * w * s + 4 });
+  });
+  (o.ghosts || []).forEach(function (gh) { var k = cell(gh.sq); g.pieces.push(sqBox(gh.sq)); g.boxes.push(disc((k[0] * 45 + 37.5) * s, (k[1] * 45 + 7.5) * s, 7 * s)); });
+  (o.badges || []).forEach(function (bd) { var k = cell(bd.sq), at = bd.at || [36, 9]; g.boxes.push(disc((k[0] * 45 + at[0]) * s, (k[1] * 45 + at[1]) * s, 9.8 * s)); });
+  (o.tokens || []).forEach(function (tk) { var k = cell(tk.sq); g.boxes.push(disc((k[0] * 45 + 12.5) * s, (k[1] * 45 + 32.5) * s, 13.7 * s)); });
+  (o.hint != null ? [{ sq: o.hint }] : []).concat(o.rings || []).forEach(function (rg) { var m = ctr(rg.sq); g.boxes.push(disc(m[0], m[1], 23.25 * s)); });
+  (o.guards || []).forEach(function (gd) { var a0 = ctr(gd.from), b0 = ctr(gd.to); g.segs.push({ x1: a0[0], y1: a0[1], x2: b0[0], y2: b0[1], r: 3.5 * s + 4 }); });
+  (o.tried || []).forEach(function (t) {
+    var b0 = ctr(t.sq != null ? t.sq : t.to);
+    if (t.sq == null) { var a0 = ctr(t.from); g.segs.push({ x1: a0[0], y1: a0[1], x2: b0[0], y2: b0[1], r: s + 4 }); }
+    g.boxes.push(disc(b0[0], b0[1], 7 * s));
+  });
+  (o.dots || []).forEach(function (d) { var m = ctr(d); g.boxes.push(f.st.b[d] ? sqBox(d) : disc(m[0], m[1], 5.5 * s)); });
+  (o.shapes || []).forEach(function (sh) {
+    if (sh.at != null) g.boxes.push(sqBox(sh.at));
+    else { var a0 = ctr(sh.from), b0 = ctr(sh.to); g.segs.push({ x1: a0[0], y1: a0[1], x2: b0[0], y2: b0[1], r: 3.5 * s + 4 + 6 * s }); }
+  });
+  (avoid || []).forEach(function (q) { g.boxes.push(sqBox(q)); });
+  return g;
+}
+/* where a w x h label goes (pure; FINAL-SPEC 2.1): beside the arrow's
+   head (or the marked square), its 8 neighbours nearest first, then the 8
+   of the tail; in each neighbour centred on it, then flush with its left
+   edge, then its right (a pill is often wider than a square). The first
+   place that stays on the board and clear of every piece, badge, token,
+   ring and shaft wins (a first-sight label may cover one piece that no
+   arrow starts or ends on); {x, y} in px, or null: no room, no label */
+var LABEL_NEAR = [[0, -1], [0, 1], [1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1]];
+function placeLabel(geom, w, h) {
+  var S = geom.size, Q = geom.sq, E = 0.5;
+  var hit = function (r, b) { return r.x < b.x + b.w - E && b.x < r.x + r.w - E && r.y < b.y + b.h - E && b.y < r.y + r.h - E; };
+  var clear = function (r) {
+    if (r.x < 0 || r.y < 0 || r.x + r.w > S || r.y + r.h > S) return false;
+    var i, n = 0;
+    for (i = 0; i < geom.boxes.length; i++) if (hit(r, geom.boxes[i])) return false;
+    for (i = 0; i < geom.segs.length; i++) if (segRectDist(geom.segs[i], r) < geom.segs[i].r) return false;
+    for (i = 0; i < geom.pieces.length; i++) if (hit(r, geom.pieces[i]) && (geom.pieces[i].end || ++n > (geom.soft || 0))) return false;
+    return true;
+  };
+  var at = [geom.head, geom.tail];
+  for (var j = 0; j < at.length; j++) {
+    if (!at[j]) continue;
+    for (var k = 0; k < LABEL_NEAR.length; k++) {
+      var cx = at[j][0] + LABEL_NEAR[k][0], cy = at[j][1] + LABEL_NEAR[k][1];
+      if (cx < 0 || cx > 7 || cy < 0 || cy > 7) continue;
+      var xs = [(cx + 0.5) * Q - w / 2, cx * Q, (cx + 1) * Q - w];
+      for (var x = 0; x < xs.length; x++) {
+        var r = { x: xs[x], y: (cy + 0.5) * Q - h / 2, w: w, h: h };
+        if (clear(r)) return { x: r.x, y: r.y };
+      }
+    }
+  }
+  return null;
+}
+/* the distance from a segment to a rectangle (0 when they meet) */
+function segRectDist(sg, r) {
+  var x1 = sg.x1, y1 = sg.y1, x2 = sg.x2, y2 = sg.y2;
+  var inR = function (x, y) { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; };
+  if (inR(x1, y1) || inR(x2, y2)) return 0;
+  var ptSeg = function (px, py, ax, ay, bx, by) {
+    var dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy, t = l ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l)) : 0;
+    var qx = ax + t * dx - px, qy = ay + t * dy - py;
+    return Math.sqrt(qx * qx + qy * qy);
+  };
+  var cross = function (ax, ay, bx, by, cx, cy, dx, dy) {
+    var d = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
+    if (!d) return false;
+    var t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / d, u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / d;
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+  };
+  var c = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]], best = Infinity;
+  for (var i = 0; i < 4; i++) {
+    var p = c[i], q = c[(i + 1) % 4];
+    if (cross(x1, y1, x2, y2, p[0], p[1], q[0], q[1])) return 0;
+    best = Math.min(best, ptSeg(p[0], p[1], x1, y1, x2, y2), ptSeg(x1, y1, p[0], p[1], q[0], q[1]), ptSeg(x2, y2, p[0], p[1], q[0], q[1]));
+  }
+  return best;
+}
+/* the label a frame shows on a board px wide, or null (pure): the first of
+   labelCands that fits the words left (labelRoom) and finds a place; before
+   an answer never on the answer's square (2.3; labelCands names the green
+   arrow only once answered). seen(kind): that kind has taught itself already (tipSeen by
+   default). {text, role, tip, mark, x, y, w, h} */
+function frameLabel(a, f, px, desk, seen) {
+  var cands = labelCands(a, f, seen || tipSeen(a));
+  if (!cands.length) return null;
+  var room = labelRoom(a), pre = ['guess', 'checking', 'tried', 'reply'].indexOf(a.phase) >= 0, due = pre ? dueMove(a) : null;
+  for (var i = 0; i < cands.length; i++) {
+    var c = cands[i];
+    if (wordsIn(c.text) > room) continue;
+    var sz = labelBox(c.text, desk), at = placeLabel(labelGeom(f, px, c, due ? [due.to] : []), sz.w, sz.h);
+    if (at) return { text: c.text, role: c.role, tip: c.tip, mark: c.mark, x: at.x, y: at.y, w: sz.w, h: sz.h };
+  }
+  return null;
+}
+/* first sight (2.1): a kind is seen once its label has shown, kept as
+   nl:tip:<kind> (in memory only, so once a page load, when storage is
+   off). Within the state it first showed in, it still counts as unseen, so
+   a repaint there (a selection, the words' beat) keeps the same label */
+var tipHeld = {};
+function tipKey(a) { return a.key + '|' + cardStateKey(a); }
+function tipSeen(a) {
+  var k = tipKey(a);
+  return function (kind) { return tipHeld[kind] !== k && !!store.get('nl:tip:' + kind, 0); };
+}
+/* the label as markup in .blabels (aria-hidden: the band says it), and a
+   first-sight label noted seen once it is on screen */
+function labelHtml(lb, fresh) {
+  return lb ? '<span class="blabel bl-' + lb.role + (fresh ? ' fx-in' : '') + '" style="left:' + Math.round(lb.x) + 'px;top:' + Math.round(lb.y) + 'px;width:' + lb.w + 'px;height:' + lb.h + 'px">' + esc(lb.text) + '</span>' : '';
+}
+/* a label fades in when it first shows, never again on a repaint of the
+   same label (a selection, the words' beat) */
+function labelFresh(a, lb) {
+  var sig = lb ? lb.text + '|' + lb.mark.kind + '|' + (lb.mark.sq != null ? lb.mark.sq : lb.mark.from + '-' + lb.mark.to) : '';
+  var fresh = !!lb && a.labelSig !== sig;
+  a.labelSig = sig;
+  return fresh;
+}
+function labelShown(a, lb) {
+  if (!lb || !lb.tip || tipHeld[lb.tip] === tipKey(a)) return;
+  tipHeld[lb.tip] = tipKey(a);
+  store.set('nl:tip:' + lb.tip, 1);
+}
+function boardPx(bw) { return (bw && bw.clientWidth) || 360; }
+function deskLabels() { return !!(window.matchMedia && window.matchMedia('(min-width:861px)').matches); }
+/* the label over the board as it is now: after a resize, or when the words
+   beside it change (a word for a tap takes the label's room for a while) */
+function paintLabels(a, f) {
+  var bw = el('bwrap'), box = bw && bw.querySelector('.blabels');
+  if (!box || !a) return;
+  var lb = frameLabel(a, f || boardOptsFor(a), boardPx(bw), deskLabels()), fresh = labelFresh(a, lb), was = box.nlHtml;
+  if (!fresh && was != null && lb && was.replace(' fx-in', '') === labelHtml(lb)) { labelShown(a, lb); return; }
+  setHtml(box, labelHtml(lb, fresh));
+  labelShown(a, lb);
+}
 /* S0's marks (S6, V+700) on the settled board st: the game move's ghost
    with its cross, where it went (on a forcing line only when that square is
    empty, and never on the square of the tick, whose badge it would meet);
@@ -718,7 +892,12 @@ function paintBoard(a, instant) {
      already drawn); a card's first board is no change */
   var pos = stateFen(f.st), moved = a.drawnPos != null && a.drawnPos !== pos;
   a.drawnPos = pos;
-  bw.innerHTML = boardSvg(f.st, f.opts) + (a.pendingPromo ? promoHtml(f.st) : '') + fade;
+  /* the label (2.1) after the marks svg, placed on the board as drawn */
+  var lb = frameLabel(a, f, boardPx(bw), deskLabels()), lh = labelHtml(lb, labelFresh(a, lb));
+  bw.innerHTML = boardSvg(f.st, f.opts) + '<div class="blabels" aria-hidden="true">' + lh + '</div>' + (a.pendingPromo ? promoHtml(f.st) : '') + fade;
+  var lbox = bw.querySelector && bw.querySelector('.blabels');
+  if (lbox) lbox.nlHtml = lh;
+  labelShown(a, lb);
   bw.classList.toggle('static', !f.live);
   var ms = f.slideMs || 0;
   /* a move the app shows sounds as its piece is let go (releaseAnims), or
@@ -798,6 +977,7 @@ function paintMarks(a) {
   f.opts.anim = null;
   var html = boardSvg(f.st, f.opts);
   old.outerHTML = html.slice(html.indexOf('</svg>') + 6);
+  paintLabels(a, f);
 }
 /* the board alone, staged: a selection, a drawn shape, a row pointed at
    while exploring. The words stay as they are */
@@ -830,8 +1010,22 @@ function renderCard(beats) {
       + '</div></div>'
       + '<div class="panel" id="cpanel"><div class="strip" id="cstrip"></div><div class="acts-row sticky-acts" id="cbar"></div></div>'
       + '</div>';
+    watchBoardSize();
   }
   stage(beats || ['board', 'land', 'text']);
+}
+/* the label follows the board's size (a phone turned, a window resized):
+   placed again in px, never while a piece slides (the next beat does it) */
+var boardObs = null;
+function watchBoardSize() {
+  if (typeof ResizeObserver === 'undefined') return;
+  if (boardObs) boardObs.disconnect();
+  boardObs = new ResizeObserver(function () {
+    var a = ui.session && ui.session.active;
+    if (a && Date.now() >= motionUntil) paintLabels(a);
+  });
+  var bw = el('bwrap');
+  if (bw) boardObs.observe(bw);
 }
 /* what the card says and offers, as data: the band (bandFor: disc, kind,
    row1, row2, chip, cap, and inside a forcing line its pips), the action
@@ -914,6 +1108,9 @@ function paintText(a) {
   }
   a.focusTask = false;
   paintLive(d);
+  /* the label beside the new words: it goes first when they take its room,
+     and a frame whose piece slid in gets its label now */
+  paintLabels(a);
   /* a miss's verdict is on screen now: its reason's beats run from here;
      so do a settled result's (S0) */
   if (a.reasonFor && a.reasonFor === a.tried && a.phase === 'tried') missReason(a);
@@ -1059,15 +1256,18 @@ function barSlots(a, ss) {
   if (a.phase === 'guess' || (a.phase === 'checking' && !a.checkSaid)) {
     /* Hint is named by the hint it gives next, and switched off when it
        has nothing left to give */
-    return [{ act: 'hint', label: a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint'), cls: 'btn-line', off: a.hints >= 2 },
+    return [{ act: 'hint', label: hintLabel(a), cls: 'btn-line', off: a.hints >= 2 },
             { act: 'reveal', label: 'Show the answer', cls: 'btn-line' }];
   }
   if (a.phase === 'checking') return [{ act: 'takeBack', label: 'Take back', cls: 'btn-line' }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
   /* their reply on its way (S10): the guess bar, switched off; under
      reduced motion the reply waits for its button, alone on the right */
   if (replyButton(a)) return [{ label: '', cls: 'slot-empty', off: true, empty: true }, replyButton(a)];
-  return [{ act: 'hint', label: a.hints >= 2 ? 'No more hints' : (a.hints ? 'Hint 2' : 'Hint'), cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
+  return [{ act: 'hint', label: hintLabel(a), cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
 }
+/* Hint is named by the hint it gives next; the worked example (S9) drew
+   hint 1 unasked, so its button is still plain Hint (it gives hint 2) */
+function hintLabel(a) { return a.hints >= 2 ? 'No more hints' : a.hints && !a.predraw ? 'Hint 2' : 'Hint'; }
 /* "Their reply ›" (S10, S19): under reduced motion no timer moves a piece,
    so the forcing reply waits for this gold button; null when no reply waits */
 function replyButton(a) {
@@ -1087,7 +1287,7 @@ function triedSlots(a, seen) {
   if (t.kind === 'miss' && t.reply && !seen) left = { act: 'seeIt', label: 'See it ›', cls: 'btn-line' };
   else if (t.kind === 'unchecked' || a.misses >= 3) left = { act: 'reveal', label: 'Show the answer', cls: 'btn-line' };
   else if (a.hints >= 2) left = { act: 'hint', label: 'No more hints', cls: 'btn-line', off: true };
-  else left = { act: 'hint', label: a.hints ? 'Hint 2' : 'Hint', cls: 'btn-line' };
+  else left = { act: 'hint', label: hintLabel(a), cls: 'btn-line' };
   return [left, { act: 'tryAgain', label: 'Try again', cls: 'btn-big' }];
 }
 /* a slot as a button: its place (data-slot) for the double-tap guard; a

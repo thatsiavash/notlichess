@@ -80,6 +80,12 @@
     const bx = $('#cband .card-task'), rows = document.querySelectorAll('#cband .bd-r1, #cband .bd-r2, #cband .bd-cap');
     const cut = !bx || bx.scrollHeight > bx.clientHeight || [].some.call(rows, (r) => r.scrollWidth > r.clientWidth + 1 || r.scrollHeight > r.clientHeight + 1);
     if (cut) W.fit.push(what + ': ' + (bx ? bx.innerText.replace(/\n+/g, ' / ') : 'no band'));
+    /* the board's label (2.1), when there is one: whole, on the board, its words inside its pill */
+    const lb = $('#bwrap .blabel'), bd = $('#bwrap .board');
+    if (lb && bd) {
+      const r = lb.getBoundingClientRect(), q = bd.getBoundingClientRect();
+      if (r.left < q.left - 0.5 || r.top < q.top - 0.5 || r.right > q.right + 0.5 || r.bottom > q.bottom + 0.5 || lb.scrollWidth > lb.clientWidth + 1) W.fit.push(what + ': the label "' + lb.textContent + '" is cut or off the board');
+    }
     if (bx && W.h0 == null) W.h0 = bx.offsetHeight;
     else if (bx && bx.offsetHeight !== W.h0) W.fit.push(what + ': the band is ' + bx.offsetHeight + ' px tall, not ' + W.h0);
   };
@@ -96,7 +102,7 @@
     const sc = $('#cstrip').cloneNode(true);
     [].forEach.call(sc.querySelectorAll('.kb-move'), (x) => x.remove());
     const words = (t) => String(t || '').split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length;
-    const n = words(text('#cband')) + words(sc.textContent) + [].reduce.call($$('#cbar a'), (x, b) => x + words(b.textContent), 0);
+    const n = words(text('#cband')) + words(sc.textContent) + [].reduce.call($$('#cbar a'), (x, b) => x + words(b.textContent), 0) + words($('#bwrap .blabel') ? $('#bwrap .blabel').textContent : '');
     if (n > 15 || !text('#cband .bd-cap')) W.story.push(what + ': ' + n + ' words, ' + text('#cband') + ' / ' + sc.textContent + ' / ' + text('#cbar'));
   };
   /* a sideways swipe on the board as a finger makes it, from its middle */
@@ -133,6 +139,13 @@
     const san0 = T.ev('sanOf(ui.session.active.pre, ui.session.active.played)');
     ok('the band reads Your turn / Find a better move than the game move', text('#cband .bd-r1') === 'Your turn' && text('#cband .bd-r2') === 'Find a better move than ' + san0 + '.', text('#cband'));
     bandFits('the card opens');
+    /* S18: a fresh profile's first card names the red arrow once ("Your game move"), beside it on the
+       board, hidden from screen readers (the band says it), and remembers that it did */
+    const lb0 = await until(() => $('#bwrap .blabel'), 3000);
+    ok('the first card ever labels the game arrow "Your game move"', !!lb0 && lb0.textContent === 'Your game move' && lb0.parentNode.getAttribute('aria-hidden') === 'true', lb0 && lb0.textContent);
+    ok('the label is remembered as seen', localStorage.getItem('nl:tip:game') === '1');
+    const wordsOn = () => { const w = (t) => String(t || '').split(/\s+/).filter((x) => /[A-Za-z0-9]/.test(x)).length; return w(text('#cband')) + [].reduce.call($$('#cbar a'), (x, b) => x + w(b.textContent), 0) + w(lb0 ? lb0.textContent : ''); };
+    ok('with the label, at most 15 words on screen', wordsOn() <= 15, wordsOn());
     recOn();
     ok('session mode hides the site chrome', document.body.classList.contains('in-session'));
     ok('the session bar has an end button and progress', !!$('.sb-end') && !!$('.dots'));
