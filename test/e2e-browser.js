@@ -231,7 +231,7 @@
       ok('a right swipe steps back', T.card().story.i === sg.n - 2, JSON.stringify(T.card().story));
     }
     /* a tap on a piece never steps: the outline, and N1 in the strip when the words allow it */
-    const sNow = T.card().story.i, pq = T.ev('(function (a) { var st = frameView(a).st; for (var q = 0; q < 64; q++) if (st.b[q]) return q; return -1; })(ui.session.active)');
+    const sNow = T.card().story.i, pq = T.ev('(function (a) { var st = doneBoard(a); for (var q = 0; q < 64; q++) if (st.b[q]) return q; return -1; })(ui.session.active)');
     fingerTap(pq);
     await sleep(300);
     ok('board taps never change the step', T.card().story.i === sNow && !!$('#bwrap .marks .nope-box'), JSON.stringify(T.card().story));
@@ -254,7 +254,7 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(500);
 
-    /* ── exploring: from Details, three rows, one arrow, a sentence, the way back ─ */
+    /* ── exploring (S14): from Details or •••, at the card position with you to move, the way back ─ */
     click('#cstrip [data-act=details]');
     await until(() => $('#overlay .sheet'), 3000);
     const inv = $('#overlay [data-act=explore]');
@@ -262,10 +262,20 @@
     ok('the answered board is still static before exploring', $('#bwrap').classList.contains('static'));
     if (inv) { recOff(); inv.click(); }
     const xr = await until(() => { const x = T.explore(); return x && x.lines && x.lines.length ? x : null; }, 10000);
+    ok('exploring starts at the card position, with you to move', !!xr && xr.at === 0 && xr.fens[0] === T.ev('stateFen(ui.session.active.pre)') && T.ev('ui.session.active.explore.st.w === myPov(ui.session.active.it)'), xr && xr.fens[0]);
+    ok('the band reads Try your own moves / Stockfish answers each one.', text('#cband .bd-r1') === 'Try your own moves' && text('#cband .bd-r2') === (T.ev('ui.session.active.tier') === 1 ? 'The computer' : 'Stockfish') + ' answers each one.' && !!$('#cband .d-king'), text('#cband'));
+    await sleep(400);
+    ok('the bar is ‹, Play Stockfish\'s pick at the trail\'s end, Continue', /^‹\s*Play Stockfish's pick\s*(Continue|Finish)$/.test(text('#cbar').replace(/\n/g, ' ').trim()), text('#cbar'));
     ok('exploring shows Stockfish\'s best moves', !!xr && document.querySelectorAll('#xp .xp-row:not(.skel)').length >= 2);
+    ok('the panel says Stockfish\'s sentence and keeps Back to the lesson', text('#xp .xp-say') === T.explore().say && !!$('#xp [data-act=exploreOff]'), text('#xp .xp-say'));
     ok('exploring makes the board live', !$('#bwrap').classList.contains('static'));
     ok('rows say your winning chances or words, never a pawn number', !/[+-]\d+\.\d/.test(text('#xp')) && (T.ev('ui.session.active.tier') === 1 || /You \d{1,2}%|mate in \d/.test(text('#xp .xp-rows'))), text('#xp .xp-rows'));
     ok('one arrow at a time while exploring', document.querySelectorAll('#bwrap .ghost-arrow, #bwrap .good-arrow, #bwrap .bad-arrow').length <= 1);
+    if (innerWidth <= 860) {
+      const bb = $('#bwrap .board').getBoundingClientRect(), xb = $('#xp').getBoundingClientRect(), cb = $('#cbar').getBoundingClientRect();
+      const rws = [].filter.call($$('#xp .xp-row'), (r) => r.offsetParent !== null), lb = rws.length ? rws[rws.length - 1].getBoundingClientRect().bottom : 0;
+      ok('on a phone the panel runs from the board\'s foot to the bar, nothing under the bar', xb.top >= bb.bottom - 1 && lb <= cb.top + 0.5 && cb.top - lb < 62 + (T.ev('ui.session.active.tier') === 1 ? 44 : 0), [bb.bottom, xb.top, lb, cb.top].map(Math.round).join(' / '));
+    }
     if (xr) {
       const legal = T.ev(`(function () { var ex = ui.session.active.explore; return legalMoves(ex.st).map(moveUci); })()`);
       const tryU = legal.filter((u) => xr.lines.map((l) => l.pv[0]).indexOf(u) === -1)[0] || legal[0];
@@ -276,12 +286,33 @@
       ok('a tried move gets one sentence', !!said && said.length <= 80 && !/\u2014/.test(said), said);
       await sleep(3000);
       ok('the sentence does not change once written', T.explore() && T.explore().say === said, T.explore() && T.explore().say);
+      /* at the trail's end, the middle button plays Stockfish's pick */
+      const pk = await until(() => { const x = T.explore(); return x && x.at === 1 && x.lines && x.lines.length ? x.lines[0].pv[0] : null; }, 15000);
+      await sleep(600);
+      click('#cbar [data-act=xpFwd]');
+      await sleep(600);
+      ok('Play Stockfish\'s pick plays the gold arrow\'s move', T.explore() && T.explore().at === 2 && T.ev('ui.session.active.explore.nodes[2].mv.uci') === pk, pk);
       click('[data-act=xpBack]');
-      await sleep(200);
-      ok('‹ steps back inside the exploration', T.explore() && T.explore().at === 0);
+      await sleep(700);
+      ok('‹ steps back inside the exploration; › reads ›', T.explore() && T.explore().at === 1 && /^‹\s*›\s*(Continue|Finish)$/.test(text('#cbar').replace(/\n/g, ' ').trim()), text('#cbar'));
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      await sleep(200);
+      await sleep(300);
       ok('Esc returns to the lesson', !T.explore() && T.card().view.mode === 's0' && !!$('#cstrip [data-act=details]'), JSON.stringify(T.card().view));
+      /* from the ••• menu, from a story step: Back to the lesson returns to that step */
+      press('#cbar [data-act=seeWhy]');
+      await storyLanded(0);
+      const sv = JSON.stringify(T.card().view);
+      click('#ctop [data-act=menu]');
+      await until(() => $('#ctop [data-act=explore]'), 3000);
+      ok('the ••• menu offers Try your own moves', !!$('#ctop [data-act=explore]') && $('#ctop [data-act=explore]').textContent === 'Try your own moves');
+      click('#ctop [data-act=explore]');
+      await until(() => T.explore(), 3000);
+      ok('••• opens exploring at the card position', !!T.explore() && T.explore().fens[0] === T.ev('stateFen(ui.session.active.pre)'));
+      click('#xp [data-act=exploreOff]');
+      await sleep(300);
+      ok('Back to the lesson returns to the story step it came from', !T.explore() && JSON.stringify(T.card().view) === sv, JSON.stringify(T.card().view) + ' vs ' + sv);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await sleep(500);
     }
     if (inv) { await sleep(300); recOn(); }
 
@@ -482,7 +513,7 @@
       const dn = await until(() => T.card().phase === 'done', 8000);
       await until(() => T.card().settle === 2, 3000);
       await sleep(300);
-      const any = dn ? T.ev('(function (a) { var st = frameView(a).st; for (var q = 0; q < 64; q++) if (st.b[q]) return q; return -1; })(ui.session.active)') : -1;
+      const any = dn ? T.ev('(function (a) { var st = doneBoard(a); for (var q = 0; q < 64; q++) if (st.b[q]) return q; return -1; })(ui.session.active)') : -1;
       if (any >= 0) fingerTap(any);
       await sleep(300);
       ok('after a dragged solve, the first tap on a piece says where to try moves', !!dn && text('#cband .bd-r2') === T.ev('CARD_COPY.N1(ui.session.active)') && !!$('#bwrap .marks .nope-box'),

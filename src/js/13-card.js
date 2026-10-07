@@ -204,7 +204,7 @@ function sessionClick(sq) {
     if (a.sel >= 0) { a.sel = -1; renderCardBoard(); }
     /* after an answer the board takes no moves: a tap on any piece says
        where to try them (N1), and nothing changes */
-    if (frameView(a).st.b[sq]) tapNote(a, 'N1', 2500, sq);
+    if (doneBoard(a).b[sq]) tapNote(a, 'N1', 2500, sq);
     return;
   }
   if (a.phase !== 'guess') return;
@@ -1069,7 +1069,6 @@ function finishCard(result, beats) {
     ss.results[a.key + '#r'] = result;
   }
   a.lines = cardLines(a);
-  a.invite = inviteFor(a);
   /* the habit line: every card for newer players, otherwise once a week
      per pattern (decided once here, not on every repaint) */
   var habitKey = 'nl:habitSeen:' + patternOf(a.it.b);
@@ -1149,24 +1148,15 @@ function disputeCard(reason) {
 }
 
 /* ── after answering: the frame on screen ───────────────────────────────── */
-/* the position an answered card shows, its last move and the bar's value:
-   S0 and the answer shown, the card's own board as play left it; a story
-   step, its ply landed (or, while a segment's first step crossfades in,
-   where that segment starts). A line view ({line, idx}) is where exploring
-   starts from the invite (until slice 12) */
-function frameView(a) {
-  var v = a.view || { line: 'best', idx: -1 };
-  if (v.mode === 'story') {
-    var s = buildStory(a).steps[v.i], n = s.line.nodes[s.k];
-    if (!v.pre) return { st: n.after, last: [n.move.from, n.move.to], ev: a.it.b.eb };
-    var pn = s.line.nodes[s.k - 1];
-    return { st: n.before, last: pn && pn.move ? [pn.move.from, pn.move.to] : a.preLast, ev: a.it.b.eb };
-  }
-  if (v.mode) return { st: a.st, last: a.lastMove, ev: a.it.b.eb };
-  var L = a.lines && a.lines[v.line];
-  if (!L || !L.states.length) return { st: a.pre, last: a.preLast, ev: a.it.b.eb };
-  if (v.idx < 0) return { st: a.pre, last: a.preLast, ev: a.it.b.eb };
-  var i = Math.min(v.idx, L.states.length - 1);
-  return { st: L.states[i], last: [L.moves[i].from, L.moves[i].to], ev: L.ev[i] != null ? L.ev[i] : a.it.b.eb };
+/* the position an answered card shows: S0 and the answer shown, the card's
+   own board as play left it (a.st); a story step, its ply landed (or, while
+   a segment's first step crossfades in, where that segment starts), with
+   its last move and the bar's value */
+function storyView(a) {
+  var v = a.view, s = buildStory(a).steps[v.i], n = s.line.nodes[s.k];
+  if (!v.pre) return { st: n.after, last: [n.move.from, n.move.to], ev: a.it.b.eb };
+  var pn = s.line.nodes[s.k - 1];
+  return { st: n.before, last: pn && pn.move ? [pn.move.from, pn.move.to] : a.preLast, ev: a.it.b.eb };
 }
+function doneBoard(a) { return a.view && a.view.mode === 'story' ? storyView(a).st : a.st; }
 

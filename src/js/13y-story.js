@@ -27,6 +27,14 @@ var CARD_COPY = {
   T4: function (a) { var s = sidesOf(a); return 'You are ' + s.me + '. Move a ' + s.mine + ' piece.'; },
   T5: function () { return 'That piece can\'t go there.'; },
   N1: function () { return 'To try moves, open Details.'; },
+  /* exploring (S14): its band, and at tier 1 a row's standing in words
+     (X3) from the learner's winning chances w; tiers 2 and 3 keep numbers */
+  X1: function () { return 'Try your own moves'; },
+  X2: function (a) { return (a.tier === 1 ? 'The computer' : 'Stockfish') + ' answers each one.'; },
+  X3: function (a, w) {
+    var opp = sidesOf(a).opp;
+    return w >= 80 ? 'you are winning' : w >= 60 ? 'you are better' : w >= 40 ? 'even game' : w >= 20 ? opp + ' is better' : opp + ' is winning';
+  },
   K1: function (a) { return 'Checking ' + (a.checking || 'your move') + '…'; },
   K2: function () { return 'Still checking.'; },
   M1: function () { return 'Not this one'; },
@@ -561,11 +569,13 @@ function rowRoom(a, b) {
 function cardStateKey(a) {
   var t = a.tried;
   var v = a.view;
-  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, v ? (v.mode === 'story' ? 'story:' + v.i : v.mode || v.line + ':' + v.idx) : '', a.explore ? 'x' : ''].join('|');
+  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, v ? (v.mode === 'story' ? 'story:' + v.i : v.mode) : '', a.explore ? 'x' : ''].join('|');
 }
 function bandOf(a) {
   var t = a.tried, v = a.verdict;
-  if (a.phase === 'done' && a.explore) return { kind: 'explore', cap: sayAt(a, a.explore, a.explore.at) };
+  /* exploring (S14): what it is, in two fixed rows; Stockfish's sentence
+     is in the panel */
+  if (a.phase === 'done' && a.explore) return { disc: 'king', kind: 'explore', row1: CARD_COPY.X1(), row2: CARD_COPY.X2(a) };
   /* the story: one caption for the ply on the board, the card's verdict
      disc kept, a red border on your game's steps, green on the better ones */
   if (a.phase === 'done' && a.view && a.view.mode === 'story') {

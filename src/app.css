@@ -485,11 +485,13 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .tl-play{flex:none;width:0;height:0;margin-top:.5em;border-left:7px solid var(--text-3);border-top:5px solid transparent;border-bottom:5px solid transparent;opacity:.8}
 .tag-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:2px 0 4px}
 .when{font-size:13px;color:var(--text-3)}
-.explore-line{font-size:13.5px;color:var(--text-2);margin:8px 0 0}
 .done-acts .nav-btn{flex:0 0 56px;height:48px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;padding:0}
 .done-acts .btn-big{flex:1 1 auto;justify-content:center;min-height:48px}
 /* the story's bar: [56 px] [1fr] [1fr], the gold one the suggested step */
 .done-acts .btn-line,.done-acts .btn-big{flex:1 1 0;min-width:0;justify-content:center;text-align:center;min-height:48px;display:inline-flex;align-items:center;white-space:nowrap}
+/* exploring's forward slot: "Play Stockfish's pick" at the trail's end may
+   take two lines rather than overflow its column */
+.done-acts .xp-fwd{white-space:normal;line-height:17px;padding:0 8px}
 /* the story's strip: each segment's name and its dots, the step on screen
    larger with a ring; folded to a count over 9 steps */
 .story-strip{display:flex;align-items:center;gap:14px;min-height:44px;flex-wrap:wrap}
@@ -777,6 +779,8 @@ a.lg-row{color:inherit}
 .xp-mv.xp-sf{color:var(--text-3)}
 .xp-mv.on{border-bottom-color:var(--accent)}
 .xp-back{flex:none;font-size:13.5px;color:var(--text-2);padding:8px 0;text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px;cursor:pointer}
+/* Stockfish's sentence: two lines kept, so the rows below never jump */
+.xp-say{margin:6px 0 0;min-height:40px;font-size:15px;line-height:20px;color:var(--text-1);font-variant-numeric:lining-nums}
 .xp-cap{font-size:12px;line-height:18px;color:var(--text-3);margin:8px 0 0}
 .xp-rows{display:flex;flex-direction:column;margin:0 -14px}
 .xp-rows.k1 .xp-row:nth-child(n+2),.xp-rows.k2 .xp-row:nth-child(n+3){display:none}
@@ -794,24 +798,26 @@ a.lg-row{color:inherit}
 .xp-kb{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .xp-kb:focus-within{position:static;width:auto;height:auto;clip:auto;margin:8px 0 4px;display:block}
 .card.xp-card .result{display:none}
-.card.xp-card .tag-row,.card.xp-card .habit,.card.xp-card .explore-line{display:none}
-.xp-back-ph{display:none}
+.card.xp-card .tag-row,.card.xp-card .habit{display:none}
 @media (max-width:860px){
   /* the invite sits right under the red line, above the fixed bar */
   .card:not(.xp-card) .result{display:contents}
   .card:not(.xp-card) .result .tl-bad,.card:not(.xp-card) .result .tl-alt,.card:not(.xp-card) .result .tl-good{order:-3}
-  .explore-line{order:-2;margin-bottom:8px}
   .card:not(.xp-card) .result .tl-opp{order:-1}
   .done-acts{height:calc(64px + env(safe-area-inset-bottom));padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:var(--surface-2)}
   .card.xp-card .panel{padding-top:4px}
   .card.xp-card .result,.card.xp-card .ctx{display:none}
   .xp{order:-2;background:none;border:0;border-radius:0;padding:0;margin:0 calc(-1 * var(--gutter))}
-  .xp-head,.xp-kb{display:none}
+  /* the whole area from the board's foot to the bar (S14): the trail and
+     the way back, the sentence, then as many rows as fit (fitRows) */
+  .xp-kb{display:none}
   .xp-meter{border-radius:0}
+  .xp-head{height:44px;padding:0 var(--gutter)}
+  .xp-back{display:flex;align-items:center;min-height:44px;padding:0;font-size:14px}
+  .xp-say{margin:0 0 4px;padding:0 var(--gutter)}
   .xp-cap{margin:0;padding:0 var(--gutter)}
   .xp-rows{margin:0}
   .xp-row{padding:0 var(--gutter)}
-  .xp-back-ph{display:flex;align-items:center;min-height:44px;font-size:14px;color:var(--text-2);padding:0 var(--gutter);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
 }
 /* text out (2.2): words about to change fade out in 100 ms before the board
    moves, and take no tap meanwhile; the next words take the class off. The

@@ -524,7 +524,8 @@ document.addEventListener('click', function (e) {
     case 'storyJump': storyJump(k); break;
     case 'xpBack': exploreStep(-1); break;
     case 'xpFwd': exploreStep(1); break;
-    case 'explore': if (a) { closeSheet(); startExplore({ view: a.invite && a.invite.view, via: 'invite' }); } break;
+    /* from the Details row, or the ••• item (S14) */
+    case 'explore': if (a) { closeSheet(); startExplore({ via: k === 'menu' ? 'menu' : 'details' }); } break;
     case 'exploreOff': exploreExit('link'); break;
     case 'xpGo': if (a && a.explore) exploreGo(parseInt(k, 10)); break;
     case 'xpRow': if (a && a.explore) {

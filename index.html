@@ -532,11 +532,13 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .tl-play{flex:none;width:0;height:0;margin-top:.5em;border-left:7px solid var(--text-3);border-top:5px solid transparent;border-bottom:5px solid transparent;opacity:.8}
 .tag-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:2px 0 4px}
 .when{font-size:13px;color:var(--text-3)}
-.explore-line{font-size:13.5px;color:var(--text-2);margin:8px 0 0}
 .done-acts .nav-btn{flex:0 0 56px;height:48px;display:inline-flex;align-items:center;justify-content:center;font-size:20px;padding:0}
 .done-acts .btn-big{flex:1 1 auto;justify-content:center;min-height:48px}
 /* the story's bar: [56 px] [1fr] [1fr], the gold one the suggested step */
 .done-acts .btn-line,.done-acts .btn-big{flex:1 1 0;min-width:0;justify-content:center;text-align:center;min-height:48px;display:inline-flex;align-items:center;white-space:nowrap}
+/* exploring's forward slot: "Play Stockfish's pick" at the trail's end may
+   take two lines rather than overflow its column */
+.done-acts .xp-fwd{white-space:normal;line-height:17px;padding:0 8px}
 /* the story's strip: each segment's name and its dots, the step on screen
    larger with a ring; folded to a count over 9 steps */
 .story-strip{display:flex;align-items:center;gap:14px;min-height:44px;flex-wrap:wrap}
@@ -824,6 +826,8 @@ a.lg-row{color:inherit}
 .xp-mv.xp-sf{color:var(--text-3)}
 .xp-mv.on{border-bottom-color:var(--accent)}
 .xp-back{flex:none;font-size:13.5px;color:var(--text-2);padding:8px 0;text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px;cursor:pointer}
+/* Stockfish's sentence: two lines kept, so the rows below never jump */
+.xp-say{margin:6px 0 0;min-height:40px;font-size:15px;line-height:20px;color:var(--text-1);font-variant-numeric:lining-nums}
 .xp-cap{font-size:12px;line-height:18px;color:var(--text-3);margin:8px 0 0}
 .xp-rows{display:flex;flex-direction:column;margin:0 -14px}
 .xp-rows.k1 .xp-row:nth-child(n+2),.xp-rows.k2 .xp-row:nth-child(n+3){display:none}
@@ -841,24 +845,26 @@ a.lg-row{color:inherit}
 .xp-kb{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .xp-kb:focus-within{position:static;width:auto;height:auto;clip:auto;margin:8px 0 4px;display:block}
 .card.xp-card .result{display:none}
-.card.xp-card .tag-row,.card.xp-card .habit,.card.xp-card .explore-line{display:none}
-.xp-back-ph{display:none}
+.card.xp-card .tag-row,.card.xp-card .habit{display:none}
 @media (max-width:860px){
   /* the invite sits right under the red line, above the fixed bar */
   .card:not(.xp-card) .result{display:contents}
   .card:not(.xp-card) .result .tl-bad,.card:not(.xp-card) .result .tl-alt,.card:not(.xp-card) .result .tl-good{order:-3}
-  .explore-line{order:-2;margin-bottom:8px}
   .card:not(.xp-card) .result .tl-opp{order:-1}
   .done-acts{height:calc(64px + env(safe-area-inset-bottom));padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));background:var(--surface-2)}
   .card.xp-card .panel{padding-top:4px}
   .card.xp-card .result,.card.xp-card .ctx{display:none}
   .xp{order:-2;background:none;border:0;border-radius:0;padding:0;margin:0 calc(-1 * var(--gutter))}
-  .xp-head,.xp-kb{display:none}
+  /* the whole area from the board's foot to the bar (S14): the trail and
+     the way back, the sentence, then as many rows as fit (fitRows) */
+  .xp-kb{display:none}
   .xp-meter{border-radius:0}
+  .xp-head{height:44px;padding:0 var(--gutter)}
+  .xp-back{display:flex;align-items:center;min-height:44px;padding:0;font-size:14px}
+  .xp-say{margin:0 0 4px;padding:0 var(--gutter)}
   .xp-cap{margin:0;padding:0 var(--gutter)}
   .xp-rows{margin:0}
   .xp-row{padding:0 var(--gutter)}
-  .xp-back-ph{display:flex;align-items:center;min-height:44px;font-size:14px;color:var(--text-2);padding:0 var(--gutter);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
 }
 /* text out (2.2): words about to change fade out in 100 ms before the board
    moves, and take no tap meanwhile; the next words take the class off. The
@@ -6154,7 +6160,7 @@ function sessionClick(sq) {
     if (a.sel >= 0) { a.sel = -1; renderCardBoard(); }
     /* after an answer the board takes no moves: a tap on any piece says
        where to try them (N1), and nothing changes */
-    if (frameView(a).st.b[sq]) tapNote(a, 'N1', 2500, sq);
+    if (doneBoard(a).b[sq]) tapNote(a, 'N1', 2500, sq);
     return;
   }
   if (a.phase !== 'guess') return;
@@ -7019,7 +7025,6 @@ function finishCard(result, beats) {
     ss.results[a.key + '#r'] = result;
   }
   a.lines = cardLines(a);
-  a.invite = inviteFor(a);
   /* the habit line: every card for newer players, otherwise once a week
      per pattern (decided once here, not on every repaint) */
   var habitKey = 'nl:habitSeen:' + patternOf(a.it.b);
@@ -7099,26 +7104,17 @@ function disputeCard(reason) {
 }
 
 /* ── after answering: the frame on screen ───────────────────────────────── */
-/* the position an answered card shows, its last move and the bar's value:
-   S0 and the answer shown, the card's own board as play left it; a story
-   step, its ply landed (or, while a segment's first step crossfades in,
-   where that segment starts). A line view ({line, idx}) is where exploring
-   starts from the invite (until slice 12) */
-function frameView(a) {
-  var v = a.view || { line: 'best', idx: -1 };
-  if (v.mode === 'story') {
-    var s = buildStory(a).steps[v.i], n = s.line.nodes[s.k];
-    if (!v.pre) return { st: n.after, last: [n.move.from, n.move.to], ev: a.it.b.eb };
-    var pn = s.line.nodes[s.k - 1];
-    return { st: n.before, last: pn && pn.move ? [pn.move.from, pn.move.to] : a.preLast, ev: a.it.b.eb };
-  }
-  if (v.mode) return { st: a.st, last: a.lastMove, ev: a.it.b.eb };
-  var L = a.lines && a.lines[v.line];
-  if (!L || !L.states.length) return { st: a.pre, last: a.preLast, ev: a.it.b.eb };
-  if (v.idx < 0) return { st: a.pre, last: a.preLast, ev: a.it.b.eb };
-  var i = Math.min(v.idx, L.states.length - 1);
-  return { st: L.states[i], last: [L.moves[i].from, L.moves[i].to], ev: L.ev[i] != null ? L.ev[i] : a.it.b.eb };
+/* the position an answered card shows: S0 and the answer shown, the card's
+   own board as play left it (a.st); a story step, its ply landed (or, while
+   a segment's first step crossfades in, where that segment starts), with
+   its last move and the bar's value */
+function storyView(a) {
+  var v = a.view, s = buildStory(a).steps[v.i], n = s.line.nodes[s.k];
+  if (!v.pre) return { st: n.after, last: [n.move.from, n.move.to], ev: a.it.b.eb };
+  var pn = s.line.nodes[s.k - 1];
+  return { st: n.before, last: pn && pn.move ? [pn.move.from, pn.move.to] : a.preLast, ev: a.it.b.eb };
 }
+function doneBoard(a) { return a.view && a.view.mode === 'story' ? storyView(a).st : a.st; }
 
 /* ── Explore: after the answer, test any move ─────────────────────────────
    The board becomes a question box: play the move you doubt, for either
@@ -7137,37 +7133,23 @@ function xpSync(ex) { var n = xpCur(ex); ex.st = n.st; ex.last = n.last; }
 function xpTouch() { return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches; }
 function sideName(w) { return w ? 'White' : 'Black'; }
 
-/* the invite under the lesson, written once when the card is answered:
-   "Why Rxc5?" jumps to the moment the opponent chose */
-function inviteFor(a) {
-  var fallback = { text: 'Move a piece to test an idea. Stockfish answers.', view: null };
-  var L = a.lines && a.lines.best;
-  if (!L || L.moves.length < 2) return fallback;
-  var mine = L.moves[0], reply = L.moves[1], before = L.states[0];
-  var myCapture = a.pre.b[mine.to] != null || mine.ep >= 0;
-  if (legalMoves(before).length < 2) return fallback;
-  if (myCapture && reply.to === mine.to) return fallback;
-  var them = a.it.g.color === 'white' ? 'black' : 'white';
-  return { text: 'Why ' + L.san[1] + '? Try another ' + them + ' move and Stockfish answers.', view: { line: 'best', idx: 0 } };
-}
-
+/* S14: opened only from an answered card's Details row or its ••• item
+   (never by a board tap, never while the engine is down), at the card's
+   own position with the solver to move (U5); it keeps the frame it came
+   from (S0, the answer shown, a story step) to go back to */
+function xpOpen(a) { return !!(a && a.phase === 'done' && !a.explore && !a.pendingPromo && a.lines && SF.state !== 'failed'); }
 function startExplore(o) {
   var a = ui.session && ui.session.active;
-  if (!a || a.phase !== 'done' || a.explore || a.pendingPromo || !a.lines) return;
+  if (!xpOpen(a)) return;
   o = o || {};
   a.menuOpen = false;
   /* the frame it came from, to come back to (S14) */
   var from = a.view ? JSON.parse(JSON.stringify(a.view)) : { mode: 's0' };
   /* a story step comes back landed */
   delete from.pre;
-  if (o.view) a.view = { line: o.view.line, idx: o.view.idx };
-  var v = frameView(a);
   a.xpRes = a.xpRes || {};
-  var ask = o.via === 'invite' && o.view && a.lines.best.uci[1] && posKey(v.st) === posKey(a.lines.best.states[0])
-    ? { uci: a.lines.best.uci[1], san: a.lines.best.san[1] } : null;
-  a.explore = { root: from, nodes: [xpNode(v.st, v.last, null)],
-                at: 0, sel: o.sq != null ? o.sq : -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null,
-                ask: ask, wantRow: o.via === 'invite' ? 0 : null };
+  a.explore = { root: from, nodes: [xpNode(a.pre, a.preLast, null)],
+                at: 0, sel: -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null, wantRow: 0 };
   xpSync(a.explore);
   xpSpoilIndex();
   track('explore_start_' + (o.via || 'link'));
@@ -7181,7 +7163,6 @@ function exploreExit(how) {
   engineStop('explore');
   a.explore = null;
   a.view = JSON.parse(JSON.stringify(root));
-  a.lastView = { line: root.line, idx: root.idx, mode: root.mode };
   track('explore_exit_' + (how || 'link'));
   enginePump();
   if (how === 'silent') return;
@@ -7546,9 +7527,6 @@ function sayAt(a, ex, at) {
     var r = { lines: xpShown(ex, n) || [] }, who = n.st.w === myPov(a.it) ? 'Your move.' : sideName(n.st.w) + ' to move.';
     if (!r.lines[0]) return who + ' Stockfish is thinking…';
     var pick = sanOf(n.st, uciToMove(n.st, r.lines[0].pv[0]));
-    if (at === 0 && ex.ask && r.lines[0].pv[0] !== ex.ask.uci)
-      return fitLine([who + ' Stockfish\'s pick is ' + pick + ', not ' + ex.ask.san + ', the gold arrow. › plays it.',
-        who + ' Stockfish\'s pick is ' + pick + ', not ' + ex.ask.san + '. › plays it.']);
     return who + ' Stockfish\'s pick is ' + pick + ', the gold arrow. › plays it.';
   }
   if (n.mv && n.mv.pick) {
@@ -7602,7 +7580,7 @@ function xpRowWords(a, n, line, best, tier) {
     }
     if (XP_MISSED.indexOf(c.t) !== -1) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return 'misses ' + bs; }
   }
-  return standingWords(winPct(myPov(a.it) ? line.cp : -line.cp));
+  return CARD_COPY.X3(a, winPct(myPov(a.it) ? line.cp : -line.cp));
 }
 function xpRows(a, ex) {
   var n = xpCur(ex), shown = xpShown(ex, n);
@@ -7671,6 +7649,14 @@ var CARD_COPY = {
   T4: function (a) { var s = sidesOf(a); return 'You are ' + s.me + '. Move a ' + s.mine + ' piece.'; },
   T5: function () { return 'That piece can\'t go there.'; },
   N1: function () { return 'To try moves, open Details.'; },
+  /* exploring (S14): its band, and at tier 1 a row's standing in words
+     (X3) from the learner's winning chances w; tiers 2 and 3 keep numbers */
+  X1: function () { return 'Try your own moves'; },
+  X2: function (a) { return (a.tier === 1 ? 'The computer' : 'Stockfish') + ' answers each one.'; },
+  X3: function (a, w) {
+    var opp = sidesOf(a).opp;
+    return w >= 80 ? 'you are winning' : w >= 60 ? 'you are better' : w >= 40 ? 'even game' : w >= 20 ? opp + ' is better' : opp + ' is winning';
+  },
   K1: function (a) { return 'Checking ' + (a.checking || 'your move') + '…'; },
   K2: function () { return 'Still checking.'; },
   M1: function () { return 'Not this one'; },
@@ -8205,11 +8191,13 @@ function rowRoom(a, b) {
 function cardStateKey(a) {
   var t = a.tried;
   var v = a.view;
-  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, v ? (v.mode === 'story' ? 'story:' + v.i : v.mode || v.line + ':' + v.idx) : '', a.explore ? 'x' : ''].join('|');
+  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, v ? (v.mode === 'story' ? 'story:' + v.i : v.mode) : '', a.explore ? 'x' : ''].join('|');
 }
 function bandOf(a) {
   var t = a.tried, v = a.verdict;
-  if (a.phase === 'done' && a.explore) return { kind: 'explore', cap: sayAt(a, a.explore, a.explore.at) };
+  /* exploring (S14): what it is, in two fixed rows; Stockfish's sentence
+     is in the panel */
+  if (a.phase === 'done' && a.explore) return { disc: 'king', kind: 'explore', row1: CARD_COPY.X1(), row2: CARD_COPY.X2(a) };
   /* the story: one caption for the ply on the board, the card's verdict
      disc kept, a red border on your game's steps, green on the better ones */
   if (a.phase === 'done' && a.view && a.view.mode === 'story') {
@@ -8688,7 +8676,7 @@ function boardOptsFor(a) {
        keeps its last value while Stockfish thinks */
     var ev = ex.lastEv;
     if (xr && xr.lines[0] && !quiet) { ev = myPov(it) ? xr.lines[0].cp : -xr.lines[0].cp; evLive = true; }
-    view = { st: ex.st, last: ex.last, ev: ev != null ? ev : frameView(a).ev };
+    view = { st: ex.st, last: ex.last, ev: ev != null ? ev : it.b.eb };
     opts.sel = ex.sel;
     /* one arrow: Stockfish's move, or the row under the pointer */
     var xs = xpShown(ex, xn), hl = xs && !quiet && xs[ex.hot || 0] ? uciToMove(ex.st, xs[ex.hot || 0].pv[0]) : null;
@@ -8701,7 +8689,7 @@ function boardOptsFor(a) {
        step keeps its arrow as the trail: the red game move on G1, the green
        better move on B1; while it crossfades in (pre) the arrow is drawn on
        the position the segment starts from */
-    view = frameView(a);
+    view = storyView(a);
     var S = buildStory(a), sp = S.steps[a.view.i], sn = sp.line.nodes[sp.k];
     if (sp.k === (sp.seg === 'game' ? 0 : sp.from)) {
       if (sp.seg === 'game') opts.bad = [sn.move.from, sn.move.to];
@@ -8723,7 +8711,7 @@ function boardOptsFor(a) {
        played. The answer shown is its green arrow until it is played; in a
        forcing line the next one lands with their reply. Once settled, S0's
        marks (s0Marks) */
-    view = frameView(a);
+    view = { st: a.st, last: a.lastMove, ev: it.b.eb };
     if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animSlow ? 400 : a.animShown ? 320 : 220; }
     var mm = a.markMove, sdue = showDue(a), sl = {}, sfx = null;
     if (mm && sameMove([mm.from, mm.to], view.last)) {
@@ -8757,9 +8745,8 @@ function boardOptsFor(a) {
       }
     }
   } else if (a.phase === 'done') {
-    /* an answered card always shows one of the frames above; a line view
-       only stands while exploring starts from it */
-    view = frameView(a);
+    /* an answered card always shows one of the frames above */
+    view = { st: a.st, last: a.lastMove, ev: it.b.eb };
   } else {
     var st = a.st, last = a.phase === 'checking' ? a.ghostMove : a.lastMove;
     if (a.phase === 'checking' && a.ghostMove) st = checkingFrame(a);
@@ -8969,7 +8956,7 @@ function paintBoard(a, instant) {
   if (a.phase === 'done' && a.explore) {
     if (f.evLive) a.explore.lastEv = f.ev;
     a.explore.anim = null;
-  } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx, mode: a.view.mode };
+  }
   var fade = f.fadeMs ? xfadeHtml(bw.innerHTML) : '';
   /* the position this card last drew, to tell a board change from a
      repaint of the same position (a selection, a mark, a verdict on a move
@@ -9284,8 +9271,10 @@ function barSlots(a, ss) {
     if (a.explore) {
       var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
       var fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
+      /* at the trail's end › plays Stockfish's pick, and says so (S14) */
+      var xEnd = xe.at >= xe.nodes.length - 1;
       return [{ act: 'xpBack', label: '‹', cls: 'nav-btn', aria: xe.at === 0 ? 'Back to the lesson' : 'Back one move' },
-              { act: 'xpFwd', label: '›', cls: 'nav-btn' + (fwdOff ? ' nav-off' : ''), aria: xe.at >= xe.nodes.length - 1 ? 'Play Stockfish\'s pick' : 'Forward one move' }, cont];
+              { act: 'xpFwd', label: xEnd ? 'Play Stockfish\'s pick' : '›', cls: 'btn-line xp-fwd' + (fwdOff ? ' nav-off' : ''), aria: xEnd ? null : 'Forward one move' }, cont];
     }
     /* the story (S12): ‹, Next move › in gold until the last step, where it
        is switched off (outlined, greyed) and Continue turns gold */
@@ -9415,6 +9404,8 @@ function menuHtml(a) {
     + '<a data-act="dispute" data-k="engine">Not a real mistake: I think the engine is wrong</a>'
     + '<span class="sep"></span>'
     + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '<a data-act="details">Details</a>')
+    /* exploring, on an answered card while the engine works (S14, S11) */
+    + (xpOpen(a) ? '<a data-act="explore" data-k="menu">Try your own moves</a>' : '')
     + '<span class="menu-keys">Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>'
     + '</div>';
 }
@@ -9497,8 +9488,8 @@ function detailsHtml() {
   if (SF.state !== 'failed') h += '<div class="acts-row sheet-acts"><a class="btn-line" data-act="explore">Try your own moves with Stockfish ›</a></div>';
   return h;
 }
-/* the exploration: the trail and Stockfish's three best moves (its
-   sentence is the band's caption) */
+/* the exploration (S14): the trail with the way back, Stockfish's
+   sentence, and its three best moves at the position on screen */
 function xpHtml(a) {
   var ex = a.explore, n = xpCur(ex), res = ex.res[n.key], rows = xpRows(a, ex), tier = a.tier || 2;
   var quiet = xpSpoil(n) || xpGameOver(n.st) || n.down;
@@ -9514,7 +9505,8 @@ function xpHtml(a) {
   if (!trail) trail = '<span class="xp-label">Your analysis</span>';
   var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis" tabindex="-1">'
     + '<span class="xp-meter' + (busy ? ' run' : '') + '" aria-hidden="true"><i></i></span>'
-    + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>';
+    + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>'
+    + '<p class="xp-say">' + esc(sayAt(a, ex, ex.at)) + '</p>';
   if (!quiet) {
     var mine = n.st.w === myPov(a.it), who = mine ? 'Your best moves' : sideName(n.st.w) + '\'s best moves';
     h += '<p class="xp-cap">' + who + (tier === 1 ? '' : ' · your winning chances') + '</p>'
@@ -9528,8 +9520,7 @@ function xpHtml(a) {
     else for (var s2 = 0; s2 < (tier === 1 ? 2 : 3); s2++) h += '<div class="xp-row skel" aria-hidden="true">' + (tier === 1 ? '' : '<span class="xp-chip">You 00%</span>') + '<span class="xp-first">00.Nxd3</span><span class="xp-cont">00.Ke2 Rd5</span></div>';
     h += '</div>';
   }
-  h += '<label class="kb-move xp-kb">Type a move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type a move"></label>'
-    + '<a class="xp-back-ph" data-act="exploreOff">Back to the lesson</a></div>';
+  h += '<label class="kb-move xp-kb">Type a move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type a move"></label></div>';
   return h;
 }
 /* the engine in words, for Settings */
@@ -9545,9 +9536,14 @@ function fitRows() {
   if (!bar || !board) return;
   var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap');
   if (window.innerWidth <= 860) {
-    var room = bar.getBoundingClientRect().top - br.bottom - 4;
+    /* on a phone the panel runs from the board's foot to the bar (S14):
+       the rows take the room under the trail and the sentence, and the
+       caption above them only when a row does not need its place */
+    if (cap) cap.style.display = '';
+    var capH = (cap && cap.offsetHeight) || 0;
+    var room = bar.getBoundingClientRect().top - rowsEl.getBoundingClientRect().top + capH - 4;
     k = Math.max(1, Math.min(3, Math.floor(room / 44)));
-    if (cap) cap.style.display = room - 44 * k >= 18 ? '' : 'none';
+    if (cap) cap.style.display = room - 44 * k >= capH ? '' : 'none';
   } else {
     if (cap) cap.style.display = '';
     rowsEl.className = 'xp-rows k3';
@@ -9580,10 +9576,6 @@ function habitFor(a, t, info) {
   }
   if (t === 'endgame' && mover === 'K') return 'In the endgame, check every pawn race before you move your king.';
   return info.habit;
-}
-/* winning chances in words, for newer players */
-function standingWords(w) {
-  return w >= 80 ? 'you are winning' : w >= 60 ? 'you are better' : w >= 40 ? 'about level' : w >= 20 ? 'you are worse' : 'you are losing';
 }
 /* when the card comes back, in a few words */
 function scheduleWords(rec, a) {
@@ -10528,7 +10520,8 @@ document.addEventListener('click', function (e) {
     case 'storyJump': storyJump(k); break;
     case 'xpBack': exploreStep(-1); break;
     case 'xpFwd': exploreStep(1); break;
-    case 'explore': if (a) { closeSheet(); startExplore({ view: a.invite && a.invite.view, via: 'invite' }); } break;
+    /* from the Details row, or the ••• item (S14) */
+    case 'explore': if (a) { closeSheet(); startExplore({ via: k === 'menu' ? 'menu' : 'details' }); } break;
     case 'exploreOff': exploreExit('link'); break;
     case 'xpGo': if (a && a.explore) exploreGo(parseInt(k, 10)); break;
     case 'xpRow': if (a && a.explore) {

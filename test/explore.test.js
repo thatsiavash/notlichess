@@ -67,30 +67,55 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
     eq(A.ev('window.__jobs.filter(function (j) { return j.opts.tag === "explore"; }).length'), 0, 'explore jobs');
   });
 
-  await test('the invite is written once, at most 80 characters', () => {
-    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
-    const inv = A.ev('JSON.stringify(ui.session.active.invite)');
-    const o = JSON.parse(inv);
-    ok(/^Why \S+\? Try another (white|black) move and Stockfish answers\.$/.test(o.text) || o.text === 'Move a piece to test an idea. Stockfish answers.', o.text);
-    ok(o.text.length <= 80, 'length');
-    A.flush(6);
-    eq(A.ev('JSON.stringify(ui.session.active.invite)'), inv, 'unchanged after every timer runs');
+  await test('the Details row and the ••• item open exploring on an answered card; never before it, by a board tap, or with no engine', () => {
+    const A = boot(); A.ev(STUB);
+    /* before an answer: no item, and the action does nothing */
+    A.ev(`(function () { ${OPEN} var it = allMistakes().filter(trainable).filter(function (x) { var a0 = cardFor(x); return a0 && unpackUci(x.b.lu).length >= 2; })[0]; openCard(it); return 1; })()`);
+    ok(A.ev('menuHtml(ui.session.active).indexOf(\'data-act="explore"\')') < 0, 'the ••• item before an answer');
+    A.click('explore', 'menu'); A.click('explore');
+    eq(A.ev('!!ui.session.active.explore'), false, 'exploring before an answer');
+    A.ev('reveal()');
+    ok(A.ev('detailsHtml().indexOf(\'data-act="explore">Try your own moves with Stockfish ›</a>\')') >= 0, 'the Details row');
+    ok(A.ev('menuHtml(ui.session.active).indexOf(\'data-act="explore" data-k="menu">Try your own moves</a>\')') >= 0, 'the ••• item');
+    /* a tap on any piece of the answered board says N1 and opens nothing */
+    const any = A.ev('(function (a) { for (var q = 0; q < 64; q++) if (a.st.b[q]) return q; })(ui.session.active)');
+    A.tap(any);
+    eq(A.ev('!!ui.session.active.explore'), false, 'a board tap opened exploring');
+    A.click('explore');
+    eq(A.ev('!!ui.session.active.explore'), true, 'the Details row opens it');
+    ok(A.ev('menuHtml(ui.session.active).indexOf(\'data-act="explore"\')') < 0, 'the ••• item while exploring');
+    A.ev(`exploreExit('link')`);
+    A.ev('ui.session.active.menuOpen = true');
+    A.click('explore', 'menu');
+    eq(A.ev('!!ui.session.active.explore && !ui.session.active.menuOpen'), true, 'the ••• item opens it and closes the menu');
+    A.ev(`exploreExit('link')`);
+    /* the engine down: hidden everywhere, and nothing opens it (S11) */
+    A.ev(`SF.state = 'failed'`);
+    ok(A.ev('detailsHtml().indexOf(\'data-act="explore"\')') < 0 && A.ev('menuHtml(ui.session.active).indexOf(\'data-act="explore"\')') < 0, 'offered with no engine');
+    A.click('explore'); A.click('explore', 'menu'); A.ev('startExplore({})');
+    eq(A.ev('!!ui.session.active.explore'), false, 'exploring with no engine');
   });
 
-  await test('exploring starts from the frame on screen and asks for three lines', () => {
+  await test('starts at the card position with the solver to move, and asks for three lines', () => {
     const A = boot(); A.ev(STUB); A.ev(ANSWERED);
-    A.ev(`(function () { var a = ui.session.active; a.view = { line: 'refute', idx: 1 }; startExplore({}); return 1; })()`);
-    eq(A.ev('ui.session.active.explore.nodes[0].fen'), A.ev('stateFen(ui.session.active.lines.refute.states[1])'), 'start frame');
-    const j = JSON.parse(A.ev('JSON.stringify(window.__jobs.map(function (j) { return { n: j.nodes, mpv: j.opts.multipv, tag: j.opts.tag, lanes: j.opts.lanes }; }))'));
+    A.ev(`(function () { var a = ui.session.active; a.view = { mode: 's0' }; startExplore({}); return 1; })()`);
+    eq(A.ev('ui.session.active.explore.nodes[0].fen'), A.ev('stateFen(ui.session.active.pre)'), 'start frame');
+    eq(A.ev('ui.session.active.explore.st.w === myPov(ui.session.active.it)'), true, 'the solver to move');
+    eq(A.ev('JSON.stringify(ui.session.active.explore.last)'), A.ev('JSON.stringify(ui.session.active.preLast)'), 'its last move');
+    const j = JSON.parse(A.ev('JSON.stringify(window.__jobs.map(function (j) { return { n: j.nodes, mpv: j.opts.multipv, tag: j.opts.tag, lanes: j.opts.lanes, fen: j.fen }; }))'));
     ok(j.length >= 1 && j[0].n === 250000 && j[0].mpv === 3 && j[0].tag === 'explore' && JSON.stringify(j[0].lanes) === '[0,1]', JSON.stringify(j));
-  });
-
-  await test('the invite jumps to the moment the opponent chose', () => {
-    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
-    const v = JSON.parse(A.ev('JSON.stringify(ui.session.active.invite.view)'));
-    if (!v) return;   /* the fallback starts from the frame on screen */
-    A.ev(`startExplore({ view: ui.session.active.invite.view, via: 'invite' })`);
-    eq(A.ev('ui.session.active.explore.nodes[0].fen'), A.ev('stateFen(ui.session.active.lines.best.states[0])'), 'the position before the reply');
+    eq(j[0].fen, A.ev('stateFen(ui.session.active.pre)'), 'the search is the card position');
+    /* the same start from a story step */
+    A.ev(`exploreExit('silent')`);
+    A.ev(`(function () { var a = ui.session.active; a.view = { mode: 'story', i: 0 }; startExplore({}); return 1; })()`);
+    eq(A.ev('ui.session.active.explore.nodes[0].fen'), A.ev('stateFen(ui.session.active.pre)'), 'from a story step');
+    /* the answer played: the board shows the position after it, exploring still starts before it */
+    A.ev(`exploreExit('silent')`);
+    A.ev('ui.session.active.view = { mode: "show" }; playIt(true)'); A.flush(4);
+    ok(A.ev('stateFen(ui.session.active.st) !== stateFen(ui.session.active.pre)'), 'the answer was played');
+    A.ev(`(function () { SF.state = 'ready'; startExplore({}); return 1; })()`);
+    eq(A.ev('ui.session.active.explore.nodes[0].fen'), A.ev('stateFen(ui.session.active.pre)'), 'after the answer was played');
+    eq(A.ev('ui.session.active.explore.st.w === myPov(ui.session.active.it)'), true, 'the solver to move after the answer was played');
   });
 
   await test('results arrive, the deeper step follows, and the rows and sentence appear', async () => {
@@ -135,16 +160,19 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
 
   await test('a move played by the opponent is judged in words, 80 characters at most', async () => {
     const A = boot(); A.ev(STUB); A.ev(ANSWERED);
-    A.ev(`startExplore({ view: ui.session.active.invite.view || null })`);
-    /* the start: step 1 then step 2 */
-    for (let i = 0; i < 2; i++) { A.ev(`window.__answer(window.__jobs[0], [60, 20, -300])`); await flush(A); }
+    A.ev(`startExplore({})`);
+    /* the solver moves first (the start is the card position), then the opponent: step 1 then step 2 each */
+    A.ev(`(function () { var ex = ui.session.active.explore; explorePlay(legalMoves(ex.st)[0]); return 1; })()`);
+    for (let i = 0; i < 4 && A.ev('window.__jobs.length'); i++) { A.ev(`window.__answer(window.__jobs[0], [60, 20, -300])`); await flush(A); }
+    eq(A.ev('ui.session.active.explore.st.w === myPov(ui.session.active.it)'), false, 'the opponent to move');
     A.ev(`(function () { var ex = ui.session.active.explore, r = ex.res[xpCur(ex).key]; var m = uciToMove(ex.st, r.lines[2].pv[0]); explorePlay(m); return 1; })()`);
+    eq(A.ev('ui.session.active.explore.nodes[2].mv.byYou'), false, 'played by the opponent');
     for (let i = 0; i < 4 && A.ev('window.__jobs.length'); i++) { A.ev(`window.__answer(window.__jobs[0], [200, 100, 50])`); await flush(A); }
-    const say = A.ev('sayAt(ui.session.active, ui.session.active.explore, 1)');
+    const say = A.ev('sayAt(ui.session.active, ui.session.active.explore, 2)');
     ok(!/thinking/.test(say), 'a sentence, not a wait: ' + say);
     ok(say.length <= 80, 'length ' + say.length + ': ' + say);
     ok(!/—/.test(say) && !/[+-]\d+\.\d/.test(say), 'no em dash or pawn number: ' + say);
-    eq(A.ev('sayAt(ui.session.active, ui.session.active.explore, 1)'), say, 'written once');
+    eq(A.ev('sayAt(ui.session.active, ui.session.active.explore, 2)'), say, 'written once');
   });
 
   await test("the opponent's voice never says 'you lose' about the opponent", () => {
@@ -278,6 +306,87 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
   await test("the opponent's voice keeps the learner as 'you' in 'is better'", () => {
     eq(C.themVoice('Nb5 lets your winning position slip: after Na6 Black is better.', 'White', 'Black'),
       "Nb5 lets White's winning position slip: after Na6 you are better.", 'voice');
+  });
+
+  await test('Back to the lesson and Esc return to the exact frame exploring came from: S0, a story step, the answer shown', () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    const frames = JSON.parse(A.ev(`(function () { var a = ui.session.active, n = buildStory(a).steps.length;
+      return JSON.stringify([{ mode: 'show' }, { mode: 's0' }, { mode: 'story', i: 0 }, { mode: 'story', i: n - 1 }]); })()`));
+    for (const f of frames) {
+      for (const how of ['link', 'esc', 'back']) {
+        A.ev(`(function () { var a = ui.session.active; a.view = ${JSON.stringify(f)}; startExplore({}); return 1; })()`);
+        eq(A.ev('!!ui.session.active.explore'), true, JSON.stringify(f) + ': exploring');
+        /* a move or two first: the way back does not depend on where the trail is */
+        A.ev(`(function () { var ex = ui.session.active.explore; explorePlay(legalMoves(ex.st)[0]); return 1; })()`);
+        if (how === 'link') { ok(/data-act="exploreOff"[^>]*>Back to the lesson</.test(A.ev('stripHtml(ui.session.active, ui.session)')), 'the panel keeps Back to the lesson'); A.click('exploreOff'); }
+        else if (how === 'esc') A.key('Escape');
+        else { A.ev('exploreStep(-1)'); A.click('xpBack', null, 0); }
+        eq(A.ev('!!ui.session.active.explore'), false, JSON.stringify(f) + ' ' + how + ': still exploring');
+        eq(A.ev('JSON.stringify(ui.session.active.view)'), JSON.stringify(f), how + ': the frame it came from');
+        eq(A.ev('window.__jobs.filter(function (j) { return j.opts.tag === "explore"; }).length'), 0, how + ': explore jobs left');
+      }
+    }
+    /* a story step still crossfading in comes back landed */
+    A.ev(`(function () { var a = ui.session.active; a.view = { mode: 'story', i: 0, pre: true }; startExplore({}); return 1; })()`);
+    A.key('Escape');
+    eq(A.ev('JSON.stringify(ui.session.active.view)'), JSON.stringify({ mode: 'story', i: 0 }), 'a story step comes back landed');
+  });
+
+  await test('the band says what exploring is; the panel holds the trail, the sentence and the rows; the bar is ‹, › and Continue', async () => {
+    for (const tier of [1, 2, 3]) {
+      const A = boot(); A.ev(STUB);
+      A.ev(`(playerTier = function () { return ${tier}; }, 1)`);
+      A.ev(ANSWERED);
+      A.ev(`(function () { var a = ui.session.active; a.view = { mode: 's0' }; startExplore({}); return 1; })()`);
+      const d = JSON.parse(A.ev('JSON.stringify(displayFor(ui.session.active))'));
+      eq(d.disc + '|' + d.kind + '|' + d.row1 + '|' + d.row2 + '|' + d.cap, 'king|explore|Try your own moves|' + (tier === 1 ? 'The computer' : 'Stockfish') + ' answers each one.|', 'tier ' + tier + ' band');
+      const bar = () => JSON.parse(A.ev('JSON.stringify(barSlots(ui.session.active, ui.session))'));
+      let b = bar();
+      eq(b.map((x) => x.act).join(' '), 'xpBack xpFwd next', 'the bar');
+      eq(b[0].label + '|' + b[0].aria, '‹|Back to the lesson', '‹ at the start');
+      eq(b[1].label, "Play Stockfish's pick", '› at the end of the trail');
+      ok(/nav-off/.test(b[1].cls), '› waits for Stockfish');
+      ok(/^(Continue|Finish)$/.test(b[2].label) && /btn-big/.test(b[2].cls), 'Continue in gold');
+      for (let i = 0; i < 2; i++) { A.ev(`window.__answer(window.__jobs[0], [60, 20, -300])`); await flush(A); }
+      b = bar();
+      ok(!/nav-off/.test(b[1].cls) && b[1].label === "Play Stockfish's pick", 'Play Stockfish\'s pick once it answers');
+      const strip = A.ev('stripHtml(ui.session.active, ui.session)');
+      ok(strip.indexOf('<p class="xp-say">' + A.ev('esc(sayAt(ui.session.active, ui.session.active.explore, 0))') + '</p>') >= 0, 'the sentence in the panel');
+      ok(/xp-trail/.test(strip) && /data-act="exploreOff"/.test(strip) && (strip.match(/data-act="xpRow"/g) || []).length === (tier === 1 ? 2 : 3), 'trail, way back and rows');
+      ok(/Your best moves/.test(strip), 'the solver\'s best moves');
+      /* › plays Stockfish's pick; then ‹ and the trail's own › */
+      const pick = A.ev('ui.session.active.explore.res[xpCur(ui.session.active.explore).key].lines[0].pv[0]');
+      A.click('xpFwd', null, 1);
+      eq(A.ev('ui.session.active.explore.at + " " + ui.session.active.explore.nodes[1].mv.uci + " " + ui.session.active.explore.nodes[1].mv.pick'), '1 ' + pick + ' true', 'Play Stockfish\'s pick plays it');
+      A.ev('exploreStep(-1)');
+      b = bar();
+      eq(b[1].label + '|' + b[1].aria + '|' + /nav-off/.test(b[1].cls), '›|Forward one move|false', '› inside the trail');
+      eq(b[0].aria, 'Back to the lesson', '‹ at the start again');
+      A.ev('exploreStep(1)');
+      eq(bar()[0].aria, 'Back one move', '‹ inside the trail');
+    }
+  });
+
+  await test('tier 1 rows say the standing in words (X3); tiers 2 and 3 keep the numbers', async () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    const words = JSON.parse(A.ev(`(function () { var a = ui.session.active, opp = sidesOf(a).opp;
+      return JSON.stringify({ opp: opp, w: [100, 80, 79.9, 60, 59.9, 40, 39.9, 20, 19.9, 0].map(function (w) { return CARD_COPY.X3(a, w); }) }); })()`));
+    const o = words.opp;
+    eq(words.w.join(' / '), ['you are winning', 'you are winning', 'you are better', 'you are better', 'even game', 'even game', o + ' is better', o + ' is better', o + ' is winning', o + ' is winning'].join(' / '), 'X3');
+    /* on the rows: the words at tier 1, never the old ones; a percentage at tiers 2 and 3 */
+    for (const tier of [1, 2, 3]) {
+      A.ev(`(function () { if (ui.session.active.explore) exploreExit('silent'); SF.state = 'ready'; ui.session.active.tier = ${tier}; ui.session.active.xpRes = {}; startExplore({}); return 1; })()`);
+      for (let i = 0; i < 2; i++) { A.ev(`window.__answer(window.__jobs[0], [10, -30, -60])`); await flush(A); }
+      const rows = JSON.parse(A.ev('JSON.stringify(xpRows(ui.session.active, ui.session.active.explore))'));
+      ok(rows && rows.length, 'rows at tier ' + tier);
+      if (tier === 1) rows.forEach((r) => ok(r.words && !/about level|you are worse|you are losing|%/.test(r.words) && !r.chip, 'tier 1 row: ' + JSON.stringify(r)));
+      else rows.forEach((r) => ok(/^You \d{1,2}%$|mate in/.test(r.chip) && !r.words, 'tier ' + tier + ' row: ' + JSON.stringify(r)));
+    }
+    /* an even position reads "even game" on a row with nothing more to say */
+    A.ev(`(function () { exploreExit('silent'); SF.state = 'ready'; ui.session.active.tier = 1; ui.session.active.xpRes = {}; startExplore({}); return 1; })()`);
+    for (let i = 0; i < 2; i++) { A.ev(`window.__answer(window.__jobs[0], [0, 0, 0])`); await flush(A); }
+    const r1 = JSON.parse(A.ev('JSON.stringify(xpRows(ui.session.active, ui.session.active.explore))'));
+    ok(r1.some((r) => r.words === 'even game'), JSON.stringify(r1.map((r) => r.words)));
   });
 
   results.forEach((l) => console.log(l));

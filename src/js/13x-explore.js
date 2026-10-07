@@ -15,37 +15,23 @@ function xpSync(ex) { var n = xpCur(ex); ex.st = n.st; ex.last = n.last; }
 function xpTouch() { return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches; }
 function sideName(w) { return w ? 'White' : 'Black'; }
 
-/* the invite under the lesson, written once when the card is answered:
-   "Why Rxc5?" jumps to the moment the opponent chose */
-function inviteFor(a) {
-  var fallback = { text: 'Move a piece to test an idea. Stockfish answers.', view: null };
-  var L = a.lines && a.lines.best;
-  if (!L || L.moves.length < 2) return fallback;
-  var mine = L.moves[0], reply = L.moves[1], before = L.states[0];
-  var myCapture = a.pre.b[mine.to] != null || mine.ep >= 0;
-  if (legalMoves(before).length < 2) return fallback;
-  if (myCapture && reply.to === mine.to) return fallback;
-  var them = a.it.g.color === 'white' ? 'black' : 'white';
-  return { text: 'Why ' + L.san[1] + '? Try another ' + them + ' move and Stockfish answers.', view: { line: 'best', idx: 0 } };
-}
-
+/* S14: opened only from an answered card's Details row or its ••• item
+   (never by a board tap, never while the engine is down), at the card's
+   own position with the solver to move (U5); it keeps the frame it came
+   from (S0, the answer shown, a story step) to go back to */
+function xpOpen(a) { return !!(a && a.phase === 'done' && !a.explore && !a.pendingPromo && a.lines && SF.state !== 'failed'); }
 function startExplore(o) {
   var a = ui.session && ui.session.active;
-  if (!a || a.phase !== 'done' || a.explore || a.pendingPromo || !a.lines) return;
+  if (!xpOpen(a)) return;
   o = o || {};
   a.menuOpen = false;
   /* the frame it came from, to come back to (S14) */
   var from = a.view ? JSON.parse(JSON.stringify(a.view)) : { mode: 's0' };
   /* a story step comes back landed */
   delete from.pre;
-  if (o.view) a.view = { line: o.view.line, idx: o.view.idx };
-  var v = frameView(a);
   a.xpRes = a.xpRes || {};
-  var ask = o.via === 'invite' && o.view && a.lines.best.uci[1] && posKey(v.st) === posKey(a.lines.best.states[0])
-    ? { uci: a.lines.best.uci[1], san: a.lines.best.san[1] } : null;
-  a.explore = { root: from, nodes: [xpNode(v.st, v.last, null)],
-                at: 0, sel: o.sq != null ? o.sq : -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null,
-                ask: ask, wantRow: o.via === 'invite' ? 0 : null };
+  a.explore = { root: from, nodes: [xpNode(a.pre, a.preLast, null)],
+                at: 0, sel: -1, res: a.xpRes, hot: 0, k: 3, say: {}, flash: null, wantRow: 0 };
   xpSync(a.explore);
   xpSpoilIndex();
   track('explore_start_' + (o.via || 'link'));
@@ -59,7 +45,6 @@ function exploreExit(how) {
   engineStop('explore');
   a.explore = null;
   a.view = JSON.parse(JSON.stringify(root));
-  a.lastView = { line: root.line, idx: root.idx, mode: root.mode };
   track('explore_exit_' + (how || 'link'));
   enginePump();
   if (how === 'silent') return;
@@ -424,9 +409,6 @@ function sayAt(a, ex, at) {
     var r = { lines: xpShown(ex, n) || [] }, who = n.st.w === myPov(a.it) ? 'Your move.' : sideName(n.st.w) + ' to move.';
     if (!r.lines[0]) return who + ' Stockfish is thinking…';
     var pick = sanOf(n.st, uciToMove(n.st, r.lines[0].pv[0]));
-    if (at === 0 && ex.ask && r.lines[0].pv[0] !== ex.ask.uci)
-      return fitLine([who + ' Stockfish\'s pick is ' + pick + ', not ' + ex.ask.san + ', the gold arrow. › plays it.',
-        who + ' Stockfish\'s pick is ' + pick + ', not ' + ex.ask.san + '. › plays it.']);
     return who + ' Stockfish\'s pick is ' + pick + ', the gold arrow. › plays it.';
   }
   if (n.mv && n.mv.pick) {
@@ -480,7 +462,7 @@ function xpRowWords(a, n, line, best, tier) {
     }
     if (XP_MISSED.indexOf(c.t) !== -1) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return 'misses ' + bs; }
   }
-  return standingWords(winPct(myPov(a.it) ? line.cp : -line.cp));
+  return CARD_COPY.X3(a, winPct(myPov(a.it) ? line.cp : -line.cp));
 }
 function xpRows(a, ex) {
   var n = xpCur(ex), shown = xpShown(ex, n);

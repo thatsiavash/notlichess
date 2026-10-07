@@ -1658,7 +1658,7 @@ const BAR = `(function () {
         A.ev('(function () { var a = ui.session.active; tryAgain(); reveal(); return 1; })()');
         run(1000);
         s = S();
-        const any = A.ev('(function (a) { var st = frameView(a).st; for (var q = 0; q < 64; q++) if (st.b[q]) return q; })(ui.session.active)');
+        const any = A.ev('(function (a) { var st = doneBoard(a); for (var q = 0; q < 64; q++) if (st.b[q]) return q; })(ui.session.active)');
         A.ev(`(sessionClick(${any}), 1)`);
         run(200);
         const s2 = S();
@@ -1719,7 +1719,7 @@ const BAR = `(function () {
       A.drag(c.bf, c.bt, mouse);
       eq(S().phase, 'done', at + ': the dragged answer solves the card');
       run(1500);
-      q = pick('frameView(a).st', -1);
+      q = pick('doneBoard(a)', -1);
       A.tap(q.mine);
       eq(nope(), JSON.stringify([q.mine]), at + ': the first tap after a dragged solve outlines the piece');
       run(200);
@@ -2374,7 +2374,7 @@ const BAR = `(function () {
         if (!d) return;
         reveal(); d.view = { mode: 's0' }; d.settle = 2;
         d.nope = { sq: -1, key: cardStateKey(d), seq: 1 };
-        for (var q2 = 0; q2 < 64; q2++) if (frameView(d).st.b[q2]) { d.nope.sq = q2; break; }
+        for (var q2 = 0; q2 < 64; q2++) if (doneBoard(d).b[q2]) { d.nope.sq = q2; break; }
         n.done++;
         if (!(boardOptsFor(d).opts.rings || []).some(function (m) { return m.kind === 'nope' && m.sq === d.nope.sq; })) out.push(it.key + ': no outline after an answer');
       });
@@ -3735,7 +3735,7 @@ const BAR = `(function () {
             n.inLine++;
             if (f.k !== 3 || moveUci(f.line.nodes[f.k].move) !== moveUci(alt2) || stateFen(f.line.nodes[f.k].before) !== stateFen(st).replace(/ \\d+ \\d+$/, '') + stateFen(f.line.nodes[f.k].before).match(/ \\d+ \\d+$/)[0]) out.push(it.key + ': the alternative in a line starts at node ' + f.k);
             a.view = { mode: 'story', i: S2.g, pre: true };
-            if (posKey(frameView(a).st) !== posKey(st)) out.push(it.key + ': B1 of an alternative in a line does not start where it was played');
+            if (posKey(doneBoard(a)) !== posKey(st)) out.push(it.key + ': B1 of an alternative in a line does not start where it was played');
           }
         });
       });
@@ -3793,7 +3793,7 @@ const BAR = `(function () {
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
     const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && !a.cls.mateAgainst && a.cls.lossAt === 1 && a.cls.bSettle === 1; }).slice(0, 6).map(function (x) { return x.key; }))`));
     ok(keys.length >= 4, 'one-move blunders ' + keys.length);
-    const st = () => JSON.parse(A.ev('JSON.stringify((function (a) { var v = a.view; return { mode: v.mode, i: v.i, fen: stateFen(frameView(a).st), off: /btn-off[^>]*>Next move/.test(window.__els.cbar.innerHTML) }; })(ui.session.active))'));
+    const st = () => JSON.parse(A.ev('JSON.stringify((function (a) { var v = a.view; return { mode: v.mode, i: v.i, fen: stateFen(doneBoard(a)), off: /btn-off[^>]*>Next move/.test(window.__els.cbar.innerHTML) }; })(ui.session.active))'));
     for (const [k, key] of keys.entries()) {
       A.ev(`(function () { window.__show(model().byKey['${key}']); ui.session.keys.push('x'); return 1; })()`);
       run(1000);
@@ -3887,7 +3887,7 @@ const BAR = `(function () {
     A.ev(BAR);
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
     const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && a.cls.lossAt + Math.max(1, a.cls.bSettle) >= 4; }).slice(0, 4).map(function (x) { return x.key; }))`));
-    const st = () => JSON.parse(A.ev('JSON.stringify((function (a) { return { mode: a.view.mode, i: a.view.i, fen: stateFen(frameView(a).st), strip: window.__els.cstrip.innerHTML, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null, nope: !!(a.nope && a.nope.key === cardStateKey(a)) }; })(ui.session.active))'));
+    const st = () => JSON.parse(A.ev('JSON.stringify((function (a) { return { mode: a.view.mode, i: a.view.i, fen: stateFen(doneBoard(a)), strip: window.__els.cstrip.innerHTML, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null, nope: !!(a.nope && a.nope.key === cardStateKey(a)) }; })(ui.session.active))'));
     /* a sideways swipe on the board as a finger makes it: from x to x + dx (the realm draws square sq at 200 + file * 45) */
     const sqs0 = () => A.ev('(function (st) { for (var q = 0; q < 64; q++) if (st.b[q]) return q; })(ui.session.active.pre)');
     const swipe = (x, dx, dy) => { A.pointer('pointerdown', 0, { clientX: x, clientY: 400 }); A.pointer('pointerup', 0, { clientX: x + dx, clientY: 400 + (dy || 0) }); };
@@ -3906,7 +3906,7 @@ const BAR = `(function () {
       A.click('storyFwd', null, 1); run(1200);
       s = st(); eq(s.i, 1, key + ': Next move');
       /* every square tapped: never a step, a piece outlined with N1 where the budget allows it */
-      const sqs = JSON.parse(A.ev('JSON.stringify((function (st) { var p = [], e = []; for (var q = 0; q < 64; q++) (st.b[q] ? p : e).push(q); return { p: p.slice(0, 6), e: e.slice(0, 3) }; })(frameView(ui.session.active).st))'));
+      const sqs = JSON.parse(A.ev('JSON.stringify((function (st) { var p = [], e = []; for (var q = 0; q < 64; q++) (st.b[q] ? p : e).push(q); return { p: p.slice(0, 6), e: e.slice(0, 3) }; })(doneBoard(ui.session.active)))'));
       for (const q of sqs.p.concat(sqs.e)) {
         A.tap(q); run(200);
         const t = st();

@@ -431,7 +431,7 @@ function boardOptsFor(a) {
        keeps its last value while Stockfish thinks */
     var ev = ex.lastEv;
     if (xr && xr.lines[0] && !quiet) { ev = myPov(it) ? xr.lines[0].cp : -xr.lines[0].cp; evLive = true; }
-    view = { st: ex.st, last: ex.last, ev: ev != null ? ev : frameView(a).ev };
+    view = { st: ex.st, last: ex.last, ev: ev != null ? ev : it.b.eb };
     opts.sel = ex.sel;
     /* one arrow: Stockfish's move, or the row under the pointer */
     var xs = xpShown(ex, xn), hl = xs && !quiet && xs[ex.hot || 0] ? uciToMove(ex.st, xs[ex.hot || 0].pv[0]) : null;
@@ -444,7 +444,7 @@ function boardOptsFor(a) {
        step keeps its arrow as the trail: the red game move on G1, the green
        better move on B1; while it crossfades in (pre) the arrow is drawn on
        the position the segment starts from */
-    view = frameView(a);
+    view = storyView(a);
     var S = buildStory(a), sp = S.steps[a.view.i], sn = sp.line.nodes[sp.k];
     if (sp.k === (sp.seg === 'game' ? 0 : sp.from)) {
       if (sp.seg === 'game') opts.bad = [sn.move.from, sn.move.to];
@@ -466,7 +466,7 @@ function boardOptsFor(a) {
        played. The answer shown is its green arrow until it is played; in a
        forcing line the next one lands with their reply. Once settled, S0's
        marks (s0Marks) */
-    view = frameView(a);
+    view = { st: a.st, last: a.lastMove, ev: it.b.eb };
     if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animSlow ? 400 : a.animShown ? 320 : 220; }
     var mm = a.markMove, sdue = showDue(a), sl = {}, sfx = null;
     if (mm && sameMove([mm.from, mm.to], view.last)) {
@@ -500,9 +500,8 @@ function boardOptsFor(a) {
       }
     }
   } else if (a.phase === 'done') {
-    /* an answered card always shows one of the frames above; a line view
-       only stands while exploring starts from it */
-    view = frameView(a);
+    /* an answered card always shows one of the frames above */
+    view = { st: a.st, last: a.lastMove, ev: it.b.eb };
   } else {
     var st = a.st, last = a.phase === 'checking' ? a.ghostMove : a.lastMove;
     if (a.phase === 'checking' && a.ghostMove) st = checkingFrame(a);
@@ -712,7 +711,7 @@ function paintBoard(a, instant) {
   if (a.phase === 'done' && a.explore) {
     if (f.evLive) a.explore.lastEv = f.ev;
     a.explore.anim = null;
-  } else if (a.phase === 'done') a.lastView = { line: a.view.line, idx: a.view.idx, mode: a.view.mode };
+  }
   var fade = f.fadeMs ? xfadeHtml(bw.innerHTML) : '';
   /* the position this card last drew, to tell a board change from a
      repaint of the same position (a selection, a mark, a verdict on a move
@@ -1027,8 +1026,10 @@ function barSlots(a, ss) {
     if (a.explore) {
       var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
       var fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
+      /* at the trail's end › plays Stockfish's pick, and says so (S14) */
+      var xEnd = xe.at >= xe.nodes.length - 1;
       return [{ act: 'xpBack', label: '‹', cls: 'nav-btn', aria: xe.at === 0 ? 'Back to the lesson' : 'Back one move' },
-              { act: 'xpFwd', label: '›', cls: 'nav-btn' + (fwdOff ? ' nav-off' : ''), aria: xe.at >= xe.nodes.length - 1 ? 'Play Stockfish\'s pick' : 'Forward one move' }, cont];
+              { act: 'xpFwd', label: xEnd ? 'Play Stockfish\'s pick' : '›', cls: 'btn-line xp-fwd' + (fwdOff ? ' nav-off' : ''), aria: xEnd ? null : 'Forward one move' }, cont];
     }
     /* the story (S12): ‹, Next move › in gold until the last step, where it
        is switched off (outlined, greyed) and Continue turns gold */
@@ -1158,6 +1159,8 @@ function menuHtml(a) {
     + '<a data-act="dispute" data-k="engine">Not a real mistake: I think the engine is wrong</a>'
     + '<span class="sep"></span>'
     + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '<a data-act="details">Details</a>')
+    /* exploring, on an answered card while the engine works (S14, S11) */
+    + (xpOpen(a) ? '<a data-act="explore" data-k="menu">Try your own moves</a>' : '')
     + '<span class="menu-keys">Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>'
     + '</div>';
 }
@@ -1240,8 +1243,8 @@ function detailsHtml() {
   if (SF.state !== 'failed') h += '<div class="acts-row sheet-acts"><a class="btn-line" data-act="explore">Try your own moves with Stockfish ›</a></div>';
   return h;
 }
-/* the exploration: the trail and Stockfish's three best moves (its
-   sentence is the band's caption) */
+/* the exploration (S14): the trail with the way back, Stockfish's
+   sentence, and its three best moves at the position on screen */
 function xpHtml(a) {
   var ex = a.explore, n = xpCur(ex), res = ex.res[n.key], rows = xpRows(a, ex), tier = a.tier || 2;
   var quiet = xpSpoil(n) || xpGameOver(n.st) || n.down;
@@ -1257,7 +1260,8 @@ function xpHtml(a) {
   if (!trail) trail = '<span class="xp-label">Your analysis</span>';
   var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis" tabindex="-1">'
     + '<span class="xp-meter' + (busy ? ' run' : '') + '" aria-hidden="true"><i></i></span>'
-    + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>';
+    + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>'
+    + '<p class="xp-say">' + esc(sayAt(a, ex, ex.at)) + '</p>';
   if (!quiet) {
     var mine = n.st.w === myPov(a.it), who = mine ? 'Your best moves' : sideName(n.st.w) + '\'s best moves';
     h += '<p class="xp-cap">' + who + (tier === 1 ? '' : ' · your winning chances') + '</p>'
@@ -1271,8 +1275,7 @@ function xpHtml(a) {
     else for (var s2 = 0; s2 < (tier === 1 ? 2 : 3); s2++) h += '<div class="xp-row skel" aria-hidden="true">' + (tier === 1 ? '' : '<span class="xp-chip">You 00%</span>') + '<span class="xp-first">00.Nxd3</span><span class="xp-cont">00.Ke2 Rd5</span></div>';
     h += '</div>';
   }
-  h += '<label class="kb-move xp-kb">Type a move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type a move"></label>'
-    + '<a class="xp-back-ph" data-act="exploreOff">Back to the lesson</a></div>';
+  h += '<label class="kb-move xp-kb">Type a move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type a move"></label></div>';
   return h;
 }
 /* the engine in words, for Settings */
@@ -1288,9 +1291,14 @@ function fitRows() {
   if (!bar || !board) return;
   var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap');
   if (window.innerWidth <= 860) {
-    var room = bar.getBoundingClientRect().top - br.bottom - 4;
+    /* on a phone the panel runs from the board's foot to the bar (S14):
+       the rows take the room under the trail and the sentence, and the
+       caption above them only when a row does not need its place */
+    if (cap) cap.style.display = '';
+    var capH = (cap && cap.offsetHeight) || 0;
+    var room = bar.getBoundingClientRect().top - rowsEl.getBoundingClientRect().top + capH - 4;
     k = Math.max(1, Math.min(3, Math.floor(room / 44)));
-    if (cap) cap.style.display = room - 44 * k >= 18 ? '' : 'none';
+    if (cap) cap.style.display = room - 44 * k >= capH ? '' : 'none';
   } else {
     if (cap) cap.style.display = '';
     rowsEl.className = 'xp-rows k3';
@@ -1323,10 +1331,6 @@ function habitFor(a, t, info) {
   }
   if (t === 'endgame' && mover === 'K') return 'In the endgame, check every pawn race before you move your king.';
   return info.habit;
-}
-/* winning chances in words, for newer players */
-function standingWords(w) {
-  return w >= 80 ? 'you are winning' : w >= 60 ? 'you are better' : w >= 40 ? 'about level' : w >= 20 ? 'you are worse' : 'you are losing';
 }
 /* when the card comes back, in a few words */
 function scheduleWords(rec, a) {
