@@ -7026,10 +7026,11 @@ function hintPrize(a) {
    hint 2 and a solve records hint. Never at tiers 2 and 3, on a relearn
    card, on a card already tried or helped, or when hint 1 draws nothing
    there (words only: that family waits for a card that can show it).
-   Storage that cannot be read counts as seen. True when it applies */
+   Storage that cannot be read counts as seen; a count that could not be
+   written is kept in store's memory for the page load. True when it applies */
 function familySeen(fam) {
-  try { var v = localStorage.getItem('nl:seen:' + fam); return v == null ? 0 : +JSON.parse(v) || 0; }
-  catch (e) { return 1; }
+  try { localStorage.getItem('nl:seen:' + fam); } catch (e) { return 1; }
+  return +store.get('nl:seen:' + fam, 0) || 0;
 }
 function workedExample(a) {
   if (!a || a.tier !== 1 || a.hints || a.misses || a.attempts || ss_relearn(a)) return false;
@@ -8303,10 +8304,9 @@ function bandOf(a) {
      only, from before the last miss, gives the task back (T1, T2). A
      hint set with no showing recorded (hintAt) counts as this one's */
   var mid = a.sol && a.solIdx > 0, hm = a.hints >= 1 ? hintMarks(a) : null;
-  /* the worked example (S9) opens as any card does, its hint's marks
-     already drawn and named by their label: the task until a miss */
-  var worked = a.predraw && a.hints === 1 && !a.misses;
-  if (a.hints >= 1 && !worked && (a.hintAfter || !mid) && (a.hintAt == null || a.hintAt === a.misses || hm.rings.length + hm.arrows.length > 0)) {
+  /* the worked example (S9) says its drawn hint as any hint 1 does ("Hint
+     1 of 2", what the game move runs into), from its first frame */
+  if (a.hints >= 1 && (a.hintAfter || !mid) && (a.hintAt == null || a.hintAt === a.misses || hm.rings.length + hm.arrows.length > 0)) {
     var h = hintText(a);
     return { disc: 'king', kind: 'hint', row1: h.row1, cands: h.cands, fall: h.fall };
   }
@@ -8345,25 +8345,24 @@ function moveDoes(pos, from, to) {
 /* a threat arrow in words (L): checkmate, a draw, what it takes ("free
    knight" when nothing guards it), a fork ("hits two", "fork" at tier 3),
    a check, a pin ("stuck", "pinned" at tier 3); and its first-sight words,
-   "{Opp} can take" or "{Opp} can check". Hint 1's danger (the arrow keyed
-   hint) is drawn on the card position before the game move that allows it,
-   so it reads from the position after that move, as "takes". S0's pair is
-   the game's reply, read where it was played: only while the piece it took
-   is still drawn on its square (or as the ghost there). null: nothing true
-   to say */
+   "{Opp} can take" or "{Opp} can check". Every word is read on the board as
+   drawn, its piece to move: S0's ghost counts as the piece on its square.
+   Hint 1's danger (the arrow keyed hint) is the reply the game line has
+   after the game move, not one on the board now: no first-sight words, and
+   "takes" only when that capture of one of yours is there as drawn (S8).
+   null: nothing true to say */
 function threatSay(a, f, ar) {
-  var gl = a.cls && a.cls.gameLine, n1 = gl && gl.nodes[1];
-  var s0 = a.phase === 'done' && a.view && a.view.mode === 's0';
-  var pos = ar.key === 'hint' || s0 ? n1 && n1.before : f.st;
-  var d = pos && moveDoes(pos, ar.from, ar.to);
+  var ap = f.st.b[ar.from];
+  if (!ap) return null;
+  var pos = cloneState(f.st), s0 = a.phase === 'done' && a.view && a.view.mode === 's0';
+  pos.w = colorW(ap);
+  pos.ep = -1;
+  if (s0) (f.opts.ghosts || []).forEach(function (g) { if (g.sq === ar.to && !pos.b[g.sq]) pos.b[g.sq] = g.p; });
+  var d = moveDoes(pos, ar.from, ar.to);
   if (!d) return null;
-  if (s0 && d.took) {
-    var gh = (f.opts.ghosts || []).filter(function (g) { return g.sq === ar.to; })[0];
-    if (f.st.b[ar.to] !== d.took && !(gh && gh.p === d.took && !f.st.b[ar.to])) return null;
-  }
-  var t = a.tier, opp = sidesOf(a).opp, say;
-  if (ar.key === 'hint') say = d.mate ? 'mate' : d.took ? 'takes' : d.check ? 'check' : '';
-  else say = d.mate ? 'mate' : d.draw ? 'draw' : d.took ? (d.free ? 'free ' + PIECE_WORD[pType(d.took)] : 'takes')
+  if (ar.key === 'hint') return d.took && colorW(d.took) === myPov(a.it) ? { say: 'takes', teach: '', does: d } : null;
+  var t = a.tier, opp = sidesOf(a).opp;
+  var say = d.mate ? 'mate' : d.draw ? 'draw' : d.took ? (d.free ? 'free ' + PIECE_WORD[pType(d.took)] : 'takes')
     : d.fork ? (t === 3 ? 'fork' : 'hits two') : d.check ? 'check' : d.pin ? (t === 3 ? 'pinned' : 'stuck') : '';
   return { say: say, teach: d.took ? opp + ' can take' : d.check ? opp + ' can check' : '', does: d };
 }
@@ -8374,7 +8373,10 @@ function threatSay(a, f, ar) {
    kind of mark has taught itself already. Each: {text, role (red, green,
    blue, gold), tip (its first-sight kind), head, tail (the squares it sits
    beside: an arrow's head and tail, or the marked square), mark (what it
-   names)}. Nothing while a piece slides: words never change in a slide */
+   names)}. A short label of a kind that teaches itself (a threat's words,
+   "lost") waits until that kind has: where its first-sight words do not
+   fit, that kind has no label yet. Nothing while a piece slides: words
+   never change in a slide */
 function labelCands(a, f, seen) {
   var o = f.opts, first = {}, short = [], answered = a.phase === 'done';
   if (!LABELS_ON || o.anim || o.decor) return [];
@@ -8391,7 +8393,7 @@ function labelCands(a, f, seen) {
       if (!w) return;
       mk.does = w.does;
       if (w.teach && !seen('threat') && !first.threat) first.threat = cand(w.teach, 'red', 'threat', ar.to, ar.from, mk);
-      if (w.say) short.push(cand(w.say, 'red', null, ar.to, ar.from, mk, 1));
+      if (w.say && seen('threat')) short.push(cand(w.say, 'red', null, ar.to, ar.from, mk, 1));
     }
     else if (ar.kind === 'reply') short.push(cand('their reply', 'blue', null, ar.to, ar.from, mk, 0));
     else if (ar.kind === 'better' && answered) short.push(cand(ar.key === 'answer' ? 'the answer' : 'better', 'green', null, ar.to, ar.from, mk, 3));
@@ -8402,7 +8404,7 @@ function labelCands(a, f, seen) {
     var mk = { kind: 'token', sq: tk.sq, p: tk.p };
     if (!seen('token') && !first.token) first.token = cand('Lost piece', 'red', 'token', tk.sq, null, mk);
     /* "lost": the piece See it's reply took, as it lands (S4) */
-    if (a.phase === 'tried' && a.tried && a.tried.seen) short.push(cand('lost', 'red', null, tk.sq, null, mk, 2));
+    if (a.phase === 'tried' && a.tried && a.tried.seen && seen('token')) short.push(cand('lost', 'red', null, tk.sq, null, mk, 2));
   });
   (o.ghosts || []).forEach(function (g) {
     if (!seen('ghost') && !first.ghost) first.ghost = cand(gameSan(a) + ' in your game', 'red', 'ghost', g.sq, null, { kind: 'ghost', sq: g.sq, p: g.p });
@@ -9078,12 +9080,37 @@ function badgeCorner(from, to, flip) {
   return spots[0];
 }
 /* ── labels (FINAL-SPEC 2.1): one pill a frame, beside the mark it names ──
-   The pill's size from a width table: 12 px Lora (about 6.6 px a
-   character) on a phone, 14 px (7.7) on the desktop, 14 px of padding and
-   the 1 px border, 18 or 20 px tall */
+   The pill's size: its words measured in the font the page draws them in
+   (12 px on a phone, 14 on the desktop, Lora 600 or whatever stands in for
+   it: Georgia sets wider), plus 14 px of padding, the 1 px border and 2 px
+   to spare, 18 or 20 px tall. Measured once per text and size, again when a
+   font arrives; where nothing can measure (no canvas), a table wide enough
+   for Georgia's bold: 7.4 px a character and 4 to spare at 12 px, 8.7 and
+   5 at 14 */
+var labelW = {}, labelCtx = null;
+function labelMeasure(text, fs) {
+  var k = fs + '|' + text;
+  if (k in labelW) return labelW[k];
+  var w = null;
+  try {
+    if (labelCtx == null) {
+      var cv = document.createElement('canvas');
+      labelCtx = (cv && cv.getContext && cv.getContext('2d')) || false;
+      if (labelCtx && document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', function () { labelW = {}; });
+    }
+    if (labelCtx) {
+      var fam = window.getComputedStyle(document.documentElement).getPropertyValue('--font-body').trim() || 'Georgia, serif';
+      labelCtx.font = '600 ' + fs + 'px ' + fam;
+      w = labelCtx.measureText(text).width;
+    }
+  } catch (e) { w = null; }
+  if (!(w > 0)) w = null;
+  return (labelW[k] = w);
+}
 function labelBox(text, desk) {
-  var n = String(text || '').length;
-  return desk ? { w: Math.ceil(n * 7.7 + 16), h: 20 } : { w: Math.ceil(n * 6.6 + 16), h: 18 };
+  var t = String(text || ''), n = t.length, fs = desk ? 14 : 12, m = labelMeasure(t, fs);
+  var w = m != null ? m + 18 : desk ? n * 8.7 + 21 : n * 7.4 + 20;
+  return { w: Math.ceil(w), h: desk ? 20 : 18 };
 }
 /* what a label must keep clear of, in px on a board px wide, as drawn
    (flipped or not): the squares holding pieces (and ghosts), each flagged
@@ -9141,33 +9168,35 @@ function labelGeom(f, px, c, avoid) {
    of the tail; in each neighbour centred on it, then flush with its left
    edge, then its right (a pill is often wider than a square). The first
    place that stays on the board and clear of every piece, badge, token,
-   ring and shaft wins (a first-sight label may cover one piece that no
-   arrow starts or ends on); {x, y} in px, or null: no room, no label */
+   ring and shaft wins. A first-sight label may cover one piece that no
+   arrow starts or ends on, but only where no place is clear of them all;
+   {x, y} in px, or null: no room, no label */
 var LABEL_NEAR = [[0, -1], [0, 1], [1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1]];
 function placeLabel(geom, w, h) {
   var S = geom.size, Q = geom.sq, E = 0.5;
   var hit = function (r, b) { return r.x < b.x + b.w - E && b.x < r.x + r.w - E && r.y < b.y + b.h - E && b.y < r.y + r.h - E; };
-  var clear = function (r) {
+  var clear = function (r, soft) {
     if (r.x < 0 || r.y < 0 || r.x + r.w > S || r.y + r.h > S) return false;
     var i, n = 0;
     for (i = 0; i < geom.boxes.length; i++) if (hit(r, geom.boxes[i])) return false;
     for (i = 0; i < geom.segs.length; i++) if (segRectDist(geom.segs[i], r) < geom.segs[i].r) return false;
-    for (i = 0; i < geom.pieces.length; i++) if (hit(r, geom.pieces[i]) && (geom.pieces[i].end || ++n > (geom.soft || 0))) return false;
+    for (i = 0; i < geom.pieces.length; i++) if (hit(r, geom.pieces[i]) && (geom.pieces[i].end || ++n > soft)) return false;
     return true;
   };
-  var at = [geom.head, geom.tail];
-  for (var j = 0; j < at.length; j++) {
-    if (!at[j]) continue;
-    for (var k = 0; k < LABEL_NEAR.length; k++) {
-      var cx = at[j][0] + LABEL_NEAR[k][0], cy = at[j][1] + LABEL_NEAR[k][1];
-      if (cx < 0 || cx > 7 || cy < 0 || cy > 7) continue;
-      var xs = [(cx + 0.5) * Q - w / 2, cx * Q, (cx + 1) * Q - w];
-      for (var x = 0; x < xs.length; x++) {
-        var r = { x: xs[x], y: (cy + 0.5) * Q - h / 2, w: w, h: h };
-        if (clear(r)) return { x: r.x, y: r.y };
+  var at = [geom.head, geom.tail], passes = geom.soft ? [0, geom.soft] : [0];
+  for (var p = 0; p < passes.length; p++)
+    for (var j = 0; j < at.length; j++) {
+      if (!at[j]) continue;
+      for (var k = 0; k < LABEL_NEAR.length; k++) {
+        var cx = at[j][0] + LABEL_NEAR[k][0], cy = at[j][1] + LABEL_NEAR[k][1];
+        if (cx < 0 || cx > 7 || cy < 0 || cy > 7) continue;
+        var xs = [(cx + 0.5) * Q - w / 2, cx * Q, (cx + 1) * Q - w];
+        for (var x = 0; x < xs.length; x++) {
+          var r = { x: xs[x], y: (cy + 0.5) * Q - h / 2, w: w, h: h };
+          if (clear(r, passes[p])) return { x: r.x, y: r.y };
+        }
       }
     }
-  }
   return null;
 }
 /* the distance from a segment to a rectangle (0 when they meet) */
@@ -9194,7 +9223,7 @@ function segRectDist(sg, r) {
   }
   return best;
 }
-/* the label a frame shows on a board px wide, or null (pure): the first of
+/* the label a frame shows on a board px wide, or null: the first of
    labelCands that fits the words left (labelRoom) and finds a place; before
    an answer never on the answer's square (2.3; labelCands names the green
    arrow only once answered). seen(kind): that kind has taught itself already (tipSeen by
@@ -9696,9 +9725,9 @@ function barSlots(a, ss) {
   if (replyButton(a)) return [{ label: '', cls: 'slot-empty', off: true, empty: true }, replyButton(a)];
   return [{ act: 'hint', label: hintLabel(a), cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
 }
-/* Hint is named by the hint it gives next; the worked example (S9) drew
-   hint 1 unasked, so its button is still plain Hint (it gives hint 2) */
-function hintLabel(a) { return a.hints >= 2 ? 'No more hints' : a.hints && !a.predraw ? 'Hint 2' : 'Hint'; }
+/* Hint is named by the hint it gives next: the worked example (S9), whose
+   band says "Hint 1 of 2" from the start, reads "Hint 2" too */
+function hintLabel(a) { return a.hints >= 2 ? 'No more hints' : a.hints ? 'Hint 2' : 'Hint'; }
 /* "Their reply ›" (S10, S19): under reduced motion no timer moves a piece,
    so the forcing reply waits for this gold button; null when no reply waits */
 function replyButton(a) {

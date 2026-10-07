@@ -613,10 +613,9 @@ function bandOf(a) {
      only, from before the last miss, gives the task back (T1, T2). A
      hint set with no showing recorded (hintAt) counts as this one's */
   var mid = a.sol && a.solIdx > 0, hm = a.hints >= 1 ? hintMarks(a) : null;
-  /* the worked example (S9) opens as any card does, its hint's marks
-     already drawn and named by their label: the task until a miss */
-  var worked = a.predraw && a.hints === 1 && !a.misses;
-  if (a.hints >= 1 && !worked && (a.hintAfter || !mid) && (a.hintAt == null || a.hintAt === a.misses || hm.rings.length + hm.arrows.length > 0)) {
+  /* the worked example (S9) says its drawn hint as any hint 1 does ("Hint
+     1 of 2", what the game move runs into), from its first frame */
+  if (a.hints >= 1 && (a.hintAfter || !mid) && (a.hintAt == null || a.hintAt === a.misses || hm.rings.length + hm.arrows.length > 0)) {
     var h = hintText(a);
     return { disc: 'king', kind: 'hint', row1: h.row1, cands: h.cands, fall: h.fall };
   }
@@ -655,25 +654,24 @@ function moveDoes(pos, from, to) {
 /* a threat arrow in words (L): checkmate, a draw, what it takes ("free
    knight" when nothing guards it), a fork ("hits two", "fork" at tier 3),
    a check, a pin ("stuck", "pinned" at tier 3); and its first-sight words,
-   "{Opp} can take" or "{Opp} can check". Hint 1's danger (the arrow keyed
-   hint) is drawn on the card position before the game move that allows it,
-   so it reads from the position after that move, as "takes". S0's pair is
-   the game's reply, read where it was played: only while the piece it took
-   is still drawn on its square (or as the ghost there). null: nothing true
-   to say */
+   "{Opp} can take" or "{Opp} can check". Every word is read on the board as
+   drawn, its piece to move: S0's ghost counts as the piece on its square.
+   Hint 1's danger (the arrow keyed hint) is the reply the game line has
+   after the game move, not one on the board now: no first-sight words, and
+   "takes" only when that capture of one of yours is there as drawn (S8).
+   null: nothing true to say */
 function threatSay(a, f, ar) {
-  var gl = a.cls && a.cls.gameLine, n1 = gl && gl.nodes[1];
-  var s0 = a.phase === 'done' && a.view && a.view.mode === 's0';
-  var pos = ar.key === 'hint' || s0 ? n1 && n1.before : f.st;
-  var d = pos && moveDoes(pos, ar.from, ar.to);
+  var ap = f.st.b[ar.from];
+  if (!ap) return null;
+  var pos = cloneState(f.st), s0 = a.phase === 'done' && a.view && a.view.mode === 's0';
+  pos.w = colorW(ap);
+  pos.ep = -1;
+  if (s0) (f.opts.ghosts || []).forEach(function (g) { if (g.sq === ar.to && !pos.b[g.sq]) pos.b[g.sq] = g.p; });
+  var d = moveDoes(pos, ar.from, ar.to);
   if (!d) return null;
-  if (s0 && d.took) {
-    var gh = (f.opts.ghosts || []).filter(function (g) { return g.sq === ar.to; })[0];
-    if (f.st.b[ar.to] !== d.took && !(gh && gh.p === d.took && !f.st.b[ar.to])) return null;
-  }
-  var t = a.tier, opp = sidesOf(a).opp, say;
-  if (ar.key === 'hint') say = d.mate ? 'mate' : d.took ? 'takes' : d.check ? 'check' : '';
-  else say = d.mate ? 'mate' : d.draw ? 'draw' : d.took ? (d.free ? 'free ' + PIECE_WORD[pType(d.took)] : 'takes')
+  if (ar.key === 'hint') return d.took && colorW(d.took) === myPov(a.it) ? { say: 'takes', teach: '', does: d } : null;
+  var t = a.tier, opp = sidesOf(a).opp;
+  var say = d.mate ? 'mate' : d.draw ? 'draw' : d.took ? (d.free ? 'free ' + PIECE_WORD[pType(d.took)] : 'takes')
     : d.fork ? (t === 3 ? 'fork' : 'hits two') : d.check ? 'check' : d.pin ? (t === 3 ? 'pinned' : 'stuck') : '';
   return { say: say, teach: d.took ? opp + ' can take' : d.check ? opp + ' can check' : '', does: d };
 }
@@ -684,7 +682,10 @@ function threatSay(a, f, ar) {
    kind of mark has taught itself already. Each: {text, role (red, green,
    blue, gold), tip (its first-sight kind), head, tail (the squares it sits
    beside: an arrow's head and tail, or the marked square), mark (what it
-   names)}. Nothing while a piece slides: words never change in a slide */
+   names)}. A short label of a kind that teaches itself (a threat's words,
+   "lost") waits until that kind has: where its first-sight words do not
+   fit, that kind has no label yet. Nothing while a piece slides: words
+   never change in a slide */
 function labelCands(a, f, seen) {
   var o = f.opts, first = {}, short = [], answered = a.phase === 'done';
   if (!LABELS_ON || o.anim || o.decor) return [];
@@ -701,7 +702,7 @@ function labelCands(a, f, seen) {
       if (!w) return;
       mk.does = w.does;
       if (w.teach && !seen('threat') && !first.threat) first.threat = cand(w.teach, 'red', 'threat', ar.to, ar.from, mk);
-      if (w.say) short.push(cand(w.say, 'red', null, ar.to, ar.from, mk, 1));
+      if (w.say && seen('threat')) short.push(cand(w.say, 'red', null, ar.to, ar.from, mk, 1));
     }
     else if (ar.kind === 'reply') short.push(cand('their reply', 'blue', null, ar.to, ar.from, mk, 0));
     else if (ar.kind === 'better' && answered) short.push(cand(ar.key === 'answer' ? 'the answer' : 'better', 'green', null, ar.to, ar.from, mk, 3));
@@ -712,7 +713,7 @@ function labelCands(a, f, seen) {
     var mk = { kind: 'token', sq: tk.sq, p: tk.p };
     if (!seen('token') && !first.token) first.token = cand('Lost piece', 'red', 'token', tk.sq, null, mk);
     /* "lost": the piece See it's reply took, as it lands (S4) */
-    if (a.phase === 'tried' && a.tried && a.tried.seen) short.push(cand('lost', 'red', null, tk.sq, null, mk, 2));
+    if (a.phase === 'tried' && a.tried && a.tried.seen && seen('token')) short.push(cand('lost', 'red', null, tk.sq, null, mk, 2));
   });
   (o.ghosts || []).forEach(function (g) {
     if (!seen('ghost') && !first.ghost) first.ghost = cand(gameSan(a) + ' in your game', 'red', 'ghost', g.sq, null, { kind: 'ghost', sq: g.sq, p: g.p });

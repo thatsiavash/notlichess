@@ -1054,10 +1054,11 @@ function hintPrize(a) {
    hint 2 and a solve records hint. Never at tiers 2 and 3, on a relearn
    card, on a card already tried or helped, or when hint 1 draws nothing
    there (words only: that family waits for a card that can show it).
-   Storage that cannot be read counts as seen. True when it applies */
+   Storage that cannot be read counts as seen; a count that could not be
+   written is kept in store's memory for the page load. True when it applies */
 function familySeen(fam) {
-  try { var v = localStorage.getItem('nl:seen:' + fam); return v == null ? 0 : +JSON.parse(v) || 0; }
-  catch (e) { return 1; }
+  try { localStorage.getItem('nl:seen:' + fam); } catch (e) { return 1; }
+  return +store.get('nl:seen:' + fam, 0) || 0;
 }
 function workedExample(a) {
   if (!a || a.tier !== 1 || a.hints || a.misses || a.attempts || ss_relearn(a)) return false;

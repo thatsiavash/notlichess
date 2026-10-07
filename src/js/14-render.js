@@ -647,12 +647,37 @@ function badgeCorner(from, to, flip) {
   return spots[0];
 }
 /* ── labels (FINAL-SPEC 2.1): one pill a frame, beside the mark it names ──
-   The pill's size from a width table: 12 px Lora (about 6.6 px a
-   character) on a phone, 14 px (7.7) on the desktop, 14 px of padding and
-   the 1 px border, 18 or 20 px tall */
+   The pill's size: its words measured in the font the page draws them in
+   (12 px on a phone, 14 on the desktop, Lora 600 or whatever stands in for
+   it: Georgia sets wider), plus 14 px of padding, the 1 px border and 2 px
+   to spare, 18 or 20 px tall. Measured once per text and size, again when a
+   font arrives; where nothing can measure (no canvas), a table wide enough
+   for Georgia's bold: 7.4 px a character and 4 to spare at 12 px, 8.7 and
+   5 at 14 */
+var labelW = {}, labelCtx = null;
+function labelMeasure(text, fs) {
+  var k = fs + '|' + text;
+  if (k in labelW) return labelW[k];
+  var w = null;
+  try {
+    if (labelCtx == null) {
+      var cv = document.createElement('canvas');
+      labelCtx = (cv && cv.getContext && cv.getContext('2d')) || false;
+      if (labelCtx && document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', function () { labelW = {}; });
+    }
+    if (labelCtx) {
+      var fam = window.getComputedStyle(document.documentElement).getPropertyValue('--font-body').trim() || 'Georgia, serif';
+      labelCtx.font = '600 ' + fs + 'px ' + fam;
+      w = labelCtx.measureText(text).width;
+    }
+  } catch (e) { w = null; }
+  if (!(w > 0)) w = null;
+  return (labelW[k] = w);
+}
 function labelBox(text, desk) {
-  var n = String(text || '').length;
-  return desk ? { w: Math.ceil(n * 7.7 + 16), h: 20 } : { w: Math.ceil(n * 6.6 + 16), h: 18 };
+  var t = String(text || ''), n = t.length, fs = desk ? 14 : 12, m = labelMeasure(t, fs);
+  var w = m != null ? m + 18 : desk ? n * 8.7 + 21 : n * 7.4 + 20;
+  return { w: Math.ceil(w), h: desk ? 20 : 18 };
 }
 /* what a label must keep clear of, in px on a board px wide, as drawn
    (flipped or not): the squares holding pieces (and ghosts), each flagged
@@ -710,33 +735,35 @@ function labelGeom(f, px, c, avoid) {
    of the tail; in each neighbour centred on it, then flush with its left
    edge, then its right (a pill is often wider than a square). The first
    place that stays on the board and clear of every piece, badge, token,
-   ring and shaft wins (a first-sight label may cover one piece that no
-   arrow starts or ends on); {x, y} in px, or null: no room, no label */
+   ring and shaft wins. A first-sight label may cover one piece that no
+   arrow starts or ends on, but only where no place is clear of them all;
+   {x, y} in px, or null: no room, no label */
 var LABEL_NEAR = [[0, -1], [0, 1], [1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1]];
 function placeLabel(geom, w, h) {
   var S = geom.size, Q = geom.sq, E = 0.5;
   var hit = function (r, b) { return r.x < b.x + b.w - E && b.x < r.x + r.w - E && r.y < b.y + b.h - E && b.y < r.y + r.h - E; };
-  var clear = function (r) {
+  var clear = function (r, soft) {
     if (r.x < 0 || r.y < 0 || r.x + r.w > S || r.y + r.h > S) return false;
     var i, n = 0;
     for (i = 0; i < geom.boxes.length; i++) if (hit(r, geom.boxes[i])) return false;
     for (i = 0; i < geom.segs.length; i++) if (segRectDist(geom.segs[i], r) < geom.segs[i].r) return false;
-    for (i = 0; i < geom.pieces.length; i++) if (hit(r, geom.pieces[i]) && (geom.pieces[i].end || ++n > (geom.soft || 0))) return false;
+    for (i = 0; i < geom.pieces.length; i++) if (hit(r, geom.pieces[i]) && (geom.pieces[i].end || ++n > soft)) return false;
     return true;
   };
-  var at = [geom.head, geom.tail];
-  for (var j = 0; j < at.length; j++) {
-    if (!at[j]) continue;
-    for (var k = 0; k < LABEL_NEAR.length; k++) {
-      var cx = at[j][0] + LABEL_NEAR[k][0], cy = at[j][1] + LABEL_NEAR[k][1];
-      if (cx < 0 || cx > 7 || cy < 0 || cy > 7) continue;
-      var xs = [(cx + 0.5) * Q - w / 2, cx * Q, (cx + 1) * Q - w];
-      for (var x = 0; x < xs.length; x++) {
-        var r = { x: xs[x], y: (cy + 0.5) * Q - h / 2, w: w, h: h };
-        if (clear(r)) return { x: r.x, y: r.y };
+  var at = [geom.head, geom.tail], passes = geom.soft ? [0, geom.soft] : [0];
+  for (var p = 0; p < passes.length; p++)
+    for (var j = 0; j < at.length; j++) {
+      if (!at[j]) continue;
+      for (var k = 0; k < LABEL_NEAR.length; k++) {
+        var cx = at[j][0] + LABEL_NEAR[k][0], cy = at[j][1] + LABEL_NEAR[k][1];
+        if (cx < 0 || cx > 7 || cy < 0 || cy > 7) continue;
+        var xs = [(cx + 0.5) * Q - w / 2, cx * Q, (cx + 1) * Q - w];
+        for (var x = 0; x < xs.length; x++) {
+          var r = { x: xs[x], y: (cy + 0.5) * Q - h / 2, w: w, h: h };
+          if (clear(r, passes[p])) return { x: r.x, y: r.y };
+        }
       }
     }
-  }
   return null;
 }
 /* the distance from a segment to a rectangle (0 when they meet) */
@@ -763,7 +790,7 @@ function segRectDist(sg, r) {
   }
   return best;
 }
-/* the label a frame shows on a board px wide, or null (pure): the first of
+/* the label a frame shows on a board px wide, or null: the first of
    labelCands that fits the words left (labelRoom) and finds a place; before
    an answer never on the answer's square (2.3; labelCands names the green
    arrow only once answered). seen(kind): that kind has taught itself already (tipSeen by
@@ -1265,9 +1292,9 @@ function barSlots(a, ss) {
   if (replyButton(a)) return [{ label: '', cls: 'slot-empty', off: true, empty: true }, replyButton(a)];
   return [{ act: 'hint', label: hintLabel(a), cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
 }
-/* Hint is named by the hint it gives next; the worked example (S9) drew
-   hint 1 unasked, so its button is still plain Hint (it gives hint 2) */
-function hintLabel(a) { return a.hints >= 2 ? 'No more hints' : a.hints && !a.predraw ? 'Hint 2' : 'Hint'; }
+/* Hint is named by the hint it gives next: the worked example (S9), whose
+   band says "Hint 1 of 2" from the start, reads "Hint 2" too */
+function hintLabel(a) { return a.hints >= 2 ? 'No more hints' : a.hints ? 'Hint 2' : 'Hint'; }
 /* "Their reply ›" (S10, S19): under reduced motion no timer moves a piece,
    so the forcing reply waits for this gold button; null when no reply waits */
 function replyButton(a) {

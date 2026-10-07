@@ -104,7 +104,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
   await test('placeLabel never overlaps a piece, badge, token, ring, cross or arrow shaft, nor leaves the board: every fixture frame, tiers 1 and 3, boards of 316, 384 and 720 px, as drawn and flipped, first sight and short labels', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${FRAMES}
-      var out = [], tried = 0, shown = 0, tips = 0, onPiece = 0, flipped = 0, texts = {};
+      var out = [], tried = 0, shown = 0, tips = 0, onPiece = 0, flipped = 0, softClear = 0, texts = {};
       var num = '(-?[\\\\d.]+)';
       var all = function (re, s) { var m, o = []; re.lastIndex = 0; while ((m = re.exec(s))) o.push(m); return o; };
       var hit = function (r, x, y, w, h) { return r.x < x + w - 0.5 && x < r.x + r.w - 0.5 && r.y < y + h - 0.5 && y < r.y + r.h - 0.5; };
@@ -158,20 +158,27 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
                   shown++; if (lb.tip) tips++;
                   texts[lb.text.replace(/^(White|Black) /, '{Opp} ').replace(/^\\S+ in your game$/, '{gameSan} in your game').replace(/^free \\w+$/, 'free {piece}')] = 1;
                   check('tier ' + tier + ' ' + it.key + ' ' + what, a, f, px, lb);
+                  /* a first-sight label covers a piece only where no place is clear of every piece */
+                  if (lb.tip) {
+                    var mk = lb.mark, pre = ['guess', 'checking', 'tried', 'reply'].indexOf(a.phase) >= 0;
+                    var g0 = labelGeom(f, px, { head: mk.to != null ? mk.to : mk.sq, tail: mk.to != null ? mk.from : null, tip: null }, pre ? [dueMove(a).to] : []);
+                    var clear0 = placeLabel(g0, lb.w, lb.h);
+                    if (clear0) { softClear++; if (Math.abs(clear0.x - lb.x) > 0.01 || Math.abs(clear0.y - lb.y) > 0.01) out.push('tier ' + tier + ' ' + it.key + ' ' + what + ' at ' + px + ', "' + lb.text + '": on a piece with a clear place at ' + Math.round(clear0.x) + ',' + Math.round(clear0.y)); }
+                  }
                 });
               });
             });
           });
         });
       });
-      return JSON.stringify({ out: out, tried: tried, shown: shown, tips: tips, onPiece: onPiece, texts: Object.keys(texts).sort() }); })()`));
+      return JSON.stringify({ out: out, tried: tried, shown: shown, tips: tips, onPiece: onPiece, softClear: softClear, texts: Object.keys(texts).sort() }); })()`));
     eq(r.out.length, 0, r.out.length + ' overlaps, first: ' + r.out.slice(0, 4).join(' | '));
-    ok(r.tried > 40000 && r.shown > 8000 && r.tips > 2000 && r.onPiece > 100, JSON.stringify({ tried: r.tried, shown: r.shown, tips: r.tips, onPiece: r.onPiece }));
+    ok(r.tried > 40000 && r.shown > 8000 && r.tips > 2000 && r.onPiece > 50 && r.softClear > 1000, JSON.stringify({ tried: r.tried, shown: r.shown, tips: r.tips, onPiece: r.onPiece, softClear: r.softClear }));
     ['Your game move', '{Opp} can take', '{Opp} can check', 'Lost piece', '{gameSan} in your game', 'takes', 'free {piece}', 'check', 'mate', 'lost', 'their reply', 'better', 'the answer']
       .forEach((t) => ok(r.texts.indexOf(t) >= 0, 'no "' + t + '" label in any frame (' + r.texts.join(', ') + ')'));
   });
 
-  await test('placeLabel, by itself: the head\'s neighbours nearest first, then the tail\'s; centred, then flush left, then flush right; no room, no label; a first-sight label may cover one piece no arrow starts or ends on', () => {
+  await test('placeLabel, by itself: the head\'s neighbours nearest first, then the tail\'s; centred, then flush left, then flush right; no room, no label; a first-sight label may cover one piece no arrow starts or ends on, only where no place is clear', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       var g = function (o) { return Object.assign({ size: 360, sq: 45, boxes: [], segs: [], pieces: [], head: [3, 3], tail: null, soft: 0 }, o); };
@@ -194,6 +201,9 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       var pcs = []; for (var x2 = 2; x2 <= 4; x2++) for (var y2 = 2; y2 <= 4; y2++) if (x2 !== 3 || y2 !== 3) pcs.push({ x: x2 * 45, y: y2 * 45, w: 45, h: 45, end: false });
       res.hard = placeLabel(g({ pieces: pcs }), 40, 18);
       res.soft = placeLabel(g({ pieces: pcs, soft: 1 }), 40, 18);
+      /* a first-sight label with a piece above the head and nothing below:
+         below, clear, before the piece above */
+      res.softClear = placeLabel(g({ pieces: [{ x: 135, y: 90, w: 45, h: 45, end: false }], soft: 1 }), 40, 18);
       res.softEnd = placeLabel(g({ pieces: pcs.map(function (p) { return Object.assign({}, p, { end: true }); }), soft: 1 }), 40, 18);
       var two = placeLabel(g({ pieces: pcs, soft: 1 }), 80, 18);
       res.softTwo = two ? pcs.filter(function (p) { return two.x < p.x + p.w - 0.5 && p.x < two.x + 80 - 0.5 && two.y < p.y + p.h - 0.5 && p.y < two.y + 18 - 0.5; }).length : 0;
@@ -210,6 +220,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
     eq(JSON.stringify(r.flush), JSON.stringify({ x: 135, y: 103.5 }), 'flush with the square\'s left edge, clear of the piece on its left');
     eq(r.hard, null, 'pieces all round: a short label has no room');
     ok(r.soft, 'a first-sight label covers one piece');
+    eq(JSON.stringify(r.softClear), JSON.stringify({ x: 137.5, y: 193.5 }), 'a first-sight label takes a clear place before covering a piece');
     eq(r.softEnd, null, 'never a piece at an arrow end');
     ok(r.softTwo <= 1, 'never two pieces: ' + r.softTwo);
     eq(r.softWall, null, 'a pill that would cover two pieces wherever it goes: none');
@@ -296,7 +307,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
   await test('L words true to the drawn geometry: "free {piece}" only with that piece there and nothing guarding it, "takes" on a capture, "check" and "mate" as the move does, "fork" and "pinned" only at tier 3 with mFork and mPin, "lost" on See it\'s token, "their reply", "better", "the answer" on their own arrows', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${FRAMES}
-      var out = [], n = 0, by = {};
+      var out = [], n = 0, hintN = 0, by = {};
       var arrowOf = function (f, mk) {
         var o = f.opts, list = (o.arrows || []).slice();
         if (o.bad) list.push({ from: o.bad[0], to: o.bad[1], kind: 'game' });
@@ -318,11 +329,16 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
               if (/^(takes|free |check|mate|draw|hits two|fork|stuck|pinned)|can (take|check)$/.test(t) && mk.kind !== 'prize') {
                 var ar = arrowOf(f, mk);
                 if (!ar || ar.kind !== 'threat') return bad('not on a threat arrow drawn');
-                /* the position the move is made from: as drawn, or for hint
-                   1's danger and S0's pair the one after the game move */
-                var s0 = a.phase === 'done' && a.view.mode === 's0', pos = ar.key === 'hint' || s0 ? a.cls.gameLine.nodes[1].before : f.st;
+                /* the board as drawn, the arrow's piece to move (S0's ghost
+                   standing for the piece on its square): every claim holds
+                   there, hint 1's too */
+                var s0 = a.phase === 'done' && a.view.mode === 's0', pos = cloneState(f.st);
+                if (!pos.b[ar.from]) return bad('no piece at the arrow\\'s tail');
+                pos.w = colorW(pos.b[ar.from]); pos.ep = -1;
+                if (s0) (f.opts.ghosts || []).forEach(function (g) { if (g.sq === ar.to && !pos.b[g.sq]) pos.b[g.sq] = g.p; });
                 var m = legalMoves(pos).filter(function (x) { return x.from === ar.from && x.to === ar.to; })[0];
-                if (!m) return bad('no such move');
+                if (!m) return bad('no such move on the board as drawn');
+                if (ar.key === 'hint') { hintN++; if (t !== 'takes') bad('hint 1\\'s danger says only "takes"'); if (!pos.b[m.to] || colorW(pos.b[m.to]) !== myPov(a.it)) bad('"takes" onto no piece of yours'); }
                 var aft = cloneState(pos); applyMove(aft, m);
                 var tsq = m.ep >= 0 ? m.ep : m.to, took = pos.b[tsq], chk = checkersOf(aft).length > 0, mate = chk && !legalMoves(aft).length;
                 if (/can take$/.test(t) && (!took || t !== opp + ' can take')) bad('takes nothing, or not theirs');
@@ -374,28 +390,45 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       var ex = (function () { var st = stateFromFen('4k3/8/8/8/8/8/8/R3K3 w - - 0 1'), res = {};
         [1, 2].forEach(function (t) { var a = { tier: t, it: { g: { color: 'white' } }, phase: 'done', explore: {}, cls: null }; var c = labelCands(a, { st: st, opts: { ghost: [0, 56] } }, YES); res[t] = c.length ? c[0].text : null; });
         return res; })();
-      return JSON.stringify({ out: out, n: n, by: Object.keys(by).sort(), nf: nf, ex: ex }); })()`));
+      return JSON.stringify({ out: out, n: n, hintN: hintN, by: Object.keys(by).sort(), nf: nf, ex: ex }); })()`));
     eq(r.out.length, 0, r.out.length + ' labels untrue to the board, first: ' + r.out.slice(0, 4).join(' | '));
     ok(r.n > 3000, 'labels read ' + r.n);
+    ok(r.hintN > 10, 'hint 1 "takes" labels read ' + r.hintN);
     ['Your game move', 'can take', 'takes', 'free', 'check', 'mate', 'lost', 'Lost piece', 'ghost', 'their reply', 'better', 'the answer'].forEach((t) => ok(r.by.indexOf(t) >= 0, 'no "' + t + '" (' + r.by.join(', ') + ')'));
     eq(JSON.stringify(r.nf), JSON.stringify(['hits two', 'fork']), 'a knight forking queen and rook: "hits two" below tier 3, "fork" at 3');
     ok(r.ex[1] === 'the computer' && r.ex[2] === 'Stockfish', 'Stockfish\'s pick: ' + JSON.stringify(r.ex));
   });
 
-  await test('first sight: the first card ever shows "Your game move" alone (the worked example\'s threat waits); the game arrow outranks a threat, a threat a lost piece, a lost piece the ghost, and any first-sight label a short one', () => {
+  await test('first sight: the first card ever shows "Your game move"; a worked example, whose band and bar leave a label one word, shows none on a fresh profile (hint 1\'s danger never teaches, its "takes" waits for the threat to have); the game arrow outranks a threat, a threat a lost piece, a lost piece the ghost, and any first-sight label a short one; a short label of a kind that has not taught itself never shows, even where its first-sight words do not fit', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var res = { worked: [], plain: [], gameOnly: 0, takes: 0 };
       playerTier = function () { return 1; };
-      var res = { first: [], none: 0 };
       allMistakes().filter(trainable).forEach(function (it) {
         var a = openCard(it);
         if (!a || !workedExample(a)) return;
         var f = boardOptsFor(a), lb = frameLabel(a, f, 384, false, NO), thr = (f.opts.arrows || []).some(function (x) { return x.kind === 'threat'; });
-        res.first.push((lb ? lb.text : '-') + (thr ? '+threat' : ''));
-        /* the threat alone would teach itself here if the game arrow did not come first */
-        var only = frameLabel(a, f, 384, false, function (k) { return k === 'game'; });
-        if (thr && only && /can (take|check)$/.test(only.text)) res.threatWaits = (res.threatWaits || 0) + 1;
+        res.worked.push((lb ? lb.text : '-') + ' room ' + labelRoom(a));
+        var g = frameLabel(a, f, 384, false, function (k) { return k === 'game'; });
+        if (g) res.gameOnly++;
+        if (labelCands(a, f, NO).some(function (c) { return c.tip === 'threat'; })) res.hintTeach = (res.hintTeach || 0) + 1;
+        var y = frameLabel(a, f, 384, false, YES);
+        if (thr && y && y.text === 'takes') res.takes++;
       });
+      /* See it landed with the lost piece untaught: "Lost piece", never "lost" */
+      res.lost = [];
+      allMistakes().filter(trainable).forEach(function (it) {
+        var a = openCard(it); if (!a) return; a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci));
+        if (a.phase !== 'tried' || !a.tried.reply) return;
+        seeIt(); a.animMove = null;
+        var f = boardOptsFor(a);
+        if (!(f.opts.tokens || []).length) return;
+        res.lost.push(labelCands(a, f, function (k) { return k !== 'token'; }).map(function (c) { return c.text; }).filter(function (t) { return /^(lost|Lost piece)$/.test(t); }).join(',') + '/' +
+          labelCands(a, f, YES).map(function (c) { return c.text; }).filter(function (t) { return /^(lost|Lost piece)$/.test(t); }).join(','));
+      });
+      /* tier 2: no worked example, the game arrow names itself */
+      playerTier = function () { return 2; };
+      allMistakes().filter(trainable).forEach(function (it) { var a = openCard(it); if (!a) return; var lb = frameLabel(a, boardOptsFor(a), 384, false, NO); res.plain.push(lb ? lb.text : '-'); });
       /* order among first-sight kinds, on one doctored frame holding them all */
       var it = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && a.cls.gameLine.nodes[1] && threatOf(a.cls.gameLine, 1) && threatOf(a.cls.gameLine, 1).captured; })[0];
       var a = openCard(it), th = threatOf(a.cls.gameLine, 1);
@@ -406,13 +439,30 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
         labelCands(a, fr, function (k) { return k !== 'token' && k !== 'ghost'; }).map(function (c) { return c.tip || c.text; })[0],
         labelCands(a, fr, function (k) { return k !== 'ghost'; }).map(function (c) { return c.tip || c.text; })[0],
         labelCands(a, fr, YES).map(function (c) { return c.tip || c.text; })[0]];
+      /* the threat alone: its first-sight words that find no place leave no
+         label, never the short "takes" in their stead */
+      var lone = { st: st, opts: { flip: false, arrows: [{ from: th.from, to: th.to, kind: 'threat', key: 'threat' }] } };
+      res.loneCands = labelCands(a, lone, NO).map(function (c) { return c.text; }).join(',');
+      var pl = placeLabel;
+      placeLabel = function (g, w, h) { return w > 60 ? null : pl(g, w, h); };
+      res.loneNarrow = frameLabel(a, lone, 384, false, NO);
+      res.loneSeen = (frameLabel(a, lone, 384, false, YES) || {}).text;
+      placeLabel = pl;
       return JSON.stringify(res); })()`));
-    ok(r.first.length >= 5, 'worked examples at tier 1: ' + r.first.length);
-    r.first.forEach((x) => ok(/^Your game move/.test(x), 'a first card ever shows ' + x));
-    ok(r.threatWaits >= 2, 'cards where the threat would have taught itself: ' + r.threatWaits);
-    ok(/^game,threat,token,ghost,/.test(r.order[0]), 'first-sight order: ' + r.order[0]);
+    ok(r.worked.length >= 5, 'worked examples at tier 1: ' + r.worked.length);
+    r.worked.forEach((x) => ok(/^- room [01]$/.test(x), 'a worked example on a fresh profile shows ' + x));
+    eq(r.gameOnly, 0, 'with the game arrow taught, hint 1\'s danger still teaches nothing');
+    eq(r.hintTeach, undefined, 'hint 1\'s danger offers no first-sight words');
+    ok(r.lost.length >= 5, 'See it with a token: ' + r.lost.length);
+    r.lost.forEach((x) => eq(x, 'Lost piece/lost', 'the lost piece untaught, then taught'));
+    ok(r.takes >= 3, 'with every kind taught, hint 1\'s "takes" where it is true: ' + r.takes);
+    ok(r.plain.filter((x) => x === 'Your game move').length >= r.plain.length * 0.8 && r.plain.every((x) => x === 'Your game move' || x === '-'), 'the first card at tier 2: ' + r.plain.join(', '));
+    eq(r.order[0], 'game,threat,token,ghost', 'first-sight order, and no short words of an untaught kind');
     eq(r.order[1], 'threat', 'with the game arrow seen'); eq(r.order[2], 'token', 'with the threat seen'); eq(r.order[3], 'ghost', 'with the token seen');
     ok(r.order[4] && !/^(game|threat|token|ghost)$/.test(r.order[4]), 'all seen: a short label, ' + r.order[4]);
+    ok(/^(White|Black) can take$/.test(r.loneCands), 'the threat untaught: its first-sight words alone, ' + r.loneCands);
+    eq(r.loneNarrow, null, 'its first-sight words find no place: no label');
+    ok(r.loneSeen && /^(takes|free \w+|mate|check)$/.test(r.loneSeen), 'taught: the short words, ' + r.loneSeen);
   });
 
 
@@ -422,31 +472,38 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
     A.ev('(playerTier = function () { return 1; }, 1)');
     const key = JSON.parse(A.ev(`${OPEN} JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var a = openCard(it); return a && workedExample(a) && (boardOptsFor(a).opts.arrows || []).some(function (x) { return x.kind === 'threat'; }); }).map(function (it) { return it.key; }))`))[0];
     ok(key, 'a worked example with a drawn threat');
-    /* priority: the game arrow's label, the threat's not taken */
+    /* the worked example on a fresh profile: hint 1's words and Hint 2
+       leave the game arrow's three words no room, so it is not taught */
     A.ev(`(window.__open(model().byKey['${key}'], true), 1)`); A.advance(1000);
+    eq(A.ev('window.__label()'), '', 'the worked example: no label');
+    eq(tips(A), '', 'the worked example: nothing seen');
+    /* priority: the same card plain, the game arrow's label, the threat's not taken */
+    A.ev(`(window.__open(model().byKey['${key}']), 1)`); A.advance(1000);
     eq(A.ev('window.__label()'), 'Your game move', 'the first card ever');
     eq(tips(A), 'nl:tip:game', 'only the game arrow is seen');
     /* a selection repaints the board in the same state: the same label */
     A.ev('(ui.session.active.sel = legalMoves(ui.session.active.st)[0].from, renderCardBoard(), 1)'); A.advance(500);
     eq(A.ev('window.__label()'), 'Your game move', 'kept in its state');
-    /* the next state: the game arrow taught, so no label of its own; the
-       threat's first-sight label now, only where the words leave it room */
+    /* the next state: the game arrow taught, so no label of its own */
     A.ev('(ui.session.active.sel = -1, ui.session.active.hints = 2, renderCard(), 1)'); A.advance(1000);
     eq(A.ev('window.__label()'), '', 'hint 2: the ring has no label, the game arrow is seen');
     eq(tips(A), 'nl:tip:game', 'still only the game arrow');
-    /* over budget: a frame whose teaching words do not fit beside the band */
+    /* over budget: a miss whose threat's teaching words do not fit beside
+       the band, and no short words in their stead */
     const over = JSON.parse(A.ev(`${OPEN} (function () { var res = null;
       allMistakes().filter(trainable).some(function (it) {
         var a = openCard(it); if (!a) return false;
-        a.hints = 1; var f = boardOptsFor(a);
+        a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
+        if (a.phase !== 'tried') return false;
+        a.reason = 2; var f = boardOptsFor(a);
         var c = labelCands(a, f, function (k) { return k !== 'threat'; })[0];
         if (!c || c.tip !== 'threat' || wordsIn(c.text) <= labelRoom(a)) return false;
         res = it.key; return true; });
       return JSON.stringify(res); })()`));
-    ok(over, 'a hint whose threat teaching words are over the budget');
-    A.storage['nl:tip:game'] = '1';
-    A.ev(`(function () { var a = window.__open(model().byKey['${over}']); a.hints = 1; renderCard(); return 1; })()`); A.advance(1000);
-    ok(A.ev('window.__label()') !== A.ev('(function (a) { return labelCands(a, boardOptsFor(a), function (k) { return k !== \'threat\'; })[0].text; })(ui.session.active)'), 'the teaching words are not shown');
+    ok(over, 'a miss whose threat teaching words are over the budget');
+    A.ev(`(function () { var a = window.__open(model().byKey['${over}']); a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); return 1; })()`); A.advance(3000);
+    const overLabel = A.ev('window.__label()');
+    ok(!/can (take|check)$|^(takes|free \w+|check|mate|draw|hits two|fork|stuck|pinned)$/.test(overLabel), 'neither the teaching words nor the short ones: ' + overLabel);
     ok(!A.storage['nl:tip:threat'], 'over the budget: the threat is not seen');
     /* no room: nothing placed, nothing seen */
     A.ev('(window.__pl = placeLabel, placeLabel = function () { return null; }, 1)');
@@ -475,11 +532,11 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
     eq(B.ev('window.__label()'), '', 'no storage: the next card does not teach it again');
   });
 
-  await test('the worked example (S9): a tier-1 player\'s first card of a family opens with hint 1 drawn, the task in the band and plain Hint in the bar; Hint gives hint 2; a solve records hint, notes a first look and counts the family; never at tiers 2 and 3, on a relearn card, or with storage unreadable', () => {
+  await test('the worked example (S9): a tier-1 player\'s first card of a family opens with hint 1 drawn, the band saying it ("Hint 1 of 2", what the game move runs into) and Hint 2 in the bar, as every band that says "Hint 1 of 2"; Hint gives hint 2; a solve records hint, notes a first look and counts the family; never at tiers 2 and 3, on a relearn card, or with storage unreadable', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       playerTier = function () { return 1; };
-      var res = { open: [], worked: 0, empty: 0, fams: {} };
+      var res = { open: [], worked: 0, empty: 0, fams: {}, agree: 0, disagree: [] };
       allMistakes().filter(trainable).forEach(function (it) {
         var a = openCard(it);
         if (!a) return;
@@ -487,7 +544,11 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
         res.worked++;
         var f = boardOptsFor(a), hm = hintMarks(a), d = displayFor(a);
         var drawn = hm.rings.concat(hm.arrows).every(function (m) { return (f.opts.rings || []).concat(f.opts.arrows || []).some(function (x) { return x.kind === m.kind && (x.sq === m.sq || (x.from === m.from && x.to === m.to)); }); });
-        res.open.push([a.hints, a.predraw, drawn, d.row1, d.row2 === 'Find a better move than ' + sanOf(a.pre, a.played) + '.', d.buttons.map(function (b) { return b.label; }).join(' | ')].join(' / '));
+        res.open.push([a.hints, a.predraw, drawn, d.row1, d.row2 === hintText(a).row2, hm.danger ? d.row2 === 'See what ' + sanOf(a.pre, a.played) + ' runs into.' : true, d.buttons.map(function (b) { return b.label; }).join(' | ')].join(' / '));
+        /* the band and the button agree at every showing: a miss, See it, Try again */
+        var chk = function (what) { var dd = displayFor(a), hb = dd.buttons.filter(function (b) { return b.act === 'hint'; })[0]; res.agree++; if (dd.row1 === 'Hint 1 of 2' && (!hb || hb.label !== 'Hint 2')) res.disagree.push(it.key + ' ' + what + ': ' + (hb && hb.label)); };
+        a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
+        if (a.phase === 'tried') { a.reason = 2; chk('miss'); if (a.tried.reply) { seeIt(); a.animMove = null; chk('See it'); } tryAgain(); a.triedHold = false; chk('Try again'); }
       });
       /* one card through: Hint, then the solve */
       var it = allMistakes().filter(trainable).filter(function (x) { var a = openCard(x); return a && !a.sol && workedExample(a); })[0], fam = familyOf(patternOf(it.b)).key;
@@ -504,13 +565,13 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       a = openCard(it2); workedExample(a); reveal();
       res.shown = [ui.session.results[it2.key], ui.session.notes[it2.key], localStorage.getItem('nl:seen:' + fam2)].join(' / ');
       /* a miss, then Try again: the hint's marks stay and the band names them */
-      localStorage.removeItem('nl:seen:' + fam2);
+      store.del('nl:seen:' + fam2);
       a = openCard(it2); workedExample(a); a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain(); a.triedHold = false;
       res.afterMiss = [a.hints, displayFor(a).row1, displayFor(a).buttons[0].label].join(' / ');
       solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
       res.afterMissResult = ui.session.results[it2.key] + ' / ' + ui.session.notes[it2.key];
       /* never at tiers 2 and 3, never on a relearn card */
-      localStorage.removeItem('nl:seen:' + fam2);
+      store.del('nl:seen:' + fam2);
       res.tiers = [2, 3].map(function (t) { playerTier = function () { return t; }; return workedExample(openCard(it2)); });
       playerTier = function () { return 1; };
       var r2 = openCard(it2); ui.session.keys = [it2.key, it2.key]; ui.session.relearnOf = {}; ui.session.relearnOf[it2.key] = 1; ui.session.idx = 1;
@@ -520,21 +581,33 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       res.unreadable = workedExample(openCard(it2));
       localStorage.getItem = gi;
       res.again = workedExample(openCard(it2));
+      /* storage that takes no write: the count is kept in memory, so the
+         family's next card is not a worked example again */
+      var si = localStorage.setItem; localStorage.setItem = function () { throw new Error('full'); };
+      var it3 = allMistakes().filter(trainable).filter(function (x) { var b = openCard(x); return b && !b.sol && familyOf(patternOf(x.b)).key !== fam && familyOf(patternOf(x.b)).key !== fam2 && workedExample(b); })[0], fam3 = it3 && familyOf(patternOf(it3.b)).key;
+      var next3 = it3 && allMistakes().filter(trainable).filter(function (x) { return x.key !== it3.key && familyOf(patternOf(x.b)).key === fam3; })[0];
+      a = openCard(it3); res.full = [workedExample(a)];
+      solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+      res.full.push(localStorage.getItem('nl:seen:' + fam3), familySeen(fam3), next3 ? workedExample(openCard(next3)) : 'no next', workedExample(openCard(it3)));
+      localStorage.setItem = si;
       return JSON.stringify(res); })()`));
     ok(r.worked >= 5, 'worked examples ' + r.worked);
-    r.open.forEach((x) => eq(x.replace(/ \/ (Your turn) \/ true \/ /, ' / T1T2 / '), '1 / true / true / T1T2 / Hint | Show the answer', 'the worked example opens'));
+    r.open.forEach((x) => eq(x, '1 / true / true / Hint 1 of 2 / true / true / Hint 2 | Show the answer', 'the worked example opens'));
+    ok(r.agree > 20, 'showings checked ' + r.agree);
+    eq(r.disagree.length, 0, 'the band says "Hint 1 of 2" beside another button: ' + r.disagree.slice(0, 3).join(' | '));
     eq(r.hint2, '2 / Hint 2 of 2 / hint', 'Hint gives hint 2');
     eq(r.result, 'hint', 'a solve records hint');
     eq(r.note, 'firstlook', 'the summary\'s note');
     eq(r.count, '1', 'the family counted');
     eq(r.next, false, 'the family\'s next card');
     eq(r.shown, 'fail / shown / 1', 'a worked example revealed: Shown, and counted');
-    eq(r.afterMiss, '1 / Hint 1 of 2 / Hint', 'after a miss the band names the drawn hint');
+    eq(r.afterMiss, '1 / Hint 1 of 2 / Hint 2', 'after a miss the band names the drawn hint, and the button the next');
     eq(r.afterMissResult, 'retry / firstlook', 'a solve after a miss');
     eq(JSON.stringify(r.tiers), '[false,false]', 'tiers 2 and 3');
     eq(r.relearn, false, 'a relearn card');
     eq(r.unreadable, false, 'unreadable storage counts as seen');
     eq(r.again, true, 'readable again: the family is still new');
+    eq(JSON.stringify(r.full), JSON.stringify([true, null, 1, false, false]), 'writes failing: counted in memory, the family not a worked example again');
   });
 
   await test('the worked example comes through the real session start (loadCard) on a fresh profile at tier 1, and is kept across a reload of the session', () => {
@@ -581,7 +654,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
     eq(tips(A), '', 'nothing remembered');
   });
 
-  await test('a label is aria-hidden and in its mark\'s colour, sized from the width table (12 px on a phone, 14 on the desktop), on a frame that slides never', () => {
+  await test('a label is aria-hidden and in its mark\'s colour, sized from its words measured in the page\'s font (12 px on a phone, 14 on the desktop, once per text, again when a font arrives), else from a table wide enough for Georgia, on a frame that slides never', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       playerTier = function () { return 2; };
@@ -590,11 +663,35 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       var html = labelHtml(ph, true);
       a.animMove = [a.played.from, a.played.to]; var sl = boardOptsFor(a); sl.opts.anim = [a.played.from, a.played.to];
       return JSON.stringify({ ph: ph && [ph.w, ph.h, ph.role], dk: dk && [dk.w, dk.h], html: html, slide: frameLabel(a, sl, 384, false, NO), box: [labelBox('takes', false), labelBox('takes', true)] }); })()`));
-    eq(JSON.stringify(r.ph), JSON.stringify([Math.ceil(14 * 6.6 + 16), 18, 'red']), 'phone pill');
-    eq(JSON.stringify(r.dk), JSON.stringify([Math.ceil(14 * 7.7 + 16), 20]), 'desktop pill');
+    eq(JSON.stringify(r.ph), JSON.stringify([Math.ceil(14 * 7.4 + 20), 18, 'red']), 'phone pill');
+    eq(JSON.stringify(r.dk), JSON.stringify([Math.ceil(14 * 8.7 + 21), 20]), 'desktop pill');
     ok(/^<span class="blabel bl-red fx-in" style="left:\d+px;top:\d+px;width:\d+px;height:18px">Your game move<\/span>$/.test(r.html), r.html);
     eq(r.slide, null, 'a sliding frame has no label');
-    eq(JSON.stringify(r.box), JSON.stringify([{ w: 49, h: 18 }, { w: 55, h: 20 }]), 'the width table');
+    eq(JSON.stringify(r.box), JSON.stringify([{ w: 57, h: 18 }, { w: 65, h: 20 }]), 'the width table');
+    /* Georgia's bold (Gelasio 700, its metric twin, measured in Chromium):
+       the widest a character sets in any label text, and the widest text */
+    [['mate', 12, 31.0], ['draw', 12, 31.7], ['Your game move', 12, 103.5], ['White can check', 12, 100.8], ['draw', 14, 37.0], ['Your game move', 14, 120.8], ['White can check', 14, 117.6]].forEach(([t, px, gw]) => {
+      const w = JSON.parse(A.ev('JSON.stringify(labelBox(' + JSON.stringify(t) + ', ' + (px === 14) + '))')).w;
+      ok(w - 16 >= gw + 1, t + ' at ' + px + ' px: ' + w + ' leaves ' + (w - 16 - gw).toFixed(1) + ' px beside Georgia\'s ' + gw);
+    });
+    /* measured: the words in the page's own font, plus padding, border and 2 px */
+    const B = boot();
+    const m = JSON.parse(B.ev(`(function () {
+      var calls = [], fontsOn = {};
+      document.fonts = { addEventListener: function (k, fn) { fontsOn[k] = fn; } };
+      window.getComputedStyle = function () { return { getPropertyValue: function (k) { return k === '--font-body' ? ' "Lora",Georgia,serif' : ''; } }; };
+      var ctx = { font: '', measureText: function (t) { calls.push(ctx.font + '|' + t); return { width: t.length * 5.25 }; } };
+      document.createElement = function (tag) { return tag === 'canvas' ? { getContext: function () { return ctx; } } : {}; };
+      labelCtx = null; labelW = {};
+      var res = { ph: labelBox('takes', false), dk: labelBox('takes', true), again: labelBox('takes', false) };
+      res.calls = calls.slice();
+      fontsOn.loadingdone && fontsOn.loadingdone();
+      labelBox('takes', false);
+      res.after = calls.length;
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify([m.ph, m.dk]), JSON.stringify([{ w: Math.ceil(5 * 5.25 + 18), h: 18 }, { w: Math.ceil(5 * 5.25 + 18), h: 20 }]), 'measured pills');
+    eq(m.calls.join(' ; '), '600 12px "Lora",Georgia,serif|takes ; 600 14px "Lora",Georgia,serif|takes', 'measured in the label\'s font, once per text and size');
+    eq(m.after, 3, 'measured again once a font has arrived');
   });
 
   results.forEach((l) => console.log(l));
