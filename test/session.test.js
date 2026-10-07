@@ -539,7 +539,14 @@ const PLAIN = `function unplain(s, tier) {
           if (fam === 'safety' || fam === 'king') {
             n.plain++;
             var get = c.mateFor ? 'There is a checkmate here.' : null;
-            if (!(d.row2 === get || /^You can win .+ here\.$/.test(d.row2) && c.matBest >= 1 && !c.mateFor || d.row2 === 'Keep it simple and safe.' && !c.mateFor && !(c.matBest >= 1 && c.bestLine && !c.bestLine.unsettled))) out.push(what + ': a ' + fam + ' card with nothing drawn reads ' + d.row2);
+            /* else where to look (fresh-eyes C5): the king; a threat that stood before the game move
+               (true: its capture was there on the card's position); what the game move allowed */
+            var look = fam === 'king' ? 'Look at your king\\'s safety.' : c.t === 'threat' ? 'What does ' + (myPov(a.it) ? 'Black' : 'White') + ' threaten?' : 'Ask what ' + gameSan(a) + ' allows.';
+            if (/threaten/.test(d.row2) && !threatExisted(a.pre, c.gameLine)) out.push(what + ': a threat named where none stood: ' + d.row2);
+            if (!(d.row2 === get || /^You can win .+ here\.$/.test(d.row2) && c.matBest >= 1 && !c.mateFor || d.row2 === look && !c.mateFor && !(c.matBest >= 1 && c.bestLine && !c.bestLine.unsettled))) out.push(what + ': a ' + fam + ' card with nothing drawn reads ' + d.row2);
+            n.look = (n.look || 0) + (d.row2 === look ? 1 : 0);
+            /* and its fallback says the same */
+            if (d.row2 === look && h.fall !== look) out.push(what + ': the fallback reads ' + h.fall + ', not ' + look);
           }
         }
       };
@@ -632,7 +639,7 @@ const PLAIN = `function unplain(s, tier) {
       n.doctored = fx;
       return JSON.stringify({ out: out, n: n }); })()`));
     ok(r.n.doctored.line >= 5 && r.n.doctored.word >= 10 && r.n.doctored.named >= 20 && r.n.doctored.mate >= 20 && r.n.doctored.fork >= 5, JSON.stringify(r.n.doctored));
-    ok(r.n.frames > 600 && r.n.danger > 60 && r.n.dropped >= 10 && r.n.harmless >= 6 && r.n.plain >= 40 && r.n.prize >= 10 && r.n.words >= 30 && r.n.mid > 30 && r.n.ring2 > 300 && r.n.plain2 > 4 * r.n.frames, JSON.stringify(r.n));
+    ok(r.n.frames > 600 && r.n.danger > 60 && r.n.dropped >= 10 && r.n.harmless >= 6 && r.n.plain >= 40 && r.n.look >= 20 && r.n.prize >= 10 && r.n.words >= 30 && r.n.mid > 30 && r.n.ring2 > 300 && r.n.plain2 > 4 * r.n.frames, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
@@ -696,7 +703,8 @@ const PLAIN = `function unplain(s, tier) {
        and "material" below that */
     eq(A.ev(`(function () { ${OPEN} var it = allMistakes().filter(trainable)[0], a = openCard(it), cw = captureWord;
       captureWord = function () { return 'material'; };
-      try { return plainCapture({ nodes: [] }, 1, 0) + ' / ' + missWhy(a, { lossG: 9, lossAt: 1, gameLine: { nodes: [] } }, 30, null, false).cands[0]; } finally { captureWord = cw; } })()`),
+      var st = stateFromFen('4k3/8/8/3q4/8/8/8/3QK3 w - - 0 1'), line = buildLine(st, 'd1d4', ['d5d4', 'e1e2'], false);
+      try { return plainCapture({ nodes: [] }, 1, 0) + ' / ' + missWhy(a, { lossG: 9, lossAt: 1, gameLine: line }, 1, null, false).cands[0]; } finally { captureWord = cw; } })()`),
     "null / You'd lose a lot of material.", 'three kinds of piece: the material word');
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       /* the band's caps (FINAL-SPEC 3): row 1 26 characters, row 2 40 and 7
@@ -760,7 +768,7 @@ const PLAIN = `function unplain(s, tier) {
       /* a miss's reason (M3), in one of its forms or its fallbacks, in plain
          words ("the exchange" is spelled out as the rook and what it went for) */
       var plain = function (what, s) { if (/exchange/.test(s)) out.push(what + ' says ' + s); };
-      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (a|an|the|two|three) [a-z ]+\\.|You'd lose material\\.|Most of your advantage is gone\\.|After \\S+, (the game is even|(White|Black) is on top)\\.|That helps (White|Black)\\.|There's a stronger move here\\.)$/;
+      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (a|an|the|two|three) [a-z ]+\\.|You'd lose material\\.|After \\S+, you'd lose ((a|an|the|two|three) [a-z ]+|material)\\.|Most of your advantage is gone\\.|After \\S+, (the game is even|(White|Black) is on top)\\.|That helps (White|Black)\\.|There's a stronger move here\\.)$/;
       /* "You'd lose material." only when no form before it fits beside row
          1 and the widest bar this miss shows: as the ladder's one word for a
          trade ("a rook for a knight" is never said as its net), or as the
@@ -984,7 +992,9 @@ const PLAIN = `function unplain(s, tier) {
               if (bl.indexOf(want) !== 0 || !/^(Continue|Finish)$/.test(bl.slice(want.length))) out.push(what + ', story step ' + si + ' bar ' + bl);
               var sw = words(String(d.strip).replace(/<[^>]*>/g, ' '));
               if (sw !== (S.steps.length > 9 ? 3 : 2)) out.push(what + ', story step ' + si + ' strip ' + d.strip);
-              if (!/^Step \\d+ of \\d+, (your game|the better move|your move)\\. /.test(d.live) || d.live.indexOf(d.cap) < 0) out.push(what + ', story step ' + si + ' live ' + d.live);
+              if (!/^Step \\d+ of \\d+, (your game|the better move|your move|what they could have played)\\. /.test(d.live) || d.live.indexOf(d.cap) < 0) out.push(what + ', story step ' + si + ' live ' + d.live);
+              /* the move they could have played is never called your game (fresh-eyes T4) */
+              if (/could have played/.test(d.live) !== !!(S.could && si === S.g - 1)) out.push(what + ', story step ' + si + ' live ' + d.live + ' for a ' + (S.could ? 'could' : 'real') + ' step');
               tapNote(a, 'N1', 2500, null); d = band(what + ', story step, N1', a);
               var withN1 = /To try moves, open Details\\./.test(d.strip);
               if (withN1 !== (words(d.cap) + 5 + 3 <= 15)) out.push(what + ', story step ' + si + ': N1 ' + (withN1 ? 'over the budget' : 'missing') + ', ' + d.cap);
@@ -1091,13 +1101,16 @@ const PLAIN = `function unplain(s, tier) {
          X", "You'd lose X"), against what the line took: its own captures
          (plainCapture), or the two words that claim no piece */
       var phrases = function (s) { var m, re = /(?:lost|could lose|wins|You'd lose) ([a-z ]+?)\\./g, got = []; while ((m = re.exec(s))) got.push(m[1]); return got; };
+      /* a loss the line takes partly back at its end (the solver's capture
+         there) may be said "X for Y" at that end (fresh-eyes T8) */
       var check = function (what, cands, line, k, from, net) {
-        var own = plainCapture(line, k, from);
+        var own = plainCapture(line, k, from), end = line && line.nodes.length - 1, back = end > k && line.nodes[end].captured && isW(line.nodes[end].captured) === line.povWhite;
+        var own2 = back && from === 0 ? plainCapture(line, end, 0) : null;
         if (own && / for /.test(own)) n.trade++;
         cands.forEach(function (c) {
           phrases(c).forEach(function (p) {
             n.word++;
-            if (p === own || p === 'material' || (p === 'a lot of material' && Math.abs(net) >= 6)) return;
+            if (p === own || p === own2 || p === 'material' || (p === 'a lot of material' && Math.abs(net) >= 6)) return;
             out.push(what + ': "' + c + '" where the line took ' + (own || 'no one phrase') + ' (net ' + net + ')');
           });
         });
@@ -1128,7 +1141,7 @@ const PLAIN = `function unplain(s, tier) {
               if (isDefended(g0.after.b, a.played.to) || !isDefended(bn.after.b, bn.move.to) || pType(a.pre.b[a.played.from]) === 'K' || pType(bn.before.b[bn.move.from]) === 'K'
                 || !c.gameLine.nodes.slice(1, c.lossAt + 1).some(function (x, i) { return i % 2 === 0 && x.move.to === a.played.to && x.captured && pType(x.captured) === pType(a.pre.b[a.played.from]); }))
                 out.push(at + ': "is guarded" where it means nothing: ' + cands.join(' | '));
-            } else if (c.lossG >= 1 && !c.mateAgainst && /safety|king/.test(familyOf(patternOf(it.b)).key) && guardRule(c.gameLine, a.played, c.bestLine.nodes[1]) && guardMeans(c, a.pre, a.played, c.bestLine.nodes[1])) out.push(at + ': the guard holds, no guard form');
+            } else if (buildCompare(a).w && /safety|king/.test(familyOf(patternOf(it.b)).key) && guardRule(c.gameLine, a.played, c.bestLine.nodes[1]) && guardMeans(c, a.pre, a.played, c.bestLine.nodes[1])) out.push(at + ': the guard holds, no guard form');
           });
           /* M3: the game move again, its reason from the card's own refutation */
           var a2 = openCard(it);
@@ -1194,10 +1207,11 @@ const PLAIN = `function unplain(s, tier) {
         sents.slice(firstB || (game && s.k === 0) ? 1 : 0).forEach(function (x, j) {
           x = x.trim(); n.sent++;
           var m, form = null, ok = true;
-          if (j === 0 && !firstB && !(game && s.k === 0) && (m = /^(\\S+) takes (your|their) (\\w+)(, as in your game)?\\.$/.exec(x))) {
+          if (j === 0 && !firstB && !(game && s.k === 0) && (m = /^(\\S+) takes (your|their) (\\w+)( with check)?(, as in your game)?\\.$/.exec(x))) {
             form = 'takes'; var cp = nd.captured;
-            ok = !!cp && pType(cp) === PW[m[3]] && (isW(cp) === pov) === (m[2] === 'your') && (!m[4] || (game && s.k === 1 && found));
-          } else if (j === 0 && (m = /^(\\S+) could take your (\\w+)\\.$/.exec(x))) { form = 'could take'; ok = game && s.k === 1 && blow && !!nd.captured && isW(nd.captured) === pov && pType(nd.captured) === PW[m[2]]; }
+            ok = !!cp && pType(cp) === PW[m[3]] && (isW(cp) === pov) === (m[2] === 'your') && (!m[5] || (game && s.k === 1 && found)) && (!m[4] || checkersOf(nd.after).length > 0);
+            if (m[4]) n.withCheck = (n.withCheck || 0) + 1;
+          } else if (j === 0 && (m = /^(\\S+) could take your (\\w+)( with check)?\\.$/.exec(x))) { form = 'could take'; ok = game && s.k === 1 && blow && !!nd.captured && isW(nd.captured) === pov && pType(nd.captured) === PW[m[2]] && (!m[3] || checkersOf(nd.after).length > 0); }
           else if (j === 0 && /^\\S+, check\\.$/.test(x)) { form = 'check'; ok = checkersOf(nd.after).length > 0 && !isMate(nd.after); }
           else if (j === 0 && /^\\S+$/.test(x.replace(/\\.$/, '')) && sents.length > 1 && /^Checkmate\\.$/.test(sents[1].trim())) { form = 'mate'; ok = isMate(nd.after); }
           else if (/^Checkmate\\.$/.test(x)) { form = 'mate'; ok = isMate(nd.after); }
@@ -1227,7 +1241,7 @@ const PLAIN = `function unplain(s, tier) {
             if (m && !m[4] && !m[3] && nd.captured) n.sameBare = (n.sameBare || 0) + 1;
           }
           else if (/^You lose less\\.$/.test(x)) { form = 'lose less'; var net = matDiff(b, pov) - matDiff(line.nodes[s.from].before.b, pov); ok = lastB && net < 0 && -net < c.lossG; }
-          else if ((m = /^You lose ([a-z ]+)\\.$/.exec(x))) { form = 'you lose'; ok = lastG && matOk(m[1], line, s.k, 0, c.lossG); }
+          else if ((m = /^You lose ([a-z ]+)\\.$/.exec(x))) { form = 'you lose'; ok = lastG && matOk(m[1], line, s.k, 0, matDiff(line.nodes[0].before.b, pov) - matDiff(b, pov)); }
           else if ((m = /^You win ([a-z ]+)\\.$/.exec(x))) { form = 'you win'; ok = lastB && matOk(m[1], line, s.k, s.from, matDiff(b, pov) - matDiff(line.nodes[s.from].before.b, pov)); }
           if (!form) return fail('an unknown sentence: ' + x);
           if (form === 'you win' && s.from > 1) n.lineWins = (n.lineWins || 0) + 1;
@@ -1273,7 +1287,7 @@ const PLAIN = `function unplain(s, tier) {
       return JSON.stringify({ out: out, n: n }); })()`));
     const f = r.n.forms;
     ok(r.n.caps > 3000 && f.takes > 500 && f['you lose'] > 50 && f.unguarded > 20 && f['can take'] > 10 && f.fork > 5 && f['gives check'] > 20 && f['mate against'] > 5 && f.guard >= 6
-      && f['it wins'] > 20 && f['you win'] > 10 && r.n.lineWins > 5 && f['still comes'] >= 4 && f.found > 50 && f.missed > 50 && f['could take'] > 10 && f.mate > 5, JSON.stringify(r.n));
+      && f['it wins'] > 20 && f['you win'] > 10 && r.n.lineWins > 5 && f['still comes'] >= 4 && f.found > 50 && f.missed > 50 && f['could take'] > 10 && f.mate > 5 && r.n.withCheck >= 5, JSON.stringify(r.n));
     /* S-same on a capture never falls back to the bare "still comes" (184216981622:46's better line loses the same knight: it names it) */
     ok(!r.n.sameBare, 'S-same fallback used ' + r.n.sameBare);
     eq(r.out.length, 0, r.out.length + ' untrue captions, first: ' + r.out.slice(0, 4).join(' | '));
@@ -1297,12 +1311,14 @@ const PLAIN = `function unplain(s, tier) {
         var S = buildStory(a), c = a.cls;
         if (S.g > 1 && / They missed it\\.$/.test(S.steps[1].cap) && !c.mateAgainst && c.lossG < 1) quiet.push(it.key + ' ' + S.steps[1].cap);
       });
-      return JSON.stringify({ q48: caps('184455333378:48'), s46: caps('184216981622:46'), c64: caps('184455333378:64'), c68: caps('184455333378:68'), quiet: quiet }); })()`));
-    eq(r.q48[1], 'Rfd8.', 'a quiet first reply after a move that lost nothing');
+      return JSON.stringify({ q48: caps('184455333378:48'), s46: caps('184216981622:46'), c57: caps('184435538450:57'), c68: caps('184455333378:68'), quiet: quiet }); })()`));
+    /* the game segment is the game: a quiet first reply that was not played is not shown (fresh-eyes T4) */
+    eq(r.q48[1], 'Better: Kg2.', 'a quiet first reply after a move that lost nothing, not the game\'s');
     eq(r.s46[r.s46.length - 1], 'Rxh2 still takes your knight.', 'S-same where the better line loses the same knight');
-    eq(r.c64[8], 'Rd7. You lose a bishop for a pawn.', 'a checking move on the loss rung, without its sign');
-    eq(r.c68[3], 'Qd2, check.', 'the check form');
-    eq(r.c68[1], 'cxd3 takes your bishop, as in your game.', 'a capture that checks, without its sign');
+    eq(r.c57[5], 'Qd5, check. You lose the pawn.', 'a checking move on the loss rung, without its sign');
+    /* a capture that checks says both (fresh-eyes T7), and drops the check before the game's words */
+    eq(r.c57[3], 'Qxd6 takes your bishop with check.', 'a capture that checks');
+    eq(r.c68[1], 'cxd3 takes your bishop, as in your game.', 'a capture that checks, without its sign, where "with check" does not fit');
     eq(r.quiet.length, 0, 'They missed it with nothing to miss: ' + r.quiet.slice(0, 3).join(' | '));
   });
 

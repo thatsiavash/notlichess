@@ -665,10 +665,10 @@ function boardAria(a, st, o) {
     if (m.kind === 'game') out.push('Red arrow: your game move, ' + mv(m) + '.');
     else if (m.kind === 'threat') {
       ringed[m.from] = 1;
-      /* read on the board as drawn, its piece to move; hint 1's danger and
-         S0's pair are the reply your game move allowed, so they are read
-         on the card's position after that move */
-      var s0 = a.phase === 'done' && a.view && a.view.mode === 's0', hint = m.key === 'hint' || s0;
+      /* read on the board as drawn, its piece to move; hint 1's danger is
+         the reply your game move allowed, so it is read on the card's
+         position after that move (S0's pair holds on its own board) */
+      var hint = m.key === 'hint';
       var pos = cloneState(hint ? a.pre : st), gm = hint ? uciToMove(pos, a.playedUci) : null;
       if (gm) applyMove(pos, gm);
       var ap = pos.b[m.from], d = null;
@@ -927,21 +927,51 @@ function paintLabels(a, f) {
    with its cross, where it went (on a forcing line only when that square is
    empty, and never on the square of the tick, whose badge it would meet);
    the threat it ran into, the game line's first reply ringed with its dashed
-   arrow, when that reply captures or checks, its piece still stands there
-   and the card is not a missed chance; after a forcing line, green tokens on
-   what you won (at most two) */
+   arrow, when that reply captures or checks, its piece still stands there,
+   the card is not a missed chance and the threat still holds on this board
+   (s0ThreatHolds); after a forcing line, green tokens on what you won (at
+   most two) */
 function s0Marks(a, st) {
   var out = { ghosts: [], rings: [], arrows: [], tokens: [] }, c = a.cls, pl = a.played, mm = a.markMove;
   var line = !!(a.sol && a.solIdx > 1);
   if (pl && !(mm && mm.to === pl.to) && (!line || !st.b[pl.to]))
     out.ghosts.push({ sq: pl.to, p: a.pre.b[pl.from], fx: a.key + ':s0' });
   var th = familyOf(patternOf(a.it.b)).key !== 'chances' ? threatOf(c.gameLine, 1) : null;
-  if (th && st.b[th.from] && st.b[th.from] === c.gameLine.nodes[1].before.b[th.from]) {
+  if (th && st.b[th.from] && st.b[th.from] === c.gameLine.nodes[1].before.b[th.from] && s0ThreatHolds(a, st, th)) {
     out.rings.push({ sq: th.from, kind: 'threat' });
     out.arrows.push({ from: th.from, to: th.to, kind: 'threat', key: 'threat' });
   }
   if (line) (a.won || []).slice(-2).forEach(function (w) { out.tokens.push({ sq: w.sq, p: w.p, kind: 'won', fx: a.key + ':s0' }); });
   return out;
+}
+/* the game line's threat still holds on S0's board (fresh-eyes T1), or it
+   is not drawn there: a beginner reads it as "my right move still loses".
+   It holds when it is their move, the move is legal on this board and it
+   takes a piece of yours (or mates), and it wins material there: where the
+   line that led to this board goes on (the best line, or your own move's),
+   its next move is this one and that line loses material from here (or
+   mates); on a board no line reaches, what it takes is unguarded or worth
+   more than the piece taking it */
+function s0ThreatHolds(a, st, th) {
+  /* moveDoes finds their move only with them to move, and what it takes is yours */
+  var d = moveDoes(st, th.from, th.to);
+  if (!d || !(d.mate || d.took)) return false;
+  var on = s0Line(a, st);
+  if (on) return !!on.next && on.next.slice(0, 4) === sqName(th.from) + sqName(th.to) && (d.mate || bestLossFrom(a, on.j, on.line, on.settle) >= 1);
+  return d.mate || d.free || MOTIF_VAL[pType(st.b[th.from])] < MOTIF_VAL[pType(d.took)];
+}
+/* the engine's line through board st: your own move's line when it worked
+   too, else the card's best line, as {line, j (its node that ends on st),
+   settle, next (its move from st, UCI, or null at its end)}; null when st
+   is on neither */
+function s0Line(a, st) {
+  var own = !!(a.alt && a.yours), ucis = own ? a.yours.uci : unpackUci(a.it.b.lu), key = posKey(st);
+  var line = own ? buildLine(a.pre, '0000', ucis, myPov(a.it)) : a.cls.bestLine;
+  if (!line) return null;
+  for (var j = 0; j < line.nodes.length; j++) {
+    if (posKey(line.nodes[j].after) === key) return { line: line, j: j, settle: own ? settleIndex(line) : a.cls.bSettle, next: ucis[j] || null };
+  }
+  return null;
 }
 /* what lands with a story step (S12, 2.1): a capture's token, red when it
    took a piece of yours, green when yours took one; on G1 the reply it
@@ -1338,7 +1368,8 @@ function liveWords(a, b) {
   /* a story step says where it is first (S20): "Step 2 of 3, your game." */
   if (a.phase === 'done' && a.view && a.view.mode === 'story') {
     var S = buildStory(a), i = a.view.i;
-    return 'Step ' + (i + 1) + ' of ' + S.steps.length + ', ' + (i < S.g ? 'your game.' : S.alt ? 'your move.' : 'the better move.') + ' ' + b.cap;
+    /* the move they could have played is not your game (S.could) */
+    return 'Step ' + (i + 1) + ' of ' + S.steps.length + ', ' + (i < S.g ? (S.could && i === S.g - 1 ? 'what they could have played.' : 'your game.') : S.alt ? 'your move.' : 'the better move.') + ' ' + b.cap;
   }
   return [LIVE_PREFIX[b.disc] || '', b.row1 || '', b.row2 || ''].filter(Boolean).join(' ');
 }

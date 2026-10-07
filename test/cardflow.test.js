@@ -2679,7 +2679,10 @@ const BAR = `(function () {
     /* one-move cards whose game reply captures or checks (S0's threat pair), and a missed chance */
     const keys = JSON.parse(A.ev(`(function () { ${OPEN}
       var its = allMistakes().filter(trainable).filter(function (it) { var a = openCard(it); return a && !a.sol; });
-      var pair = its.filter(function (it) { var a = openCard(it); return familyOf(patternOf(it.b)).key !== 'chances' && threatOf(a.cls.gameLine, 1) && a.best.to !== a.played.to; }).slice(0, 3);
+      var pair = its.filter(function (it) { var a = openCard(it); return familyOf(patternOf(it.b)).key !== 'chances' && threatOf(a.cls.gameLine, 1) && a.best.to !== a.played.to; });
+      /* one whose pair still holds once solved (fresh-eyes T1), first */
+      var holds = function (it) { var a = openCard(it), t = threatOf(a.cls.gameLine, 1); applyMove(a.st, uciToMove(a.st, a.bestUci)); return a.st.b[t.from] === a.cls.gameLine.nodes[1].before.b[t.from] && s0ThreatHolds(a, a.st, t); };
+      pair = pair.filter(holds).slice(0, 1).concat(pair.filter(function (it) { return !holds(it); })).slice(0, 3);
       /* a missed chance whose game reply captures or checks, from a piece still standing once solved */
       var ch = its.filter(function (it) { var a = openCard(it), t = threatOf(a.cls.gameLine, 1); if (familyOf(patternOf(it.b)).key !== 'chances' || !t || a.best.to === a.played.to) return false;
         applyMove(a.st, uciToMove(a.st, a.bestUci)); return a.st.b[t.from] === a.cls.gameLine.nodes[1].before.b[t.from]; }).slice(0, 1);
@@ -2703,7 +2706,7 @@ const BAR = `(function () {
       ok(bar && /^See why › \| (Continue|Finish)$/.test(bar.bar) && bar.dt === v.dt, at + ': the bar with it, ' + JSON.stringify(bar));
       const gh = ws.filter((w) => w.id === 'bwrap' && /ghost/.test(w.v))[0], chances = A.ev(`familyOf(patternOf(model().byKey['${key}'].b)).key`) === 'chances';
       ok(gh && gh.dt === v.dt + MARKS, at + ': the ghost ' + MARKS + ' ms after the words, ' + JSON.stringify(gh) + ' vs ' + v.dt);
-      ok(chances ? !/ring|arrow/.test(gh.v) : /ring/.test(gh.v) && /arrow/.test(gh.v) || !A.ev('(function (a) { var t = threatOf(a.cls.gameLine, 1); return !!(t && a.st.b[t.from] === a.cls.gameLine.nodes[1].before.b[t.from]); })(ui.session.active)'),
+      ok(chances ? !/ring|arrow/.test(gh.v) : (/ring/.test(gh.v) && /arrow/.test(gh.v)) === A.ev('(function (a) { var t = threatOf(a.cls.gameLine, 1); return !!(t && a.st.b[t.from] === a.cls.gameLine.nodes[1].before.b[t.from] && s0ThreatHolds(a, a.st, t)); })(ui.session.active)'),
         at + ': the threat pair with it (none on a missed chance), ' + gh.v);
       ok(/tick/.test(gh.v), at + ': the tick stays');
       const r4 = ws.filter((w) => w.id === 'cband' && w.r2)[0], strip = ws.filter((w) => w.id === 'cstrip' && w.dt > 0).pop();
@@ -3014,7 +3017,7 @@ const BAR = `(function () {
     const A = boot();
     A.ev('(playerTier = function () { return 2; }, 1)');
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var out = [], n = { pair: 0, ghost: 0, won: 0 }, its = allMistakes().filter(trainable);
+      var out = [], n = { pair: 0, ghost: 0, won: 0, holds: 0, holdsStatic: 0 }, its = allMistakes().filter(trainable);
       its.forEach(function (it) {
         var a = openCard(it);
         if (!a) return;
@@ -3024,7 +3027,45 @@ const BAR = `(function () {
           var st = cloneState(a.st);
           if (st.b[th.from] && st.b[th.from] === a.cls.gameLine.nodes[1].before.b[th.from]) {
             n.pair++;
-            if (!s0Marks(a, st).rings.length) out.push(it.key + ': no threat pair while its piece stands');
+            /* it still holds (fresh-eyes T1): their move, legal here, taking a piece of yours or mating,
+               and winning material: the best line plays it next and loses material from here (settled
+               where it is counted), or with no line through this board, a loose piece or a cheaper taker */
+            var holds = function (st2, line) {
+              var pov = myPov(it), lm = legalMoves(st2).filter(function (m) { return m.from === th.from && m.to === th.to; })[0];
+              if (!!st2.w === pov || !lm) return false;
+              var aft = cloneState(st2); applyMove(aft, lm);
+              var took = st2.b[lm.ep >= 0 ? lm.ep : lm.to], mate = checkersOf(aft).length > 0 && !legalMoves(aft).length;
+              if (!mate && !(took && isW(took) === pov)) return false;
+              if (!line) return mate || !isDefended(st2.b, lm.ep >= 0 ? lm.ep : lm.to) || MOTIF_VAL[pType(st2.b[th.from])] < MOTIF_VAL[pType(took)];
+              var j = -1;
+              line.nodes.forEach(function (x, k) { if (j < 0 && posKey(x.after) === posKey(st2)) j = k; });
+              if (j < 0) return mate || !isDefended(st2.b, lm.ep >= 0 ? lm.ep : lm.to) || MOTIF_VAL[pType(st2.b[th.from])] < MOTIF_VAL[pType(took)];
+              var nx = line.nodes[j + 1];
+              if (!nx || nx.move.from !== th.from || nx.move.to !== th.to) return false;
+              if (mate) return true;
+              var q = function (x) { return !x || (!x.captured && !x.move.promo && !checkersOf(x.after).length); };
+              var base = matDiff(line.nodes[j].after.b, pov), worst = 0;
+              [a.cls.bSettle, line.nodes.length - 1].forEach(function (k) {
+                var still = k === line.nodes.length - 1 ? q(line.nodes[k]) : q(line.nodes[k + 1]) && q(line.nodes[k + 2]);
+                if (k > j && still) worst = Math.min(worst, matDiff(line.nodes[k].after.b, pov) - base);
+              });
+              return worst <= -1;
+            };
+            var want = holds(st, a.cls.bestLine), drawn = s0Marks(a, st).rings.length > 0;
+            if (want) n.holds++;
+            if (drawn !== want) out.push(it.key + ': the threat pair ' + (drawn ? 'drawn where it no longer holds' : 'not drawn where it holds'));
+            /* doctored: the line plays it and loses nothing by it, so it wins nothing */
+            if (want) {
+              var blf = bestLossFrom; bestLossFrom = function () { return 0; };
+              try { if (s0Marks(a, st).rings.length) out.push(it.key + ': a threat pair the line loses nothing by'); } finally { bestLossFrom = blf; }
+            }
+            /* no line through the board: the board alone decides */
+            var bl0 = a.cls.bestLine; a.cls.bestLine = null;
+            try {
+              var want0 = holds(st, null), drawn0 = s0Marks(a, st).rings.length > 0;
+              if (want0) n.holdsStatic++;
+              if (drawn0 !== want0) out.push(it.key + ': with no line, the threat pair ' + (drawn0 ? 'drawn where it wins nothing' : 'not drawn where it wins'));
+            } finally { a.cls.bestLine = bl0; }
             /* taken, or another piece there: no pair */
             st.b[th.from] = null;
             if (s0Marks(a, st).rings.length) out.push(it.key + ': a threat pair from an empty square');
@@ -3062,7 +3103,7 @@ const BAR = `(function () {
         }
       });
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.pair >= 5 && r.n.ghost >= 4 && r.n.won >= 1, JSON.stringify(r.n));
+    ok(r.n.pair >= 5 && r.n.holds >= 1 && r.n.holdsStatic >= 1 && r.n.pair > r.n.holds && r.n.ghost >= 4 && r.n.won >= 1, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
   });
 
@@ -3722,6 +3763,34 @@ const BAR = `(function () {
     for (var k = 1; k < ref.nodes.length; k++) if (isMate(ref.nodes[k].after)) return { line: ref, k: k };
     return { line: ref, k: ref.nodes.length - 1 };
   }
+  /* the game segment as fresh-eyes T4 has it: the refutation (to the loss,
+     or to the mate) while the game really went that way; where the game
+     left it, the last move really played, or (their first reply missing a
+     blow) one step more, the move they could have played */
+  function gameEnd(a) {
+    var c = a.cls, mi = c.mateAgainst ? mateIdx(a) : null, end = mi && isMate(mi.line.nodes[mi.k].after) ? mi : { line: c.gameLine, k: c.lossAt };
+    var k0 = Math.min(end.k, end.line.nodes.length - 1), toks = a.it.g.mv.split(' '), st = cloneState(a.pre), real = [];
+    for (var i = a.it.b.p; i < toks.length && real.length <= k0; i++) { var m = sanToMove(st, toks[i]); if (!m) break; real.push(moveUci(m)); applyMove(st, m); }
+    for (var k = 1; k <= k0; k++) if (real[k] !== moveUci(end.line.nodes[k].move)) {
+      var could = k === 1 && real.length > 1 && (!!c.mateAgainst || c.lossG >= 1);
+      return { line: end.line, k: could ? 1 : k - 1, could: could, cut: true, real: real };
+    }
+    return { line: end.line, k: k0, could: false, cut: false, real: real };
+  }
+  /* where a better line's steps end (fresh-eyes T12): never on their
+     capture, but on your recapture just after it or before it, unless the
+     line mates or its last step is S-same's */
+  function trimEnd(a, line, from, end) {
+    var pov = myPov(a.it), g1 = a.cls.gameLine.nodes[1], b2 = line.nodes[2];
+    if (line === a.cls.bestLine && end === 2 && g1 && b2 && sameMove([b2.move.from, b2.move.to], [g1.move.from, g1.move.to])) return end;
+    if (isMate(line.nodes[end].after)) return end;
+    for (var g = 0; g < 4 && end > from; g++) {
+      var nd = line.nodes[end], nx = line.nodes[end + 1];
+      if (!nd.captured || isW(nd.captured) !== pov) break;
+      end = nx && nx.captured && isW(nx.captured) !== pov ? end + 1 : end - 1;
+    }
+    return end;
+  }
   function answered(a, how) {
     if (how === 'shown') { reveal(); a.view = { mode: 's0' }; a.settle = 2; return a; }
     if (a.sol) { while (a.solIdx < a.sol.length) { var m = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.solIdx++; } finishCard('first'); }
@@ -3729,10 +3798,10 @@ const BAR = `(function () {
     a.settle = 2;
     return a;
   }`;
-  await test('the game segment ends at lossAt: G1 is the game move, then the refutation ply by ply to the loss (to the mate when it mates)', () => {
+  await test('the game segment is the game: G1 is the game move, then the refutation ply by ply to the loss (to the mate when it mates) while the game went that way, never an engine move as the game (fresh-eyes T4)', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MATE_AT}
-      var out = [], n = { cards: 0, long: 0, mates: 0, mateLong: 0 };
+      var out = [], n = { cards: 0, long: 0, mates: 0, mateLong: 0, cut: 0, could: 0, whole: 0 };
       [1, 2, 3].forEach(function (tier) {
         playerTier = function () { return tier; };
         allMistakes().filter(trainable).forEach(function (it) {
@@ -3741,21 +3810,28 @@ const BAR = `(function () {
             if (!a0) return;
             var a = answered(a0, how), c = a.cls, S = buildStory(a), at = 'tier ' + tier + ' ' + it.key + ' ' + how;
             n.cards++;
-            var end = c.mateAgainst ? mateIdx(a) : { line: c.gameLine, k: c.lossAt };
-            if (c.lossAt >= 2) n.long++;
+            var e = gameEnd(a);
+            if (S.g >= 3) n.long++;
             if (c.mateAgainst) n.mates++;
-            if (S.g !== Math.min(end.k, end.line.nodes.length - 1) + 1) out.push(at + ': ' + S.g + ' game steps, lossAt ' + c.lossAt + (c.mateAgainst ? ', mate at ' + end.k : ''));
+            if (e.cut) n.cut++; else n.whole++;
+            if (e.could) n.could++;
+            if (S.g !== e.k + 1) out.push(at + ': ' + S.g + ' game steps, the game segment ends at ' + e.k + (e.cut ? ' (cut)' : ''));
+            if (!!S.could !== e.could) out.push(at + ': S.could ' + S.could + ', expected ' + e.could);
             var ref = a.lines.refute.uci;
             for (var i = 0; i < S.g; i++) {
-              var s = S.steps[i], nd = s.line.nodes[s.k];
-              if (s.seg !== 'game' || s.k !== i || moveUci(nd.move) !== ref[i]) out.push(at + ': game step ' + i + ' is ' + s.seg + ' node ' + s.k + ' ' + moveUci(nd.move) + ', not ' + ref[i]);
+              var s = S.steps[i], nd = s.line.nodes[s.k], u = moveUci(nd.move);
+              if (s.seg !== 'game' || s.k !== i || u !== ref[i]) out.push(at + ': game step ' + i + ' is ' + s.seg + ' node ' + s.k + ' ' + u + ', not ' + ref[i]);
+              /* every game step but the one they could have played is the game's own move */
+              if (!(e.could && i === 1) && u !== e.real[i]) out.push(at + ': game step ' + i + ' plays ' + u + ', the game ' + e.real[i]);
             }
             var last = S.steps[S.g - 1], ln = last.line.nodes[last.k];
-            if (c.mateAgainst && !isMate(ln.after)) out.push(at + ': the mate segment does not end in mate');
-            if (!c.mateAgainst && last.k !== c.lossAt) out.push(at + ': the game segment ends at ' + last.k + ', not lossAt ' + c.lossAt);
+            if (c.mateAgainst && !e.cut && !isMate(ln.after)) out.push(at + ': the mate segment does not end in mate');
+            if (!c.mateAgainst && !e.cut && last.k !== c.lossAt) out.push(at + ': the game segment ends at ' + last.k + ', not lossAt ' + c.lossAt);
             if (S.steps[0].line.nodes[0].move.from !== a.played.from || S.steps[0].line.nodes[0].move.to !== a.played.to) out.push(at + ': G1 is not the game move');
+            /* the move they could have played says so, and nothing comes after it */
+            if (e.could && !/could take|They missed it/.test(S.steps[1].cap)) out.push(at + ': the step they could have played reads ' + S.steps[1].cap);
             /* a mate is stepped to the mate on the stored refutation, whatever lossAt says (the classifier keeps 8 plies) */
-            if (c.mateAgainst && end.k >= 1) {
+            if (c.mateAgainst && !e.cut && e.k >= 1) {
               var keep = c.lossAt; c.lossAt = 0; a.story = null;
               var S2 = buildStory(a), l2 = S2.steps[S2.g - 1];
               if (!isMate(l2.line.nodes[l2.k].after)) out.push(at + ': with lossAt 0 the mate segment stops at node ' + l2.k);
@@ -3764,8 +3840,24 @@ const BAR = `(function () {
           });
         });
       });
+      /* doctored: the game's own moves as the refutation's, the segment runs to the loss */
+      playerTier = function () { return 1; };
+      allMistakes().filter(trainable).forEach(function (it) {
+        var a = openCard(it);
+        if (!a || it.b.ma != null) return;
+        var keep = it.g.mv, toks = keep.split(' '), ru = unpackUci(it.b.ru), st = cloneState(a.pre), sans = [];
+        applyMove(st, a.played);
+        for (var k = 0; k < Math.min(ru.length, 8); k++) { var m = uciToMove(st, ru[k]); if (!m) break; sans.push(sanOf(st, m)); applyMove(st, m); }
+        it.g.mv = toks.slice(0, it.b.p + 1).concat(sans).join(' ');
+        try {
+          answered(a, 'solved');
+          var S = buildStory(a);
+          n.doctored = (n.doctored || 0) + 1;
+          if (S.could || S.g !== Math.min(a.cls.lossAt, sans.length) + 1) out.push('doctored ' + it.key + ': ' + S.g + ' game steps with the game as the refutation, lossAt ' + a.cls.lossAt);
+        } finally { it.g.mv = keep; }
+      });
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.cards > 500 && r.n.long > 100 && r.n.mates > 10 && r.n.mateLong > 5, JSON.stringify(r.n));
+    ok(r.n.cards > 500 && r.n.long > 80 && r.n.mates > 10 && r.n.mateLong > 5 && r.n.cut > 100 && r.n.could > 50 && r.n.whole > 100 && r.n.doctored > 50, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
   });
 
@@ -3784,7 +3876,8 @@ const BAR = `(function () {
             if (c.mateFor) {
               var bs = S.steps[S.steps.length - 1];
               if (!isMate(bs.line.nodes[bs.k].after) && bs.k !== a.lines.best.uci.length) out.push(at + ': the mate line stops short');
-            } else if (nb !== Math.max(1, c.bSettle)) out.push(at + ': ' + nb + ' better steps, bSettle ' + c.bSettle);
+            } else if (nb !== trimEnd(a, c.bestLine, 1, Math.min(Math.max(1, c.bSettle), c.bestLine.nodes.length - 1))) out.push(at + ': ' + nb + ' better steps, bSettle ' + c.bSettle);
+            if (nb !== Math.max(1, c.bSettle)) n.trimmed = (n.trimmed || 0) + 1;
             if (nb > 1) n.multi++;
             /* what lands on B1: the better move's badge and tints, then guard dots or the game move's ghost, never both; on G1 the reply it allows; a capture's token in its owner's colour */
             var b1 = S.steps[S.g], bn = b1.line.nodes[b1.k], m1 = storyMarks(a, S, S.g), bk = a.revealed ? 'info' : 'good';
@@ -3815,7 +3908,7 @@ const BAR = `(function () {
             var rest = playUci(after, unpackUci(it.b.lu).slice(1)).uci;
             a.yours = { uci: [moveUci(alt)].concat(rest), cp: 0, at: 0 };
             solved(alt, moveUci(alt), { win: 50, best: 52, mate: null });
-            var S = buildStory(a), al = buildLine(a.pre, '0000', a.yours.uci, myPov(it)), want = Math.max(1, settleIndex(al)), b1 = S.steps[S.g];
+            var S = buildStory(a), al = buildLine(a.pre, '0000', a.yours.uci, myPov(it)), want = trimEnd(a, al, 1, Math.min(Math.max(1, settleIndex(al)), al.nodes.length - 1)), b1 = S.steps[S.g];
             n.alts++;
             if (S.steps.length - S.g !== want || moveUci(b1.line.nodes[b1.k].move) !== moveUci(alt)) out.push(it.key + ': the alternative has ' + (S.steps.length - S.g) + ' steps from ' + moveUci(b1.line.nodes[b1.k].move) + ', not ' + want + ' from ' + moveUci(alt));
           }
@@ -3837,7 +3930,7 @@ const BAR = `(function () {
         });
       });
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.cards > 500 && r.n.multi > 100 && r.n.alts > 50 && r.n.inLine > 5 && r.n.guard >= 6 && r.n.ghost > 300 && r.n.ep >= 2, JSON.stringify(r.n));
+    ok(r.n.cards > 500 && r.n.multi > 100 && r.n.alts > 50 && r.n.inLine > 5 && r.n.guard >= 6 && r.n.ghost > 300 && r.n.ep >= 2 && r.n.trimmed >= 10, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
   });
 
@@ -3856,10 +3949,10 @@ const BAR = `(function () {
         if (!c.mateAgainst && !c.mateFor) {
           c.mateAgainst = 1; a.story = null;
           var S = buildStory(a);
-          if (S.mateG || /checkmate/i.test(S.steps[0].cap) || S.g !== c.lossAt + 1) out.push(it.key + ': a mate claimed against with none on screen: ' + S.steps[0].cap + ', ' + S.g + ' game steps');
+          if (S.mateG || /checkmate/i.test(S.steps[0].cap) || S.g !== gameEnd(a).k + 1) out.push(it.key + ': a mate claimed against with none on screen: ' + S.steps[0].cap + ', ' + S.g + ' game steps');
           c.mateAgainst = null; c.mateFor = 1; a.story = null;
           S = buildStory(a);
-          if (S.mateB || /checkmate/i.test(S.steps[S.g].cap) || S.steps.length - S.g !== Math.max(1, c.bSettle)) out.push(it.key + ': a mate claimed for with none on screen: ' + S.steps[S.g].cap);
+          if (S.mateB || /checkmate/i.test(S.steps[S.g].cap) || S.steps.length - S.g !== trimEnd(a, c.bestLine, 1, Math.min(Math.max(1, c.bSettle), c.bestLine.nodes.length - 1))) out.push(it.key + ': a mate claimed for with none on screen: ' + S.steps[S.g].cap);
           c.mateFor = null; a.story = null; n.mateG++; n.mateB++;
         }
         /* an alternative whose own line cannot be built: told as the better move, never as yours */
@@ -3888,7 +3981,7 @@ const BAR = `(function () {
     A.ev('(playerTier = function () { return 2; }, 1)');
     A.ev(BAR);
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
-    const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && !a.cls.mateAgainst && a.cls.lossAt === 1 && a.cls.bSettle === 1; }).slice(0, 6).map(function (x) { return x.key; }))`));
+    const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); if (!a || a.sol) return false; /* the game went the refutation's way (fresh-eyes T4) */ var g = realGame(a, a.cls.lossAt + 1).join(' '), ru = [a.playedUci].concat(unpackUci(x.b.ru)).slice(0, a.cls.lossAt + 1).join(' '); return g === ru && !a.cls.mateAgainst && a.cls.lossAt === 1 && a.cls.bSettle === 1; }).slice(0, 6).map(function (x) { return x.key; }))`));
     ok(keys.length >= 4, 'one-move blunders ' + keys.length);
     const st = () => JSON.parse(A.ev('JSON.stringify((function (a) { var v = a.view; return { mode: v.mode, i: v.i, fen: stateFen(doneBoard(a)), off: /btn-off[^>]*>Next move/.test(window.__els.cbar.innerHTML) }; })(ui.session.active))'));
     for (const [k, key] of keys.entries()) {
@@ -3983,7 +4076,7 @@ const BAR = `(function () {
     A.ev('(playerTier = function () { return 2; }, 1)');
     A.ev(BAR);
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
-    const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && a.cls.lossAt + Math.max(1, a.cls.bSettle) >= 4; }).slice(0, 4).map(function (x) { return x.key; }))`));
+    const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); if (!a || a.sol) return false; var g = realGame(a, a.cls.lossAt + 1).join(' '), ru = [a.playedUci].concat(unpackUci(x.b.ru)).slice(0, a.cls.lossAt + 1).join(' '); return g === ru && !a.cls.mateAgainst && a.cls.lossAt + Math.max(1, a.cls.bSettle) >= 4; }).slice(0, 4).map(function (x) { return x.key; }))`));
     const st = () => JSON.parse(A.ev('JSON.stringify((function (a) { return { mode: a.view.mode, i: a.view.i, fen: stateFen(doneBoard(a)), strip: window.__els.cstrip.innerHTML, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null, nope: !!(a.nope && a.nope.key === cardStateKey(a)) }; })(ui.session.active))'));
     /* a sideways swipe on the board as a finger makes it: from x to x + dx (the realm draws square sq at 200 + file * 45) */
     const sqs0 = () => A.ev('(function (st) { for (var q = 0; q < 64; q++) if (st.b[q]) return q; })(ui.session.active.pre)');
@@ -4141,6 +4234,222 @@ const BAR = `(function () {
       A.key('Enter', false, on()); run(1000);
       eq(A.ev('ui.session.idx'), 1, key + ': Enter on Continue');
     }
+  });
+
+  /* ── fresh-eyes fixes A: truth on the card face ── */
+  /* the rules as these tests read them, apart from the app's own: a count
+     of material stands at node k when the line does not end there on a
+     capture or check left unanswered and has none in the next two plies; a
+     loss is claimed only where it stands, in line with the score (no more
+     than 3 pawns over the drop, unless the move is lost anyway) and more
+     than the card's best line loses from the same position; or at the
+     line's end when the solver takes something back there ("X for Y") */
+  const FRESH = `
+    var qp = function (x) { return !x || !x.move || (!x.captured && !x.move.promo && !checkersOf(x.after).length); };
+    function stands(line, k) { var n = line.nodes; if (!n[k]) return false; return k === n.length - 1 ? qp(n[k]) : qp(n[k + 1]) && qp(n[k + 2]); }
+    function netLoss(a, line, k) { var pov = myPov(a.it); return matDiff(line.nodes[0].before.b, pov) - matDiff(line.nodes[k].after.b, pov); }
+    function bestLoss(a, j) {
+      var line = a.cls.bestLine, pov = myPov(a.it), worst = 0;
+      if (!line || !line.nodes[j]) return 0;
+      var base = matDiff(line.nodes[j].after.b, pov);
+      [a.cls.bSettle, line.nodes.length - 1].forEach(function (k) { if (k > j && stands(line, k)) worst = Math.min(worst, matDiff(line.nodes[k].after.b, pov) - base); });
+      return -worst;
+    }
+    function claimAt(a, line, k, cpAfter, j, story) {
+      var bl = bestLoss(a, j), eb = a.it.b.eb, last = line.nodes.length - 1, end = line.nodes[last];
+      var good = function (kk, st) { var n = netLoss(a, line, kk); return st && n >= 1 && n > bl && (cpAfter <= -900 || n <= (eb - cpAfter) / 100 + 3); };
+      if (good(k, stands(line, k))) return k;
+      if (!story && last > k && end.captured && isW(end.captured) !== myPov(a.it) && good(last, true)) return last;
+      return -1;
+    }
+    function cpGame(b) { return b.ea != null ? b.ea : b.ma != null ? (b.ma > 0 ? 1500 : -1500) : cpFromWin(b.wa); }
+  `;
+
+  await test('S0 draws the game line\'s threat only where it holds on its own board: their move, legal there, taking a piece of yours or mating, and winning material (the engine\'s line plays it next and loses by it); its words and aria-label follow (fresh-eyes T1)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MATE_AT} ${FRESH}
+      var out = [], n = { frames: 0, stands: 0, drawn: 0, gone: 0 };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var a = openCard(it);
+          if (!a) return;
+          a = answered(a, 'solved');
+          a.view = { mode: 's0' }; a.settle = 2;
+          var at = 'tier ' + tier + ' ' + it.key, f = boardOptsFor(a), o = f.opts, st = f.st, pov = myPov(it);
+          n.frames++;
+          var th = familyOf(patternOf(it.b)).key !== 'chances' ? threatOf(a.cls.gameLine, 1) : null;
+          if (th && st.b[th.from] === a.cls.gameLine.nodes[1].before.b[th.from]) n.stands++;
+          var arrows = (o.arrows || []).filter(function (x) { return x.kind === 'threat'; });
+          if (th && !arrows.length && st.b[th.from] === a.cls.gameLine.nodes[1].before.b[th.from]) n.gone++;
+          arrows.forEach(function (ar) {
+            n.drawn++;
+            var lm = legalMoves(st).filter(function (m) { return m.from === ar.from && m.to === ar.to; })[0];
+            if (!!st.w === pov) out.push(at + ': a threat drawn with you to move');
+            if (!lm) { out.push(at + ': an illegal threat ' + sqName(ar.from) + sqName(ar.to)); return; }
+            var aft = cloneState(st); applyMove(aft, lm);
+            var took = st.b[lm.ep >= 0 ? lm.ep : lm.to], mate = isMate(aft);
+            if (!mate && !(took && isW(took) === pov)) out.push(at + ': a threat that takes nothing of yours');
+            /* the engine's line through this board plays it next and loses material by it */
+            var bl = a.cls.bestLine, j = -1;
+            bl.nodes.forEach(function (x, k) { if (j < 0 && posKey(x.after) === posKey(st)) j = k; });
+            if (j >= 0) {
+              var nx = bl.nodes[j + 1];
+              if (!nx || nx.move.from !== ar.from || nx.move.to !== ar.to) out.push(at + ': a threat the engine does not play');
+              else if (!mate && bestLoss(a, j) < 1) out.push(at + ': a threat that wins nothing on the best line');
+            }
+            /* its words, on this board as drawn */
+            if (!/Dashed red arrow: the [a-z]+ on [a-h][1-8] can (take|give check) on /.test(o.label) || /after your game move/.test(o.label)) out.push(at + ': the aria-label reads ' + o.label);
+            var w = threatSay(a, f, ar);
+            if (!w || !w.say) out.push(at + ': no words for the threat drawn');
+          });
+          /* the three repro boards (fresh-eyes T1) draw nothing */
+          if (/^184331579496:34$|^184205946040:62$|^184380745302:11$|^184455333378:68$|^184268949378:16$/.test(it.key) && arrows.length) out.push(at + ': the repro card still draws ' + JSON.stringify(arrows));
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.frames > 250 && r.n.stands > 30 && r.n.drawn >= 2 && r.n.gone > 30, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
+  });
+
+  await test('no material claim on an unsettled line, out of line with the score, or lost by the best line too: R4, the game move again (M3), a wrong try (M3) and the story\'s last game step (fresh-eyes T5, T8, T2c)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MATE_AT} ${FRESH} ${MISSES}
+      var out = [], n = { r4: 0, r4Claim: 0, r4Back: 0, m2: 0, m2Claim: 0, tries: 0, tryClaim: 0, story: 0, dropped: 0 };
+      var lose = function (s) { return /(lost|could lose|you'd lose|You'd lose|You lose) (?!nothing|less)/.test(s); };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var a = openCard(it);
+          if (!a) return;
+          var c = a.cls, at = 'tier ' + tier + ' ' + it.key, fam = familyOf(patternOf(it.b)).key;
+          /* the game move again (M2) */
+          if (fam !== 'chances') {
+            var w2 = gameMoveWhy(a), k2 = c.lossG >= 1 && !c.mateAgainst ? claimAt(a, c.gameLine, c.lossAt, cpGame(it.b), 0) : -1;
+            n.m2++;
+            var said2 = w2.cands.concat([w2.fall]).some(lose);
+            if (said2) n.m2Claim++;
+            if (said2 !== (k2 >= 0)) out.push(at + ' M2: ' + (said2 ? 'claims ' : 'drops a claim that holds: ') + w2.cands.join(' | '));
+          }
+          a = answered(a, 'solved');
+          a.view = { mode: 's0' }; a.settle = 2;
+          /* R4: the game move's loss, exactly where it holds */
+          var cmp = buildCompare(a), r4 = r4Of(a), k4 = c.lossG >= 1 && !c.mateAgainst ? claimAt(a, c.gameLine, c.lossAt, cpGame(it.b), 0) : -1;
+          n.r4++;
+          if (!!cmp.w !== (k4 >= 0)) out.push(at + ' R4: w "' + cmp.w + '" where the claim ' + (k4 >= 0 ? 'holds at ' + k4 : 'does not hold'));
+          if (cmp.w) { n.r4Claim++; if (k4 !== c.lossAt) n.r4Back++; if (cmp.w !== (plainCapture(c.gameLine, k4, 0) || cmp.w)) out.push(at + ' R4: "' + cmp.w + '" is not what the line took to node ' + k4); }
+          else if (c.lossG >= 1 && !c.mateAgainst) { n.dropped++; r4.cands.concat([displayFor(a).row2]).forEach(function (x) { if (lose(x)) out.push(at + ' R4 dropped, yet reads ' + x); }); }
+          /* the story's last game step */
+          var S = buildStory(a), lg = S.steps[S.g - 1], m = /You lose ([a-z ]+)\\./.exec(lg.cap);
+          if (m) {
+            n.story++;
+            if (claimAt(a, lg.line, lg.k, cpGame(it.b), 0, true) !== lg.k) out.push(at + ' story: "' + lg.cap + '" where the count does not stand');
+            if (S.could && lg.k === 1) out.push(at + ' story: a loss on a move they only could have played');
+          }
+          /* the last better step's gain, only where its count stands */
+          var lb = S.steps[S.steps.length - 1];
+          if (/You win /.test(lb.cap)) { n.win = (n.win || 0) + 1; if (!stands(lb.line, lb.k)) out.push(at + ' story: "' + lb.cap + '" where the count does not stand'); }
+        });
+      });
+      /* a wrong try (M3): the stub answers with the stored refutation */
+      eachMiss([1, 2], function (a, what) {
+        var t = a.tried;
+        /* the game move again is M2's, checked above */
+        if (!t || t.kind !== 'miss' || t.uci === a.playedUci) return;
+        n.tries++;
+        var b = a.it.b, m = uciToMove(a.st, t.uci), after = cloneState(a.st); applyMove(after, m);
+        var ru = unpackUci(b.ru), reply = ru.length && playUci(after, ru).uci.length === ru.length ? ru : legalMoves(after).slice(0, 1).map(moveUci);
+        var c = classifyMistake(a.st, t.uci, { pv: [] }, { pv: reply, mate: reply === ru ? b.ma : null }, winPct(b.eb), b.wa, b.p);
+        var k = c.lossG >= 1 && !c.mateAgainst ? claimAt(a, c.gameLine, c.lossAt, cpFromWin(b.wa), a.sol && a.solIdx > 0 ? a.solIdx : 0) : -1;
+        var said = a.verdict.cands.concat([a.verdict.fall]).some(lose);
+        if (said) n.tryClaim++;
+        if (said !== (k >= 0)) out.push(what + ' M3: ' + (said ? 'claims ' : 'drops a claim that holds: ') + a.verdict.cands.join(' | '));
+      });
+      /* the settle rule's own steps: a capture two plies on, a capture or check left unanswered at the end */
+      var sl = buildLine(stateFromFen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'), 'e2e4', ['d7d5', 'g1f3', 'd5e4'], false);
+      if (settledAt(sl, 1)) out.push('a count stands with a capture two plies on');
+      if (settledAt(sl, 3) || !settledAt(buildLine(sl.nodes[0].before, 'e2e4', ['d7d5', 'g1f3'], false), 2)) out.push('the end of a line: unanswered capture stands, or a quiet end does not');
+      /* the repro cards: an unsettled line (it ends on a check) claims nothing; a rook taken back is said */
+      playerTier = function () { return 2; };
+      var rp = function (key) { var a = answered(openCard(model().byKey[key]), 'solved'); a.view = { mode: 's0' }; a.settle = 2; return r4Of(a).cands.concat([displayFor(a).row2]); };
+      rp('184268949378:16').forEach(function (x) { if (lose(x)) out.push('184268949378:16 R4 still claims: ' + x); });
+      rp('184455333378:68').forEach(function (x) { if (/a queen and a bishop\\./.test(x)) out.push('184455333378:68 R4 leaves out the rook taken back: ' + x); });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.r4 > 250 && r.n.r4Claim > 60 && r.n.r4Back >= 3 && r.n.m2Claim > 40 && r.n.tries > 150 && r.n.tryClaim >= 3 && r.n.story > 20 && r.n.dropped > 20 && r.n.win >= 10, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
+  });
+
+  await test('a wrong move\'s loss is said as See it shows it: "You\'d lose X." only when their one reply takes it, else after that reply; the lost token and its label only on a capture (fresh-eyes T3)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MISSES}
+      var out = [], n = { plain: 0, after: 0, seen: 0, token: 0 };
+      eachMiss([1, 2], function (a, what) {
+        var t = a.tried;
+        if (!t || t.kind !== 'miss') return;
+        var b = a.it.b, m = uciToMove(a.st, t.uci), after = cloneState(a.st); applyMove(after, m);
+        var ru = unpackUci(b.ru), reply = ru.length && playUci(after, ru).uci.length === ru.length ? ru : legalMoves(after).slice(0, 1).map(moveUci);
+        var c = classifyMistake(a.st, t.uci, { pv: [] }, { pv: reply, mate: reply === ru ? b.ma : null }, winPct(b.eb), b.wa, b.p), r1 = c.gameLine.nodes[1];
+        var first = a.verdict.cands[0] || '';
+        if (/^You'd lose /.test(first)) {
+          n.plain++;
+          if (!r1 || !r1.captured || c.lossAt !== 1) out.push(what + ': "' + first + '" where their one reply does not take it');
+        } else if (/^After \\S+, you'd lose /.test(first)) {
+          n.after++;
+          if (first.indexOf('After ' + sanOf(after, uciToMove(after, t.reply)) + ',') !== 0) out.push(what + ': "' + first + '" names another reply than ' + t.reply);
+        }
+        if (!t.reply) return;
+        a.reason = 2; seeIt(); a.animMove = null;
+        n.seen++;
+        var o = boardOptsFor(a).opts, tk = (o.tokens || []).filter(function (x) { return x.kind === 'lost'; });
+        var rm = uciToMove(after, t.reply), took = rm && (rm.ep >= 0 ? after.b[rm.ep] : after.b[rm.to]);
+        if (tk.length) n.token++;
+        if (tk.length && !took) out.push(what + ': a lost token with no capture');
+        if (tk.length && tk[0].p !== took) out.push(what + ': the token is not the piece taken');
+        var lb = labelCands(a, boardOptsFor(a), function () { return true; }).filter(function (x) { return x.text === 'lost'; });
+        if (lb.length && !tk.length) out.push(what + ': "lost" with no token');
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.plain >= 10 && r.n.after > 10 && r.n.seen > 150 && r.n.token > 50, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
+  });
+
+  await test('a better line, or your own, never ends on their capture: it runs on to your recapture or stops before it (a mate, or S-same\'s "still takes", aside) (fresh-eyes T12)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MATE_AT}
+      var out = [], n = { lines: 0, alts: 0, same: 0, trimmed: 0 };
+      var check = function (a, what) {
+        var S = buildStory(a), s = S.steps[S.steps.length - 1], nd = s.line.nodes[s.k], pov = myPov(a.it);
+        n.lines++;
+        if (/still (comes|takes)/.test(s.cap)) { n.same++; return; }
+        if (S.mateB || isMate(nd.after)) return;
+        if (s.k !== s.from && nd.captured && isW(nd.captured) === pov) out.push(what + ': ends on their capture: ' + s.cap);
+        var full = a.cls.bestLine;
+        if (!S.alt && s.line === full && s.k !== Math.max(1, a.cls.bSettle)) n.trimmed++;
+      };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          ['solved', 'shown'].forEach(function (how) {
+            var a = openCard(it);
+            if (a) check(answered(a, how), 'tier ' + tier + ' ' + it.key + ' ' + how);
+          });
+          /* a move that works too, the stored line after it */
+          var a = openCard(it);
+          if (!a || a.sol) return;
+          legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci; }).slice(0, 3).forEach(function (alt) {
+            var b = openCard(it), aft = cloneState(b.st); applyMove(aft, alt);
+            var rest = legalMoves(aft).filter(function (m) { return aft.b[m.to]; }).slice(0, 1).map(moveUci);
+            if (rest.length) { var a2 = cloneState(aft); applyMove(a2, uciToMove(a2, rest[0])); var back = legalMoves(a2).filter(function (m) { return a2.b[m.to]; })[0]; if (back) rest.push(moveUci(back)); }
+            b.yours = { uci: [moveUci(alt)].concat(rest), cp: 0, at: 0 };
+            solved(alt, moveUci(alt), { win: 50, best: 52, mate: null });
+            n.alts++;
+            check(b, 'tier ' + tier + ' ' + it.key + ' works too ' + moveUci(alt));
+          });
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.lines > 1000 && r.n.alts > 300 && r.n.same >= 4 && r.n.trimmed >= 10, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
   });
 
   await test('board primitives: distinct marker ids', () => {

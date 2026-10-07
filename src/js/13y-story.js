@@ -154,6 +154,78 @@ function oneWord(x, n) {
   return / and /.test(x) && n >= 6 ? 'a lot of material' : x;
 }
 
+/* ── what a line may claim (fresh-eyes fixes A) ─────────────────────────
+   A count of material is a result only where the line lets it stand: not
+   on a capture or a check the line leaves unanswered (its last ply), and
+   not with a capture or a check coming in the next two plies. The claim
+   must also agree with the engine (a loss far bigger than the score's drop
+   is a line cut short, not what the move costs) and with the better move
+   (a loss the best line suffers as well is not why the move is wrong). A
+   claim that fails any of these is not made: the caller says where the
+   game stands instead */
+var EVAL_SLACK = 3;
+function quietPly(x) { return !x || !x.move || (!x.captured && !x.move.promo && !checkersOf(x.after).length); }
+function settledAt(line, k) {
+  var n = line && line.nodes;
+  if (!n || !n[k]) return false;
+  if (k === n.length - 1) return quietPly(n[k]);
+  return quietPly(n[k + 1]) && quietPly(n[k + 2]);
+}
+/* the solver's score after the game move, in centipawns, as cardLines
+   reads it (the deeper look, a mate, else the scan's win chance) */
+function gameCpAfter(b) { return b.ea != null ? b.ea : b.ma != null ? (b.ma > 0 ? 1500 : -1500) : cpFromWin(b.wa); }
+/* what the card's best line loses (in pawns, 0 when nothing) from its node
+   j (the position the move is asked from: node 0 is the card's own, node
+   solIdx inside a forcing line), read where it settles and where it ends
+   when it is settled there; the worse of the two. line, settle: another
+   line of yours and where it settles (S0's board on your own move's line) */
+function bestLossFrom(a, j, line, settle) {
+  if (!line) { line = a.cls.bestLine; settle = a.cls.bSettle; }
+  var pov = myPov(a.it);
+  if (!line || !line.nodes[j]) return 0;
+  var base = matDiff(line.nodes[j].after.b, pov), worst = 0;
+  [settle, line.nodes.length - 1].forEach(function (k) {
+    if (k > j && settledAt(line, k)) worst = Math.min(worst, matDiff(line.nodes[k].after.b, pov) - base);
+  });
+  return -worst;
+}
+/* the loss a move's line (line, from node `from`: 0 for a move's own line,
+   whose node 0 is that move) may claim at node k: {n, w, wn, k} or null.
+   cpAfter, cpBest: the solver's score after the move and after the best
+   one; bestLoss: what the best line loses itself. When the count at k does
+   not stand and the line ends on a capture of the solver's (it takes
+   something back), the count at the line's end, said "X for Y" (unless
+   only: the story, which claims nothing past the ply on screen) */
+function lossClaim(a, line, k, from, cpAfter, cpBest, bestLoss, only) {
+  if (!line || !line.nodes[k]) return null;
+  var pov = myPov(a.it), base = matDiff(line.nodes[from].before.b, pov), last = line.nodes.length - 1;
+  var drop = cpAfter != null && cpBest != null ? (cpBest - cpAfter) / 100 : null;
+  var at = [k];
+  var back = line.nodes[last];
+  if (!only && last > k && back.captured && colorW(back.captured) !== pov) at.push(last);
+  for (var i = 0; i < at.length; i++) {
+    var kk = at[i], n = base - matDiff(line.nodes[kk].after.b, pov);
+    if (!(kk === k ? settledAt(line, kk) : true)) continue;
+    if (n < 1 || n <= (bestLoss || 0)) continue;
+    if (drop != null && cpAfter > -900 && n > drop + EVAL_SLACK) continue;
+    var x = plainCapture(line, kk, from);
+    return { n: n, w: x || oneWord(null, n), wn: oneWord(x, n), k: kk };
+  }
+  return null;
+}
+/* the game's own moves from the card's position (the game move first), as
+   UCI, up to n plies; shorter when the game ended */
+function realGame(a, n) {
+  var toks = a.it.g.mv.split(' '), st = cloneState(a.pre), out = [];
+  for (var k = a.it.b.p; k < Math.min(toks.length, a.it.b.p + n); k++) {
+    var m = sanToMove(st, toks[k]);
+    if (!m) break;
+    out.push(moveUci(m));
+    applyMove(st, m);
+  }
+  return out;
+}
+
 /* why a wrong try fails (M3), as row 2's ladder {cands, fall}: c is the
    classifier on the try (on the game move again, the card's own), win the
    solver's win chance after it, reply their answer in SAN. Checkmate first,
@@ -162,11 +234,17 @@ function oneWord(x, n) {
    due now, or needs a reply there is none of, gives way to the fallback */
 function missWhy(a, c, win, reply, inLine) {
   var s = sidesOf(a), cands = [], fall = 'That helps ' + s.opp + '.';
+  /* the material it loses, only as missWhyLoss allows it */
+  var lc = c && !c.mateAgainst && c.lossG >= 1 ? missWhyLoss(a, c, win) : null;
   if (c && c.mateAgainst === 1 && reply) cands = ['Then ' + reply.replace(/#$/, '') + ' is checkmate.', s.opp + ' could checkmate you.'];
   else if (c && c.mateAgainst > 1) cands = [s.opp + ' could checkmate you.'];
-  else if (c && c.lossG >= 1) {
-    var lw = plainCapture(c.gameLine, c.lossAt, 0), w = oneWord(lw, c.lossG);
-    cands = ['You\'d lose ' + (lw || w) + '.', 'You\'d lose ' + w + '.'];
+  else if (lc) {
+    /* See it plays one reply: a loss that takes more than that ply names
+       the reply it starts from, so the words and the board agree */
+    var r1 = c.gameLine.nodes[1], one = lc.k === 1 && !!r1 && !!r1.captured;
+    var ws = lc.wn !== lc.w ? [lc.w, lc.wn] : [lc.w];
+    var plain = ws.map(function (x) { return 'You\'d lose ' + x + '.'; });
+    cands = one || !reply ? plain : ws.map(function (x) { return 'After ' + reply + ', you\'d lose ' + x + '.'; }).concat(plain);
     fall = 'You\'d lose material.';
   }
   else if (inLine) cands = ['Nothing lost, but there\'s a better move.'];
@@ -174,6 +252,15 @@ function missWhy(a, c, win, reply, inLine) {
   else if (reply) cands = ['After ' + reply + ', ' + (win >= 40 ? 'the game is even.' : s.opp + ' is on top.')];
   var due = sanOf(a.st, dueMove(a));
   return { cands: cands.filter(function (x) { return x.indexOf(due) < 0; }), fall: fall };
+}
+/* the loss a wrong move (or the game move again) may claim (lossClaim):
+   settled where it is counted, in line with the score after it (win, the
+   solver's chance) against the best move's, and more than the card's best
+   line loses from the same position */
+function missWhyLoss(a, c, win) {
+  var b = a.it.b, j = a.sol && a.solIdx > 0 ? a.solIdx : 0;
+  var after = c === a.cls ? gameCpAfter(b) : win != null ? cpFromWin(win) : null;
+  return lossClaim(a, c.gameLine, c.lossAt, 0, after, b.eb, bestLossFrom(a, j));
 }
 /* the game move again (M2): its reason from the card's own refutation and
    the score after it; a missed-chance card says only that there is more
@@ -208,8 +295,9 @@ function triedVerdict(a, t, why, again) {
    trade), a checkmate, a fork made by the first move (only when the line
    is missing), else checks and captures; a winning position, keeping it
    simple; a quiet one, its worst piece; a safety or king card with nothing
-   drawn, what the answer wins when it wins something, else keeping it
-   safe. No form names the answer due now */
+   drawn, what the answer wins when it wins something, else where to look
+   (a threat already there, the king, what the game move allowed). No form
+   names the answer due now */
 function hintText(a) {
   var marks = hintMarks(a), due = dueMove(a), dueSan = sanOf(a.st, due), cands, fall;
   var r = { row1: CARD_COPY[a.hints >= 2 ? 'H3' : 'H1'](), marks: marks };
@@ -226,15 +314,20 @@ function hintText(a) {
        its line wins */
     var gets = c.mateFor ? ['There is a checkmate here.']
       : win ? ['You can win ' + (pw || oneWord(null, c.matBest)) + ' here.', 'You can win ' + oneWord(pw, c.matBest) + ' here.'] : null;
+    /* a safety or king card with nothing drawn (its danger would touch
+       the answer's squares) still points somewhere (fresh-eyes C5): at a
+       threat that stood before the game move, at the king, else at what the
+       game move allowed */
+    var guard = fam === 'king' ? 'Look at your king\'s safety.' : c.t === 'threat' ? 'What does ' + sidesOf(a).opp + ' threaten?' : 'Ask what ' + gameSan(a) + ' allows.';
     var own = fam === 'conversion' ? 'Keep it simple and safe.' : fam === 'quiet' ? 'Improve your worst piece.'
-      : fam === 'chances' || win ? 'You can win material here.' : 'Keep it simple and safe.';
+      : fam === 'chances' || win ? 'You can win material here.' : guard;
     fall = own;
     if (fam === 'chances') cands = gets || (mt.fork && mt.fork.ply === 1 && c.matBest >= 2 ? ['One piece can hit two targets.'] : ['Look for checks and captures.']);
     /* the reply the game move runs into, drawn beside these words */
     else if (marks.danger) cands = ['See what ' + gameSan(a) + ' runs into.'];
     else if (fam === 'conversion') cands = ['Keep it simple and safe.'];
     else if (fam === 'quiet') cands = ['Find your worst piece and improve it.', 'Improve your worst piece.'];
-    else cands = gets || ['Keep it simple and safe.'];
+    else cands = gets || [guard];
   }
   /* the guard: no form names the answer due now */
   var names = function (x) { return String(x || '').split(/[\s.,]+/).indexOf(dueSan) >= 0; };
@@ -292,10 +385,12 @@ function buildCompare(a) {
       better = sanOf(alt.nodes[at].before, alt.nodes[at].move);
     }
   }
-  var bn = line && line.nodes[at], lw = plainCapture(c.gameLine, c.lossAt, 0), gw = gain >= 1 && line ? plainCapture(line, settle, at) : null;
+  var bn = line && line.nodes[at], gw = gain >= 1 && line ? plainCapture(line, settle, at) : null;
+  /* what the game move lost, only where the claim stands (lossClaim) */
+  var lc = c.lossG >= 1 && !c.mateAgainst ? lossClaim(a, c.gameLine, c.lossAt, 0, gameCpAfter(it.b), it.b.eb, bestLossFrom(a, 0)) : null;
   a.compare = {
     found: !!(gm[1] && ru[0] && gm[1] === ru[0]), replied: !!gm[1], betterSan: better, gameSan: gameSan(a),
-    w: c.lossG >= 1 ? lw || oneWord(null, c.lossG) : '', wn: c.lossG >= 1 ? oneWord(lw, c.lossG) : '',
+    w: lc ? lc.w : '', wn: lc ? lc.wn : '',
     w2: gain >= 1 && line ? gw || oneWord(null, gain) : '', w2n: gain >= 1 ? oneWord(gw, gain) : '',
     guard: guardRule(c.gameLine, a.played, bn) && guardMeans(c, a.pre, a.played, bn)
   };
@@ -343,7 +438,7 @@ function r4Of(a) {
     cands = [g + ' allowed checkmate.' + (cmp.found ? '' : ' They missed it.')];
     if (!cmp.found) never.push(g + ' allowed checkmate.');
   }
-  else if ((fam === 'safety' || fam === 'king') && c.lossG >= 1) {
+  else if ((fam === 'safety' || fam === 'king') && cmp.w) {
     var mistake = function (x) { return g + (cmp.found ? ' lost ' : ' could lose ') + x + '.'; };
     var better = cmp.guard ? bs + ' is guarded. ' : null;
     if (better) cands = both(function (x) { return better + mistake(x); }, cmp.w, cmp.wn);
@@ -388,7 +483,20 @@ function buildStory(a) {
     if (rk >= 0) { gl = ref; gEnd = rk; }
   }
   gEnd = Math.max(0, Math.min(gEnd, gl.nodes.length - 1));
-  for (var k = 0; k <= gEnd; k++) steps.push({ seg: 'game', line: gl, k: k, from: 0 });
+  /* the game segment is your game (fresh-eyes T4): the engine's line only
+   while the game really went that way. Where the game left it, the segment
+   ends on the last move really played; when that is their first reply and
+   it missed a blow, one step more shows the move they could have played
+   ("could take ... They missed it."), and nothing after it */
+  var real = realGame(a, gEnd + 1), could = false;
+  for (var k = 1; k <= gEnd; k++) {
+    if (real[k] === moveUci(gl.nodes[k].move)) continue;
+    var cmp0 = buildCompare(a);
+    could = k === 1 && !cmp0.found && cmp0.replied && (!!c.mateAgainst || c.lossG >= 1);
+    gEnd = could ? 1 : k - 1;
+    break;
+  }
+  for (k = 0; k <= gEnd; k++) steps.push({ seg: 'game', line: gl, k: k, from: 0 });
   var bl = c.bestLine || buildLine(a.pre, '0000', a.lines.best.uci, pov), from = 1, bEnd = Math.max(1, c.bSettle || 0), alt = null;
   if (a.alt && a.yours) {
     var al = buildLine(a.pre, '0000', a.yours.uci, pov), at = (a.yours.at || 0) + 1;
@@ -398,8 +506,13 @@ function buildStory(a) {
     if (mk >= 1) { bl = ml; bEnd = mk; }
   }
   bEnd = Math.max(from, Math.min(bEnd, bl.nodes.length - 1));
+  /* S-same's step (the game's blow again, a move later) says itself that
+     it still comes: it may end the line */
+  var g1 = c.gameLine && c.gameLine.nodes[1], b2 = bl.nodes[2];
+  var same = !alt && bl === c.bestLine && bEnd === 2 && !!g1 && !!b2 && sameMove([b2.move.from, b2.move.to], [g1.move.from, g1.move.to]);
+  bEnd = betterEnd(bl, from, bEnd, pov, same || (!alt && !!c.mateFor && isMate(bl.nodes[bEnd].after)));
   for (k = from; k <= bEnd; k++) steps.push({ seg: 'better', line: bl, k: k, from: from });
-  var S = a.story = { steps: steps, g: gEnd + 1, threat: storyThreat(c, gl), guard: null, alt: !!alt,
+  var S = a.story = { steps: steps, g: gEnd + 1, could: could, threat: storyThreat(c, gl), guard: null, alt: !!alt,
                       mateG: isMate(gl.nodes[gEnd].after), mateB: isMate(bl.nodes[bEnd].after) };
   /* the guard dots and words of B1: the better move's own square guarded
      once it is played, the game move's not (the guard rule, read as R4 reads
@@ -411,6 +524,22 @@ function buildStory(a) {
   }
   steps.forEach(function (s, i) { s.cap = storyCaption(a, S, i); });
   return S;
+}
+/* a better (or your own) line never ends on their capture (fresh-eyes
+   T12): it reads as the line dropping that piece. It runs on to your
+   recapture when that is the line's next ply, else stops before their
+   capture (never before its first step); keep: a line that mates, or one
+   whose last step is S-same's (its words say the blow still comes), is
+   left whole */
+function betterEnd(line, from, end, pov, keep) {
+  if (keep) return end;
+  for (var g = 0; g < 4 && end > from; g++) {
+    var n = line.nodes[end];
+    if (!n.captured || colorW(n.captured) !== pov) break;
+    var nx = line.nodes[end + 1];
+    end = nx && nx.captured && colorW(nx.captured) !== pov ? end + 1 : end - 1;
+  }
+  return end;
 }
 /* the first checkmate along a line (from node 1), -1 when it has none */
 function mateAt(line) {
@@ -437,10 +566,12 @@ function storyThreat(c, gl) {
 function capSan(st, m) { return sanOf(st, m).replace(/[+#]$/, ''); }
 /* a ply in plain words (S-ply): a capture names what it took, and whose; a
    check or a mate says so */
-function plySay(a, n) {
+function plySay(a, n, bare) {
   var san = capSan(n.before, n.move), byMe = n.byWhite === myPov(a.it);
   if (isMate(n.after)) return san + '. Checkmate.';
-  if (n.captured) return san + ' takes ' + (byMe ? 'their ' : 'your ') + PIECE_WORD[pType(n.captured)] + '.';
+  /* a capture that gives check says both (fresh-eyes T7); bare: the
+     capture alone, the next rung when that does not fit */
+  if (n.captured) return san + ' takes ' + (byMe ? 'their ' : 'your ') + PIECE_WORD[pType(n.captured)] + (!bare && checkersOf(n.after).length ? ' with check.' : '.');
   if (checkersOf(n.after).length) return san + ', check.';
   return san + '.';
 }
@@ -484,21 +615,29 @@ function storyCaption(a, S, i) {
     return fitRow(cands, 'caption', fall);
   }
   fall = san + '.';
-  var say = plySay(a, n);
+  var say = plySay(a, n), say0 = plySay(a, n, true), says = say0 !== say ? [say, say0] : [say];
   if (s.seg === 'game') {
     /* their first reply: whether they found it in the game (S-opp). "They
        missed it." only when there was a blow to miss (a mate, or material
        the line wins) and they replied with something else; a reply that
-       blows nothing is just its ply */
+       blows nothing is just its ply. That missed step is the move they
+       could have played, the segment's last (S.could) */
     var cmp0 = buildCompare(a), found = s.k === 1 && cmp0.found;
     var missed = s.k === 1 && !found && cmp0.replied && (!!c.mateAgainst || c.lossG >= 1);
-    var heads = [say];
+    var heads = says;
     if (s.k === 1 && n.captured && !isMate(n.after) && (found || missed)) {
-      var pw = PIECE_WORD[pType(n.captured)];
-      heads = [found ? san + ' takes your ' + pw + ', as in your game.' : san + ' could take your ' + pw + '. They missed it.', say];
-    } else if (found) heads = [say + ' As in your game.', say];
-    else if (missed) heads = [say + ' They missed it.', say];
-    var loss = lastG && !S.mateG && !isMate(n.after) ? storyGain(s.line, s.k, 0, c.lossG) : null;
+      var pw = PIECE_WORD[pType(n.captured)], ck = checkersOf(n.after).length ? ' with check' : '';
+      heads = (found ? [san + ' takes your ' + pw + ck + ', as in your game.', san + ' takes your ' + pw + ', as in your game.']
+        : [san + ' could take your ' + pw + ck + '. They missed it.', san + ' could take your ' + pw + '. They missed it.']).concat(says);
+    } else if (found) heads = [say + ' As in your game.', say0 + ' As in your game.'].concat(says);
+    else if (missed) heads = [say + ' They missed it.', say0 + ' They missed it.'].concat(says);
+    heads = heads.filter(function (h, j) { return heads.indexOf(h) === j; });
+    /* the net loss on the last step, only where it stands on this board
+       (lossClaim, with nothing past this ply counted), never on a move they
+       only could have played */
+    var lc = lastG && !S.mateG && !isMate(n.after) && !(S.could && s.k === 1) && c.lossG >= 1
+      ? lossClaim(a, s.line, s.k, 0, gameCpAfter(a.it.b), a.it.b.eb, bestLossFrom(a, 0), true) : null;
+    var loss = lc ? { w: lc.w, wn: lc.wn } : null;
     if (loss && !namesIt(n, loss.w)) {
       /* the net loss before the step's longer words: last, the move alone
          (its token shows what it took) */
@@ -527,16 +666,19 @@ function storyCaption(a, S, i) {
     fall = san + ' still comes.';
     if (net >= 1 && cmp.w2) { cands.push(san + ' still comes, but you win ' + cmp.w2 + '.'); if (cmp.w2n !== cmp.w2) cands.push(san + ' still comes, but you win ' + cmp.w2n + '.'); }
     else if (net === 0 && lost >= 1) cands.push(san + ' still comes, but you lose nothing.');
-    else if (net < 0 && -net < lost) cands.push(san + ' still comes. You lose less.');
+    else if (net < 0 && -net < lost && cmp.w) cands.push(san + ' still comes. You lose less.');
     else if (n.captured && colorW(n.captured) === pov) cands.push(san + ' still takes your ' + PIECE_WORD[pType(n.captured)] + '.');
     return fitRow(cands, 'caption', fall);
   }
-  var won = lastB && !isMate(n.after) ? storyGain(s.line, s.k, s.from, gain) : null;
-  if (won && !namesIt(n, won.w)) [say, san + '.'].forEach(function (h) { cands.push(h + ' You win ' + won.w + '.'); if (won.wn !== won.w) cands.push(h + ' You win ' + won.wn + '.'); });
+  /* what it nets where it ends, only where that count stands (settledAt) */
+  var stands = lastB && !isMate(n.after) && settledAt(s.line, s.k);
+  var won = stands ? storyGain(s.line, s.k, s.from, gain) : null;
+  if (won && !namesIt(n, won.w)) says.concat([san + '.']).forEach(function (h) { cands.push(h + ' You win ' + won.w + '.'); if (won.wn !== won.w) cands.push(h + ' You win ' + won.wn + '.'); });
   /* a better line that still loses material where it ends says so only when
-     it loses less than the game did; otherwise its ply alone */
-  else if (lastB && !isMate(n.after) && gain < 0 && -gain < c.lossG) cands.push(say + ' You lose less.', san + '. You lose less.');
-  return fitRow(cands.concat([say]), 'caption', fall);
+     it loses less than the game did (a loss the card claims); otherwise its
+     ply alone */
+  else if (stands && cmp.w && gain < 0 && -gain < c.lossG) says.concat([san + '.']).forEach(function (h) { cands.push(h + ' You lose less.'); });
+  return fitRow(cands.concat(says), 'caption', fall);
 }
 /* the story's strip (S12): "Game ●●● Better ●", the step on screen larger;
    over 9 dots, "Game 2/5 · Better". Its words count in the budget */
@@ -655,7 +797,7 @@ function moveDoes(pos, from, to) {
    knight" when nothing guards it), a fork ("hits two", "fork" at tier 3),
    a check, a pin ("stuck", "pinned" at tier 3); and its first-sight words,
    "{Opp} can take" or "{Opp} can check". Every word is read on the board as
-   drawn, its piece to move: S0's ghost counts as the piece on its square.
+   drawn, its piece to move (S0 draws a threat only where it holds there).
    Hint 1's danger (the arrow keyed hint) is the reply the game line has
    after the game move, not one on the board now: no first-sight words, and
    "takes" only when that capture of one of yours is there as drawn (S8).
@@ -663,10 +805,9 @@ function moveDoes(pos, from, to) {
 function threatSay(a, f, ar) {
   var ap = f.st.b[ar.from];
   if (!ap) return null;
-  var pos = cloneState(f.st), s0 = a.phase === 'done' && a.view && a.view.mode === 's0';
+  var pos = cloneState(f.st);
   pos.w = colorW(ap);
   pos.ep = -1;
-  if (s0) (f.opts.ghosts || []).forEach(function (g) { if (g.sq === ar.to && !pos.b[g.sq]) pos.b[g.sq] = g.p; });
   var d = moveDoes(pos, ar.from, ar.to);
   if (!d) return null;
   if (ar.key === 'hint') return d.took && colorW(d.took) === myPov(a.it) ? { say: 'takes', teach: '', does: d } : null;

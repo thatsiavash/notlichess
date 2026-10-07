@@ -710,8 +710,13 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
               if (m.kind === 'threat' && lab.indexOf(' on ' + sqName(m.from) + ' c') < 0) bad.push('threat from ' + sqName(m.from));
               if (m.kind === 'threat' && !new RegExp(' ' + sqName(m.to) + '[.]').test(lab)) bad.push('threat to ' + sqName(m.to));
             });
-            /* hint 1's danger and S0's pair are what the game move allowed: read after it, a capture or a check */
-            if ((o.arrows || []).some(function (x) { return x.kind === 'threat' && (x.key === 'hint' || (a.view && a.view.mode === 's0')); }) && (!/Dashed red arrow: after your game move, the [a-z]+ on [a-h][1-8] could (take|give check) on /.test(lab) || / could go to /.test(lab))) bad.push('what the game move allowed, not read after it');
+            /* hint 1's danger is what the game move allowed: read after it, a capture or a check */
+            if ((o.arrows || []).some(function (x) { return x.kind === 'threat' && x.key === 'hint'; }) && (!/Dashed red arrow: after your game move, the [a-z]+ on [a-h][1-8] could (take|give check) on /.test(lab) || / could go to /.test(lab))) bad.push('what the game move allowed, not read after it');
+            /* S0's pair holds on its own board (fresh-eyes T1): read there, a capture it can make now */
+            if (a.view && a.view.mode === 's0' && (o.arrows || []).some(function (x) { return x.kind === 'threat'; })) {
+              by['S0 pair'] = 1;
+              if (!/Dashed red arrow: the [a-z]+ on [a-h][1-8] can (take|give check) on /.test(lab) || /after your game move/.test(lab)) bad.push('the S0 pair not read on its own board');
+            }
             /* a telegraphed or sliding reply is not named before it lands */
             if ((o.arrows || []).some(function (x) { return x.kind === 'reply' && !x.solid; }) && /Blue arrow/.test(lab)) bad.push('the reply named before it landed');
             n++;
@@ -735,7 +740,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       return JSON.stringify({ out: out, n: n, by: Object.keys(by).sort() }); })()`));
     ok(r.n > 2000, 'frames ' + r.n);
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' || '));
-    ['game arrow', 'threat arrow', 'landed reply', 'green arrow', 'hint ring', 'lost token', 'won token', 'guard dots', 'tried move', 'tried cross', 'tick', 'cross', 'i', 'ghost', 'ghost on a piece'].forEach((k) => ok(r.by.indexOf(k) >= 0, 'never said: ' + k + ' (' + r.by.join(', ') + ')'));
+    ['game arrow', 'threat arrow', 'landed reply', 'green arrow', 'hint ring', 'lost token', 'won token', 'guard dots', 'tried move', 'tried cross', 'tick', 'cross', 'i', 'ghost', 'ghost on a piece', 'S0 pair'].forEach((k) => ok(r.by.indexOf(k) >= 0, 'never said: ' + k + ' (' + r.by.join(', ') + ')'));
   });
 
   await test('LABELS_ON false: no label on any frame, first sight included, and none painted or remembered', () => {
