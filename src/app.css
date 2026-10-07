@@ -474,6 +474,9 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 @media (min-width:861px){
   .guess-acts,.done-acts{margin-top:auto;padding-top:12px}
 }
+/* the keys that work now, under the bar, on the desktop only (2.0) */
+.keyline{display:none}
+@media (min-width:861px){.keyline{display:block;margin:6px 0 0;min-height:16px;font-size:12px;line-height:16px;color:var(--text-3)}}
 
 /* the card, answered: the result, and both halves of the lesson ────────── */
 .result{background:var(--surface-1);border:1px solid var(--line);border-radius:var(--r2);padding:16px 18px;margin:6px 0 12px}
@@ -537,6 +540,10 @@ body.in-session{padding-bottom:0}
 .dot{height:6px;border-radius:3px;background:transparent;box-shadow:inset 0 0 0 1.5px var(--line-strong);transition:background var(--dur-3) var(--ease)}
 .dot.on{height:10px;background:transparent;box-shadow:inset 0 0 0 2px var(--accent)}
 .dot.done{background:var(--accent);box-shadow:none}
+/* a card coming back (S16): its segment in the chip's gold, from the moment it is queued */
+.dot.relearn{box-shadow:inset 0 0 0 1.5px var(--gold)}
+.dot.relearn.on{box-shadow:inset 0 0 0 2px var(--gold)}
+.dot.relearn.done{background:var(--gold);box-shadow:none}
 .card-menu > a{display:inline-flex;min-width:44px;min-height:44px;align-items:center;justify-content:center;color:var(--text-2)}
 .menu-keys{display:block;padding:8px 10px 4px;font-size:12px;color:var(--text-3);border-top:1px solid var(--line);margin-top:4px}
 .recap-top{display:flex;align-items:center;max-width:680px;margin:0 auto}
@@ -637,6 +644,7 @@ body.in-session{padding-bottom:0}
 .recap-next{color:var(--text-1);margin:0 0 20px}
 .recap-habit{background:var(--surface-1);margin:0 0 20px}
 .recap-habit .plan{font-size:17px;line-height:1.5;border:0;padding:0;margin:8px 0 0}
+.recap-habit .plan:first-child{margin-top:0}
 .recap-acts{margin-top:24px}
 @media (max-width:860px){.recap-acts .btn-big,.recap-acts .btn-line{width:100%;min-height:52px}}
 

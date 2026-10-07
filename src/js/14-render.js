@@ -375,25 +375,42 @@ function recapHabit(ss) {
   if (!fam) { var f = currentFocus(); fam = f && FAMILIES.filter(function (x) { return x.key === f.fam; })[0]; }
   return fam ? fam.habit : '';
 }
+/* the summary's word for a card (S17, copy Q): the note first, since it
+   carries what the result cannot (the answer shown, a worked example, a
+   card left), then the result. A close move then the answer shown is
+   graded hint but reads "Shown": the answer was shown. solved: the word
+   counts toward "N of M solved"; counted: it counts at all (a card
+   skipped is neither) */
+var RECAP_NOTE = { shown: 'Shown', firstlook: 'First look', leftMiss: 'Missed', left: 'Skipped' };
+var RECAP_RESULT = { first: 'Found', hint: 'With help', retry: 'Found after a miss', fail: 'Missed', skip: 'Skipped' };
+function recapWord(note, r) {
+  var w = RECAP_NOTE[note] || RECAP_RESULT[r] || '';
+  return { word: w, solved: w === 'Found' || w === 'With help' || w === 'Found after a miss' || w === 'First look', counted: !!w && w !== 'Skipped' };
+}
 function doneHtml(ss) {
-  var solved = 0, answered = 0;
+  var solved = 0, answered = 0, fams = [];
   var uniq = [];
   ss.keys.forEach(function (k) { if (uniq.indexOf(k) === -1) uniq.push(k); });
   var recap = uniq.map(function (k) {
     var it = model().byKey[k], r = ss.results[k], note = (ss.notes || {})[k];
-    if (!it || !r || r === 'skip') return '';
-    if (note !== 'left') { answered++; if (r !== 'fail') solved++; }
+    /* a card taken out as not a real mistake has left the model: gone from the summary too */
+    if (!it || !r) return '';
+    var rw = recapWord(note, r);
+    if (!rw.word) return '';
+    if (rw.counted) { answered++; if (rw.solved) solved++; }
+    /* the habit of each family seen today, once, in the order met */
+    var fam = familyOf(patternOf(it.b));
+    if (fams.indexOf(fam) === -1) fams.push(fam);
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
-    /* the result in words, never in colour alone */
-    /* a close move then the answer shown: graded hint, noted shown */
-    var word = note === 'left' ? 'Skipped' : note === 'close' || (note === 'shown' && r === 'hint') ? '◐ close' : r === 'first' ? '✓ first try' : r === 'retry' ? '✓ on the retry' : r === 'fail' ? 'Shown' : '✓ with help';
     var pm = uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
+    /* the result in words, never in colour alone */
     return '<div class="recap-item" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: k, label: 'One position' })) + '">'
       + boardSvg(pre, { flip: it.g.color === 'black', bad: pm ? [pm.from, pm.to] : null, decor: true }) + '<span>' + esc(patternInfo(patternOf(it.b)).name) + '</span>'
-      + '<span class="res' + (r === 'fail' ? ' shown' : '') + '">' + word + '</span></div>';
+      + '<span class="res' + (rw.solved ? '' : ' shown') + '">' + rw.word + '</span></div>';
   }).join('');
-  var habit = recapHabit(ss);
+  var habits = fams.map(function (f) { return f.habit; });
+  if (!habits.length && recapHabit(ss)) habits = [recapHabit(ss)];
   var more = morePracticeKeys().length;
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
@@ -401,7 +418,7 @@ function doneHtml(ss) {
     + ladderHtml(ss, uniq)
     + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
-    + (habit ? '<div class="focus recap-habit"><div class="kicker">For your next game</div><div class="plan">' + esc(habit) + '</div></div>' : '')
+    + (habits.length ? '<div class="focus recap-habit">' + habits.map(function (h) { return '<p class="plan">For your next game: ' + esc(h) + '</p>'; }).join('') + '</div>' : '')
     + (recap ? '<div class="recap">' + recap + '</div>' : '')
     + '<div class="acts-row recap-acts">'
       + '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>'
@@ -583,13 +600,12 @@ function boardOptsFor(a) {
      with a verdict to come gets no tint until the verdict's own, so its
      squares change colour once */
   opts.mark = land ? null : view.last;
-  /* the board's name says what it draws: the game move only with its red
-     arrow (mid-line its name can be the answer due now) */
-  opts.label = (view.st.w ? 'White' : 'Black') + ' to move.' + (opts.bad ? ' You played ' + sanOf(a.pre, a.played) + ' in the game.' : '');
   /* a check given by a piece still sliding glows once it lands, with the
      rest of what lands */
   var ck = checkedKingSq(view.st);
   if (ck != null && !land) opts.check = ck;
+  /* the board's name says what it draws (S20), mark by mark */
+  opts.label = boardAria(a, view.st, opts);
   return {
     st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts, slideMs: slideMs, land: land,
     fadeMs: a.jump && !slideMs ? XFADE : 0,
@@ -623,6 +639,66 @@ function addReplyMarks(a, view, opts, noLanded) {
   if (!o) return false;
   for (var k in o) opts[k] = (opts[k] || []).concat(o[k]);
   return sliding;
+}
+/* the board's aria-label (S20), built from the marks of the frame as
+   drawn: who is to move, then each mark in words ("Red arrow: your game
+   move, bishop c1 to f4. Dashed red arrow: the pawn on e5 can take on
+   f4."). It names only what is on the board, so before an answer it never
+   names the answer (2.3 keeps every mark but the game arrow and the move
+   just played off its square, and a verdict badge is named without its
+   square). The forcing reply is named once it has landed (its solid
+   arrow), not while it is telegraphed or slides. Selection, legal dots
+   and the grey outline of a tap are left out */
+var ARIA_BADGE = { good: 'Green tick: your move.', bad: 'Red cross: your move is not it.', close: 'Ring with a tick: a good move, not the best.',
+  checking: 'Grey dots: your move is being checked.', unchecked: 'Question mark: your move could not be checked.', info: 'Grey i: the answer, played.' };
+function boardAria(a, st, o) {
+  var side = function (w) { return w ? 'White' : 'Black'; }, b = st.b;
+  var pw = function (sq, alt) { var p = b[sq] || (alt != null ? b[alt] : null); return p ? PIECE_WORD[pType(p)] : 'piece'; };
+  var mv = function (m) { return pw(m.from, m.to) + ' ' + sqName(m.from) + ' to ' + sqName(m.to); };
+  var out = [side(st.w) + ' to move.'], arrows = [];
+  if (o.bad) arrows.push({ from: o.bad[0], to: o.bad[1], kind: 'game' });
+  if (o.good) arrows.push({ from: o.good[0], to: o.good[1], kind: 'better' });
+  if (o.ghost) arrows.push({ from: o.ghost[0], to: o.ghost[1], kind: 'explore' });
+  arrows = arrows.concat(o.arrows || []);
+  var ringed = {};
+  arrows.forEach(function (m) {
+    if (m.kind === 'game') out.push('Red arrow: your game move, ' + mv(m) + '.');
+    else if (m.kind === 'threat') {
+      ringed[m.from] = 1;
+      /* read on the board as drawn, its piece to move; hint 1's danger and
+         S0's pair are the reply your game move allowed, so they are read
+         on the card's position after that move */
+      var s0 = a.phase === 'done' && a.view && a.view.mode === 's0', hint = m.key === 'hint' || s0;
+      var pos = cloneState(hint ? a.pre : st), gm = hint ? uciToMove(pos, a.playedUci) : null;
+      if (gm) applyMove(pos, gm);
+      var ap = pos.b[m.from], d = null;
+      if (ap) { pos.w = colorW(ap); pos.ep = -1; d = moveDoes(pos, m.from, m.to); }
+      var verb = d && d.took ? 'take on ' : d && d.check ? 'give check on ' : 'go to ';
+      out.push('Dashed red arrow: ' + (hint ? 'after your game move, ' : '') + 'the ' + (ap ? PIECE_WORD[pType(ap)] : 'piece') + ' on ' + sqName(m.from) + (hint ? ' could ' : ' can ') + verb + sqName(m.to) + '.');
+    }
+    else if (m.kind === 'reply' && m.solid) out.push('Blue arrow: ' + side(!myPov(a.it)) + '\'s reply, ' + mv(m) + '.');
+    else if (m.kind === 'better') out.push('Green arrow: ' + (m.key === 'answer' ? 'the answer, ' : 'the better move, ') + mv(m) + '.');
+    else if (m.kind === 'explore') out.push('Gold arrow: ' + (a.tier === 1 ? 'the computer\'s pick, ' : 'Stockfish\'s pick, ') + mv(m) + '.');
+  });
+  (o.hint != null ? [{ sq: o.hint, kind: 'hint' }] : []).concat(o.rings || []).forEach(function (r) {
+    if (r.kind === 'threat' && !ringed[r.sq]) out.push('Red ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' punishes it.');
+    else if (r.kind === 'hint') out.push('Gold ring: move the ' + pw(r.sq) + ' on ' + sqName(r.sq) + '.');
+    else if (r.kind === 'target') out.push('Dashed gold ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is there to win.');
+  });
+  (o.tokens || []).forEach(function (t) {
+    out.push(t.kind === 'lost' ? 'Your ' + PIECE_WORD[pType(t.p)] + ' was taken on ' + sqName(t.sq) + '.' : 'You won a ' + PIECE_WORD[pType(t.p)] + ' on ' + sqName(t.sq) + '.');
+  });
+  (o.ghosts || []).forEach(function (g) { out.push((b[g.sq] ? 'Red cross on ' : 'Faded ' + PIECE_WORD[pType(g.p)] + ' on ') + sqName(g.sq) + ': where your game move went.'); });
+  (o.guards || []).forEach(function (g) { out.push('Green dots: the ' + pw(g.from) + ' on ' + sqName(g.from) + ' guards ' + sqName(g.to) + '.'); });
+  /* a move tried already: its line, or (when it went to the answer's
+     square) only the cross on the square it left, never naming where it went */
+  (o.tried || []).forEach(function (t) {
+    if (t.sq != null) out.push('Red cross: a move of the ' + pw(t.sq) + ' on ' + sqName(t.sq) + ' was tried already.');
+    else out.push('Faint red line: you tried ' + mv(t) + ' already.');
+  });
+  (o.badges || []).forEach(function (g) { if (ARIA_BADGE[g.kind]) out.push(ARIA_BADGE[g.kind]); });
+  if (o.check != null) out.push('The ' + (isW(b[o.check]) ? 'white' : 'black') + ' king is in check.');
+  return out.join(' ');
 }
 /* the corner of square to that the verdict badge takes, as [x, y] from
    the square's corner: the top-right (36, 9) of 2.1, unless an arrow from
@@ -1004,6 +1080,9 @@ function paintMarks(a) {
   f.opts.anim = null;
   var html = boardSvg(f.st, f.opts);
   old.outerHTML = html.slice(html.indexOf('</svg>') + 6);
+  /* the board's name follows its marks (S20) */
+  var bsv = bw.querySelector('svg.board');
+  if (bsv && bsv.getAttribute('aria-label') !== f.opts.label) bsv.setAttribute('aria-label', f.opts.label);
   paintLabels(a, f);
 }
 /* the board alone, staged: a selection, a drawn shape, a row pointed at
@@ -1035,7 +1114,7 @@ function renderCard(beats) {
         + '<div class="evalbar pending' + (flip ? ' flip' : '') + '" id="ebar"><i class="evalbar-fill" id="ebar-fill"></i><span class="evalbar-label" id="ebar-lab"></span></div>'
         + '<div class="board-wrap" id="bwrap"></div>'
       + '</div></div>'
-      + '<div class="panel" id="cpanel"><div class="strip" id="cstrip"></div><div class="acts-row sticky-acts" id="cbar"></div></div>'
+      + '<div class="panel" id="cpanel"><div class="strip" id="cstrip"></div><div class="acts-row sticky-acts" id="cbar"></div><p class="keyline" id="ckeys"></p></div>'
       + '</div>';
     watchBoardSize();
   }
@@ -1058,9 +1137,33 @@ function watchBoardSize() {
    row1, row2, chip, cap, and inside a forcing line its pips), the action
    bar as slots, the strip's markup and the live region's words */
 function displayFor(a) {
-  var b = bandFor(a), ss = ui.session;
+  var b = bandFor(a), ss = ui.session, buttons = barSlots(a, ss);
   return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', sweep: !!b.sweep, pips: b.pips || null,
-           buttons: barSlots(a, ss), strip: stripHtml(a, ss), live: liveWords(a, b) };
+           buttons: buttons, strip: stripHtml(a, ss), live: liveWords(a, b), keys: keyLine(a, buttons) };
+}
+/* the desktop key line under the panel (2.0): only the keys that do
+   something in this state, as the keydown handler (15-shell.js) reads
+   them. Enter names the right-hand button it presses, when that button is
+   on (not while a move is checked, where Enter does nothing, nor during a
+   forcing reply but for its own button); ? while a hint is left to give
+   (over a try too: the try goes first); → opens See why from the settled
+   result; ← → step the story or the exploration, and Esc goes back; Esc
+   takes back a move being checked */
+function keyLine(a, slots) {
+  var k = [], right = null, has = function (act) { return slots.filter(function (s) { return s.act === act && !s.off && !/nav-off/.test(s.cls || ''); })[0]; };
+  for (var i = slots.length - 1; i >= 0 && !right; i--) if (!slots[i].empty) right = slots[i];
+  if (right && right.act && !right.off && a.phase !== 'checking' && (a.phase !== 'reply' || right.act === 'theirReply')) k.push('Enter: ' + right.label.replace(/ ›$/, ''));
+  if (a.phase === 'done' && a.explore) {
+    k.push(has('xpFwd') ? '← → step' : '← step');
+    k.push('Esc: back to the lesson');
+  } else if (a.phase === 'done' && a.view && a.view.mode === 'story') {
+    k.push(has('storyFwd') ? '← → step' : '← step');
+    k.push('Esc: back');
+  } else if (a.phase === 'done') {
+    if (has('seeWhy')) k.push('→ see why');
+  } else if ((a.phase === 'guess' || a.phase === 'tried' || (a.phase === 'checking' && !a.checkSaid)) && a.hints < 2) k.push('? hint');
+  if (a.phase === 'checking') k.push('Esc: take back');
+  return k.join(' · ');
 }
 /* a node's markup, written only when it changed, so a repaint that changes
    nothing writes nothing (and keeps focus and a running fade) */
@@ -1091,6 +1194,7 @@ function paintText(a) {
   paintBand(a, d);
   paintBar(d);
   paintStrip(d);
+  setHtml(el('ckeys'), esc(d.keys));
   /* the new words are in: whatever faded out for them (fadeOut) is back */
   if (band.classList) band.classList.remove('stale');
   var sp = el('cstrip');
@@ -1363,8 +1467,14 @@ function altNames(a) {
 function sessionBarHtml(ss, a) {
   var n = Math.min(ss.idx + 1, ss.keys.length);
   return '<a class="sb-end" data-act="endSession" aria-label="End the session">×</a>' + dotsHtml(ss)
-    + '<span class="sr-only">Position ' + n + ' of ' + ss.keys.length + '</span>'
+    + '<span class="sr-only">Position ' + n + ' of ' + ss.keys.length + relearnWords(ss) + '</span>'
     + (a ? '<span class="card-menu"><a data-act="menu" aria-label="More" aria-expanded="' + !!a.menuOpen + '">•••</a>' + (a.menuOpen ? menuHtml(a) : '') + '</span>' : '');
+}
+/* the cards queued to come back, for the screen reader (once they come,
+   they are counted in the positions) */
+function relearnWords(ss) {
+  var back = (ss.relearn || []).length;
+  return back ? ', and ' + (back === 1 ? 'one position' : back + ' positions') + ' to try again' : '';
 }
 function dotsHtml(ss) {
   var seen = {}, out = '';
@@ -1374,10 +1484,12 @@ function dotsHtml(ss) {
     var r = relearn ? ss.results[k + '#r'] : ss.results[k];
     /* progress only: results are said in words on the recap */
     var cls = i === ss.idx && !ss.finished ? 'on' : (r ? 'done' : '');
-    out += '<span class="dot ' + cls + '"></span>';
+    out += '<span class="dot ' + cls + (relearn ? ' relearn' : '') + '"></span>';
   });
-  /* one more try still to come: its place is shown already */
-  (ss.relearn || []).forEach(function () { out += '<span class="dot"></span>'; });
+  /* one more try still to come: its segment joins the bar as the card is
+     queued, marked as a card coming back (S16, U7), so the bar growing
+     says why */
+  (ss.relearn || []).forEach(function () { out += '<span class="dot relearn"></span>'; });
   return '<div class="dots" aria-hidden="true">' + out + '</div>';
 }
 function menuHtml(a) {

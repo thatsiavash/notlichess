@@ -136,14 +136,14 @@ function loadCard() {
     finishSession(); return;
   }
   var it = currentItem();
-  if (!it || !trainable(it) || it.b.x) { ss.keys.splice(ss.idx, 1); saveSession(); loadCard(); return; }
+  if (!it || !trainable(it) || it.b.x) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
   var myGen = gen, key = it.key;
   var go = function () {
     if (ss.loadingKey === key) ss.loadingKey = null;
     if (stale(myGen) || ui.session !== ss || ss.keys[ss.idx] !== key) return;
-    if (it.b.x) { ss.keys.splice(ss.idx, 1); saveSession(); loadCard(); return; }
+    if (it.b.x) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
     var a = cardFor(it);
-    if (!a) { it.b.x = 'moves'; ss.keys.splice(ss.idx, 1); saveSession(); loadCard(); return; }
+    if (!a) { it.b.x = 'moves'; ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
     ss.active = a;
     if (workedExample(a)) keepProgress(a);
     a.shownAt = Date.now();
@@ -1055,7 +1055,12 @@ function hintPrize(a) {
    card, on a card already tried or helped, or when hint 1 draws nothing
    there (words only: that family waits for a card that can show it).
    Storage that cannot be read counts as seen; a count that could not be
-   written is kept in store's memory for the page load. True when it applies */
+   written is kept in store's memory for the page load. Not on the first
+   card ever (S18): that card teaches only the game arrow, "Your game move"
+   beside the task, which needs the words' room; until that label has shown
+   (nl:tip:game) no card is a worked example, and the family keeps its
+   count at 0, so its worked example comes on its next card. True when it
+   applies */
 function familySeen(fam) {
   try { localStorage.getItem('nl:seen:' + fam); } catch (e) { return 1; }
   return +store.get('nl:seen:' + fam, 0) || 0;
@@ -1063,6 +1068,7 @@ function familySeen(fam) {
 function workedExample(a) {
   if (!a || a.tier !== 1 || a.hints || a.misses || a.attempts || ss_relearn(a)) return false;
   if (familySeen(familyOf(patternOf(a.it.b)).key) > 0) return false;
+  if (LABELS_ON && !store.get('nl:tip:game', 0)) return false;
   a.hints = 1;
   var hm = hintMarks(a);
   if (!hm.rings.length && !hm.arrows.length) { a.hints = 0; return false; }
@@ -1099,11 +1105,7 @@ function finishCard(result, beats) {
     if (!a.revealed && !relearn) (ss.notes = ss.notes || {})[a.key] = 'firstlook';
   }
   a.lines = cardLines(a);
-  /* the habit line: every card for newer players, otherwise once a week
-     per pattern (decided once here, not on every repaint) */
-  var habitKey = 'nl:habitSeen:' + patternOf(a.it.b);
-  a.showHabit = a.tier === 1 || Date.now() - store.get(habitKey, 0) > 7 * DAY;
-  if (a.showHabit) store.set(habitKey, Date.now());
+  /* the habit is in Details and, once per family, on the summary (S17) */
   /* the board keeps showing what was just played (S6: the move found, the
      alternative that also works, or the end of the forcing line), its tick
      landing with the piece, then settles (S0); a shown answer is its green
@@ -1146,7 +1148,9 @@ function nextCard() {
   setTimeout(autoScan, 400);
 }
 /* a card the player leaves before answering: untouched it is a free skip;
-   after a miss it counts as missed, after only a hint as solved with help */
+   after a miss it counts as missed, after only a hint as solved with help.
+   The summary reads the note (S17): left after a miss "Missed", otherwise
+   "Skipped" */
 function settleLeft(a) {
   var ss = ui.session;
   if (!ss || !a || a.phase === 'done') return;
@@ -1155,7 +1159,7 @@ function settleLeft(a) {
   if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
   if (ss.progress) delete ss.progress[a.key];
   ss.results[a.key + (again ? '#r' : '')] = result;
-  if (!again) (ss.notes = ss.notes || {})[a.key] = 'left';
+  if (!again) (ss.notes = ss.notes || {})[a.key] = a.misses ? 'leftMiss' : 'left';
   a.phase = 'done';
 }
 function skipCard() {

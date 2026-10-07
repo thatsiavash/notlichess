@@ -245,6 +245,62 @@ const PLAIN = `function unplain(s, tier) {
     ok(r.skipped, 'caption'); ok(!r.solved, 'not solved');
   });
 
+  await test('the summary reads the note first, then the result (S17): found, with help, found after a miss, a reveal reads Shown, left after a miss reads Missed, left untouched Skipped, a first look reads First look; a removed card is gone; one habit per family seen', () => {
+    const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
+    const r = JSON.parse(A.ev(`(function () {
+      playerTier = function () { return 1; };
+      var its = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && unpackUci(x.b.ru).length; });
+      var we = its.filter(function (x) { var a = cardFor(x); ui.session = { keys: [x.key], idx: 0, results: {}, relearn: [], relearnOf: {} }; return workedExample(a); })[0];
+      var pick = [we].concat(its.filter(function (x) { return x !== we; }).slice(0, 7));
+      ui.session = { mode: 'today', label: 't', keys: pick.map(function (x) { return x.key; }), idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} };
+      var ss = ui.session, act = function (i, fn) { ss.idx = i; var a = cardFor(pick[i]); ss.active = a; fn(a); };
+      var best = function (a) { solved(uciToMove(a.st, a.bestUci), a.bestUci, null); };
+      var miss = function (a) { a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); };
+      act(0, function (a) { workedExample(a); best(a); });                    /* First look */
+      act(1, best);                                                           /* Found */
+      act(2, function (a) { a.hints = 1; best(a); });                         /* With help */
+      act(3, function (a) { miss(a); tryAgain(); best(a); });                 /* Found after a miss */
+      act(4, function (a) { reveal(); });                                     /* Shown */
+      act(5, function (a) { miss(a); settleLeft(a); });                       /* Missed */
+      act(6, function (a) { settleLeft(a); });                                /* Skipped */
+      act(7, function (a) { disputeCard('engine'); });                        /* gone */
+      ss.active = null; ss.finished = true;
+      var h = doneHtml(ss), words = [];
+      h.replace(/class="res[^"]*">([^<]*)</g, function (m, w) { words.push(w); return m; });
+      var fams = [];
+      pick.slice(0, 7).forEach(function (x) { var f = familyOf(patternOf(x.b)); if (fams.indexOf(f) < 0) fams.push(f); });
+      var habits = []; h.replace(/<p class="plan">([^<]*)</g, function (m, t) { habits.push(t); return m; });
+      return JSON.stringify({ words: words, head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], notes: [ss.notes[pick[0].key], ss.notes[pick[4].key], ss.notes[pick[5].key], ss.notes[pick[6].key]],
+        habits: habits, want: fams.map(function (f) { return 'For your next game: ' + esc(f.habit); }), spotted: /spotted/i.test(h), glyphs: /[✓◐]/.test(h) }); })()`));
+    eq(r.words.join(' | '), 'First look | Found | With help | Found after a miss | Shown | Missed | Skipped', 'the words, in session order, the removed card gone');
+    eq(r.notes.join(' | '), 'firstlook | shown | leftMiss | left', 'the notes');
+    eq(r.head, '4 of 6 solved.', 'solved: found, with help, after a miss, a first look; counted: and shown, missed; a skip neither');
+    eq(JSON.stringify(r.habits), JSON.stringify(r.want), 'one habit per family seen, in the order met');
+    ok(r.habits.length >= 2, 'families ' + r.habits.length);
+    ok(!r.spotted && !r.glyphs, 'no "spotted" recap line, no glyphs: words only');
+  });
+
+  await test('the relearn segment joins the session bar as the card is queued, marked and named for a screen reader, and stays marked when the card comes back', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var its = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol; }).slice(0, 3);
+      ui.session = { mode: 'today', label: 't', keys: its.map(function (x) { return x.key; }), idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} };
+      var ss = ui.session, res = {}, bar = function () { return sessionBarHtml(ss, null); }, n = function (h, re) { return (h.match(re) || []).length; };
+      ss.active = cardFor(its[0]);
+      res.before = [n(bar(), /<span class="dot/g), n(bar(), /relearn/g), /try again/.test(bar())];
+      reveal();
+      res.queued = [n(bar(), /<span class="dot/g), n(bar(), /class="dot relearn"/g), (/<span class="sr-only">([^<]*)</.exec(bar()) || [])[1]];
+      ss.idx = 1; ss.active = cardFor(its[1]); solved(uciToMove(ss.active.st, ss.active.bestUci), ss.active.bestUci, null);
+      ss.idx = 2; ss.active = cardFor(its[2]); solved(uciToMove(ss.active.st, ss.active.bestUci), ss.active.bestUci, null);
+      queueRelearn(ss); ss.idx = 3; ss.active = cardFor(its[0]);
+      res.back = [n(bar(), /<span class="dot/g), n(bar(), /class="dot on relearn"/g), n(bar(), /class="dot done"/g), /try again/.test(bar())];
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify(r.before), JSON.stringify([3, 0, false]), 'nothing queued: three plain segments');
+    eq(JSON.stringify(r.queued.slice(0, 2)), JSON.stringify([4, 1]), 'a shown answer queues it: a fourth segment, marked');
+    eq(r.queued[2], 'Position 1 of 3, and one position to try again', 'named for a screen reader');
+    eq(JSON.stringify(r.back), JSON.stringify([4, 1, 3, false]), 'back again: its segment current and still marked, counted in the positions');
+  });
+
   await test('the page title never names the player', () => {
     const A = boot();
     ok(A.ev('document.title').indexOf('tester') === -1, A.ev('document.title'));
@@ -1295,9 +1351,14 @@ const PLAIN = `function unplain(s, tier) {
       out.forcing = its.filter(asks).length;
       out.missed = its.filter(function (it) { return asks(it) && !looksForcing(it); }).length;
       /* forcing cards made the easiest of all: card 1 still asks for one move */
-      cardEase = function (it) { return realLooks(it) ? 3 : 2; };
+      cardEase = function (it) { return asks(it) ? 3 : 2; };
       keys = todayPlan().keys;
-      out.easiest = { first: looksForcing(m.byKey[keys[0]]), three: count(keys, looksForcing) };
+      out.easiest = { first: asks(m.byKey[keys[0]]), three: count(keys, asks) };
+      /* a card the cheap check flags that asks for one move, made the
+         easiest of all, still leads: the head is decided by the card's own rule */
+      var flagged = its.filter(function (it) { return looksForcing(it) && !asks(it); });
+      out.flagged = flagged.length;
+      if (flagged[0]) { cardEase = function (it) { return it === flagged[0] ? 3 : 1; }; out.flaggedLeads = todayPlan().keys[0] === flagged[0].key; }
       cardEase = realEase;
       /* the latest loss leads, unless it looks forcing: then it keeps its place in the ease order */
       var lost = its.filter(function (it) { return it.b.d && it.g.res === 'loss'; }).sort(function (x, y) { return y.g.ts - x.g.ts; })[0];
@@ -1310,8 +1371,54 @@ const PLAIN = `function unplain(s, tier) {
     eq(r.plain.first, false, 'card 1 asks for a forcing line'); ok(r.plain.three <= 1, r.plain.three + ' forcing in the first three');
     ok(r.forcing > 0, 'no forcing cards at tier 2'); eq(r.missed, 0, 'forcing cards the plan cannot see');
     eq(r.easiest.first, false, 'card 1, forcing cards easiest'); ok(r.easiest.three <= 1, r.easiest.three + ' forcing in the first three, forcing cards easiest');
+    ok(r.flagged > 0, 'flagged cards that ask for one move: ' + r.flagged); eq(r.flaggedLeads, true, 'a flagged one-move card, the easiest, leads');
     eq(r.tieSkips, 0, 'one-move cards as easy left out for a forcing card');
     eq(r.lostLeads, true, 'the latest loss leads'); ok(r.forcingLostAt < 0 || r.forcingLostAt >= 2, 'a forcing latest loss pulled forward, card ' + (r.forcingLostAt + 1));
+  });
+
+  await test('a first session keeps its head when a card drops out before it is shown: card 1 asks for one move, at most one of the first three a forcing line', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      playerTier = function () { return 2; };
+      SF.state = 'failed';
+      var its = allMistakes().filter(trainable), m = model();
+      var asks = function (it) { var a = cardFor(it); return !!(a && a.sol); };
+      var plain = its.filter(function (it) { return !asks(it); }), forcing = its.filter(asks);
+      /* card 1 drops out (the deeper look): a forcing card would move up to lead */
+      var keys = [plain[0], forcing[0], forcing[1], plain[1], plain[2]].map(function (x) { return x.key; });
+      ui.session = { mode: 'today', label: 'Today', keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {}, firstTime: true };
+      plain[0].b.x = 'deep';
+      ui.session.active = null; loadCard();
+      var ss = ui.session, a = ss.active, res = { lead: a && a.key, sol: !!(a && a.sol), three: ss.keys.slice(0, 3).filter(function (k) { return asks(m.byKey[k]); }).length, n: ss.keys.length };
+      res.want = plain[1].key;
+      /* saved and read back with it */
+      saveSession(); res.saved = !!savedSession().firstTime;
+      /* not a first session: the order is left as it was */
+      plain[0].b.x = null;
+      ui.session = { mode: 'today', label: 'Today', keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} };
+      plain[0].b.x = 'deep'; ui.session.active = null; loadCard();
+      res.other = ui.session.active && ui.session.active.key;
+      plain[0].b.x = null;
+      return JSON.stringify(res); })()`));
+    eq(r.lead, r.want, 'the next one-move card leads'); eq(r.sol, false, 'card 1 asks for one move');
+    ok(r.three <= 1, r.three + ' forcing in the first three'); eq(r.n, 4, 'one card fewer');
+    eq(r.saved, true, 'the session remembers it is a first one');
+    ok(r.other && r.other !== r.want, 'a later session keeps its order: ' + r.other);
+  });
+
+  await test('the cheap forcing check runs once per card and line, as the ease check does', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      playerTier = function () { return 2; };
+      var n = 0, real = stateAtPly;
+      stateAtPly = function () { n++; return real.apply(this, arguments); };
+      var it = allMistakes().filter(trainable)[0];
+      looksForcing(it); var first = n; looksForcing(it); looksForcing(it);
+      var again = n - first;
+      playerTier = function () { return 3; }; looksForcing(it);
+      stateAtPly = real;
+      return JSON.stringify({ first: first, again: again, tier: n - first }); })()`));
+    ok(r.first <= 1, 'first call replays at most once'); eq(r.again, 0, 'memoised'); ok(r.tier <= 1, 'a new tier is a new answer');
   });
 
   await test('the coarse events carry no names or ratings', () => {

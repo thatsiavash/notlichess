@@ -39,8 +39,12 @@ const FRAMES = `function eachFrame(it, cb) {
   cb('open', a);
   a.sel = legalMoves(a.st)[0].from; cb('selected', a); a.sel = -1;
   a.hints = 1; cb('hint 1', a); a.hints = 2; cb('hint 2', a);
+  /* the worked example, as on any card after the first ever (S18) */
   a = openCard(it);
-  if (workedExample(a)) cb('worked example', a);
+  var tg = store.get('nl:tip:game', 0); store.set('nl:tip:game', 1);
+  var we = workedExample(a);
+  if (!tg) store.del('nl:tip:game');
+  if (we) cb('worked example', a);
   a = openCard(it); a.tapped = true;
   gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
   if (a.phase === 'tried') {
@@ -402,8 +406,11 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
   await test('first sight: the first card ever shows "Your game move"; a worked example, whose band and bar leave a label one word, shows none on a fresh profile (hint 1\'s danger never teaches, its "takes" waits for the threat to have); the game arrow outranks a threat, a threat a lost piece, a lost piece the ghost, and any first-sight label a short one; a short label of a kind that has not taught itself never shows, even where its first-sight words do not fit', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var res = { worked: [], plain: [], gameOnly: 0, takes: 0 };
+      var res = { worked: [], plain: [], gameOnly: 0, takes: 0, firstEver: 0 };
       playerTier = function () { return 1; };
+      /* the first card ever is never a worked example (S18): it teaches the game arrow */
+      allMistakes().filter(trainable).forEach(function (it) { var a = openCard(it); if (a && workedExample(a)) res.firstEver++; });
+      store.set('nl:tip:game', 1);
       allMistakes().filter(trainable).forEach(function (it) {
         var a = openCard(it);
         if (!a || !workedExample(a)) return;
@@ -449,8 +456,9 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       res.loneSeen = (frameLabel(a, lone, 384, false, YES) || {}).text;
       placeLabel = pl;
       return JSON.stringify(res); })()`));
+    eq(r.firstEver, 0, 'worked examples before the game arrow has taught itself');
     ok(r.worked.length >= 5, 'worked examples at tier 1: ' + r.worked.length);
-    r.worked.forEach((x) => ok(/^- room [01]$/.test(x), 'a worked example on a fresh profile shows ' + x));
+    r.worked.forEach((x) => ok(/^- room [01]$/.test(x), 'a worked example (the game arrow taught, nothing else) shows ' + x));
     eq(r.gameOnly, 0, 'with the game arrow taught, hint 1\'s danger still teaches nothing');
     eq(r.hintTeach, undefined, 'hint 1\'s danger offers no first-sight words');
     ok(r.lost.length >= 5, 'See it with a token: ' + r.lost.length);
@@ -470,15 +478,14 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
     const A = boot();
     A.ev(OPEN); A.ev(PAGE);
     A.ev('(playerTier = function () { return 1; }, 1)');
-    const key = JSON.parse(A.ev(`${OPEN} JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var a = openCard(it); return a && workedExample(a) && (boardOptsFor(a).opts.arrows || []).some(function (x) { return x.kind === 'threat'; }); }).map(function (it) { return it.key; }))`))[0];
+    const key = JSON.parse(A.ev(`${OPEN} (store.set('nl:tip:game', 1), JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var a = openCard(it); return a && workedExample(a) && (boardOptsFor(a).opts.arrows || []).some(function (x) { return x.kind === 'threat'; }); }).map(function (it) { return it.key; })))`))[0];
+    A.ev(`(store.del('nl:tip:game'), 1)`);
     ok(key, 'a worked example with a drawn threat');
-    /* the worked example on a fresh profile: hint 1's words and Hint 2
-       leave the game arrow's three words no room, so it is not taught */
+    /* the first card ever, on a card that would be a worked example: not
+       one (S18), so the game arrow's three words have their room; the
+       threat's not taken (priority) */
     A.ev(`(window.__open(model().byKey['${key}'], true), 1)`); A.advance(1000);
-    eq(A.ev('window.__label()'), '', 'the worked example: no label');
-    eq(tips(A), '', 'the worked example: nothing seen');
-    /* priority: the same card plain, the game arrow's label, the threat's not taken */
-    A.ev(`(window.__open(model().byKey['${key}']), 1)`); A.advance(1000);
+    eq(A.ev('!!ui.session.active.predraw'), false, 'the first card ever is not a worked example');
     eq(A.ev('window.__label()'), 'Your game move', 'the first card ever');
     eq(tips(A), 'nl:tip:game', 'only the game arrow is seen');
     /* a selection repaints the board in the same state: the same label */
@@ -488,6 +495,12 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
     A.ev('(ui.session.active.sel = -1, ui.session.active.hints = 2, renderCard(), 1)'); A.advance(1000);
     eq(A.ev('window.__label()'), '', 'hint 2: the ring has no label, the game arrow is seen');
     eq(tips(A), 'nl:tip:game', 'still only the game arrow');
+    /* the game arrow taught: the same card now is the worked example, whose
+       hint 1 words and Hint 2 leave a label one word; nothing taught there */
+    A.ev(`(window.__open(model().byKey['${key}'], true), 1)`); A.advance(1000);
+    eq(A.ev('!!ui.session.active.predraw'), true, 'the next card is the worked example');
+    eq(A.ev('window.__label()'), '', 'the worked example: no label');
+    eq(tips(A), 'nl:tip:game', 'the worked example: nothing more seen');
     /* over budget: a miss whose threat's teaching words do not fit beside
        the band, and no short words in their stead */
     const over = JSON.parse(A.ev(`${OPEN} (function () { var res = null;
@@ -533,7 +546,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
   });
 
   await test('the worked example (S9): a tier-1 player\'s first card of a family opens with hint 1 drawn, the band saying it ("Hint 1 of 2", what the game move runs into) and Hint 2 in the bar, as every band that says "Hint 1 of 2"; Hint gives hint 2; a solve records hint, notes a first look and counts the family; never at tiers 2 and 3, on a relearn card, or with storage unreadable', () => {
-    const A = boot();
+    /* the first card ever has taught the game arrow (S18) */
+    const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       playerTier = function () { return 1; };
       var res = { open: [], worked: 0, empty: 0, fams: {}, agree: 0, disagree: [] };
@@ -610,8 +624,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
     eq(JSON.stringify(r.full), JSON.stringify([true, null, 1, false, false]), 'writes failing: counted in memory, the family not a worked example again');
   });
 
-  await test('the worked example comes through the real session start (loadCard) on a fresh profile at tier 1, and is kept across a reload of the session', () => {
-    const A = boot();
+  await test('the worked example comes through the real session start (loadCard) at tier 1 once the game arrow has taught itself, and is kept across a reload of the session', () => {
+    const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       playerTier = function () { return 1; };
       SF.state = 'failed';
@@ -626,6 +640,102 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
     eq(r.first, 'true / 1 / true', 'the card opens as the worked example');
     ok(/"h":1/.test(r.kept) && /"p":1/.test(r.kept), 'kept: ' + r.kept);
     eq(r.reload, '1 / true / false', 'reloaded: the same hint, still the worked example, not made twice');
+  });
+
+  await test('a tier-1 player\'s first card ever is no worked example, even of a new family: it teaches the game arrow, the family keeps its count at 0, and its worked example comes on its next card', () => {
+    const A = boot();
+    A.ev(OPEN); A.ev(PAGE);
+    const r = JSON.parse(A.ev(`${OPEN} (function () {
+      playerTier = function () { return 1; };
+      SF.state = 'failed';
+      /* two one-move cards of one family, each a worked example once the game arrow is taught */
+      store.set('nl:tip:game', 1);
+      var we = allMistakes().filter(trainable).filter(function (x) { var a = openCard(x); return a && !a.sol && workedExample(a); }), it = null, it2 = null;
+      we.some(function (x) { var y = we.filter(function (z) { return z !== x && familyOf(patternOf(z.b)).key === familyOf(patternOf(x.b)).key; })[0]; if (y) { it = x; it2 = y; } return !!y; });
+      store.del('nl:tip:game');
+      var fam = familyOf(patternOf(it.b)).key, res = {};
+      ui.session = null;
+      startSession('drill', [it.key, it2.key], 'x');
+      var a = ui.session.active;
+      res.first = [a.key === it.key, a.hints, !!a.predraw].join(' / ');
+      res.label = window.__label();
+      res.tip = store.get('nl:tip:game', 0);
+      solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+      res.count = [localStorage.getItem('nl:seen:' + fam), familySeen(fam), (ui.session.notes || {})[it.key] || null, ui.session.results[it.key]].join(' / ');
+      nextCard();
+      var b = ui.session.active;
+      res.next = [b.key === it2.key, b.hints, !!b.predraw].join(' / ');
+      return JSON.stringify(res); })()`));
+    eq(r.first, 'true / 0 / false', 'the first card ever opens plain');
+    eq(r.label, 'Your game move', 'and names the game arrow');
+    eq(r.tip, 1, 'which is then taught');
+    eq(r.count, ' / 0 /  / first', 'solved: the family not counted, no first look, found');
+    eq(r.next, 'true / 1 / true', 'the family\'s next card is its worked example');
+  });
+
+  await test('the board\'s aria-label (S20) names what the frame draws, mark by mark, and nothing it does not: who moves, each arrow with its squares, rings, tokens, the ghost, guard dots, a tried move, the badge and a check; the forcing reply only once it has landed', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`${OPEN} (function () { ${FRAMES}
+      var out = [], n = 0, by = {};
+      var cnt = function (s, re) { return (s.match(re) || []).length; };
+      [1, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          eachFrame(it, function (what, a) {
+            var f = boardOptsFor(a), o = f.opts, svg = boardSvg(f.st, o), lab = o.label, bad = [];
+            if ((/aria-label="([^"]*)"/.exec(svg) || [])[1] !== lab) bad.push('the svg does not carry the label');
+            if (lab.indexOf((f.st.w ? 'White' : 'Black') + ' to move.') !== 0) bad.push('who moves');
+            /* each drawn mark, counted in the svg, against its words */
+            var pairs = [[/class="bad-arrow"/g, /Red arrow: your game move, /g, 'game arrow'], [/class="threat-arrow"/g, /Dashed red arrow: /g, 'threat arrow'],
+              [/class="reply-arrow"(?![^>]*stroke-dasharray)/g, /Blue arrow: /g, 'landed reply'], [/class="good-arrow"/g, /Green arrow: /g, 'green arrow'],
+              [/class="ghost-arrow"/g, /Gold arrow: /g, 'gold arrow'], [/class="hint-ring"/g, /Gold ring: /g, 'hint ring'], [/class="ring-target"/g, /Dashed gold ring: /g, 'prize ring'],
+              [/token-lost/g, / was taken on /g, 'lost token'], [/token-won/g, /You won a /g, 'won token'], [/class="guard-line"/g, /Green dots: /g, 'guard dots'],
+              [/<g class="tried"/g, /Faint red line: |Red cross: a move /g, 'tried move'], [/url[(]#checkglow/g, / king is in check[.]/g, 'check'],
+              [/badge-good/g, /Green tick: /g, 'tick'], [/badge-bad/g, /Red cross: your move/g, 'cross'], [/badge-close/g, /Ring with a tick: /g, 'close'], [/badge-info/g, /Grey i: /g, 'i'],
+              [/badge-checking/g, /Grey dots: /g, 'checking'], [/badge-unchecked/g, /Question mark: /g, 'unchecked']];
+            pairs.forEach(function (p) { var d = cnt(svg, p[0]), w = cnt(lab, p[1]); if (d !== w) bad.push(p[2] + ' drawn ' + d + ', said ' + w); if (w) by[p[2]] = (by[p[2]] || 0) + 1; });
+            var faded = (o.ghosts || []).length; if (cnt(lab, /: where your game move went[.]/g) !== faded) bad.push('ghost');
+            if (faded) by.ghost = (by.ghost || 0) + 1;
+            /* the ghost faded where its square is empty; on a piece, only its cross is drawn and said */
+            (o.ghosts || []).forEach(function (g) {
+              var want = (f.st.b[g.sq] ? 'Red cross on ' : 'Faded ' + PIECE_WORD[pType(g.p)] + ' on ') + sqName(g.sq) + ': where';
+              if (lab.indexOf(want) < 0) bad.push('the ghost on ' + sqName(g.sq) + ' said as ' + lab);
+              if (f.st.b[g.sq]) by['ghost on a piece'] = 1;
+            });
+            var rr = (o.rings || []).filter(function (x) { return x.kind === 'threat'; }).length, ra = (o.arrows || []).filter(function (x) { return x.kind === 'threat'; }).length;
+            if (rr > ra && cnt(lab, /Red ring: /g) !== rr - ra) bad.push('a threat ring alone');
+            /* the squares said are the squares drawn */
+            (o.bad ? [{ from: o.bad[0], to: o.bad[1], kind: 'game' }] : []).concat(o.arrows || []).forEach(function (m) {
+              if (m.kind === 'game' && lab.indexOf(sqName(m.from) + ' to ' + sqName(m.to) + '.') < 0) bad.push('game arrow squares');
+              if (m.kind === 'threat' && lab.indexOf(' on ' + sqName(m.from) + ' c') < 0) bad.push('threat from ' + sqName(m.from));
+              if (m.kind === 'threat' && !new RegExp(' ' + sqName(m.to) + '[.]').test(lab)) bad.push('threat to ' + sqName(m.to));
+            });
+            /* hint 1's danger and S0's pair are what the game move allowed: read after it, a capture or a check */
+            if ((o.arrows || []).some(function (x) { return x.kind === 'threat' && (x.key === 'hint' || (a.view && a.view.mode === 's0')); }) && (!/Dashed red arrow: after your game move, the [a-z]+ on [a-h][1-8] could (take|give check) on /.test(lab) || / could go to /.test(lab))) bad.push('what the game move allowed, not read after it');
+            /* a telegraphed or sliding reply is not named before it lands */
+            if ((o.arrows || []).some(function (x) { return x.kind === 'reply' && !x.solid; }) && /Blue arrow/.test(lab)) bad.push('the reply named before it landed');
+            n++;
+            bad.forEach(function (x) { out.push('tier ' + tier + ' ' + it.key + ' ' + what + ': ' + x + ' | ' + lab); });
+          });
+        });
+      });
+      /* a move tried already: its line names it; one that went to the
+         answer's square shows only the cross where it left, and its words
+         name only that square */
+      playerTier = function () { return 2; };
+      var tr = [];
+      allMistakes().filter(trainable).forEach(function (it) {
+        var a = openCard(it); if (!a || a.sol) return;
+        var ms = legalMoves(a.st).filter(function (m) { return moveUci(m) !== a.bestUci && moveUci(m) !== a.playedUci; });
+        var away = ms.filter(function (m) { return m.to !== a.best.to; })[0], onto = ms.filter(function (m) { return m.to === a.best.to; })[0];
+        if (away) { a.wrong = [{ at: 0, from: away.from, to: away.to, fx: 'x' }]; var l1 = boardOptsFor(a).opts.label; if (l1.indexOf('Faint red line: you tried ') < 0 || l1.indexOf(sqName(away.from) + ' to ' + sqName(away.to) + ' already.') < 0) tr.push(it.key + ' line: ' + l1); else by['tried move'] = 1; }
+        if (onto) { a.wrong = [{ at: 0, from: onto.from, to: onto.to, fx: 'x' }]; var l2 = boardOptsFor(a).opts.label; if (l2.indexOf('Red cross: a move of the ') < 0 || l2.indexOf(' on ' + sqName(onto.from) + ' was tried') < 0 || l2.replace(/Red arrow: your game move[^.]*[.]/, '').indexOf(sqName(a.best.to)) >= 0) tr.push(it.key + ' cross: ' + l2); else by['tried cross'] = 1; }
+      });
+      out = out.concat(tr);
+      return JSON.stringify({ out: out, n: n, by: Object.keys(by).sort() }); })()`));
+    ok(r.n > 2000, 'frames ' + r.n);
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' || '));
+    ['game arrow', 'threat arrow', 'landed reply', 'green arrow', 'hint ring', 'lost token', 'won token', 'guard dots', 'tried move', 'tried cross', 'tick', 'cross', 'i', 'ghost', 'ghost on a piece'].forEach((k) => ok(r.by.indexOf(k) >= 0, 'never said: ' + k + ' (' + r.by.join(', ') + ')'));
   });
 
   await test('LABELS_ON false: no label on any frame, first sight included, and none painted or remembered', () => {

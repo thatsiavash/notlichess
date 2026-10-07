@@ -134,6 +134,16 @@ const SPOILER = `function spoilerFaults(a, f) {
   if (mover && isW(mover) === myPov(a.it) && !sameMove(own, o.anim)) out.push('replays a move of yours, ' + o.anim.map(sqName).join('-'));
   if (!f.pending) out.push('the bar shows the score');
   if (String(o.label || '').split(/[\\s.]+/).indexOf(sanOf(a.st, due)) >= 0) out.push('the board name says ' + sanOf(a.st, due));
+  /* the board's aria-label (S20) never names the answer: not its move, not
+     its square, not "the answer" or "better", outside the sentences of the
+     marks 2.3 exempts (the game arrow of the move played, the forcing
+     reply's own arrow and token, the move just played's badge, which names
+     no square) */
+  var lab = String(o.label || ''), gm = 'Red arrow: your game move, ', pw = function (sq) { var p = a.st.b[sq]; return p ? PIECE_WORD[pType(p)] : ''; };
+  var rest = lab.split(/(?<=[.]) /).filter(function (x) { return x.indexOf(gm) !== 0 && !(rm && (x.indexOf('Blue arrow: ') === 0 || (/ was taken on | won a /.test(x) && x.indexOf(' ' + sqName(rm[1]) + '.') >= 0))); }).join(' ');
+  if (rest.indexOf(pw(due.from) + ' ' + sqName(due.from) + ' to ' + sqName(due.to)) >= 0) out.push('the board name says the answer move: ' + lab);
+  if (rest.split(/[^a-h1-8]+/).indexOf(sqName(due.to)) >= 0) out.push('the board name names the answer square ' + sqName(due.to) + ': ' + lab);
+  if (/the answer|better move|Green arrow|Gold arrow/.test(lab)) out.push('the board name says ' + lab);
   /* the label (2.1), as a first-sight label and as a short one, on a 384
      px board: never "better" or "the answer", never over the answer's
      square (its rectangle as drawn, flipped or not) */
@@ -486,6 +496,11 @@ const BAR = `(function () {
         slide: (a.hints = 0, doctor(function (g) { g.opts.anim = [a.played.from, a.played.from]; g.st = cloneState(a.pre); })),
         bar: doctor(function (g) { g.pending = false; }),
         label: doctor(function (g) { g.opts.label = 'Play ' + sanOf(a.st, b) + '.'; }),
+        /* the aria-label in the board's words (S20): the answer's move, its square, the green words */
+        ariaMove: doctor(function (g) { g.opts.label = 'White to move. Move the ' + PIECE_WORD[pType(a.st.b[b.from])] + ' ' + sqName(b.from) + ' to ' + sqName(b.to) + '.'; }),
+        ariaSquare: doctor(function (g) { g.opts.label = 'White to move. Dashed red arrow: the pawn on a1 can take on ' + sqName(b.to) + '.'; }),
+        ariaGreen: doctor(function (g) { g.opts.label = 'White to move. Green arrow: here.'; }),
+        ariaGame: doctor(function (g) { g.opts.label = 'White to move. Red arrow: your game move, piece ' + sqName(a.played.from) + ' to ' + sqName(b.to) + '.'; }),
         /* the same marks in the lists boardSvg also takes, and the new ones */
         greenList: doctor(function (g) { g.opts.arrows = [{ from: b.from, to: b.to, kind: 'better' }]; }),
         goldList: doctor(function (g) { g.opts.arrows = [{ from: b.from, to: b.to, kind: 'explore' }]; }),
@@ -533,7 +548,8 @@ const BAR = `(function () {
     eq(r.allowed, 0, 'marks the rule allows after a miss');
     eq(r.threatInTried, 0, 'S4 marks on the answer piece after a miss');
     eq(r.gameItself, 0, 'the red arrow of the game move, as a list arrow');
-    ['green', 'gold', 'ringEarly', 'ringOnTo', 'slide', 'bar', 'label', 'greenList', 'goldList', 'ringList', 'threatOnTo', 'prizeOnFrom',
+    eq(r.ariaGame, 0, 'the game arrow\'s words, whatever square they name');
+    ['green', 'gold', 'ringEarly', 'ringOnTo', 'slide', 'bar', 'label', 'ariaMove', 'ariaSquare', 'ariaGreen', 'greenList', 'goldList', 'ringList', 'threatOnTo', 'prizeOnFrom',
       'ringOnToList', 'token', 'guard', 'tried', 'badge', 'tint', 'threatFromOnFrom', 'threatToOnFrom', 'threatRingOnFrom', 'replyArrowOnTo',
       'replyRingOnTo', 'threatOnToInTried', 'gameElsewhere', 'labelAnswer', 'labelOnTo'].forEach((k) => ok(r[k] > 0, k + ' not caught'));
     /* the forcing reply's own marks, in phase reply: allowed on the reply's
@@ -1049,6 +1065,67 @@ const BAR = `(function () {
     A.key('Enter');
     s = S();
     eq(s.phase, 'guess', 'Enter on a close move takes it back'); eq(s.result, null, 'and shows no answer'); eq(s.misses, 0, 'and counts no miss');
+  });
+
+  await test('the desktop key line lists exactly the keys that do something in each state (Enter by the button it presses, ?, ← →, Esc)', async () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    A.ev(BAR);
+    /* each state from scratch on one card with a stored reply */
+    const SET = `${AFTER} var c1 = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && unpackUci(x.b.ru).length; })[0];
+      var settled = function () { var a = window.__show(c1); solved(uciToMove(a.st, a.bestUci), a.bestUci, null); return a; };
+      var SETUPS = {
+        open: function () { window.__show(c1); },
+        hint2: function () { var a = window.__show(c1); a.hints = 2; renderCard(); },
+        miss: function () { var a = window.__show(c1); a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); },
+        close: function () { var a = window.__show(c1); a.attempts++; showTry(a, offBook(a), 'close', null); },
+        checking: function () { window.readyEngine(); window.__holdTry = true; var a = window.__show(c1); a.tapped = true; gradeMove(offBook(a)); },
+        settled: settled,
+        story: function () { settled(); ui.session.active.settle = 2; seeWhy(); },
+        storyEnd: function () { var a = settled(); a.settle = 2; seeWhy(); a.view = { mode: 'story', i: buildStory(a).steps.length - 1 }; renderCard(); },
+        shown: function () { window.__show(c1); reveal(); },
+        exploring: function () { window.readyEngine(); settled(); startExplore({}); }
+      };`;
+    const SIG = 'JSON.stringify((function (a) { return a ? [a.key, a.phase, a.view && a.view.mode, a.view && a.view.i, a.explore ? a.explore.at : -1, a.hints, a.result || null, a.tried && a.tried.kind, a.sel] : null; })(ui.session && ui.session.active))';
+    const keyOf = { Enter: /^Enter: /, '?': /(^| )\? hint/, ArrowRight: /→/, ArrowLeft: /←/, Escape: /Esc: / };
+    const out = [], lines = {};
+    for (const st of ['open', 'hint2', 'miss', 'close', 'checkingEarly', 'checking', 'settled', 'story', 'storyEnd', 'shown', 'exploring']) {
+      for (const k of Object.keys(keyOf)) {
+        if (st === 'checkingEarly') {
+          /* a move being checked before K1: the guess bar is still up, but Enter does nothing */
+          A.ev(`(function () { ${SET} window.__holdTry = false; window.__show(c1); return 1; })()`);
+          A.advance(1000);
+          A.ev(`(function () { ${SET} window.readyEngine(); window.__holdTry = true; var a = ui.session.active; a.tapped = true; gradeMove(offBook(a)); return 1; })()`);
+          A.advance(100);
+        } else {
+          A.ev(`(function () { ${SET} window.__holdTry = false; SETUPS['${st}'](); return 1; })()`);
+          A.advance(3000);
+          await tick(); await tick();
+          A.advance(600);
+        }
+        const line = A.ev('displayFor(ui.session.active).keys');
+        lines[st] = line;
+        const before = A.ev(SIG);
+        A.key(k);
+        A.advance(600);
+        const changed = A.ev(SIG) !== before;
+        if (changed !== keyOf[k].test(line)) out.push(st + ' "' + line + '": ' + k + (changed ? ' works but is not listed' : ' is listed but does nothing'));
+      }
+    }
+    A.ev('(window.__holdTry = false, 1)');
+    eq(out.length, 0, out.join(' | '));
+    eq(lines.open, 'Enter: Show the answer · ? hint', 'the card asking');
+    eq(lines.hint2, 'Enter: Show the answer', 'no hint left');
+    eq(lines.miss, 'Enter: Try again · ? hint', 'a miss');
+    eq(lines.close, 'Enter: Keep looking · ? hint', 'a close move');
+    eq(lines.checking, 'Esc: take back', 'a move being checked');
+    eq(lines.checkingEarly, '? hint · Esc: take back', 'a move being checked, before the band says so');
+    eq(lines.settled, 'Enter: Finish · → see why', 'the settled result (the last card)');
+    eq(lines.story, 'Enter: Finish · ← → step · Esc: back', 'the story');
+    eq(lines.storyEnd, 'Enter: Finish · ← step · Esc: back', 'the story\'s last step');
+    eq(lines.shown, 'Enter: Play it', 'the answer shown');
+    ok(/^Enter: Finish · ← (→ )?step · Esc: back to the lesson$/.test(lines.exploring), 'exploring: ' + lines.exploring);
   });
 
   await test('a held key presses once: its auto-repeat never reaches the button that took its place', async () => {
@@ -2900,13 +2977,15 @@ const BAR = `(function () {
     A.ev('(playerTier = function () { return 2; }, 1)');
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       var out = [], its = allMistakes().filter(trainable), one = its.filter(function (x) { var a = cardFor(x); return a && !a.sol; }), line = its.filter(function (x) { var a = cardFor(x); return a && a.sol && a.sol.length >= 3; });
-      /* a close move found first, then the answer: graded hint, and the summary says close */
+      /* a close move found first, then the answer: graded hint, and the
+         summary says what happened last, the answer shown (S17), not solved */
       var a = openCard(one[0]); a.foundGood = { san: 'x', win: 60 }; reveal();
       if (a.result !== 'hint') out.push('after a close move the reveal grades ' + a.result);
-      if (!/◐ close/.test(doneHtml(ui.session))) out.push('the summary does not say close');
+      ui.session.finished = true;
+      var dh = doneHtml(ui.session);
+      if (!/class="res shown">Shown</.test(dh) || /1 of 1 solved/.test(dh) || /With help/.test(dh)) out.push('a close move then the answer shown does not read Shown, unsolved: ' + (dh.match(/class="res[^"]*">[^<]*/g) || []).join(','));
       a = openCard(one[1]); reveal();
       if (a.result !== 'fail' || ui.session.notes[a.key] !== 'shown') out.push('a reveal grades ' + a.result + ', notes ' + ui.session.notes[a.key]);
-      if (/◐ close/.test(doneHtml(ui.session))) out.push('a plain reveal says close');
       /* a relearn showing: its first note stays */
       a = openCard(one[2]); ui.session.keys = [a.key, a.key]; ui.session.idx = 1; ui.session.relearnOf = {}; ui.session.relearnOf[a.key] = 1; ui.session.notes = {}; ui.session.notes[a.key] = 'leftMiss';
       reveal();

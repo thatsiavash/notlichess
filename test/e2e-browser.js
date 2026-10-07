@@ -146,6 +146,14 @@
     ok('the label is remembered as seen', localStorage.getItem('nl:tip:game') === '1');
     const wordsOn = () => { const w = (t) => String(t || '').split(/\s+/).filter((x) => /[A-Za-z0-9]/.test(x)).length; return w(text('#cband')) + [].reduce.call($$('#cbar a'), (x, b) => x + w(b.textContent), 0) + w(lb0 ? lb0.textContent : ''); };
     ok('with the label, at most 15 words on screen', wordsOn() <= 15, wordsOn());
+    /* S20: the board's name is built from its marks, and never names the answer before it */
+    const al0 = $('#bwrap svg.board').getAttribute('aria-label') || '', best0 = T.ev('sanOf(ui.session.active.st, ui.session.active.best)');
+    ok('the board\'s aria-label says who moves and names the red arrow, never the answer', /^(White|Black) to move\. Red arrow: your game move, \w+ [a-h][1-8] to [a-h][1-8]\./.test(al0)
+      && al0.split(/[\s.]+/).indexOf(best0) < 0 && !/answer|Green arrow/.test(al0), al0);
+    /* the desktop key line: the keys that work now, 12 px; none on a phone */
+    const kl = $('#ckeys');
+    if (innerWidth > 860) ok('the key line lists the keys that work now, in 12 px', !!kl && kl.textContent === T.ev('displayFor(ui.session.active).keys') && kl.textContent === 'Enter: Show the answer · ? hint' && getComputedStyle(kl).fontSize === '12px', kl && kl.textContent);
+    else ok('no key line on a phone', !!kl && getComputedStyle(kl).display === 'none');
     recOn();
     ok('session mode hides the site chrome', document.body.classList.contains('in-session'));
     ok('the session bar has an end button and progress', !!$('.sb-end') && !!$('.dots'));
@@ -370,6 +378,9 @@
         && text('#cband').indexOf(T.ev('sanOf(ui.session.active.pre, ui.session.active.best)')) === -1, text('#cband'));
       ok('the reason on the board: the punishing piece ringed, a dashed arrow to what it takes', !th || th.from === due[1]
         || (!!$('#bwrap .marks .ring-threat') && (th.to === due[1] || !!$('#bwrap .marks .threat-arrow'))), JSON.stringify(th));
+      /* the reason's marks come in their own beat (marks only): the board's name follows them */
+      const al1 = $('#bwrap svg.board').getAttribute('aria-label') || '';
+      ok('the board\'s aria-label follows the reason\'s marks', /Dashed red arrow: /.test(al1) === !!$('#bwrap .marks .threat-arrow') && /Red cross: your move is not it\./.test(al1), al1);
       bandFits('the game move again, its reason');
       /* the try stays on the board until Try again (a button ignores taps in
          a card's first 450 ms and for 450 ms after the bar changes) */
@@ -557,6 +568,17 @@
     }
     await until(() => T.card().finished || !!$('.recap-item'), 20000);
     ok('the session ends in a recap', !!$('.recap-item') || /solved/i.test(text('#trainbox')), text('#trainbox').slice(0, 80));
+    /* S17: each card in words, the note first (Shown, First look, Missed, Skipped), then the result;
+       no "spotted" line; one habit per family seen, "For your next game: ..." */
+    const words = [].map.call($$('.recap-item .res'), (e) => e.textContent);
+    ok('the recap says each card in words', words.length > 0 && words.every((w) => /^(Found|With help|First look|Found after a miss|Shown|Missed|Skipped)$/.test(w)), words.join(', '));
+    ok('the cards revealed to finish read Shown', words.indexOf('Shown') >= 0, words.join(', '));
+    ok('the card skipped after its miss reads Missed', words.indexOf('Missed') >= 0, words.join(', '));
+    const head = text('#recap-h'), solvedN = words.filter((w) => /^(Found|With help|First look|Found after a miss)$/.test(w)).length, countedN = words.filter((w) => w !== 'Skipped').length;
+    ok('the recap counts what it says', head === (countedN ? solvedN + ' of ' + countedN + ' solved.' : 'Done.'), head + ' / ' + words.join(', '));
+    const habits = [].map.call($$('.recap-habit .plan'), (e) => e.textContent);
+    ok('one habit per family seen, for the next game', habits.length >= 1 && habits.every((h) => /^For your next game: /.test(h)) && new Set(habits).size === habits.length, habits.join(' | '));
+    ok('no "spotted" line on the recap', !/spotted/i.test(text('#trainbox')));
     ok('the recap offers to play a game', !!$('.recap-acts .btn-big'));
     ok('reveal-only cards do not earn the day on their own', T.ev('ui.session ? (ui.session.attempted || 0) + (ui.session.carried || 0) >= 3 : false') || T.ev('dayLoad().sessions || 0') === sessionsBefore);
     click('[data-act=endSession]');

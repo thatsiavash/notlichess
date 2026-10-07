@@ -21,7 +21,7 @@ function saveSession() {
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
-                         progress: ss.progress || {}, attempted: ss.attempted || 0, carried: ss.carried || 0, notes: ss.notes || {} });
+                         progress: ss.progress || {}, attempted: ss.attempted || 0, carried: ss.carried || 0, notes: ss.notes || {}, firstTime: !!ss.firstTime });
 }
 /* a paused session that is dropped or replaced: a card left after a miss
    is graded a fail, and its tries still count toward the day */
@@ -69,8 +69,17 @@ function cardEaseOf(it) {
 }
 /* a card that will ask for a forcing line (several moves in a row): the
    rule cardFor uses, read from the stored line without the classifier, so
-   it may say yes to a few cards that turn out to ask for one move */
+   it may say yes to cards that turn out to ask for one move (about one
+   for each card that really does), never no to one that asks for a line.
+   Once per card and line, as the ease check: it replays the game, and the
+   Today screen plans on many of its repaints */
+var forcingMemo = {};
 function looksForcing(it) {
+  var mk = it.key + '|' + (it.b.lu || '') + '|' + it.b.mb + '|' + playerTier();
+  if (forcingMemo[mk] == null) forcingMemo[mk] = looksForcingOf(it);
+  return forcingMemo[mk];
+}
+function looksForcingOf(it) {
   var b = it.b, lu = unpackUci(b.lu);
   if (playerTier() < 2 || lu.length < 3) return false;
   if (b.mb != null && b.mb > 0) return true;
@@ -79,6 +88,40 @@ function looksForcing(it) {
   var after = cloneState(pre);
   applyMove(after, m);
   return pre.b[m.to] != null || m.ep >= 0 || checkedKingSq(after) != null;
+}
+/* whether a card really asks for a forcing line: cardFor's own rule (the
+   card built), asked only of cards looksForcing flags, and once per card
+   and line */
+var asksMemo = {};
+function asksForcing(it) {
+  if (!looksForcing(it)) return false;
+  var mk = it.key + '|' + (it.b.lu || '') + '|' + (it.b.bu || '') + '|' + it.b.mb + '|' + playerTier();
+  if (asksMemo[mk] == null) { var a = null; try { a = cardFor(it); } catch (e) {} asksMemo[mk] = !!(a && a.sol); }
+  return asksMemo[mk];
+}
+/* a first session's head (section 4): card 1 asks for one move, and at
+   most one of the first three asks for a forcing line. Reorders list (of
+   cards or keys, isF telling a forcing one) from index from on, the ones
+   before it already shown; looks at each candidate only until one fits */
+function firstThree(list, isF, from) {
+  from = from || 0;
+  var head = list.slice(0, from), rest = list.slice(from);
+  while (head.length < 3 && rest.length) {
+    var oneIn = head.some(isF), pick = null;
+    for (var i = 0; i < rest.length && !pick; i++) if (!((!head.length || oneIn) && isF(rest[i]))) pick = rest[i];
+    pick = pick || rest[0];
+    head.push(pick);
+    rest.splice(rest.indexOf(pick), 1);
+  }
+  return head.concat(rest);
+}
+/* the same rule kept when a first session's card is taken out before it
+   was shown (loadCard: the deeper look found no real mistake), since every
+   later card then moves up a place */
+function keepFirstThree(ss) {
+  if (!ss || !ss.firstTime || ss.idx >= 3) return;
+  var m = model();
+  ss.keys = firstThree(ss.keys, function (k) { var it = m.byKey[k]; return !!it && asksForcing(it); }, ss.idx);
 }
 /* how much a card can teach: a named idea, not played in a scramble, in a
    position that was still alive, with a line that settles */
@@ -166,15 +209,9 @@ function todayPlan() {
       .sort(function (x, y) { return y.g.ts - x.g.ts; })[0];
     /* a hard one there: the easiest card leads instead, not an older loss */
     if (lostLast && cardEase(lostLast) >= 2 && !forcing[lostLast.key]) fresh = [lostLast].concat(fresh.filter(function (x) { return x !== lostLast; }));
-    /* card 1 is never a forcing line, and at most one of the first three is */
-    var head = [], rest = fresh.slice();
-    while (head.length < 3 && rest.length) {
-      var oneIn = head.some(function (x) { return forcing[x.key]; });
-      var pick = rest.filter(function (x) { return !forcing[x.key] || (head.length && !oneIn); })[0] || rest[0];
-      head.push(pick);
-      rest.splice(rest.indexOf(pick), 1);
-    }
-    fresh = head.concat(rest);
+    /* card 1 is never a forcing line, and at most one of the first three
+       is, by the card's own rule (a flagged card often asks for one move) */
+    fresh = firstThree(fresh, asksForcing);
   }
   /* a reserved slot: the best new mistake from games since the last visit */
   var since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
@@ -229,6 +266,8 @@ function startToday() {
   var plan = todayPlan();
   if (!plan.keys.length) { notice('Nothing to practise yet. Your mistakes are still being found.'); return; }
   startSession('today', plan.keys, 'Today');
+  /* its head rule is kept if a card drops out before it is shown */
+  if (ui.session && plan.firstTime) { ui.session.firstTime = true; saveSession(); }
 }
 /* more practice: due reviews first, then new positions within the day's
    cap, so extra taps never pile up future reviews */
@@ -248,7 +287,7 @@ function resumeSession() {
   if (!s) return false;
   ui.session = { mode: s.mode, label: s.label, keys: s.keys, idx: s.idx, results: s.results || {},
                  relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {},
-                 attempted: s.attempted || 0, carried: s.carried || 0, notes: s.notes || {} };
+                 attempted: s.attempted || 0, carried: s.carried || 0, notes: s.notes || {}, firstTime: !!s.firstTime };
   setView('train', false);
   pushSessionState();
   /* a card answered before the reload is not asked again */
