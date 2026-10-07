@@ -806,7 +806,7 @@ document.addEventListener('pointerdown', function (e) {
     took = true;
   }
   /* a board that takes no moves (the answered card): a sideways swipe
-     steps the story (FINAL-SPEC 2.2), so its start is kept when it is
+     steps the story, so its start is kept when it is
      clear of both screen edges (iOS Back ends the session). A press on a
      piece there is answered by its click (N1) */
   if (e.button === 0 && !bs.live && !a.pendingPromo) {

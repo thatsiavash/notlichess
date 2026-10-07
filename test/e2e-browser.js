@@ -196,9 +196,10 @@
     /* the Details sheet: both long sentences, the game, the pattern, the way to explore */
     click('#cstrip [data-act=details]');
     await until(() => $('#overlay .sheet'), 3000);
-    /* the better move's sentence as Details says it (no safety claim where its own line loses material) */
+    /* both sentences as Details says them (each material claim the card face's own) */
     const sn = T.card().sentences, snBest = sn && T.ev('(function (a) { return detailsBest(a, a.cls.sentences, a.lines.best.san[0]); })(ui.session.active)');
-    ok('the Details sheet holds both sentences', !!sn && text('#overlay .sheet').indexOf(snBest) !== -1 && text('#overlay .sheet').indexOf(sn.game.replace(/ \(\d+% to \d+%\)/g, '')) !== -1 && !!$('#overlay .sheet .ctx'),
+    const snGame = sn && T.ev('detailsGame(ui.session.active)');
+    ok('the Details sheet holds both sentences', !!sn && text('#overlay .sheet').indexOf(snBest) !== -1 && text('#overlay .sheet').indexOf(snGame.replace(/ \(\d+% to \d+%\)/g, '')) !== -1 && !!$('#overlay .sheet .ctx'),
       text('#overlay .sheet').slice(0, 200));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(200);

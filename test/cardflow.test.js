@@ -1,6 +1,6 @@
 // The card flow, run on the built page in Node (test/app-realm.js) with the fixture games: what each
-// frame of a card draws, checked as data (boardOptsFor) against the spoiler rule of the redesign spec
-// (projects/lichess-launcher/ux-2026-10-03/FINAL-SPEC.md, 2.3). Node has no engine, so a try is answered
+// frame of a card draws, checked as data (boardOptsFor) against the spoiler rule (no mark gives the
+// answer away before it is found or shown; spoilerFaults below). Node has no engine, so a try is answered
 // by a stub with the card's stored refutation; timers run on the realm's fake clock (setNow, flush, or
 // advance, which runs each timer when it falls due).
 // Each slice of the redesign adds the frames it builds to these loops. node test/cardflow.test.js
@@ -72,7 +72,8 @@ const OPEN = `function openCard(it) {
   ui.session.active = a;
   return a;
 }`;
-/* the spoiler rule (FINAL-SPEC 2.3), on the frame the user sees. Before an
+/* the spoiler rule (no mark gives the answer away before it is found or
+   shown), on the frame the user sees. Before an
    answer (guess, checking, tried, reply) a frame may not show a green arrow,
    a gold arrow, a gold hint ring other than hint 2's on the answer's
    from-square, a hint's prize ring on that square, a threat arrow end or
@@ -782,7 +783,7 @@ const BAR = `(function () {
         const at = 'tier ' + tier + ' ' + key;
         /* S1: the card opens, board and band at once (nothing slides) */
         A.ev(`(window.__show(model().byKey['${key}']), 1)`);
-        ok(/Your turn Find a better move than \S+\.$/.test(band()), at + ': the open band reads ' + band());
+        ok(/Your turn Find a better move than (\S+|[a-z ]+ [a-h][1-8]|castling)\.$/.test(band()), at + ': the open band reads ' + band());
         run(1000);
         /* S2: a piece picked up and put down repaints the board alone */
         const t0 = textWrites();
@@ -1124,23 +1125,53 @@ const BAR = `(function () {
     eq(r.out.length, 0, r.out.slice(0, 5).join(' | '));
   });
 
-  await test('Details never says the better move keeps everything safe when its own line loses material (184455333378:68: Qe6 still loses the bishop); its other sentences stay', () => {
+  await test('Details claims material only as the card face does: the game move\'s loss as its claim (buildCompare: standing, in line with the score, more than the best line loses; "could" when not played), the better move\'s gain as B1 says it (its square only where it took that one piece), safety only where the best line loses nothing; every card and tier (184455333378:68, 184205946040:62)', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      var out = [], swapped = [], kept = 0;
-      allMistakes().filter(trainable).forEach(function (it) {
-        var a = openCard(it);
-        if (!a) return;
-        reveal();
-        var h = detailsHtml(), say = a.cls.sentences.best || '', best = a.lines.best.san[0];
-        var loses = !a.cls.mateFor && bestLossFrom(a, 0) >= 1, safe = /\\bsafe\\b|out of danger/.test(say);
-        if (loses && safe) { swapped.push(it.key); if (h.indexOf(esc(say)) >= 0 || h.indexOf(esc(best + ' was the better move.')) < 0) out.push(it.key + ' still says ' + say); }
-        else if (say) { kept++; if (h.indexOf(esc(say)) < 0) out.push(it.key + ' lost ' + say); }
+      var out = [], n = { cards: 0, loss: 0, could: 0, gain: 0, sq: 0, safe: 0, swapped: 0 }, rows = {};
+      var text = function (h, cls) { var m = new RegExp('dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>([^<]*)<').exec(h); return m ? m[1].replace(/&#39;/g, "'").replace(/&amp;/g, '&') : ''; };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var a = openCard(it);
+          if (!a) return;
+          reveal();
+          n.cards++;
+          var c = a.cls, cmp = buildCompare(a), h = detailsHtml(), game = text(h, 'tl-bad'), best = text(h, 'tl-good'), at = 'tier ' + tier + ' ' + it.key;
+          var w = familyOf(patternOf(it.b)).key === 'chances' ? '' : cmp.w, m, re = /\\b(You could lose|You lose|could lose|loses) ([^.]+?)(?= after |\\.)/g, said = 0;
+          if (tier === 2) rows[it.key] = game + ' / ' + best;
+          /* the mistake: each loss is the card face's claim, "could" exactly when the opponent did not play into it */
+          while ((m = re.exec(game))) {
+            said++; n.loss++;
+            if (m[2] !== w) out.push(at + ': says it loses "' + m[2] + '" where the card claims "' + w + '": ' + game);
+            if (/could/.test(m[1]) === cmp.found) out.push(at + ': "' + m[1] + '" where the opponent ' + (cmp.found ? 'played' : 'did not play') + ' into it');
+            if (/could/.test(m[1])) n.could++;
+          }
+          if (/\\bis lost\\b|get trapped|\\bwins\\b/.test(game) && !w) out.push(at + ': a loss said another way, with no claim: ' + game);
+          /* and a claim the card makes is said, or named as the one piece taken */
+          var one = /^the (\\w+)$/.exec(w);
+          if (w && !said && !(one && new RegExp('your ' + one[1] + '\\\\b').test(game))) out.push(at + ': the card claims ' + w + ', Details does not: ' + game);
+          /* the better move: its gain as B1 says it, the square a capture of that piece of theirs */
+          var gw = c.matBest >= 1 && c.bestLine ? plainCapture(c.bestLine, c.bSettle) || oneWord(null, c.matBest) : '';
+          if ((m = /\\bwins (.+?)(?: on ([a-h][1-8]))?\\.$/.exec(best))) {
+            n.gain++;
+            if (m[1] !== gw) out.push(at + ': the better move wins "' + m[1] + '" where B1 says "' + gw + '": ' + best);
+            if (m[2]) {
+              n.sq++;
+              var took = c.bestLine.nodes.filter(function (x, k) { return k >= 1 && k <= c.bSettle && x.pov && x.captured && 'the ' + PIECE_WORD[pType(x.captured)] === m[1]; });
+              if (took.length !== 1 || sqName(took[0].move.ep >= 0 ? took[0].move.ep : took[0].move.to) !== m[2]) out.push(at + ': the square ' + m[2] + ' is not where that one piece was taken');
+            }
+          }
+          if (/\\bsafe\\b|out of danger/.test(best)) { n.safe++; if (!c.mateFor && bestLossFrom(a, 0) >= 1) out.push(at + ': a safety claim where the best line loses material: ' + best); }
+          if (best === a.lines.best.san[0] + ' was the better move.') n.swapped++;
+        });
       });
-      return JSON.stringify({ out: out, swapped: swapped, kept: kept }); })()`));
-    ok(r.swapped.indexOf('184455333378:68') >= 0, 'the repro card is one: ' + r.swapped.join(' '));
-    ok(r.kept > 40, 'sentences kept ' + r.kept);
-    eq(r.out.length, 0, r.out.slice(0, 5).join(' | '));
+      return JSON.stringify({ out: out, n: n, rows: rows }); })()`));
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
+    ok(r.n.cards > 250 && r.n.loss > 60 && r.n.could > 20 && r.n.gain > 30 && r.n.sq > 10 && r.n.safe > 30 && r.n.swapped >= 3, JSON.stringify(r.n));
+    /* the two cards the fresh eyes read: the claim in full ("for a rook"), and "could" for a blow they missed */
+    ok(r.rows['184455333378:68'].indexOf('You lose a queen and a bishop for a rook. / Qe6 was the better move.') > 0, r.rows['184455333378:68']);
+    ok(r.rows['184205946040:62'].indexOf('You could lose a queen and a pawn.') > 0, r.rows['184205946040:62']);
   });
 
   await test('a typed move with its piece letter small ("qf3", "o-o") is read as the move; a small b stays a pawn on the b-file where that move exists (I5)', () => {
@@ -1684,7 +1715,7 @@ const BAR = `(function () {
     has(stops('endSession()'), 'Ending the session');
   });
 
-  /* slice 6, the verdict states (FINAL-SPEC S2 to S5, S11) */
+  /* slice 6, the verdict states (S2 to S5, S11) */
   await test('a close move is not a miss', async () => {
     const A = boot();
     /* one-move cards, and two off-book tries the stub scores 7 points under
@@ -1931,7 +1962,7 @@ const BAR = `(function () {
           for (var q2 = 0; q2 < 64; q2++) { var p2 = a.st.b[q2]; if (!p2) continue;
             if (isW(p2) !== !!a.st.w && hits.indexOf(q2) < 0 && free < 0) free = q2;
             if (isW(p2) === !!a.st.w && q2 !== mine && mine2 < 0) mine2 = q2; }
-          return JSON.stringify({ theirs: theirs, mine: mine, to: to, free: free, mine2: mine2, t2: CARD_COPY.T2(a), t4: CARD_COPY.T4(a), jobs: window.__evals.length }); })(ui.session.active)`));
+          return JSON.stringify({ theirs: theirs, mine: mine, to: to, free: free, mine2: mine2, t2: fitRow([CARD_COPY.T2(a, inWords(a)), CARD_COPY.T2(a)], 'row2', ''), t4: CARD_COPY.T4(a), jobs: window.__evals.length }); })(ui.session.active)`));
         /* their piece, nothing picked up: the outline at once, the words 150 ms later, nothing graded */
         const tap = A.getNow();
         A.ev(`(sessionClick(${c.theirs}), 1)`);
@@ -2700,7 +2731,7 @@ const BAR = `(function () {
         var onBoard = (o.rings || []).some(function (m) { return m.kind === 'target' || m.kind === 'hint' || (hm.danger && m.kind === 'threat'); });
         if (onBoard !== drawn) out.push(what + ': the board draws the hint ' + onBoard + ', hintMarks ' + drawn);
         if (said !== (fresh || drawn)) out.push(what + ': the band reads ' + d.row1 + ' / ' + d.row2 + (fresh ? ' on the hint\\'s own showing' : '') + (drawn ? ' with its marks drawn' : ' with nothing drawn'));
-        if (!said && (d.row1 !== CARD_COPY.T1(a) || d.row2 !== CARD_COPY.T2(a))) out.push(what + ': the task back reads ' + d.row1 + ' / ' + d.row2);
+        if (!said && (d.row1 !== CARD_COPY.T1(a) || [CARD_COPY.T2(a), CARD_COPY.T2(a, true)].indexOf(d.row2) < 0)) out.push(what + ': the task back reads ' + d.row1 + ' / ' + d.row2);
         if (fresh) n.fresh++; else if (drawn) n.drawn++; else n.task++;
       };
       var miss = function (a) { if (a.phase === 'tried') tryAgain(); gradeMove(uciToMove(a.st, a.playedUci)); return a.phase === 'tried'; };
@@ -2889,7 +2920,7 @@ const BAR = `(function () {
     }
   });
 
-  /* the board primitives (FINAL-SPEC 2.1), drawn by boardSvg as markup and
+  /* the board primitives, drawn by boardSvg as markup and
      read back here: SHOW draws every kind of mark at once on a card's own
      position, older single names and lists alike */
   const SHOW = `function showcase(a, flip) {
@@ -3508,7 +3539,7 @@ const BAR = `(function () {
           n++;
           var at = 'tier ' + tier + ' ' + it.key, d = displayFor(a), html = bandHtml(a, d);
           if (d.pips || /bd-pips|class="pip/.test(html)) out.push(at + ': pips at the open');
-          if (d.row1 !== 'Your turn' || d.row2 !== CARD_COPY.T2(a)) out.push(at + ': opens as ' + d.row1 + ' / ' + d.row2);
+          if (d.row1 !== 'Your turn' || [CARD_COPY.T2(a), CARD_COPY.T2(a, true)].indexOf(d.row2) < 0) out.push(at + ': opens as ' + d.row1 + ' / ' + d.row2);
           if (/[0-9]| of /.test(d.row1 + ' ' + d.chip)) out.push(at + ': a count at the open, ' + d.row1 + ' ' + d.chip);
           /* a relearn showing: its chip until the first move is found, then the pips */
           ui.session.keys = [it.key, it.key]; ui.session.idx = 1; ui.session.relearnOf[it.key] = 1;
@@ -4092,6 +4123,17 @@ const BAR = `(function () {
       if (!nd.captured || isW(nd.captured) !== pov) break;
       end = nx && nx.captured && isW(nx.captured) !== pov ? end + 1 : end - 1;
     }
+    /* nor on a quiet move or check of theirs with nothing to claim
+       where the line stands there (a gain, less lost than the game's claimed
+       loss, or nothing lost for good after a game move that lost something) */
+    var c = a.cls, base = matDiff(line.nodes[from].before.b, pov);
+    var says = function (k) {
+      if (!settledAt(line, k)) return false;
+      var gain = matDiff(line.nodes[k].after.b, pov) - base;
+      if (gain !== 0) return gain >= 1 || (!!buildCompare(a).w && -gain < c.lossG);
+      return (c.lossG >= 1 || !!c.mateAgainst) && !line.nodes.some(function (y, j) { return j > k && settledAt(line, j) && matDiff(y.after.b, pov) < base; });
+    };
+    while (end > from && !!line.nodes[end].byWhite !== pov && !line.nodes[end].captured && !isMate(line.nodes[end].after) && !says(end)) end--;
     return end;
   }
   function answered(a, how) {

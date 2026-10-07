@@ -111,7 +111,7 @@ var PIECE_ID = { K:'wK',Q:'wQ',R:'wR',B:'wB',N:'wN',P:'wP',
                  k:'bK',q:'bQ',r:'bR',b:'bB',n:'bN',p:'bP' };
 
 var boardSeq = 0, boardFxSeen = {};
-/* the marks over the board (FINAL-SPEC 2.1): one colour and one shape per
+/* the marks over the board: one colour and one shape per
    meaning, never a second one. Arrows by kind: your game move (solid red),
    their threat (dashed red), their expected reply in a forcing line (dashed
    blue-grey), the better move (green), Stockfish's pick (gold) */
@@ -191,9 +191,9 @@ function badgeXY(c, at) {
   var lo = BADGE_HALO + 0.2, hi = 360 - lo, k = function (v) { return Math.min(hi, Math.max(lo, v)); };
   return [k(c[0] + at[0]), k(c[1] + at[1])];
 }
-/* the board: squares, tints and pieces in one svg, and the marks (FINAL-SPEC
-   2.1, z 8 to 12) in a second one laid over it, so marks can change without
-   touching a piece. Both are drawn bottom to top in the spec's z order.
+/* the board: squares, tints and pieces in one svg, and the marks (z 8 to
+   12) in a second one laid over it, so marks can change without touching a
+   piece. Both are drawn bottom to top, in z order.
    opts: flip, mark (last-move squares), tints [{sq, kind}], sel, check,
    ghosts [{sq, p}], anim [from, to], dots, label, decor; marks: guards
    [{from, to}], arrows [{from, to, kind, key, solid}], tried [{from, to}
@@ -407,7 +407,7 @@ function sndWarm() {
 function snd(name) {
   if (cfg.sound === false) return;
   /* where the phone can (Android), a found move buzzes once, short, and a
-     wrong one twice (FINAL-SPEC 2.2) */
+     wrong one twice */
   try { if ((name === 'good' || name === 'bad') && navigator.vibrate) navigator.vibrate(name === 'good' ? 15 : [30, 60, 30]); } catch (e) {}
   try {
     if (!sndCtx) sndCtx = new (window.AudioContext || window.webkitAudioContext)();

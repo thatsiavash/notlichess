@@ -1,4 +1,4 @@
-/* ── The sequencer (FINAL-SPEC 2.2): one change at a time ─────────────────
+/* ── The sequencer: one change at a time ────────────────────────────────
    An action changes the card at once (phase, verdict, misses, hints, the
    result) and then stages what the screen shows, as beats that run in order
    on the active card:

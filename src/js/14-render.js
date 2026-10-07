@@ -239,7 +239,7 @@ function heroHtml() {
       .filter(function (it) { return it && it.b.d; }).sort(function (x, y) { return y.g.ts - x.g.ts; })[0];
     var reviews = plan.keys.length - plan.fresh;
     if (dec) why = 'Includes the move that ' + decisiveWords(dec.g, dec.b) + ' vs ' + esc(dec.g.opp) + ', ' + agoWords(dec.g.ts) + '.';
-    else why = (reviews ? plur(reviews, 'review') + (plan.fresh ? ' and ' + plan.fresh + ' new from your games.' : '.') : plan.fresh + ' new from your games.');
+    else why = (reviews ? plur(reviews, 'position') + ' back for another look' + (plan.fresh ? ', and ' + plan.fresh + ' new from your games.' : '.') : plan.fresh + ' new from your games.');
   }
   /* a session finished today without enough tries: say what counts */
   var dl = dayLoad();
@@ -266,7 +266,7 @@ function nextDueHtml() {
   var n = Object.keys(srs).filter(function (k) { var r = srs[k]; return r.due && !r.hidden && r.due >= d0.getTime() && r.due < d1.getTime(); }).length;
   var w = dueWhen(next);
   n = Math.min(n, sessionSize());
-  return (w === 'tomorrow' ? 'Tomorrow' : w === 'later today' ? 'Later today' : w.charAt(0).toUpperCase() + w.slice(1)) + ': ' + plur(n, 'review') + ', about ' + Math.max(1, Math.round(n * 0.8)) + (Math.round(n * 0.8) > 1 ? ' minutes.' : ' minute.');
+  return (w === 'tomorrow' ? 'Tomorrow' : w === 'later today' ? 'Later today' : w.charAt(0).toUpperCase() + w.slice(1)) + ': ' + plur(n, 'position') + ' to practise, about ' + Math.max(1, Math.round(n * 0.8)) + (Math.round(n * 0.8) > 1 ? ' minutes.' : ' minute.');
 }
 function doneTodayHtml() {
   var more = morePracticeKeys().length;
@@ -349,7 +349,8 @@ function gameDateLine(g) {
     return d.toLocaleDateString('en-GB', o);
   } catch (e) { return ''; }
 }
-/* the ladder moving: how many positions went up, and when they come back */
+/* the ladder moving, in plain words: the positions found without help
+   wait longer before they come back, and when that is */
 function ladderHtml(ss, keys) {
   var srs = srsLoad(), now = Date.now(), days = [];
   keys.forEach(function (k) {
@@ -358,7 +359,7 @@ function ladderHtml(ss, keys) {
   });
   if (!days.length) return '';
   var lo = Math.min.apply(null, days), hi = Math.max.apply(null, days);
-  return '<p class="recap-ladder">' + (days.length === 1 ? 'One position' : days.length + ' positions') + ' moved up. Next in '
+  return '<p class="recap-ladder">' + (days.length === 1 ? 'The position you found comes' : 'The ' + days.length + ' positions you found come') + ' back in '
     + (lo === hi ? plur(lo, 'day') : lo + ' to ' + hi + ' days') + '.</p>';
 }
 /* one habit per screen: the drill's own family, the habit of the move that
@@ -745,7 +746,7 @@ function badgeCorner(from, to, flip) {
   }
   return spots[0];
 }
-/* ── labels (FINAL-SPEC 2.1): one pill a frame, beside the mark it names ──
+/* ── labels: one pill a frame, beside the mark it names ───────────────────
    The pill's size: its words measured in the font the page draws them in
    (12 px on a phone, 14 on the desktop, Lora 600 or whatever stands in for
    it: Georgia sets wider), plus 14 px of padding, the 1 px border and 2 px
@@ -829,7 +830,7 @@ function labelGeom(f, px, c, avoid) {
   (avoid || []).forEach(function (q) { g.boxes.push(sqBox(q)); });
   return g;
 }
-/* where a w x h label goes (pure; FINAL-SPEC 2.1): beside the arrow's
+/* where a w x h label goes (pure): beside the arrow's
    head (or the marked square), its 8 neighbours nearest first, then the 8
    of the tail; in each neighbour centred on it, then flush with its left
    edge, then its right (a pill is often wider than a square). The first
@@ -1399,7 +1400,7 @@ function paintLive(d) {
   if (!live) { live = document.createElement('div'); live.id = 'sr-live'; live.className = 'sr-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('data-clarity-mask', 'true'); document.body.appendChild(live); }
   if (live.textContent !== d.live) live.textContent = d.live;
 }
-/* the band (FINAL-SPEC 2.0): the fixed box above the board. A disc, then
+/* the band: the fixed box above the board. A disc, then
    row 1 (the heading the card focuses: the task before an answer, the
    result after) with the relearn chip or a forcing line's pips at its
    right, then row 2; or one caption while exploring */
@@ -1671,17 +1672,59 @@ function storyStripHtml(a) {
    face. The game's context, the decisive line, both long sentences (and an
    alternative's), what the opponent did, the pattern and the schedule, the
    habit, and the way into exploring */
-/* the better move's sentence in Details: the classifier's, unless it
-   claims safety ("keeps everything safe", "out of danger") while the
-   card's own rule (fresh-eyes A, bestLossFrom) says the better line loses
-   material itself, where it would be false (184455333378:68: Qe6 still
-   loses the bishop); then only that it was the better move. Sentences about
-   the game's balance or what a move stops stay. The classifier is left as
-   it is */
+/* Details says what the card face says, in longer words. The
+   classifier's sentences name the pattern (the threat ignored, the fork
+   allowed, the reply that takes), but count material by their own reckoning;
+   every count here follows the card face's rules instead, and the
+   classifier is left as it is.
+   The mistake: each material loss the classifier states goes, and the card
+   face's own claim (buildCompare, the lossClaim rule: standing there, in
+   line with the score, more than the best line loses) is said in its words,
+   "You could lose" when the opponent did not play into it. A sentence that
+   is nothing but a count (the material pattern, a trapped piece) and whose
+   claim does not stand says where the game went, as R4 does. A missed
+   chance is about what the better move wins (its face never says what the
+   game move lost) */
+var LOSS_SAID = [/ You lose [^.]*\./, /: you lose [^.]*(?=\.$)/, /, and the pinned \w+ is lost(?=\.$)/];
+function detailsGame(a) {
+  var c = a.cls, b = a.it.b, s = c.sentences.game || '', cmp = buildCompare(a), g = c.gameLine;
+  var w = familyOf(patternOf(b)).key === 'chances' ? '' : cmp.w;
+  var played = sanOf(a.pre, a.played), loss = w ? (cmp.found ? 'You lose ' : 'You could lose ') + w + '.' : '';
+  var trapped = c.t === 'hung' && / get trapped\.$/.test(s);
+  if (c.t === 'material' || trapped) {
+    if (!w) return 'After ' + played + ', ' + (b.wa >= 60 ? 'you are still better' : b.wa >= 40 ? 'the game is even' : sidesOf(a).opp + ' is on top')
+      + ' (' + Math.round(b.wb) + '% to ' + Math.round(b.wa) + '%).';
+    if (trapped) return s + (w === 'the ' + /your (\w+) get trapped/.exec(s)[1] ? '' : ' ' + loss);
+    /* the line to where the claim is counted, as the classifier shows one */
+    var last = 0;
+    for (var i = 1; i <= cmp.k && i < g.nodes.length; i++) if (g.nodes[i].captured) last = i;
+    var shown = Math.min(Math.max(last, 1), 4);
+    return played + (cmp.found ? ' loses ' : ' could lose ') + w + (g.nodes[1] ? ' after ' + lineSans(g, shown).join(' ') + (last > shown ? ' and more' : '') : '') + '.';
+  }
+  /* a capture the classifier says as "is lost" is the reply that takes */
+  s = s.replace(/, but the (\w+) is lost to (\S+)\.$/, ', but $2 takes your $1.');
+  LOSS_SAID.forEach(function (re) { s = s.replace(re, ''); });
+  /* the claim, unless the sentence already says that one piece is taken */
+  var one = /^the (\w+)$/.exec(w || '');
+  return s + (loss && !(one && new RegExp('your ' + one[1] + '\\b').test(s)) ? ' ' + loss : '');
+}
+/* the better move: its gain in the card face's words (the best line's own
+   captures where it settles, as R4 and B1 say it), with the square when it
+   is one piece; a safety claim ("keeps everything safe", "out of danger")
+   only where the best line loses nothing itself (bestLossFrom), else only
+   that it was the better move (184455333378:68: Qe6 still loses the
+   bishop). Sentences about the game's balance or what a move stops stay */
 var SAFE_CLAIM = /\bsafe\b|out of danger|keeps your position together/;
 function detailsBest(a, s, best) {
-  var say = s.best || best + ' keeps your position together.';
-  if (SAFE_CLAIM.test(say) && a.cls && a.cls.bestLine && !a.cls.mateFor && bestLossFrom(a, 0) >= 1) return best + ' was the better move.';
+  var c = a.cls, say = s.best || best + ' keeps your position together.', bl = c && c.bestLine;
+  if (SAFE_CLAIM.test(say) && bl && !c.mateFor && bestLossFrom(a, 0) >= 1) return best + ' was the better move.';
+  if (bl && / wins [^.]+\.$/.test(say)) {
+    var won = c.matBest >= 1 ? plainCapture(bl, c.bSettle) || oneWord(null, c.matBest) : '', sq = wonSquare(bl, 1, c.bSettle, won);
+    if (!won) return best + ' was the better move.';
+    say = say.replace(/ (pins and )?wins [^.]+\.$/, function (x, pins) {
+      return (pins && won !== 'the ' + PIECE_WORD[c.missed.pin.piece] ? ' pins the ' + PIECE_WORD[c.missed.pin.piece] + ' and' : pins ? ' pins and' : '') + ' wins ' + won + (sq ? ' on ' + sq : '') + '.';
+    });
+  }
   return say;
 }
 function detailsHtml() {
@@ -1692,7 +1735,8 @@ function detailsHtml() {
   /* the pattern is named once, by its chip (S13) */
   var h = '<div class="kicker">Details</div>' + ctxHtml(a);
   if (b.d) h += '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(it.g, b) + '.</p>';
-  h += '<div class="dt-lines">' + row('tl-bad', esc(a.tier === 1 ? s.game.replace(/ \(\d+% to \d+%\)/g, '') : s.game))
+  var why = detailsGame(a);
+  h += '<div class="dt-lines">' + row('tl-bad', esc(a.tier === 1 ? why.replace(/ \(\d+% to \d+%\)/g, '') : why))
     + (a.alt && a.lines.yours ? row('tl-alt', esc(altNames(a).mine) + ' also holds.') : '')
     + row('tl-good', esc(detailsBest(a, s, best)));
   var opp = opponentLine(a);

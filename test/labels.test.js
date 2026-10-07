@@ -1,4 +1,4 @@
-// The board's labels and the worked example (FINAL-SPEC 2.1 labels, copy L, S9, S18), run on the built page
+// The board's labels and the worked example (copy L, S9, S18), run on the built page
 // in Node (test/app-realm.js) with the fixture games: where a label goes (placeLabel, checked against the
 // marks as boardSvg draws them, on flipped boards and a 316 px board), what it says (true to the drawn
 // geometry), which one shows (first sight, priority, the word budget), what is remembered (nl:tip:<kind>,
@@ -586,7 +586,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
         res.worked++;
         var f = boardOptsFor(a), hm = hintMarks(a), d = displayFor(a);
         var drawn = hm.rings.concat(hm.arrows).every(function (m) { return (f.opts.rings || []).concat(f.opts.arrows || []).some(function (x) { return x.kind === m.kind && (x.sq === m.sq || (x.from === m.from && x.to === m.to)); }); });
-        res.open.push([a.hints, a.predraw, drawn, d.row1, d.row2 === hintText(a).row2, hm.danger ? d.row2 === 'See what ' + sanOf(a.pre, a.played) + ' runs into.' : true, d.buttons.map(function (b) { return b.label; }).join(' | ')].join(' / '));
+        res.open.push([a.hints, a.predraw, drawn, d.row1, d.row2 === hintText(a).row2, hm.danger ? ['See what ' + sanOf(a.pre, a.played) + ' runs into.', 'See what ' + moveWords(a.pre, a.played) + ' runs into.'].indexOf(d.row2) >= 0 : true, d.buttons.map(function (b) { return b.label; }).join(' | ')].join(' / '));
         /* the band and the button agree at every showing: a miss, See it, Try again */
         var chk = function (what) { var dd = displayFor(a), hb = dd.buttons.filter(function (b) { return b.act === 'hint'; })[0]; res.agree++; if (dd.row1 === 'Hint 1 of 2' && (!hb || hb.label !== 'Hint 2')) res.disagree.push(it.key + ' ' + what + ': ' + (hb && hb.label)); };
         a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;

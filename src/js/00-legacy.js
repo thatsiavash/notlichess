@@ -2,9 +2,6 @@
 /* ══════════════════════════════════════════════════════════════════════════
    notlichess.org
    ─────────────────────────────────────────────────────────────────────────
-   Reference: projects/lichess-launcher/engineering-handoff.md (API, deep
-   links, what is impossible) and design-handoff.md (visual language).
-
    The mistakes trainer: your own games, analysed in your browser, retrained
    until the mistakes stop. No backend; everything stays on this device.
    ══════════════════════════════════════════════════════════════════════════ */
@@ -142,7 +139,7 @@ function setPerfs(perfs) {
   if (tcs.length) { cfg.tcs = tcs; if (!linkVisit) saveCfg('tcs'); }
 }
 
-/* ── 4. Deep links (handoff §4) ──────────────────────────────────────── */
+/* ── 4. Deep links ───────────────────────────────────────────────────── */
 
 var L = 'https://lichess.org';
 function playHref(tc) {

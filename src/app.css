@@ -421,7 +421,7 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
   .brand{gap:8px}
   .hero-top .week{flex-direction:row;align-items:center;gap:8px;margin:-4px 0 14px}
 }
-/* the band (FINAL-SPEC 2.0): one fixed 56 px box above the board on a
+/* the band: one fixed 56 px box above the board on a
    phone, a block at the head of the panel on a wide screen. A disc, row 1
    (the relearn chip at its right) and row 2, or one caption while
    exploring; the background and a 3 px left border carry the state. It

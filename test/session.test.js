@@ -24,7 +24,7 @@ const OPEN = `function openCard(it) {
   return a;
 }`;
 
-/* plain words on the card face (FINAL-SPEC 3): no percentages, "winning
+/* plain words on the card face: no percentages, "winning
    chances", "about level", "edge", "lead", "exchange", "Stockfish" at tier
    1, and no pattern names ("pinned" and "fork" only at tier 3). unplain(s,
    tier) names the first word that breaks it, '' when none does */
@@ -36,6 +36,25 @@ const PLAIN = `function unplain(s, tier) {
   var re = /\\b(forks?|forked|forking|pins?|pinned|pinning|skewers?|skewered|discovered|hanging|hidden attack|tactics?|tactical|overload(ed|ing)?|deflection|decoy|zwischenzug|desperado|x-ray|back rank)\\b/gi, w;
   while ((w = re.exec(s))) if (!(tier === 3 && /^(fork|pinned)$/i.test(w[1]))) return w[1];
   return '';
+}`;
+/* tier 1 says moves in words: "rook to g1", "rook from a8 to
+   d8" where two can go there, "pawn takes on d3", "castling", "pawn to a8 to
+   make a queen". wordsOf(st, m): the test's own reading of a move in words;
+   unit(s): s with each move in words as one word, as a SAN counts; named(a,
+   f, cap): what a row with one move says, f(the move's name), in words at
+   tier 1 where that fits the row's cap (40 characters and 7 words), else
+   in SAN */
+const WORDS = `function wordsOf(st, m) {
+  var P = { P: 'pawn', N: 'knight', B: 'bishop', R: 'rook', Q: 'queen', K: 'king' }, p = st.b[m.from], t = pType(p);
+  if (t === 'K' && Math.abs(m.to - m.from) === 2) return 'castling';
+  var from = {};
+  legalMoves(st).forEach(function (x) { if (x.to === m.to && st.b[x.from] === p) from[x.from] = 1; });
+  return P[t] + (Object.keys(from).length > 1 ? ' from ' + sqName(m.from) : '') + (st.b[m.to] || m.ep >= 0 ? ' takes on ' : ' to ') + sqName(m.to) + (m.promo ? ' to make a ' + P[pType(m.promo)] : '');
+}
+function unit(s) { return String(s || '').replace(/\\b(?:king|queen|rook|bishop|knight|pawn)(?: from [a-h][1-8])? (?:to|takes on) [a-h][1-8](?: to make a (?:queen|rook|bishop|knight))?|\\bcastling\\b/gi, 'Mv'); }
+function named(a, st, m, f, ch) {
+  var w = f(wordsOf(st, m));
+  return a.tier === 1 && w.length <= (ch || 40) && unit(w).split(/\\s+/).length <= 7 ? w : f(sanOf(st, m));
 }`;
 (async () => {
   await test('the fixture boots with its games and cards', () => {
@@ -311,6 +330,30 @@ const PLAIN = `function unplain(s, tier) {
     eq(r.ended, '', 'nothing left in the live region when a session ends'); eq(r.finished, '', 'nor when it finishes');
   });
 
+  await test('the summary and Today in plain words: positions found come back in N days (never "moved up"), "Tomorrow: N positions to practise", "back for another look" (never "reviews")', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var its = allMistakes().filter(trainable).filter(function (it) { return !it.b.d; }), res = {}, srs = srsLoad(), now = Date.now();
+      var keys = its.slice(0, 3).map(function (x) { return x.key; });
+      srs[keys[0]] = { box: 1, due: now + 3 * DAY }; srs[keys[1]] = { box: 2, due: now + 7 * DAY }; srs[keys[2]] = { box: 0, due: now + DAY };
+      srsSave(srs);
+      var ss = { mode: 'today', label: 't', keys: keys, idx: 3, results: {}, relearn: [], relearnOf: {}, notes: {}, finished: true };
+      ss.results[keys[0]] = 'first'; ss.results[keys[1]] = 'first'; ss.results[keys[2]] = 'hint';
+      res.two = (/class="recap-ladder">([^<]*)</.exec(doneHtml(ss)) || [])[1];
+      ss.results[keys[1]] = 'retry';
+      res.one = (/class="recap-ladder">([^<]*)</.exec(doneHtml(ss)) || [])[1];
+      res.next = nextDueHtml();
+      var tp = todayPlan;
+      todayPlan = function () { return { keys: keys, fresh: 1, firstTime: false }; };
+      res.why = (/class="why">([^<]*)</.exec(heroHtml()) || [])[1];
+      todayPlan = tp;
+      return JSON.stringify(res); })()`));
+    eq(r.two, 'The 2 positions you found come back in 3 to 7 days.', 'the ladder, two');
+    eq(r.one, 'The position you found comes back in 3 days.', 'the ladder, one');
+    eq(r.next, 'Tomorrow: 1 position to practise, about 1 minute.', 'what comes next');
+    eq(r.why, '2 positions back for another look, and 1 new from your games.', 'the reason to start');
+  });
+
   await test('a card left after a hint is captioned Skipped and not counted solved', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
@@ -526,6 +569,7 @@ const PLAIN = `function unplain(s, tier) {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       ${PLAIN}
+      ${WORDS}
       var out = [], n = { frames: 0, plain2: 0, danger: 0, dropped: 0, harmless: 0, plain: 0, prize: 0, prizeDropped: 0, words: 0, mid: 0, ring2: 0 };
       var same = function (x, y) { return JSON.stringify(x) === JSON.stringify(y); };
       var words = function (s) { return String(s || '').split(/[\\s.,:]+/); };
@@ -547,8 +591,8 @@ const PLAIN = `function unplain(s, tier) {
         if (words(d.row1).concat(words(d.row2)).indexOf(dueSan) >= 0) out.push(what + ' names the answer: ' + d.row1 + ' / ' + d.row2);
         /* nor the answer's square, inside any move it names but the game move (whose red arrow is on the card) */
         [d.row2].concat(h.cands, [h.fall]).forEach(function (x) {
-          if (words(x).indexOf(dueSan) >= 0) out.push(what + ' has a form naming the answer: ' + x);
-          if (String(x).split(gameSan(a)).join(' ').indexOf(sqName(due.to)) >= 0) out.push(what + ' names the answer square: ' + x);
+          if (words(x).indexOf(dueSan) >= 0 || String(x).toLowerCase().indexOf(wordsOf(a.st, due)) >= 0) out.push(what + ' has a form naming the answer: ' + x);
+          if (String(x).split(gameSan(a)).join(' ').split(wordsOf(a.pre, a.played)).join(' ').indexOf(sqName(due.to)) >= 0) out.push(what + ' names the answer square: ' + x);
         });
         /* every hint string, ladder and fallback too, in plain words at this tier */
         [d.row1, d.row2, h.fall].concat(h.cands).forEach(function (x) { var bad = unplain(x, a.tier); n.plain2++; if (bad) out.push(what + ': "' + bad + '" in a hint: ' + x); });
@@ -605,7 +649,7 @@ const PLAIN = `function unplain(s, tier) {
             n.danger++;
             if (!same(hm.rings, [{ sq: th.from, kind: 'threat' }]) || hm.arrows.length !== 1 || hm.arrows[0].from !== th.from || hm.arrows[0].to !== th.to || hm.arrows[0].kind !== 'threat') out.push(what + ': the danger drawn is not the game reply ' + th.san + ': ' + JSON.stringify(hm));
             if (!a.st.b[th.from] || isW(a.st.b[th.from]) === myPov(a.it)) out.push(what + ': the ring is not on a piece of theirs');
-            if (d.row2 !== 'See what ' + gameSan(a) + ' runs into.') out.push(what + ': a danger reads ' + d.row2);
+            if (d.row2 !== named(a, a.pre, a.played, function (x) { return 'See what ' + x + ' runs into.'; })) out.push(what + ': a danger reads ' + d.row2);
           } else n.dropped++;
         } else if (sqs.length) out.push(what + ': marks with no losing capture or check to show ' + JSON.stringify(hm));
         if (!sqs.length) {
@@ -620,12 +664,13 @@ const PLAIN = `function unplain(s, tier) {
             var get = c.mateFor ? 'There is a checkmate here.' : null;
             /* else where to look (fresh-eyes C5): the king; a threat that stood before the game move
                (true: its capture was there on the card's position); what the game move allowed */
-            var look = fam === 'king' ? 'Look at your king\\'s safety.' : c.t === 'threat' ? 'What does ' + (myPov(a.it) ? 'Black' : 'White') + ' threaten?' : 'Ask what ' + gameSan(a) + ' allows.';
+            var asks = function (x) { return 'Ask what ' + x + ' allows.'; };
+            var look = fam === 'king' ? 'Look at your king\\'s safety.' : c.t === 'threat' ? 'What does ' + (myPov(a.it) ? 'Black' : 'White') + ' threaten?' : named(a, a.pre, a.played, asks);
             if (/threaten/.test(d.row2) && !threatExisted(a.pre, c.gameLine)) out.push(what + ': a threat named where none stood: ' + d.row2);
             if (!(d.row2 === get || /^You can win .+ here\.$/.test(d.row2) && c.matBest >= 1 && !c.mateFor || d.row2 === look && !c.mateFor && !(c.matBest >= 1 && c.bestLine && !c.bestLine.unsettled))) out.push(what + ': a ' + fam + ' card with nothing drawn reads ' + d.row2);
             n.look = (n.look || 0) + (d.row2 === look ? 1 : 0);
             /* and its fallback says the same */
-            if (d.row2 === look && h.fall !== look) out.push(what + ': the fallback reads ' + h.fall + ', not ' + look);
+            if (d.row2 === look && h.fall !== (/^Ask what/.test(look) ? asks(gameSan(a)) : look)) out.push(what + ': the fallback reads ' + h.fall + ', not ' + look);
           }
         }
       };
@@ -765,6 +810,47 @@ const PLAIN = `function unplain(s, tier) {
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
+  await test('tier 1 says moves in words where the row has room: "rook to g1", "pawn takes on d3", "castling", "rook from a8 to d8" where two can go there, "pawn to a8 to make a queen", one word against the caps; the task, the hint, the reason, R4, the answer and the story in words, tiers 2 and 3 in SAN', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      ${WORDS}
+      var mw = function (fen, uci) { var st = stateFromFen(fen); return moveWords(st, uciToMove(st, uci)); };
+      var one = {
+        castle: mw('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'e1g1'), long: mw('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'e1c1'),
+        takes: mw('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'a1a8'), ep: mw('4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1', 'e5d6'),
+        promo: mw('4k3/P7/8/8/8/8/8/4K3 w - - 0 1', 'a7a8q'), twin: mw('R6R/8/8/8/8/8/8/4K2k w - - 0 1', 'a8d8'),
+        lone: mw('R7/8/8/8/8/8/8/4K2k w - - 0 1', 'a8d8'), pawns: mw('4k3/8/8/3p4/2P1P3/8/8/4K3 w - - 0 1', 'c4d5'),
+        units: wordsIn('Find a better move than rook from a8 to d8.') + ' ' + fitsRow('Find a better move than rook to d8.', 'row2')
+      };
+      var out = [], n = { t2: 0, r4: 0, m3: 0, hint: 0, v1: 0, cap: 0 };
+      var moved = function (what, s, tier) {
+        if (unit(s) === s) return 0;
+        if (tier > 1) out.push(what + ': a move in words at tier ' + tier + ': ' + s);
+        return 1;
+      };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var at = 'tier ' + tier + ' ' + it.key, a = openCard(it);
+          if (!a) return;
+          var d = displayFor(a), t2w = 'Find a better move than ' + wordsOf(a.pre, a.played) + '.';
+          /* the task: in words exactly where they fit row 2 */
+          if ((d.row2 === t2w) !== (tier === 1 && fitsRow(t2w, 'row2'))) out.push(at + ': the task reads ' + d.row2);
+          n.t2 += moved(at + ' T2', d.row2, tier);
+          a.hints = 1; a.hintAfter = true; n.hint += moved(at + ' hint 1', displayFor(a).row2, tier);
+          a = openCard(it); gradeMove(uciToMove(a.st, a.playedUci)); a.reason = 2; n.m3 += moved(at + ' M2', displayFor(a).row2, tier);
+          a = openCard(it); reveal(); n.v1 += moved(at + ' V1', displayFor(a).row1, tier);
+          a.view = { mode: 's0' }; a.settle = 2; n.r4 += moved(at + ' R4', displayFor(a).row2, tier);
+          buildStory(a).steps.forEach(function (x, i) { n.cap += moved(at + ' step ' + i, x.cap, tier); });
+        });
+      });
+      return JSON.stringify({ one: one, out: out, n: n }); })()`));
+    eq(JSON.stringify(r.one), JSON.stringify({ castle: 'castling', long: 'castling', takes: 'rook takes on a8', ep: 'pawn takes on d6', promo: 'pawn to a8 to make a queen',
+      twin: 'rook from a8 to d8', lone: 'rook to d8', pawns: 'pawn from c4 takes on d5', units: '6 true' }), 'moves in words');
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
+    ok(r.n.t2 > 40 && r.n.hint > 10 && r.n.m3 > 20 && r.n.v1 > 50 && r.n.r4 > 40 && r.n.cap > 250, JSON.stringify(r.n));
+  });
+
   await test('S1 to S8, S10, S11 and the answered frame fit 26 / 40 / 60 characters and 15 words at every tier, the board\'s label included, in plain words', () => {
     const A = boot();
     /* the fit ladder's own steps: a row that fits stays as it is; a longer
@@ -786,17 +872,19 @@ const PLAIN = `function unplain(s, tier) {
       try { return plainCapture({ nodes: [] }, 1, 0) + ' / ' + missWhy(a, { lossG: 9, lossAt: 1, gameLine: line }, 1, null, false).cands[0]; } finally { captureWord = cw; } })()`),
     "null / You'd lose a lot of material.", 'three kinds of piece: the material word');
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
-      /* the band's caps (FINAL-SPEC 3): row 1 26 characters, row 2 40 and 7
+      /* the band's caps: row 1 26 characters, row 2 40 and 7
          words, a caption 60 and 8; the chip one short label */
-      var out = [], frames = 0, seen = {}, plainSeen = 0, labelled = {};
+      var out = [], frames = 0, seen = {}, plainSeen = 0, labelled = {}, wordsT2 = 0;
       ${PLAIN}
+      ${WORDS}
+      /* a move in words counts as one word, as its SAN does */
       var cap = function (what, s, ch, words) {
         s = String(s || '');
-        if (s.length > ch || (s && s.split(/\\s+/).length > words) || /\u2014/.test(s)) out.push(what + ' (' + s.length + '): ' + s);
+        if (s.length > ch || (s && unit(s).split(/\\s+/).length > words) || /\u2014/.test(s)) out.push(what + ' (' + s.length + '): ' + s);
       };
       /* principle 5: 15 words before the next tap, the band and the bar
          together (glyphs such as the arrows are not words) */
-      var words = function (s) { return String(s || '').split(/\\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w); }).length; };
+      var words = function (s) { return unit(s).split(/\\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w); }).length; };
       var band = function (what, a) {
         var d = displayFor(a);
         frames++;
@@ -865,8 +953,9 @@ const PLAIN = `function unplain(s, tier) {
           var a = openCard(it);
           if (!a) return;
           var at = 'tier ' + tier + ' ' + it.key;
-          /* S1: the task, in the spec's words */
-          var d = band(at + ' open', a), want = 'Find a better move than ' + sanOf(a.pre, a.played) + '.';
+          /* S1: the task, in its own words */
+          var d = band(at + ' open', a), want = named(a, a.pre, a.played, function (x) { return 'Find a better move than ' + x + '.'; });
+          if (tier === 1 && want !== 'Find a better move than ' + sanOf(a.pre, a.played) + '.') wordsT2++;
           if (d.row1 !== 'Your turn' || d.row2 !== want || d.chip) out.push(at + ' open reads ' + d.row1 + ' / ' + d.row2 + ' / ' + d.chip);
           /* S1 on a relearn card: the chip */
           ui.session.keys = [it.key, it.key]; ui.session.relearnOf = {}; ui.session.relearnOf[it.key] = 1; ui.session.idx = 1;
@@ -935,7 +1024,7 @@ const PLAIN = `function unplain(s, tier) {
             if (d.row1 !== 'Not this one' || d.row2) out.push(at + ' a miss before its reason reads ' + d.row1 + ' / ' + d.row2);
             a.reason = 2;
             d = band(at + ' a miss outside a line', a);
-            if (/does not work|Nothing lost/.test(d.row2) || !M3.test(d.row2) || d.row1 !== 'Not this one') out.push(at + ' a miss outside a line reads ' + d.row1 + ' / ' + d.row2);
+            if (/does not work|Nothing lost/.test(d.row2) || !M3.test(unit(d.row2)) || d.row1 !== 'Not this one') out.push(at + ' a miss outside a line reads ' + d.row1 + ' / ' + d.row2);
             d = band(at + ' a miss, T4', note(a, 'T4'));
             if (d.row2 !== t4) out.push(at + ' a miss T4 reads ' + d.row2);
             /* the same try answered with the card's stored refutation, as
@@ -945,7 +1034,7 @@ const PLAIN = `function unplain(s, tier) {
             if (ru0.length && playUci(aft0, ru0).uci.length === ru0.length) {
               miss(off0, moveUci(off0), { cp: it.b.ea != null ? it.b.ea : cpFromWin(it.b.wa), mate: it.b.ma, pv: [moveUci(off0)].concat(ru0), win: it.b.wa }, false);
               a.reason = 2; d = band(at + ' a miss with a reply', a);
-              if (!M3.test(d.row2)) out.push(at + ' a miss with a reply reads ' + d.row1 + ' / ' + d.row2);
+              if (!M3.test(unit(d.row2))) out.push(at + ' a miss with a reply reads ' + d.row1 + ' / ' + d.row2);
               lossFall(at + ' a miss with a reply', a, d.row2);
               plain(at + ' a miss with a reply', a.verdict.cands.join(' | '));
               if (a.tried.reply) { seeIt(); if (band(at + ' a miss with a reply, seen', a).row2 !== d.row2) out.push(at + ' a miss with a reply: row 2 changed with See it'); }
@@ -1027,7 +1116,7 @@ const PLAIN = `function unplain(s, tier) {
           if (d.row1 !== 'Your game move again' || d.row2) out.push(at + ' game move again reads ' + d.row1 + ' / ' + d.row2);
           a.reason = 2; d = band(at + ' game move again, its reason', a);
           plain(at + ' game move again', a.verdict.cands.join(' | '));
-          if (!M3.test(d.row2) && !(d.row2 === '' && !M3.test(a.verdict.row2))) out.push(at + ' game move again, its reason reads ' + d.row2 + ' (' + a.verdict.row2 + ')');
+          if (!M3.test(unit(d.row2)) && !(d.row2 === '' && !M3.test(unit(a.verdict.row2)))) out.push(at + ' game move again, its reason reads ' + d.row2 + ' (' + a.verdict.row2 + ')');
           lossFall(at + ' game move again', a, d.row2);
           if (familyOf(patternOf(it.b)).key === 'chances' && a.verdict.row2 !== 'There\\'s a stronger move here.') out.push(at + ' a missed chance\\'s game move reads ' + a.verdict.row2);
           if (a.tried && a.tried.reply) { seeIt(); if (band(at + ' game move again, seen', a).row2 !== d.row2) out.push(at + ' game move again: row 2 changed with See it'); }
@@ -1046,7 +1135,7 @@ const PLAIN = `function unplain(s, tier) {
             a.settle = 1; d = band(what + ', S0 marks', a);
             if (d.row1 !== (r1early || r1) || (d.row2 && !a.revealed)) out.push(what + ' at V+700 reads ' + d.row1 + ' / ' + d.row2);
             a.settle = 2; d = band(what + ', settled', a);
-            if (d.row1 !== r1 || !R4.test(d.row2)) out.push(what + ' settled reads ' + d.row1 + ' / ' + d.row2);
+            if (d.row1 !== r1 || !R4.test(unit(d.row2))) out.push(what + ' settled reads ' + d.row1 + ' / ' + d.row2);
             plain(what + ', R4', r4Of(a).cands.join(' | '));
             if (!/data-act="details"/.test(d.strip)) out.push(what + ': no Details once settled');
             /* the strip's Details is a word of the budget: row 2 has that much less room */
@@ -1081,7 +1170,7 @@ const PLAIN = `function unplain(s, tier) {
             a.note = null;
           };
           a = openCard(it); reveal(); d = band(at + ' shown', a);
-          var v1 = 'The answer: ' + a.lines.best.san[0];
+          var v1 = named(a, a.pre, a.best, function (x) { return 'The answer: ' + x; }, 26);
           if (d.row1 !== v1 || d.row2 !== 'Play the green arrow.' || d.disc !== 'info') out.push(at + ' shown reads ' + d.row1 + ' / ' + d.row2);
           d = band(at + ' shown, N1', note(a, 'N1'));
           if (d.row2 !== 'To try moves, open Details.') out.push(at + ' N1 reads ' + d.row2);
@@ -1121,7 +1210,8 @@ const PLAIN = `function unplain(s, tier) {
           }
         });
       });
-      return JSON.stringify({ out: out, frames: frames, seen: seen, plain: plainSeen, labelled: labelled }); })()`));
+      return JSON.stringify({ out: out, frames: frames, seen: seen, plain: plainSeen, labelled: labelled, wordsT2: wordsT2 }); })()`));
+    ok(r.wordsT2 > 40, 'tier 1 tasks in words: ' + r.wordsT2);
     ok(r.frames > 6000 && r.plain > 6 * r.frames, 'frames ' + r.frames + ', strings read for plain words ' + r.plain);
     ok(r.labelled.tip > 1000 && r.labelled.short > 1000, 'frames with a label, counted in the words: ' + JSON.stringify(r.labelled));
     eq(r.out.length, 0, r.out.length + ' too long or not plain, first: ' + r.out.slice(0, 3).join(' | '));
@@ -1174,7 +1264,7 @@ const PLAIN = `function unplain(s, tier) {
 
   await test('R4 and M3 name only what changed hands: a material word is the line\'s own captures, "material", or "a lot of material" worth 6 or more; "is guarded" only where it means it', () => {
     const A = boot();
-    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${WORDS}
       var out = [], n = { r4: 0, m3: 0, word: 0, trade: 0, guard: 0 };
       /* every material phrase a form says ("lost X", "could lose X", "wins
          X", "You'd lose X"), against what the line took: its own captures
@@ -1206,6 +1296,9 @@ const PLAIN = `function unplain(s, tier) {
             else solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
             a.settle = 2;
             var c = a.cls, r4 = r4Of(a), row2 = displayFor(a).row2, cands = r4.cands.concat([row2]);
+            /* tier 1's forms in words read as their SAN twins */
+            var up = function (x) { return x.charAt(0).toUpperCase() + x.slice(1); }, gw = wordsOf(a.pre, a.played), bw = wordsOf(a.pre, a.best);
+            if (tier === 1) cands = cands.map(function (x) { return x.split(up(gw)).join(gameSan(a)).split(gw).join(gameSan(a)).split(up(bw)).join(buildCompare(a).betterSan); });
             n.r4++;
             /* the game move's words against the game line, the better move's against its own */
             var game = cands.map(function (x) { return x.split(/(?<=\\.) /).filter(function (y) { return y.indexOf(buildCompare(a).gameSan + ' ') === 0; }).join(' '); });
@@ -1239,6 +1332,7 @@ const PLAIN = `function unplain(s, tier) {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       ${PLAIN}
+      ${WORDS}
       var out = [], n = { caps: 0, sent: 0, forms: {} };
       var PW = { pawn: 'P', knight: 'N', bishop: 'B', rook: 'R', queen: 'Q', king: 'K' };
       var bare = function (s) { return s.replace(/[+#]$/, ''); };
@@ -1250,8 +1344,28 @@ const PLAIN = `function unplain(s, tier) {
         return net >= 1 && (p === own || (p === 'material' && (!own || / for /.test(own))) || (p === 'a lot of material' && Math.abs(net) >= 6 && (!own || / and /.test(own))));
       };
       var sides = function (w) { return w ? 'White' : 'Black'; };
+      /* tier 1 says moves in words: the caption read back into SAN, each move in words the test's own
+         reading of a move this step may name (its line's, the game move, the reply G1 warns of), a capture said by
+         its piece ("Their pawn takes", "Pawn takes") only of this step's ply and by its side, the mate's "They play"
+         only by its side; what is left is checked as every caption is. No words survive the reading, none at tiers 2, 3 */
+      var toSan = function (a, S, s, cap) {
+        var nd = s.line.nodes[s.k], byMe = !!nd.byWhite === myPov(a.it), mv = [], t1 = a.cls.gameLine.nodes[1];
+        s.line.nodes.concat([{ before: a.pre, move: a.played }, t1 || {}]).forEach(function (x) { if (x.move) mv.push({ w: wordsOf(x.before, x.move), san: bare(sanOf(x.before, x.move)) }); });
+        mv.sort(function (x, y) { return y.w.length - x.w.length; });
+        mv.forEach(function (x) { cap = cap.split(x.w).join(x.san).split(x.w.charAt(0).toUpperCase() + x.w.slice(1)).join(x.san); });
+        if (nd.move) {
+          var pw = Object.keys(PW).filter(function (w) { return PW[w] === pType(nd.before.b[nd.move.from]); })[0];
+          var subj = new RegExp('^(?:' + (byMe ? 'Your ' : 'Their ') + pw + '|' + pw.charAt(0).toUpperCase() + pw.slice(1) + ')(?= (?:takes|could take|could give|still takes) )');
+          cap = cap.replace(subj, bare(sanOf(nd.before, nd.move)));
+        }
+        var m = /^(You|They) play (\\S+)\\. Checkmate\\./.exec(cap);
+        if (m && (m[1] === 'You') === byMe && isMate(nd.after)) cap = cap.replace(/^(You|They) play /, '');
+        return cap;
+      };
       var check = function (what, a, S, i) {
-        var s = S.steps[i], line = s.line, nd = line.nodes[s.k], c = a.cls, pov = myPov(a.it), cap = s.cap, cmp = buildCompare(a);
+        var s = S.steps[i], line = s.line, nd = line.nodes[s.k], c = a.cls, pov = myPov(a.it), cap = a.tier === 1 ? toSan(a, S, s, s.cap) : s.cap, cmp = buildCompare(a);
+        if (unit(cap) !== cap) out.push(what + ' step ' + i + ' "' + s.cap + '": a move in words that is none of this step\\'s, or at tier ' + a.tier);
+        if (a.tier === 1 && cap !== s.cap) n.inWords = (n.inWords || 0) + 1;
         var san = sanOf(nd.before, nd.move), b = nd.after.b, game = s.seg === 'game', firstB = !game && s.k === s.from, lastG = game && i === S.g - 1, lastB = !game && i === S.steps.length - 1;
         var n1 = game && s.k === 0 ? line.nodes[1] : null, rsan = n1 ? sanOf(n1.before, n1.move) : null, found = cmp.found;
         /* a blow they could miss: a mate or material the line wins, and a game reply that was another move */
@@ -1275,6 +1389,8 @@ const PLAIN = `function unplain(s, tier) {
           if (/works too/.test(cap) !== !!S.alt || (S.alt && (!a.alt || line === c.bestLine || moveUci(nd.move) !== a.yours.uci[a.yours.at]))) fail('works too on a card that is ' + (a.alt ? '' : 'not ') + 'an alternative');
         }
         else if (cap.indexOf(bare(san)) !== 0 && cap.indexOf('You play ' + bare(san)) !== 0 && cap.indexOf('They play ' + bare(san)) !== 0 && cap.indexOf('They could play ' + bare(san)) !== 0) fail('does not start with its ply ' + san);
+        /* a better line never ends on a bare quiet move or check of theirs */
+        if (lastB && s.k > s.from && nd.byWhite !== pov && !nd.captured && !isMate(nd.after) && sents.length < 2) fail('the better line ends on a bare move of theirs');
         /* the move they could have played is said as one, never as played (final fixes 2) */
         var couldStep = game && s.k === 1 && !!S.could;
         if (couldStep && !/^(\\S+ could (take|give)|They could play|\\S+ would be checkmate)/.test(cap)) fail('the move they could have played said as played');
@@ -1298,6 +1414,8 @@ const PLAIN = `function unplain(s, tier) {
           else if (j === 0 && /^\\S+ would be checkmate\\.$/.test(x)) { form = 'could mate'; ok = couldStep && isMate(nd.after); }
           else if (j === 0 && (m = /^They could play (\\S+)\\.$/.exec(x))) { form = 'could play'; ok = couldStep && blow && m[1] === bare(san) && !nd.captured && !checkersOf(nd.after).length; }
           else if (j === 0 && /^\\S+, check\\.$/.test(x)) { form = 'check'; ok = checkersOf(nd.after).length > 0 && !isMate(nd.after); }
+          /* a quiet check says whose it is */
+          else if (j === 0 && (m = /^(You|They) play (\\S+), check\\.$/.exec(x))) { form = 'whose check'; ok = m[2] === bare(san) && (m[1] === 'You') === (!!nd.byWhite === pov) && !nd.captured && checkersOf(nd.after).length > 0 && !isMate(nd.after); }
           else if (j === 0 && /^\\S+$/.test(x.replace(/\\.$/, '')) && sents.length > 1 && /^Checkmate\\.$/.test(sents[1].trim())) { form = 'mate'; ok = isMate(nd.after); }
           else if (/^Checkmate\\.$/.test(x)) { form = 'mate'; ok = isMate(nd.after); }
           else if (j === 0 && x === bare(san) + '.') { form = 'quiet'; }
@@ -1315,7 +1433,15 @@ const PLAIN = `function unplain(s, tier) {
           else if (/^Moving one piece opens a line\\.$/.test(x)) { form = 'discovered'; ok = game && s.k === 0 && !!c.allowed.discoveredAttack && c.allowed.discoveredAttack.ply === 1; }
           else if ((m = /^(White|Black) has no move: a draw\\.$/.exec(x))) { form = 'stalemate'; ok = !legalMoves(nd.after).length && !checkersOf(nd.after).length; }
           else if ((m = /^The (\\w+) on ([a-h][1-8]) guards it\\.$/.exec(x))) { form = 'guard'; var d = sqNum(m[2]); ok = firstB && mine(d, PW[m[1]]) && attackersOf(b, nd.move.to, pov).indexOf(d) >= 0 && !isDefended(c.gameLine.nodes[0].after.b, a.played.to); }
-          else if ((m = /^It wins ([a-z ]+)\\.$/.exec(x))) { form = 'it wins'; ok = firstB && !a.alt && matOk(m[1], c.bestLine, c.bSettle, 1, c.matBest); }
+          else if ((m = /^It wins ([a-z ]+?)(?: on ([a-h][1-8]))?\\.$/.exec(x))) {
+            form = 'it wins'; ok = firstB && !a.alt && matOk(m[1], c.bestLine, c.bSettle, 1, c.matBest);
+            /* its square: where that one piece of theirs was taken, the only one taken along the line */
+            if (m[2]) {
+              n.wonSq = (n.wonSq || 0) + 1;
+              var tk = c.bestLine.nodes.filter(function (y, k) { return k >= 1 && k <= c.bSettle && y.captured && 'the ' + Object.keys(PW).filter(function (w) { return PW[w] === pType(y.captured); })[0] === m[1]; });
+              ok = ok && tk.length === 1 && !!tk[0].pov && sqName(tk[0].move.ep >= 0 ? tk[0].move.ep : tk[0].move.to) === m[2];
+            }
+          }
           else if (/^It leads to checkmate\\.$/.test(x)) { form = 'leads to mate'; ok = firstB && !!c.mateFor && !!S.mateB && isMate(line.nodes[S.steps[S.steps.length - 1].k].after); }
           else if ((m = /^(\\S+) still (comes|takes your (\\w+))(, but you (win ([a-z ]+)|lose nothing))?\\.$/.exec(x)) || (same && /^You lose less\\.$/.test(x))) {
             /* S-same: the copy row's forms, each true of the line where it
@@ -1326,6 +1452,13 @@ const PLAIN = `function unplain(s, tier) {
               && (!m || !m[3] || (!!nd.captured && isW(nd.captured) === pov && pType(nd.captured) === PW[m[3]] && !(c.matBest >= 0 && c.lossG >= 1) && !(c.matBest < 0 && -c.matBest < c.lossG)))
               && (!/less/.test(x) || (c.matBest < 0 && -c.matBest < c.lossG));
             if (m && !m[4] && !m[3] && nd.captured) n.sameBare = (n.sameBare || 0) + 1;
+          }
+          else if (/^Nothing is lost\\.$/.test(x)) {
+            /* the better line's last step, standing, nothing lost from its first move, after a game move that lost
+               material or allowed a mate, and nothing lost at any later point where the line stands */
+            form = 'nothing lost'; var base = matDiff(line.nodes[s.from].before.b, pov);
+            ok = lastB && settledAt(line, s.k) && matDiff(b, pov) - base === 0 && (c.lossG >= 1 || !!c.mateAgainst)
+              && !line.nodes.some(function (y, k) { return k > s.k && settledAt(line, k) && matDiff(y.after.b, pov) < base; });
           }
           else if (/^You lose less\\.$/.test(x)) { form = 'lose less'; var net = matDiff(b, pov) - matDiff(line.nodes[s.from].before.b, pov); ok = lastB && net < 0 && -net < c.lossG; }
           else if ((m = /^You lose ([a-z ]+)\\.$/.exec(x))) { form = 'you lose'; ok = lastG && matOk(m[1], line, s.k, 0, matDiff(line.nodes[0].before.b, pov) - matDiff(b, pov)); }
@@ -1374,7 +1507,8 @@ const PLAIN = `function unplain(s, tier) {
       return JSON.stringify({ out: out, n: n }); })()`));
     const f = r.n.forms;
     ok(r.n.caps > 3000 && f.takes > 500 && f['you lose'] > 50 && f.unguarded > 20 && f['can take'] > 10 && f.fork > 5 && f['gives check'] > 20 && f['mate against'] > 5 && f.guard >= 6
-      && f['it wins'] > 20 && f['you win'] > 10 && r.n.lineWins > 5 && f['still comes'] >= 4 && f.found > 50 && f.missed > 50 && f['could take'] > 10 && f['could play'] > 20 && f.mate > 5 && r.n.withCheck >= 5 && f.whose > 100, JSON.stringify(r.n));
+      && f['it wins'] > 20 && f['you win'] > 10 && r.n.lineWins > 5 && f['still comes'] >= 4 && f.found > 50 && f.missed > 50 && f['could take'] > 10 && f['could play'] > 20 && f.mate > 5 && r.n.withCheck >= 5 && f.whose > 100
+      && f['nothing lost'] > 20 && f['whose check'] > 30 && r.n.wonSq > 5 && r.n.inWords > 1000, JSON.stringify(r.n));
     /* S-same on a capture never falls back to the bare "still comes" (184216981622:46's better line loses the same knight: it names it) */
     ok(!r.n.sameBare, 'S-same fallback used ' + r.n.sameBare);
     eq(r.out.length, 0, r.out.length + ' untrue captions, first: ' + r.out.slice(0, 4).join(' | '));
@@ -1402,7 +1536,7 @@ const PLAIN = `function unplain(s, tier) {
     /* the game segment is the game: a quiet first reply that was not played is not shown (fresh-eyes T4) */
     eq(r.q48[1], 'Better: Kg2.', 'a quiet first reply after a move that lost nothing, not the game\'s');
     eq(r.s46[r.s46.length - 1], 'Rxh2 still takes your knight.', 'S-same where the better line loses the same knight');
-    eq(r.c57[5], 'Qd5, check. You lose the pawn.', 'a checking move on the loss rung, without its sign');
+    eq(r.c57[5], 'They play Qd5, check. You lose the pawn.', 'a checking move on the loss rung, whose it is and without its sign');
     /* a capture that checks says both (fresh-eyes T7), and drops the check before the game's words */
     eq(r.c57[3], 'Qxd6 takes your bishop with check.', 'a capture that checks');
     /* the check is a board fact, "as in your game" context: the check is kept when both do not fit (final fixes 4) */

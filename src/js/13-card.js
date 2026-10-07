@@ -398,7 +398,7 @@ function theirReply(a, early) {
   a.replySaid = replyWords(a, before, m, took);
   var next = a.solIdx < a.sol.length ? uciToMove(a.st, a.sol[a.solIdx]) : null;
   /* a shown line: the next move of yours is the answer now */
-  if (rp.show) { a.markMove = null; if (next) a.answerSan = sanOf(a.st, next); }
+  if (rp.show) { a.markMove = null; if (next) { a.answerSan = sanOf(a.st, next); a.answerWords = { san: a.answerSan, w: moveWords(a.st, next) }; } }
   /* exploring has the board: the reply is played there unseen, and the
      frame exploring comes back to is the one it leads to */
   if (a.explore) {
@@ -522,7 +522,7 @@ function missReason(a) {
   });
 }
 /* the move at ply k of a line, when it captures or checks: the threat a
-   dashed red arrow draws (FINAL-SPEC 2.1), from the attacker's square to
+   dashed red arrow draws, from the attacker's square to
    where it lands, with what it takes; null for a quiet move */
 function threatOf(line, k) {
   var n = line && line.nodes[k];
@@ -533,7 +533,7 @@ function threatOf(line, k) {
            check: check, mate: check && !legalMoves(n.after).length, san: sanOf(n.before, n.move) };
 }
 /* the answer due now: the card's best move, or inside a forcing line the
-   line's next move (FINAL-SPEC 2.3) */
+   line's next move: what no mark may give away before an answer */
 function dueMove(a) { return (a.sol && a.solIdx > 0 && uciToMove(a.st, a.sol[a.solIdx])) || a.best; }
 /* the wrong move tried last at this step, as the board draws it on the
    card's position: a faint line and a cross where it landed, one per frame
@@ -793,7 +793,7 @@ function miss(m, u, info, inLine) {
      nothing is a close move outside a forcing line (closeTry), never a
      miss; inside one it is still a miss, and says so honestly */
   var why = missWhy(a, c, info ? info.win : null, r1 ? sanOf(r1.before, r1.move) : null,
-                    !!inLine && !concrete && !!info && info.win >= winPct(it.b.eb) - STRONGER_TOL);
+                    !!inLine && !concrete && !!info && info.win >= winPct(it.b.eb) - STRONGER_TOL, r1 ? moveWords(r1.before, r1.move) : null);
   /* the reply that punishes it is marked when it captures or checks and
      the try loses something by it */
   why.threat = concrete ? threatOf(c.gameLine, 1) : null;
@@ -1004,7 +1004,7 @@ function giveHint() {
      words 150 ms later, never in the same frame (principles 1 and 2) */
   renderCard(cleared ? null : MARKS_THEN_WORDS);
 }
-/* the marks a hint draws (FINAL-SPEC S8, 2.1), from the card's hint state,
+/* the marks a hint draws (S8), from the card's hint state,
    on the position the card asks from: hint 2 is the gold ring on the piece
    to move (the answer due now, so inside a forcing line the step's own
    piece); hint 1 on the card's first move is, on a missed-chance card, a
@@ -1130,6 +1130,7 @@ function finishCard(result, beats) {
     a.view = { mode: 'show' };
     var due = showDue(a);
     a.answerSan = due ? sanOf(a.st, due) : '';
+    a.answerWords = due ? { san: a.answerSan, w: moveWords(a.st, due) } : null;
   } else {
     a.view = { mode: 's0' };
     if (a.lastMove) a.markMove = { from: a.lastMove[0], to: a.lastMove[1], kind: 'good' };
