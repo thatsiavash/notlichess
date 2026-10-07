@@ -105,6 +105,20 @@ function srsNoteMiss(it) {
   srsSave(map);
   return had;
 }
+/* one position's record put back as it was (null: it had none), as the
+   Undo of a removal does: the rest saved as srsSave keeps them */
+function srsRestore(key, rec) {
+  var map = srsLoad();
+  if (rec) map[key] = rec; else delete map[key];
+  srsSave(map);
+  if (rec) return;
+  /* srsSave keeps a record the disk has: one that was not there goes from both */
+  var disk = store.get(srsKey(), {});
+  delete disk[key];
+  store.set(srsKey(), disk);
+  srsMem = { key: srsKey(), map: disk };
+  srsRevision++;
+}
 function srsHide(it) {
   var map = srsLoad(), rec = map[it.key] || { box: 0, streak: 0 };
   rec.hidden = 1;

@@ -874,7 +874,7 @@ function named(a, st, m, f, ch) {
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       /* the band's caps: row 1 26 characters, row 2 40 and 7
          words, a caption 60 and 8; the chip one short label */
-      var out = [], frames = 0, seen = {}, plainSeen = 0, labelled = {}, wordsT2 = 0;
+      var out = [], frames = 0, seen = {}, plainSeen = 0, labelled = {}, wordsT2 = 0, k1w = 0;
       ${PLAIN}
       ${WORDS}
       /* a move in words counts as one word, as its SAN does */
@@ -995,7 +995,10 @@ function named(a, st, m, f, ch) {
             if (d.row1 !== 'Your turn' || d.row2 !== t4) out.push(at + ' T4 while checking at once reads ' + d.row1 + ' / ' + d.row2);
             a.note = null;
             a.checkSaid = 1; d = band(at + ' checking, 300 ms', a);
-            if (d.row1 !== 'Checking ' + sanOf(a.st, off0) + '…' || d.row2 || !d.sweep || labs(d) !== 'Take back | Show the answer') out.push(at + ' K1 reads ' + d.row1 + ' / ' + d.row2 + ' | ' + labs(d));
+            /* K1 names the move in words at tier 1 where row 1 has room (round D), else in SAN */
+            var k1Words = 'Checking ' + moveWords(a.st, off0) + '…', k1 = tier === 1 && k1Words.length <= 26 ? k1Words : 'Checking ' + sanOf(a.st, off0) + '…';
+            if (d.row1 !== k1 || d.row2 || !d.sweep || labs(d) !== 'Take back | Show the answer') out.push(at + ' K1 reads ' + d.row1 + ' / ' + d.row2 + ' | ' + labs(d));
+            if (tier === 1 && d.row1 === k1Words) k1w++;
             d = band(at + ' checking, 300 ms, T4', note(a, 'T4'));
             if (!/^Checking /.test(d.row1) || d.row2 !== t4 || !d.sweep) out.push(at + ' T4 while checking reads ' + d.row1 + ' / ' + d.row2);
             a.note = null;
@@ -1210,8 +1213,9 @@ function named(a, st, m, f, ch) {
           }
         });
       });
-      return JSON.stringify({ out: out, frames: frames, seen: seen, plain: plainSeen, labelled: labelled, wordsT2: wordsT2 }); })()`));
+      return JSON.stringify({ out: out, frames: frames, seen: seen, plain: plainSeen, labelled: labelled, wordsT2: wordsT2, k1w: k1w }); })()`));
     ok(r.wordsT2 > 40, 'tier 1 tasks in words: ' + r.wordsT2);
+    ok(r.k1w > 20, 'tier 1 K1 in words: ' + r.k1w);
     ok(r.frames > 6000 && r.plain > 6 * r.frames, 'frames ' + r.frames + ', strings read for plain words ' + r.plain);
     ok(r.labelled.tip > 1000 && r.labelled.short > 1000, 'frames with a label, counted in the words: ' + JSON.stringify(r.labelled));
     eq(r.out.length, 0, r.out.length + ' too long or not plain, first: ' + r.out.slice(0, 3).join(' | '));
@@ -1715,6 +1719,126 @@ function named(a, st, m, f, ch) {
     const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
     ok(html.includes('rel="manifest"') && html.includes('apple-touch-icon'), 'linked from the page');
     ok(!html.includes('cdn.jsdelivr.net'), 'no CDN engine');
+  });
+
+  /* ── final build round D ── */
+  await test('round D, I9: "Not a real mistake" takes the card and its segment out of the session, and its toast\'s Undo puts back the card, its segment and its stored state; after something else happened only the stored state', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var its = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol; }).slice(0, 3), res = {}, said = [];
+      its.forEach(function (x) { x.b.v = Math.max(x.b.v || 0, 2); });
+      notice = function (t, act) { said.push([t, act ? act.act + ':' + act.label : '']); };
+      var dots = function () { return (sessionBarHtml(ui.session, null).match(/<span class="dot/g) || []).length; };
+      var stored = function (k) { var g = store.get(cacheKey(), null), hit = null;
+        ((g && g.games) || []).forEach(function (gm) { (gm.bl || []).forEach(function (b) { if (gm.id + ':' + b.p === k) hit = b.x || null; }); }); return hit; };
+      startSession('t', its.map(function (x) { return x.key; }), 't');
+      var ss = ui.session, k1 = its[0].key, rec0 = JSON.stringify(srsLoad()[k1] || null), b1 = its[0].b, b2 = null;
+      res.before = [dots(), ss.active && ss.active.key];
+      disputeCard('engine');
+      res.gone = [dots(), ss.keys.length, ss.active && ss.active.key, !!b1.x, !!(srsLoad()[k1] || {}).hidden, stored(k1), said[0]];
+      undoDispute();
+      res.back = [dots(), ss.keys.length, ss.idx, ss.active && ss.active.key, b1.x || null, JSON.stringify(srsLoad()[k1] || null) === rec0, stored(k1)];
+      /* an answered card comes back as it was left */
+      var a = ss.active; solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+      disputeCard('misclick');
+      res.answeredGone = [dots(), Object.keys(ss.results).length];
+      undoDispute();
+      res.answeredBack = [dots(), ss.active === a, a.phase, ss.results[k1]];
+      /* something else happened since: the stored state only */
+      nextCard();
+      var k2 = ss.active.key;
+      b2 = ss.active.it.b;
+      disputeCard('decided');
+      var a3 = ss.active; solved(uciToMove(a3.st, a3.bestUci), a3.bestUci, null); nextCard();
+      undoDispute();
+      res.later = [ss.keys.indexOf(k2), b2.x || null, !!(srsLoad()[k2] || {}).hidden, said[said.length - 1][0]];
+      /* the last card of a session: it finishes, and Undo opens it again on that card, the day as it was */
+      startSession('t', [its[1].key], 't');
+      var day0 = JSON.stringify(dayLoad());
+      disputeCard('engine');
+      res.ended = [ui.session ? 'session' : 'none'];
+      undoDispute();
+      res.reopened = [ui.session && !ui.session.finished, ui.session && ui.session.active && ui.session.active.key, JSON.stringify(dayLoad()) === day0, dots()];
+      res.toast = said[0][1];
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify(r.before), JSON.stringify([3, r.before[1]]), 'three segments');
+    eq(r.toast, 'undoDispute:Undo', 'the toast carries Undo');
+    eq(JSON.stringify(r.gone.slice(0, 6)), JSON.stringify([2, 2, r.gone[2], true, true, 'user:engine']), 'removed: its segment gone, the next card on, hidden and stored');
+    ok(r.gone[2] !== r.before[1], 'the next card took its place');
+    eq(JSON.stringify(r.back), JSON.stringify([3, 3, 0, r.before[1], null, true, null]), 'undone: the card, its segment and its stored state back');
+    eq(JSON.stringify(r.answeredGone), JSON.stringify([2, 0]), 'an answered card removed: its segment and result gone');
+    eq(JSON.stringify(r.answeredBack), JSON.stringify([3, true, 'done', r.answeredBack[3]]), 'and back as it was left');
+    ok(r.answeredBack[3], 'with its result');
+    eq(JSON.stringify(r.later), JSON.stringify([-1, null, false, 'Put back. It comes back in a later session.']), 'after another card: the stored state only');
+    eq(JSON.stringify(r.reopened), JSON.stringify([true, r.reopened[1], true, 1]), 'the session it ended opened again on that card, the day as it was');
+    ok(r.reopened[1], 'on its card');
+  });
+
+  await test('round D, I8: one position opened from the summary goes back to the summary, by × and once done', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var its = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol; }).slice(0, 2), res = {};
+      its.forEach(function (x) { x.b.v = Math.max(x.b.v || 0, 2); });
+      notice = function () {};
+      var sum = { mode: 'today', label: 't', keys: its.map(function (x) { return x.key; }), idx: 2, results: {}, relearn: [], relearnOf: {}, notes: {}, finished: true };
+      sum.results[its[0].key] = 'first'; sum.results[its[1].key] = 'fail';
+      ui.session = sum;
+      var spec = /data-act="drill" data-spec="([^"]*)"/.exec(doneHtml(sum));
+      startDrill(JSON.parse(spec[1].replace(/&quot;/g, '"')));
+      res.opened = [ui.session !== sum, ui.session.from === sum, ui.session.keys.length];
+      endSession();
+      res.x = [ui.session === sum, !!ui.session.finished];
+      startDrill({ type: 'one', key: its[1].key, label: 'One position' });
+      var a = ui.session.active; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); nextCard();
+      res.done = [ui.session === sum, !!ui.session.finished];
+      /* from Today, × goes to Today as before */
+      ui.session = null;
+      startDrill({ type: 'one', key: its[1].key, label: 'One position' });
+      res.today = [!!ui.session.from];
+      endSession();
+      res.today.push(ui.session);
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify(r.opened), '[true,true,1]', 'a one-position session from the summary');
+    eq(JSON.stringify(r.x), '[true,true]', '× goes back to the summary');
+    eq(JSON.stringify(r.done), '[true,true]', 'done, back to the summary');
+    eq(JSON.stringify(r.today), '[false,null]', 'from Today, back to Today');
+  });
+
+  await test('round D, C1: the count never seems to grow ("3 of 5 done, 2 to try again."), and the first card ever queued says "This one comes back later." once, within the word budget', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var its = allMistakes().filter(trainable), k = its.slice(0, 5).map(function (x) { return x.key; }), res = {};
+      var s = { keys: k.concat([k[1], k[3]]), idx: 6, results: {}, relearn: [], relearnOf: {} };
+      [0, 1, 2].forEach(function (i) { s.results[k[i]] = 'first'; });
+      res.mid = countsWords(s);
+      s.results[k[1] + '#r'] = 'retry';
+      res.one = countsWords(s);
+      res.queued = countsWords({ keys: k, idx: 3, results: { a: 1, b: 1, c: 1 }, relearn: [k[0], k[1]], relearnOf: {} });
+      res.none = countsWords({ keys: k, idx: 3, results: { a: 1, b: 1, c: 1 }, relearn: [], relearnOf: {} });
+      res.resume = (/<p class="why">([^<]*)</.exec(resumeHtml(s)) || [])[1];
+      /* the strip's word: on the first card queued, where it fits; never again */
+      playerTier = function () { return 2; };
+      var seen = 0, again = 0, over = 0, fit = 0;
+      its.forEach(function (it) {
+        var a = openCard(it);
+        if (!a) return;
+        reveal();
+        var d = displayFor(a), strip = String(d.strip || '').replace(/<[^>]*>/g, ' ');
+        var has = strip.indexOf('This one comes back later.') >= 0;
+        if (has && seen) again++;
+        if (has) seen++;
+        var words = [d.row1, d.row2, d.chip, d.cap, strip].concat(d.buttons.map(function (b) { return b.label; })).reduce(function (n, x) { return n + wordsIn(x); }, 0);
+        if (words > 15) over++;
+        if (a.retryTip) fit = has ? 1 : -1;
+      });
+      res.tip = [seen, again, over, fit, store.get('nl:tip:retry', 0)];
+      return JSON.stringify(res); })()`));
+    eq(r.mid, '3 of 5 done, 2 to try again.', 'two coming back');
+    eq(r.one, '3 of 5 done, 1 to try again.', 'one of them done');
+    eq(r.queued, '3 of 5 done, 2 to try again.', 'two queued, not yet in the bar\'s keys');
+    eq(r.none, '3 of 5 done.', 'none coming back');
+    eq(r.resume, '3 of 5 done, 1 to try again. The rest are waiting where you stopped.', 'the resume line');
+    eq(JSON.stringify(r.tip), '[1,0,0,1,1]', 'said once, on the first card queued, within 15 words');
   });
 
   results.forEach((l) => console.log(l));

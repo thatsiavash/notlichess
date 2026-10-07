@@ -238,62 +238,47 @@ var XP_TACTIC = ['mateAllowed', 'forkAllowed', 'pinAllowed', 'discoveredAllowed'
 var XP_MISSED = ['missedMaterial', 'missedTactic', 'mateMissed'];
 /* the score of a line for the side `w` (true = White), mates as +-1500 */
 function sideCp(line, w) { return w ? line.cp : -line.cp; }
-/* the material a line wins or gives up for the mover, in words, once it
-   settles: "wins the rook", "gives up the exchange" */
-function xpSameKind(p1, p2) { return p1 === p2 || ((p1 === 'N' || p1 === 'B') && (p2 === 'N' || p2 === 'B')); }
-function xpMaterialWords(c, tier) {
-  var g = c.gameLine;
-  if (!g) return '';
-  var up = Math.min(g.nodes.length - 1, c.gSettle != null ? c.gSettle : g.nodes.length - 1);
-  /* a line that promotes is not counted in pieces */
-  for (var pk = 0; pk <= up; pk++) if (g.nodes[pk] && g.nodes[pk].move && g.nodes[pk].move.promo) return '';
-  /* the line stops with material still in motion: say nothing about it */
-  if (up === g.nodes.length - 1 && enPrise(g.nodes[up].after)) return '';
-  var mine = [], theirs = [];
-  for (var i = 0; i <= up; i++) {
-    var n = g.nodes[i];
-    if (!n || !n.captured) continue;
-    (n.pov ? theirs : mine).push(pType(n.captured));
-    /* taken by a piece of the same kind that the mover takes back on that
-       square a few moves later, with only quiet moves between: a trade */
-    if (n.pov && xpSameKind(n.piece, pType(n.captured))) {
-      for (var k = i + 1; k < g.nodes.length && k <= i + 4; k++) {
-        var m2 = g.nodes[k];
-        if (!m2 || !m2.move || m2.move.from === n.move.to) break;
-        if (m2.move.to === n.move.to) { if (k > up && !m2.pov && m2.captured) mine.push(pType(m2.captured)); break; }
-        if (m2.captured) break;
-      }
-    }
+/* what a move wins or gives up, by the card face's own rule (13y-story.js:
+   settledAt, EVAL_SLACK, plainCapture): counted where the engine's line
+   settles, never on a capture or check it leaves unanswered, in line with
+   the engine's score (a count far past it is a line cut short), in the
+   captures' own words. st: the position before the move; ucis: the move
+   and the engine's line after it; cp: the mover's score after it
+   (centipawns, mates as +-1500). {n (pawns, more than 0 when won), w} or
+   null when no count stands */
+function xpClaim(st, ucis, cp) {
+  var mover = !!st.w, line = ucis && ucis.length ? buildLine(st, '0000', ucis, mover) : null;
+  if (!line || line.nodes.length < 2) return null;
+  var k = settleIndex(line);
+  if (k < 1 || !settledAt(line, k)) return null;
+  for (var i = 1; i <= k; i++) if (line.nodes[i].move.promo) return null;
+  var base = matDiff(line.nodes[0].after.b, mover), n = matDiff(line.nodes[k].after.b, mover) - base;
+  if (Math.abs(n) < 1) return null;
+  if (cp != null && Math.abs(cp) < 900 && (n > 0 ? n > cp / 100 - base + EVAL_SLACK : -n > base - cp / 100 + EVAL_SLACK)) return null;
+  /* a loss in the words of what the other side took */
+  var w = plainCapture(n > 0 ? line : buildLine(st, '0000', ucis, !mover), k, 1);
+  return { n: n, w: w || oneWord(null, n) };
+}
+/* no mate is possible for either side (a dead draw): kings alone, or with
+   one knight or bishop, or with bishops all on one colour */
+function deadDraw(st) {
+  var minors = [];
+  for (var sq = 0; sq < 64; sq++) {
+    var p = st.b[sq], t = pType(p);
+    if (!p || t === 'K') continue;
+    if (t !== 'N' && t !== 'B') return false;
+    minors.push({ t: t, dark: ((sq >> 3) + (sq & 7)) % 2 === 0 });
   }
-  var cancel = function (cross) {
-    for (var x = mine.length - 1; x >= 0; x--) {
-      var j = theirs.indexOf(mine[x]);
-      if (j === -1 && cross && (mine[x] === 'N' || mine[x] === 'B')) j = theirs.indexOf(mine[x] === 'N' ? 'B' : 'N');
-      if (j !== -1) { mine.splice(x, 1); theirs.splice(j, 1); }
-    }
-  };
-  cancel(false); cancel(true);
-  var val = function (l) { return l.reduce(function (s, p) { return s + MOTIF_VAL[p]; }, 0); };
-  var NUMW = ['', 'a', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
-  var word = function (l) {
-    var cnt = {};
-    l.forEach(function (p) { cnt[p] = (cnt[p] || 0) + 1; });
-    var ks = Object.keys(cnt).sort(function (p1, p2) { return MOTIF_VAL[p2] - MOTIF_VAL[p1]; });
-    if (ks.length > 2) return null;
-    return ks.map(function (p) { return cnt[p] === 1 ? 'a ' + PIECE_WORD[p] : (NUMW[cnt[p]] || cnt[p]) + ' ' + PIECE_WORD[p] + 's'; }).join(' and ');
-  };
-  var exch = function (a1, b1) { return a1.length === 1 && b1.length === 1 && a1[0] === 'R' && (b1[0] === 'N' || b1[0] === 'B'); };
-  if (!mine.length && !theirs.length) return '';
-  if (word(mine) === null || word(theirs) === null) return '';
-  if (val(mine) > val(theirs)) {
-    if (exch(mine, theirs)) return tier === 1 ? 'wins a rook for a ' + PIECE_WORD[theirs[0]] : 'wins the exchange';
-    return theirs.length ? 'wins ' + word(mine) + ' for ' + word(theirs) : 'wins ' + (mine.length === 1 ? 'the ' + PIECE_WORD[mine[0]] : word(mine));
-  }
-  if (val(mine) < val(theirs)) {
-    if (exch(theirs, mine)) return tier === 1 ? 'gives up a rook for a ' + PIECE_WORD[mine[0]] : 'gives up the exchange';
-    return 'gives up ' + word(theirs) + (mine.length ? ' for ' + word(mine) : '');
-  }
-  return '';
+  return minors.length <= 1 || minors.every(function (m) { return m.t === 'B' && m.dark === minors[0].dark; });
+}
+/* a row whose line ends in a dead draw, or that the engine scores 0.00
+   while its line repeats a position: a draw, whatever the winning chances
+   would say */
+function xpDrawn(st, line) {
+  if (!line || line.mate != null || Math.abs(line.cp) > 20) return false;
+  var all = [st].concat(playUci(st, line.pv || []).states), seen = {};
+  if (deadDraw(all[all.length - 1])) return true;
+  return line.cp === 0 && all.some(function (x) { var k = posKey(x); if (seen[k]) return true; seen[k] = 1; return false; });
 }
 /* the biggest piece the move loses once the line settles, and the moves
    that take it: exploring often meets a quiet first capture before the real
@@ -342,6 +327,33 @@ function xpThreatBefore(P, reply) {
   applyMove(after, m);
   return !!(st.b[m.to] || checkedKingSq(after) != null);
 }
+/* the classifier's sentence with every material count it makes taken
+   out (as Details does): "You lose X.", ": you lose X", "and the pinned X
+   is lost", "but the X is lost to R" said as "but R takes the X"; a
+   sentence that is nothing but a count (the material pattern), or a
+   trapped piece the count does not bear out, is dropped (null) */
+var XP_LOSS = [/ (?:You|White|Black) loses? [^.]*\./, /: (?:you|White|Black) loses? [^.]*(?=\.$)/, /, and the pinned \w+ is lost(?=\.$)/];
+function xpBare(s, c, cl) {
+  if (c.t === 'material') return null;
+  var tr = / lets (?:your|\w+'s) (\w+) get trapped\.$/.exec(s);
+  if (tr) return cl && cl.n <= -1 && cl.w === 'the ' + tr[1] ? s : null;
+  XP_LOSS.forEach(function (re) { s = s.replace(re, ''); });
+  s = s.replace(/, but the (\w+) is lost to (\S+)\.$/, ', but $2 takes the $1.').replace(/, but the (\w+) is lost\.$/, '.');
+  return s.trim() || null;
+}
+/* the sentence already names that one piece taken ("takes your bishop"
+   beside a loss of the bishop) */
+function xpSaysTaken(s, w) {
+  var one = /^the (\w+)$/.exec(w || '');
+  return !!one && new RegExp('takes (?:your|the|\\w+\'s) ' + one[1] + '\\b').test(s);
+}
+/* the better move's sentence, for a chance missed: a gain said only as
+   the card face counts it (else "Best was B."); a fork, a mate or a pin
+   that counts nothing stays as it is */
+function xpBestSaid(s, B, bc) {
+  if (!/ wins | takes the |come out ahead/.test(s)) return s;
+  return bc && bc.n >= 1 ? B + ' wins ' + bc.w + '.' : 'Best was ' + B + '.';
+}
 function xpVerdict(a, ex, at) {
   if (ex.say[at]) return ex.say[at];
   var C = ex.nodes[at], P = ex.nodes[at - 1];
@@ -350,7 +362,7 @@ function xpVerdict(a, ex, at) {
   var over = xpGameOver(C.st);
   if (!over && (!pr || pr.step < 2 || !cr || cr.step < 2)) return null;
   if (!pr || pr.step < 2) return null;
-  var tier = a.tier || 2, s = P.st.w, voice = C.mv.byYou ? 'you' : 'them';
+  var s = P.st.w, voice = C.mv.byYou ? 'you' : 'them';
   var best = pr.lines[0], X = C.mv.uci, B = sanOf(P.st, uciToMove(P.st, best.pv[0]));
   var row = pr.lines.filter(function (l) { return l.pv[0] === X; })[0];
   var cpBest = sideCp(best, s);
@@ -368,7 +380,9 @@ function xpVerdict(a, ex, at) {
   var text, cat, whose = voice === 'them' ? ' for ' + sideName(s) : '';
   if (X === best.pv[0]) {
     cat = 'best';
-    var mw = xpMaterialWords(c, tier), mateIn = mateOf(best, s);
+    /* what it wins, counted on the engine's line as the card face counts */
+    var bc = xpClaim(P.st, R.length ? [X].concat(R) : best.pv, cpBest), mateIn = mateOf(best, s);
+    var mw = bc ? (bc.n > 0 ? 'wins ' : 'gives up ') + bc.w : '';
     /* the count the rows show: the child's own search, plus this move */
     var cm = cr && cr.lines[0] ? mateOf(cr.lines[0], s) : null;
     if (cm != null && mateIn != null && (cm > 0) === (mateIn > 0)) mateIn = cm > 0 ? cm + 1 : cm;
@@ -379,28 +393,42 @@ function xpVerdict(a, ex, at) {
     var mateBoth = best.mate != null && ((row && row.mate != null) || !!(cr && cr.lines[0] && cr.lines[0].mate != null)) && (cpBest > 0) === (cpX > 0);
     var concrete = XP_TACTIC.indexOf(c.t) !== -1 && (c.t === 'mateMissed' || gap >= 100
       || (!mateBoth && ((c.mateAgainst && !c.alreadyLost) || (decided && c.lossG >= 3))));
+    /* a move that keeps a clear edge with no tactic against it passes on
+       the card too ("That works too", the safe-win rule): a small drop reads
+       as small, never as giving the advantage back */
+    var keeps = !concrete && wX >= 70 && wBest >= 70;
     /* near 0% or 100% the winning-chance scale is flat: a real difference in
        material is still a difference, unless the game is decided either way */
-    if (concrete || drop > STRONGER_TOL || (gap >= 100 && !decided)) {
+    if (!keeps && (concrete || drop > STRONGER_TOL || (gap >= 100 && !decided))) {
       cat = concrete ? 'concrete' : 'worse';
-      var reason = String(c.sentences.short || c.sentences.game).replace(/ \(\d+% to \d+%\)/g, '');
-      var big = XP_MISSED.indexOf(c.t) === -1 && c.t !== 'mateAllowed' ? xpBigLoss(c) : null;
-      if (big && reason.indexOf(big.word) === -1) reason = C.mv.san + ' loses the ' + big.word + ': ' + big.line + '.';
+      /* the classifier names the pattern; what is lost is said only as the
+         card face would say it (xpClaim), the classifier's own counts gone */
+      var cl = xpClaim(P.st, [X].concat(R), cpX), who = voice === 'you' ? 'You lose ' : sideName(s) + ' loses ';
+      var bare = xpBare(String(c.sentences.short || c.sentences.game).replace(/ \(\d+% to \d+%\)/g, ''), c, cl);
+      var loss = cl && cl.n <= -1 && !(bare && xpSaysTaken(bare, cl.w)) ? who + cl.w + '.' : '';
+      var reason = bare ? bare + (loss ? ' ' + loss : '') : cl && cl.n <= -1 ? C.mv.san + ' loses ' + cl.w + '.' : '';
+      var big = XP_MISSED.indexOf(c.t) === -1 && c.t !== 'mateAllowed' && cl && cl.n <= -1 ? xpBigLoss(c) : null;
+      if (big && cl.w.indexOf(big.word) >= 0 && reason.indexOf(big.word) === -1) reason = C.mv.san + ' loses the ' + big.word + ': ' + big.line + '.';
       var cmp;
       if (XP_MISSED.indexOf(c.t) !== -1 && c.sentences.best) {
-        cmp = c.sentences.best;
+        cmp = xpBestSaid(c.sentences.best, B, xpClaim(P.st, best.pv, cpBest));
         if (cmp.indexOf(B + ' ') === 0 && reason.indexOf(B) !== -1) cmp = 'It ' + cmp.slice(B.length + 1);
       } else {
         var stop = stopsWhat(c, P.st);
         if (stop && voice === 'them') stop = themVoice(stop, sideName(s), sideName(!s));
         cmp = stop && xpThreatBefore(P, R[0]) ? stop : (B + (wBest < 45 ? ' loses less.' : ' keeps more.'));
       }
-      var lean = reason.replace(/ (You|White|Black) loses? [^.]*\.$/, '');
-      text = fitLine([reason + ' ' + cmp, reason + ' Best was ' + B + '.', reason, lean + ' ' + cmp, lean + ' Best was ' + B + '.',
-        firstClause(reason) + ' Best was ' + B + '.', firstClause(reason), C.mv.san + ' is worse' + whose + ' than ' + B + '.']);
+      var lean = bare || '';
+      text = reason ? fitLine([reason + ' ' + cmp, reason + ' Best was ' + B + '.', reason, lean && lean + ' ' + cmp, lean && lean + ' Best was ' + B + '.',
+        firstClause(reason) + ' Best was ' + B + '.', firstClause(reason), C.mv.san + ' is worse' + whose + ' than ' + B + '.'])
+        : C.mv.san + ' is worse' + whose + ' than ' + B + '.';
     } else if (drop <= SOLVE_TOL) {
       cat = 'fine';
       text = C.mv.san + ' is about as good' + whose + ' as ' + B + '.';
+    } else if (keeps) {
+      cat = 'little';
+      var edge = voice === 'you' ? 'your' : sideName(s) + '\'s';
+      text = fitLine([C.mv.san + ' keeps most of ' + edge + ' advantage. ' + B + ' keeps more.', C.mv.san + ' keeps most of ' + edge + ' advantage.']);
     } else {
       cat = 'little';
       var rep = R[0] ? sanOf(C.st, uciToMove(C.st, R[0])) : '';
@@ -432,14 +460,8 @@ function sayAt(a, ex, at) {
     /* the button under it says how to play it (Play Stockfish's pick) */
     return who + ' ' + xpWho(a, true) + '\'s pick is ' + pick + ', the gold arrow.';
   }
-  if (n.mv && n.mv.pick) {
-    /* walking Stockfish's line keeps the explanation of the move that started it */
-    for (var i = at - 1; i >= 1; i--) {
-      var sv = ex.say[i] || (ex.nodes[i].mv && !ex.nodes[i].mv.pick ? xpVerdict(a, ex, i) : null);
-      if (sv && sv.cat !== 'best') return sv.text.replace(/ Best reply: [^,]+, the gold arrow\./, '');
-      if (ex.nodes[i].mv && !ex.nodes[i].mv.pick) break;
-    }
-  }
+  /* always about the move on the board now, Stockfish's pick too (never the
+     move before it); until its searches are in, only that it is thinking */
   var v = xpVerdict(a, ex, at), sh = xpShown(ex, n), lv = ex.res[n.key];
   if (v && v.cat === 'little' && sh && sh[0] && lv && lv.lines[0] && sh[0].pv[0] !== lv.lines[0].pv[0])
     return v.text.replace(/ Best reply: [^,]+, the gold arrow\./, '');
@@ -460,27 +482,28 @@ function xpNum(st, i) {
   var ply = xpPly(st) + i, full = Math.floor(ply / 2) + 1;
   return ply % 2 === 0 ? full + '.' : full + '…';
 }
-function xpRowWords(a, n, line, best, tier) {
+function xpRowWords(a, n, line, best) {
   var w = n.st.w, m0 = line.pv[0];
   var mateFor = line.mate != null ? (w ? line.mate : -line.mate) : null;
   if (mateFor != null && mateFor > 0) return 'mates in ' + mateFor;
   if (mateFor != null && mateFor < 0) return 'allows mate in ' + (-mateFor);
+  /* a dead draw is a draw, whatever the winning chances would say */
+  if (xpDrawn(n.st, line)) return 'a draw';
   var cpB = sideCp(best, w), cpL = sideCp(line, w), isBest = line === best || (winPct(cpB) - winPct(cpL) <= SOLVE_TOL && cpB - cpL < 100);
   var c = classifyMistake(n.st, m0, { pv: best.pv, mate: null }, { pv: line.pv.slice(1), mate: null }, winPct(cpB), winPct(cpL), xpPly(n.st));
+  /* material as the card face counts it, on this row's own line */
+  var cl = xpClaim(n.st, line.pv, cpL);
   if (isBest) {
-    var mw = xpMaterialWords(c, tier);
-    if (mw) return mw;
+    if (cl) return (cl.n > 0 ? 'wins ' : 'gives up ') + cl.w;
   } else {
     var g = c.gameLine, r1 = g && g.nodes[1], rSan = r1 && r1.move ? sanOf(r1.before, r1.move) : '';
     if (c.t === 'forkAllowed' && c.allowed.fork) { var fm = g.nodes[c.allowed.fork.ply]; return 'allows a fork: ' + sanOf(fm.before, fm.move); }
     if (c.t === 'pinAllowed') return 'walks into a pin';
     if (c.t === 'discoveredAllowed') return 'allows a hidden attack';
     if (c.t === 'mateAllowed') return 'allows mate in ' + (c.mateAgainst || 2);
-    if (['threat', 'hung', 'badTrade', 'material'].indexOf(c.t) !== -1 && r1 && r1.captured && c.matGame <= -1) {
-      /* only when that piece stays lost once the line settles */
-      var L = xpLostPieces(c) || [], p1 = pType(r1.captured);
-      if (L.some(function (l) { return l.p === p1; })) return 'loses the ' + PIECE_WORD[p1] + ' to ' + rSan;
-    }
+    /* only when what the line loses, counted where it settles, is that piece */
+    if (['threat', 'hung', 'badTrade', 'material'].indexOf(c.t) !== -1 && r1 && r1.captured && cl && cl.n <= -1 && cl.w === 'the ' + PIECE_WORD[pType(r1.captured)])
+      return 'loses ' + cl.w + ' to ' + rSan;
     if (XP_MISSED.indexOf(c.t) !== -1) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return 'misses ' + bs; }
   }
   return CARD_COPY.X3(a, winPct(myPov(a.it) ? line.cp : -line.cp));
@@ -493,7 +516,7 @@ function xpRows(a, ex) {
   if (tier === 1) {
     /* the best, then the line that teaches something different, a tactic
        before a plain standing, never the same words twice */
-    ws = lines.map(function (l) { return xpRowWords(a, n, l, lines[0], 1); });
+    ws = lines.map(function (l) { return xpRowWords(a, n, l, lines[0]); });
     var tac = /^(allows a fork|walks into a pin|allows a hidden attack|allows mate|loses the|misses )/;
     var two = [1, 2].filter(function (i) { return lines[i] && tac.test(ws[i]); })[0];
     if (two == null) two = lines[1] ? 1 : -1;
@@ -515,13 +538,13 @@ function xpRows(a, ex) {
       row.label = first + ', ' + row.words + '.';
       return row;
     }
-    var myMate = l.mate != null ? (me ? l.mate : -l.mate) : null;
+    var myMate = l.mate != null ? (me ? l.mate : -l.mate) : null, drawn = myMate == null && xpDrawn(n.st, l);
     row.chip = myMate != null ? (myMate > 0 ? 'You mate in ' + myMate : 'They mate in ' + (-myMate))
-      : 'You ' + Math.max(1, Math.min(99, Math.round(winPct(me ? l.cp : -l.cp)))) + '%';
+      : drawn ? 'A draw' : 'You ' + Math.max(1, Math.min(99, Math.round(winPct(me ? l.cp : -l.cp)))) + '%';
     var plies = tier === 3 ? (touch ? 4 : 6) : 2, cont = [];
     for (var k = 1; k <= plies && k < sans.length; k++) cont.push(((xpPly(n.st) + k) % 2 === 0 ? xpNum(n.st, k) : '') + sans[k]);
     row.cont = cont.join(' ');
-    row.label = first + (cont.length ? ', then ' + sans.slice(1, plies + 1).join(' ') : '') + '. ' + (myMate != null ? row.chip + '.' : 'Your winning chances ' + row.chip.replace('You ', '') + '.');
+    row.label = first + (cont.length ? ', then ' + sans.slice(1, plies + 1).join(' ') : '') + '. ' + (myMate != null || drawn ? row.chip + '.' : 'Your winning chances ' + row.chip.replace('You ', '') + '.');
     return row;
   });
 }

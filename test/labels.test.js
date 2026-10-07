@@ -102,7 +102,8 @@ const PAGE = `(function () {
     return a;
   };
   return 1; })()`;
-const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sort().join(',');
+/* the board labels' first-sight kinds remembered (nl:tip:retry is the strip's word, not a label) */
+const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k !== 'nl:tip:retry').sort().join(',');
 
 (async () => {
   await test('placeLabel never overlaps a piece, badge, token, ring, cross or arrow shaft, nor leaves the board: every fixture frame, tiers 1 and 3, boards of 316, 384 and 720 px, as drawn and flipped, first sight and short labels', () => {
@@ -397,7 +398,10 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
                 if (t === 'lost' && !(a.phase === 'tried' && a.tried.seen)) bad('"lost" off See it');
               }
               else if (/ in your game$/.test(t)) {
-                if (t !== sanOf(a.pre, a.played) + ' in your game' || !(f.opts.ghosts || []).some(function (g) { return g.sq === mk.sq && g.sq === a.played.to; })) bad('not the game move\\'s ghost');
+                /* tier 1 names it in words where the label has room (round D) */
+                var gw = upFirst(moveWords(a.pre, a.played)) + ' in your game';
+                if ((t !== sanOf(a.pre, a.played) + ' in your game' && !(a.tier === 1 && t === gw)) || !(f.opts.ghosts || []).some(function (g) { return g.sq === mk.sq && g.sq === a.played.to; })) bad('not the game move\\'s ghost');
+                if (t === gw) by['ghost in words'] = 1;
               }
               else if (t === 'their reply') { var rr = arrowOf(f, mk); if (!rr || rr.kind !== 'reply') bad('no reply arrow'); }
               else if (t === 'better') { var br = arrowOf(f, mk); if (!br || br.kind !== 'better' || br.key !== 'better' || a.phase !== 'done' || a.view.mode !== 'story') bad('not the story\\'s green arrow'); }
@@ -426,7 +430,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
     eq(r.out.length, 0, r.out.length + ' labels untrue to the board, first: ' + r.out.slice(0, 4).join(' | '));
     ok(r.n > 3000, 'labels read ' + r.n);
     ok(r.hintN > 10, 'hint 1 "takes" labels read ' + r.hintN);
-    ['Your game move', 'can take', 'takes', 'free', 'check', 'mate', 'lost', 'Lost piece', 'ghost', 'their reply', 'better', 'the answer'].forEach((t) => ok(r.by.indexOf(t) >= 0, 'no "' + t + '" (' + r.by.join(', ') + ')'));
+    ['Your game move', 'can take', 'takes', 'free', 'check', 'mate', 'lost', 'Lost piece', 'ghost', 'ghost in words', 'their reply', 'better', 'the answer'].forEach((t) => ok(r.by.indexOf(t) >= 0, 'no "' + t + '" (' + r.by.join(', ') + ')'));
     eq(JSON.stringify(r.nf), JSON.stringify(['hits two', 'fork']), 'a knight forking queen and rook: "hits two" below tier 3, "fork" at 3');
     ok(r.ex[1] === 'the computer' && r.ex[2] === 'Stockfish', 'Stockfish\'s pick: ' + JSON.stringify(r.ex));
   });
@@ -732,11 +736,19 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
             if (/They could have taken /.test(lab) && !couldNow) bad.push('could have taken on a step played');
             if (couldNow && / was taken on /.test(lab)) bad.push('was taken on the move they could have played');
             if (couldNow && /They could have taken /.test(lab)) by['could token'] = 1;
-            var faded = (o.ghosts || []).length; if (cnt(lab, /: where your game move went[.]/g) !== faded) bad.push('ghost');
+            /* a castling game move's rook (C10) is said with its king, never alone */
+            var faded = (o.ghosts || []).filter(function (g) { return !g.rook; }).length; if (cnt(lab, /: where your game move went[.]/g) !== faded) bad.push('ghost');
             if (faded) by.ghost = (by.ghost || 0) + 1;
             /* the ghost faded where its square is empty; on a piece, only its cross is drawn and said */
-            (o.ghosts || []).forEach(function (g) {
-              var want = (f.st.b[g.sq] ? 'Red cross on ' : 'Faded ' + PIECE_WORD[pType(g.p)] + ' on ') + sqName(g.sq) + ': where';
+            (o.ghosts || []).forEach(function (g, gi, gs) {
+              if (g.rook) {
+                var rw = ' and faded rook on ' + sqName(g.sq) + ': where';
+                if ((lab.indexOf(rw) >= 0) === !!f.st.b[g.sq]) bad.push('the castled rook on ' + sqName(g.sq) + ' said as ' + lab);
+                if (!f.st.b[g.sq]) by['castled rook'] = 1;
+                return;
+              }
+              var rk = gs[gi + 1] && gs[gi + 1].rook && !f.st.b[gs[gi + 1].sq];
+              var want = (f.st.b[g.sq] ? 'Red cross on ' : 'Faded ' + PIECE_WORD[pType(g.p)] + ' on ') + sqName(g.sq) + (rk ? ' and faded rook on ' : ': where');
               if (lab.indexOf(want) < 0) bad.push('the ghost on ' + sqName(g.sq) + ' said as ' + lab);
               if (f.st.b[g.sq]) by['ghost on a piece'] = 1;
             });
@@ -778,7 +790,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k)).sor
       return JSON.stringify({ out: out, n: n, by: Object.keys(by).sort() }); })()`));
     ok(r.n > 2000, 'frames ' + r.n);
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' || '));
-    ['game arrow', 'threat arrow', 'landed reply', 'green arrow', 'hint ring', 'lost token', 'won token', 'guard dots', 'tried move', 'tried cross', 'tick', 'cross', 'i', 'ghost', 'ghost on a piece', 'S0 pair', 'could token'].forEach((k) => ok(r.by.indexOf(k) >= 0, 'never said: ' + k + ' (' + r.by.join(', ') + ')'));
+    ['game arrow', 'threat arrow', 'landed reply', 'green arrow', 'hint ring', 'lost token', 'won token', 'guard dots', 'tried move', 'tried cross', 'tick', 'cross', 'i', 'ghost', 'ghost on a piece', 'S0 pair', 'could token', 'castled rook'].forEach((k) => ok(r.by.indexOf(k) >= 0, 'never said: ' + k + ' (' + r.by.join(', ') + ')'));
   });
 
   await test('LABELS_ON false: no label on any frame, first sight included, and none painted or remembered', () => {

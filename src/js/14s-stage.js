@@ -24,8 +24,10 @@
    marks beats apply at once, and waiting text moves to 150 ms from now.
    The one exception is the forcing reply (S10), the only move that plays
    by itself: it is always seen moving, so an input before it starts it at
-   once, and while it slides (and until its words come) flushStage leaves
-   everything as it is and says so; the input is dropped.
+   once, and while it slides (and until its words come, but for a tap on
+   the board once it has landed) flushStage leaves everything as it is and
+   says so; the input is dropped (a tap on a piece of yours is kept for
+   the landing, replyTap).
    Beats belong to one card and die with it (Next, leaving the card). So do
    timed beats (stageAt): a change due at a set time (K1 at 300 ms, K2 at
    3 s, the end of a word or an outline for a tap that is not a move), which
@@ -104,15 +106,16 @@ function stageAt(ms, run) {
 /* input first: the slide ends, the board catches up, the words wait 150 ms.
    Returns true when the input must be dropped: the forcing reply is on its
    way (S10). Before it slides, an input starts it now (its telegraph kept,
-   a.reply); while it slides, and once landed until its words come (2050),
-   input changes nothing. Under reduced motion it waits for its own button,
-   and input goes on as usual */
-function flushStage() {
+   a.reply); while it slides input changes nothing, and once landed until
+   its words come (2050) only the board takes input again (board: a tap or
+   a press on it), which brings the reply's words 150 ms after it. Under
+   reduced motion it waits for its own button, and input goes on as usual */
+function flushStage(board) {
   var now = Date.now(), a = ui.session && ui.session.active, moved = false;
   if (motionHold && motionUntil > now) return true;
   motionHold = false;
   var rp = a && a.reply;
-  if (rp && rp.played && stageQ.indexOf('board') < 0) return true;
+  if (rp && rp.played && stageQ.indexOf('board') < 0 && !board) return true;
   if (motionUntil > now) {
     var bw = el('bwrap'), ps = bw ? bw.querySelectorAll('.anim-piece') : [], xf = bw ? bw.querySelectorAll('.xfade') : [];
     for (var i = 0; i < ps.length; i++) { ps[i].style.transition = 'none'; ps[i].style.transform = 'translate(0px,0px)'; }

@@ -252,7 +252,7 @@ function heroHtml() {
 }
 function resumeHtml(s) {
   return '<div class="hero">'
-    + '<h2>Pick up where you left off.</h2><p class="why">' + Math.min(sessionDoneCount(s), sessionTotal(s)) + ' of ' + sessionTotal(s) + ' done.'
+    + '<h2>Pick up where you left off.</h2><p class="why">' + countsWords(s)
     + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.') + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">Start over</a></div></div>';
 }
@@ -542,7 +542,8 @@ function boardOptsFor(a) {
     }
     view = { st: st, last: last, ev: it.b.eb };
     opts.sel = a.sel;
-    if (a.phase === 'guess' && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
+    /* a piece tapped during the forcing reply is picked up as it lands */
+    if ((a.phase === 'guess' || (a.phase === 'reply' && a.reply && a.reply.played)) && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
     opts.shapes = a.shapes;
     if (a.phase === 'guess' && a.solIdx === 0 && !a.explore) opts.bad = [a.played.from, a.played.to];
     /* your move slides as you make it; their reply, once See it plays it,
@@ -711,7 +712,12 @@ function boardAria(a, st, o) {
     out.push(t.could ? 'They could have taken your ' + PIECE_WORD[pType(t.p)] + ' on ' + sqName(t.sq) + '.'
       : t.kind === 'lost' ? 'Your ' + PIECE_WORD[pType(t.p)] + ' was taken on ' + sqName(t.sq) + '.' : 'You won a ' + PIECE_WORD[pType(t.p)] + ' on ' + sqName(t.sq) + '.');
   });
-  (o.ghosts || []).forEach(function (g) { out.push((b[g.sq] ? 'Red cross on ' : 'Faded ' + PIECE_WORD[pType(g.p)] + ' on ') + sqName(g.sq) + ': where your game move went.'); });
+  (o.ghosts || []).forEach(function (g, i, gs) {
+    if (g.rook) return;
+    /* castling: the rook that went with the king, where it is drawn */
+    var rk = gs[i + 1] && gs[i + 1].rook && !b[gs[i + 1].sq] ? gs[i + 1] : null;
+    out.push((b[g.sq] ? 'Red cross on ' : 'Faded ' + PIECE_WORD[pType(g.p)] + ' on ') + sqName(g.sq) + (rk ? ' and faded rook on ' + sqName(rk.sq) : '') + ': where your game move went.');
+  });
   (o.guards || []).forEach(function (g) { out.push('Green dots: the ' + pw(g.from) + ' on ' + sqName(g.from) + ' guards ' + sqName(g.to) + '.'); });
   /* a move tried already: its line, or (when it went to the answer's
      square) only the cross on the square it left, never naming where it went */
@@ -812,7 +818,7 @@ function labelGeom(f, px, c, avoid) {
     g.segs.push({ x1: a0[0], y1: a0[1], x2: ex, y2: ey, r: (w + 2.4) / 2 * s + 4 });
     g.segs.push({ x1: ex - ux * 2.94 * w * s, y1: ey - uy * 2.94 * w * s, x2: ex + ux * 1.26 * w * s, y2: ey + uy * 1.26 * w * s, r: 2.1 * w * s + 4 });
   });
-  (o.ghosts || []).forEach(function (gh) { var k = cell(gh.sq); g.pieces.push(sqBox(gh.sq)); g.boxes.push(disc((k[0] * 45 + 37.5) * s, (k[1] * 45 + 7.5) * s, 7 * s)); });
+  (o.ghosts || []).forEach(function (gh) { var k = cell(gh.sq); g.pieces.push(sqBox(gh.sq)); if (!gh.rook) g.boxes.push(disc((k[0] * 45 + 37.5) * s, (k[1] * 45 + 7.5) * s, 7 * s)); });
   (o.badges || []).forEach(function (bd) { var k = cell(bd.sq), xy = badgeXY([k[0] * 45, k[1] * 45], bd.at); g.boxes.push(disc(xy[0] * s, xy[1] * s, BADGE_HALO * s)); });
   (o.tokens || []).forEach(function (tk) { var k = cell(tk.sq); g.boxes.push(disc((k[0] * 45 + 12.5) * s, (k[1] * 45 + 32.5) * s, 13.7 * s)); });
   (o.hint != null ? [{ sq: o.hint }] : []).concat(o.rings || []).forEach(function (rg) { var m = ctr(rg.sq); g.boxes.push(disc(m[0], m[1], 23.25 * s)); });
@@ -840,7 +846,8 @@ function labelGeom(f, px, c, avoid) {
    {x, y} in px, or null: no room, no label */
 var LABEL_NEAR = [[0, -1], [0, 1], [1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1]];
 function placeLabel(geom, w, h) {
-  var S = geom.size, Q = geom.sq, E = 0.5;
+  /* a touch of half a board unit is no overlap, at any board size */
+  var S = geom.size, Q = geom.sq, E = 0.5 * Math.min(1, S / 360);
   var hit = function (r, b) { return r.x < b.x + b.w - E && b.x < r.x + r.w - E && r.y < b.y + b.h - E && b.y < r.y + r.h - E; };
   var clear = function (r, soft) {
     if (r.x < 0 || r.y < 0 || r.x + r.w > S || r.y + r.h > S) return false;
@@ -900,10 +907,12 @@ function frameLabel(a, f, px, desk, seen) {
   if (!cands.length) return null;
   var room = labelRoom(a), pre = ['guess', 'checking', 'tried', 'reply'].indexOf(a.phase) >= 0, due = pre ? dueMove(a) : null;
   for (var i = 0; i < cands.length; i++) {
-    var c = cands[i];
-    if (wordsIn(c.text) > room) continue;
-    var sz = labelBox(c.text, desk), at = placeLabel(labelGeom(f, px, c, due ? [due.to] : []), sz.w, sz.h);
-    if (at) return { text: c.text, role: c.role, tip: c.tip, mark: c.mark, x: at.x, y: at.y, w: sz.w, h: sz.h };
+    var c = cands[i], texts = c.alt ? [c.text, c.alt] : [c.text];
+    for (var j = 0; j < texts.length; j++) {
+      if (wordsIn(texts[j]) > room) continue;
+      var sz = labelBox(texts[j], desk), at = placeLabel(labelGeom(f, px, c, due ? [due.to] : []), sz.w, sz.h);
+      if (at) return { text: texts[j], role: c.role, tip: c.tip, mark: c.mark, x: at.x, y: at.y, w: sz.w, h: sz.h };
+    }
   }
   return null;
 }
@@ -958,8 +967,7 @@ function paintLabels(a, f) {
 function s0Marks(a, st) {
   var out = { ghosts: [], rings: [], arrows: [], tokens: [] }, c = a.cls, pl = a.played, mm = a.markMove;
   var line = !!(a.sol && a.solIdx > 1);
-  if (pl && !(mm && mm.to === pl.to) && (!line || !st.b[pl.to]))
-    out.ghosts.push({ sq: pl.to, p: a.pre.b[pl.from], fx: a.key + ':s0' });
+  if (pl && !(mm && mm.to === pl.to) && (!line || !st.b[pl.to])) out.ghosts = gameGhosts(a, a.key + ':s0');
   var th = familyOf(patternOf(a.it.b)).key !== 'chances' ? threatOf(c.gameLine, 1) : null;
   if (th && st.b[th.from] && st.b[th.from] === c.gameLine.nodes[1].before.b[th.from] && s0ThreatHolds(a, st, th)) {
     out.rings.push({ sq: th.from, kind: 'threat' });
@@ -967,6 +975,17 @@ function s0Marks(a, st) {
   }
   if (line) (a.won || []).slice(-2).forEach(function (w) { out.tokens.push({ sq: w.sq, p: w.p, kind: 'won', fx: a.key + ':s0', s0: true }); });
   if (line && out.tokens.length) out.lineTakes = lineTakes(a);
+  return out;
+}
+/* the game move's ghost: its piece where it went, with the cross; a
+   castling game move shows the rook it moved too, where it went, with no
+   cross of its own (C10) */
+function gameGhosts(a, fx) {
+  var pl = a.played, out = [{ sq: pl.to, p: a.pre.b[pl.from], fx: fx }];
+  if (pl.castle) {
+    var base = pl.to < 8 ? 0 : 56, short_ = pl.castle === 'O-O';
+    out.push({ sq: base + (short_ ? 5 : 3), p: a.pre.b[base + (short_ ? 7 : 0)], fx: fx, rook: true });
+  }
   return out;
 }
 /* what a forcing line changed hands up to the board on screen: {won,
@@ -1022,7 +1041,7 @@ function storyMarks(a, S, i) {
     out.tints = [{ sq: n.move.from, kind: bk }, { sq: n.move.to, kind: bk }];
     out.badges = [{ sq: n.move.to, kind: bk, fx: fx }];
     if (S.guard) out.guards = [{ from: S.guard.from, to: S.guard.to }];
-    else if (s.from === 1 && a.played.to !== n.move.to) out.ghosts = [{ sq: a.played.to, p: a.pre.b[a.played.from], fx: fx }];
+    else if (s.from === 1 && a.played.to !== n.move.to) out.ghosts = gameGhosts(a, fx);
   }
   return out;
 }
@@ -1211,7 +1230,8 @@ function displayFor(a) {
    nothing, nor during a forcing reply but for its own button); any other
    control focused (foc.other): Enter presses that, so the line names no
    Enter. ? while a hint is left to give (over a try too: the try goes
-   first); → opens See why from the settled result; ← → step the story (and
+   first); → plays See it on a wrong try, and opens See why from the
+   settled result; ← → step the story (and
    Space steps it forward) or the exploration, where ← on its first move
    goes back to the lesson, as Esc does; Esc takes back a move being checked */
 function keyLine(a, slots, foc) {
@@ -1227,7 +1247,10 @@ function keyLine(a, slots, foc) {
     k.push('Esc: back');
   } else if (a.phase === 'done') {
     if (has('seeWhy')) k.push('→ see why');
-  } else if ((a.phase === 'guess' || a.phase === 'tried' || (a.phase === 'checking' && !a.checkSaid)) && a.hints < 2) k.push('? hint');
+  } else {
+    if (a.phase === 'tried' && has('seeIt')) k.push('→ see it');
+    if ((a.phase === 'guess' || a.phase === 'tried' || (a.phase === 'checking' && !a.checkSaid)) && a.hints < 2) k.push('? hint');
+  }
   if (a.phase === 'checking') k.push('Esc: take back');
   return k.join(' · ');
 }
@@ -1610,7 +1633,7 @@ function menuHtml(a) {
        not while a shown line's reply is on its way, when a tap is input to
        the reply (S10) */
     + (xpOpen(a) && !a.reply ? '<a data-act="explore" data-k="menu">Try your own moves</a>' : '')
-    + '<span class="menu-keys">Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>'
+    + '<span class="menu-keys">↑ ↓: this menu · Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>'
     + '</div>';
 }
 function ctxHtml(a) {
@@ -1641,15 +1664,48 @@ function stripHtml(a, ss) {
     /* empty before an answer (2.0): the game's context is in Details. The
        typed-move field sits here, off screen until it has the keyboard; a
        move typed over a try takes the try back first */
-    if (a.phase === 'guess' || a.phase === 'tried')
-      return '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. ' + (a.lines && a.lines.best.san[0] === 'Nf3' ? 'Bc4 or f1c4' : 'Nf3 or g1f3') + '" aria-label="Type your move"></label>';
+    if (a.phase === 'guess' || a.phase === 'tried') {
+      var ex = typedExample(a.st, cardAvoid(a));
+      return '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false"' + (ex ? ' placeholder="e.g. ' + esc(ex) + '"' : '') + ' aria-label="Type your move"></label>';
+    }
     return '';
   }
   if (a.explore) return xpHtml(a);
   if (a.view.mode === 'story') return storyStripHtml(a);
+  /* the first card ever queued to come back says so, once (C1) */
+  var tip = retryTipOn(a) ? '<p class="story-note retry-tip">' + RETRY_TIP + '</p>' : '';
   /* settled (S0): one link to everything else (S13) */
-  return a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="btn-quiet details-link" data-act="details">Details</a></p>' : '';
+  return tip + (a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="btn-quiet details-link" data-act="details">Details</a></p>' : '');
 }
+/* the bar grows by a segment when a card is queued to come back (S16):
+   on the first card ever queued (nl:tip:retry, on this device) the strip
+   says why, on its answer shown and its settled result, where the words on
+   screen leave it room (read on the settled frame, so it never comes and
+   goes within one); it gives way to the band's own words, and is not said
+   again on a later card */
+var RETRY_TIP = 'This one comes back later.';
+function retryTipOn(a) {
+  if (!a.retryTip || a.phase !== 'done' || a.explore || !a.view || (a.view.mode !== 's0' && a.view.mode !== 'show')) return false;
+  var v = Object.create(a), ss = ui.session;
+  if (a.view.mode === 's0') v.settle = 2;
+  return bandWords(bandFor(v), ss ? barSlots(v, ss) : []) + stripWords(v) + wordsIn(RETRY_TIP) <= WORD_BUDGET;
+}
+/* an example for the typed-move field (I5): a legal move of the position
+   in both forms ("Nc3 or b1c3"), never one in avoid (the answer due, the
+   game move: 2.3), a quiet piece move where there is one, else any legal
+   move; '' with none */
+function typedExample(st, avoid) {
+  var rank = function (m) {
+    var t = pType(st.b[m.from]), loud = st.b[m.to] || m.ep >= 0 || m.promo || m.castle;
+    return (loud ? 10 : 0) + ({ N: 0, B: 1, R: 2, Q: 3, P: 4, K: 5 }[t] || 6);
+  };
+  var ms = legalMoves(st).filter(function (m) { return (avoid || []).indexOf(moveUci(m)) < 0; });
+  ms.sort(function (x, y) { return rank(x) - rank(y) || x.from - y.from || x.to - y.to; });
+  return ms[0] ? sanOf(st, ms[0]).replace(/[+#]$/, '') + ' or ' + moveUci(ms[0]) : '';
+}
+/* the moves an example must never be on a card still asking: the answer
+   due (every move of a forcing line), the best move and the game move */
+function cardAvoid(a) { return [a.bestUci, a.playedUci].concat(a.sol || []).filter(Boolean); }
 /* the story's strip (S12): "Game ●●● Better ●", a dot per step, the one on
    screen larger with a ring; each name opens its segment's first step. Over
    9 dots it folds to "Game 2/5 · Better". An alternative's segment is

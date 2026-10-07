@@ -409,8 +409,9 @@ function importProgress() {
    starts the reply, or is dropped), except these, which are neither board
    nor flow: Continue in a line shown (S7: it ends the card at any point),
    × and the menu's ways off the card (the reply is simply left behind),
-   ••• and Details (the reply runs on underneath) */
-var REPLY_FREE = /^(next|endSession|skip|dispute|menu|details)$/;
+   ••• and Details (the reply runs on underneath), and the Undo of a card
+   just removed (it brings that card back) */
+var REPLY_FREE = /^(next|endSession|skip|dispute|undoDispute|menu|details)$/;
 /* the ••• menu opens or closes. During the forcing reply it is words like
    any other: drawn at once, or 150 ms after a piece that is moving lands,
    and the board is left alone */
@@ -522,6 +523,7 @@ document.addEventListener('click', function (e) {
     case 'promo': promoChoose(k); break;
     case 'menu': if (a) { setMenu(a, !a.menuOpen); var mb0 = document.querySelector('#ctop [data-act="menu"]'); if (mb0) mb0.focus({ preventScroll: true }); } break;
     case 'dispute': disputeCard(k); break;
+    case 'undoDispute': { var nt = t.closest && t.closest('.notice'); if (nt) nt.remove(); undoDispute(); break; }
     /* the story (S12): one ply per tap; its strip's names open a segment */
     case 'storyBack': storyStep(-1); break;
     case 'storyFwd': storyStep(1); break;
@@ -644,6 +646,8 @@ document.addEventListener('keydown', function (e) {
   }
   var a = ui.session && ui.session.active;
   if (!a || ui.sheet) return;
+  /* the menu open: ↑ ↓ walk its items (the board is not touched) */
+  if (a.menuOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); menuArrow(e.key === 'ArrowDown' ? 1 : -1); return; }
   /* a handled key is input: whatever was staged catches up first (while
      the forcing reply slides, the key is dropped) */
   if (/^(ArrowLeft|ArrowRight|Enter| |\?)$/.test(e.key) && flushStage()) { e.preventDefault(); return; }
@@ -665,6 +669,8 @@ document.addEventListener('keydown', function (e) {
        guard of the slot they stand for */
     if (e.key === '?') { e.preventDefault(); if (!slotGuarded(slotOfAct('hint'))) giveHint(); }
     else if (e.key === 'Enter' && !onAct) { e.preventDefault(); pressRight(); }
+    /* → plays their reply to a wrong try (See it), as its button does */
+    else if (e.key === 'ArrowRight' && a.phase === 'tried') { e.preventDefault(); pressAct('seeIt'); }
   } else if (a.phase === 'reply' && e.key === 'Enter' && !onAct) {
     /* under reduced motion the forcing reply waits for its button, the
        right-hand one (otherwise the key started the reply and was dropped) */
@@ -681,6 +687,20 @@ document.addEventListener('keydown', function (e) {
 function pressRight() {
   var bar = el('cbar'), b = bar && bar.querySelector('[data-slot="' + rightSlot() + '"][data-act]');
   if (b) b.click();
+}
+/* a bar button pressed by its key (→ for See it), the same way */
+function pressAct(act) {
+  var i = slotOfAct(act), bar = el('cbar'), b = i >= 0 && bar && bar.querySelector('[data-slot="' + i + '"][data-act="' + act + '"]');
+  if (b) b.click();
+}
+/* ↑ ↓ move through the open ••• menu's items, round from either end */
+function menuArrow(d) {
+  var items = [].slice.call(document.querySelectorAll('#ctop .menu-pop a'));
+  if (!items.length) return false;
+  var at = items.indexOf(document.activeElement);
+  var to = at < 0 ? (d > 0 ? 0 : items.length - 1) : (at + d + items.length) % items.length;
+  items[to].focus({ preventScroll: true });
+  return true;
 }
 /* reduced motion: every slide, fade and crossfade takes 0 ms (in Node
    tests, ui.reducedTest says so) */
@@ -701,7 +721,7 @@ function typedMove(txt) {
   if (!m && big && !/^b([1-8]|x)/.test(t)) m = sanToMove(st, big);
   if (!m && t) m = sanToMove(st, t);
   if (!m && big) m = sanToMove(st, big);
-  if (!m) { notice('That move is not legal here. Try a move like Nf3, exd5, O-O or g1f3.'); return; }
+  if (!m) { var eg = typedExample(st, xp ? [] : cardAvoid(a)); notice('That move is not legal here.' + (eg ? ' Try one like ' + eg + '.' : '')); return; }
   if (xp) { explorePlay(m, false); var kb = el('kbmove'); if (kb) { kb.value = ''; kb.focus(); } }
   else { if (a.phase === 'tried') clearTry(a); gradeMove(m); }
 }
@@ -786,21 +806,23 @@ document.addEventListener('pointerdown', function (e) {
      flag would eat this press's click. Cleared before every early return */
   pointerState.suppressClick = false;
   /* input first: a running slide ends and the board catches up. While the
-     forcing reply slides the press is dropped, and the click it makes too */
-  if (flushStage()) { pointerState.held = true; return; }
+     forcing reply is on its way the press moves nothing (one on a piece of
+     yours is kept for its landing, replyTap), and the click it makes is
+     dropped too */
+  if (flushStage(true)) { replyTap(a, sq); pointerState.held = true; return; }
   if (e.button === 2) { pointerState.rightFrom = sq; return; }
   var bs = boardState(a), took = false;
   /* a move on the board, being checked or tried: a press on the moved piece
-     (on a try, any of yours) takes it back at once, picked up, and the
-     press (a tap or a drag) goes on from the real position. Anything else
-     is answered by the click this press makes (sessionClick) */
+     takes it back at once with nothing picked up, and the click this press
+     makes is not a tap on the card's position (I1, and S3 alike); on a try
+     a press on another piece of yours takes it back with that piece picked
+     up, and the press (a tap or a drag) goes on from the real position.
+     Anything else is answered by the click this press makes (sessionClick) */
   if (e.button === 0 && !a.pendingPromo && (bs.checking || bs.tried)) {
     var pick = bs.checking ? checkingPick(a, sq) : triedPick(a, sq);
-    /* the tried piece itself: the try goes and nothing is picked up, and the
-       click this press makes is not a tap on the card's position (I1) */
-    if (pick === TRY_ONLY) { tryAgain(); pointerState.held = true; return; }
+    if (pick === TRY_ONLY || (bs.checking && pick >= 0)) { if (bs.checking) takeBack(); else tryAgain(); pointerState.held = true; return; }
     if (pick < 0) return;
-    if (bs.checking) takeBack(pick); else tryAgain(pick);
+    tryAgain(pick);
     bs = boardState(a);
     sq = pick;
     took = true;

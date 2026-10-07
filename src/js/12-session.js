@@ -250,7 +250,10 @@ function startSession(mode, keys, label, spec, opts) {
   }
   var d0 = dayLoad(), carried = d0.carry || 0;
   if (carried) { d0.carry = 0; daySave(d0); }
+  /* one position opened from a summary goes back to that summary (I8) */
+  var from = spec && spec.type === 'one' && ui.session && ui.session.finished ? ui.session : null;
   ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, carried: carried };
+  if (from) ui.session.from = from;
   if (opts && opts.firstTime) ui.session.firstTime = true;
   data.freshOnboard = false;
   saveSession();
@@ -304,6 +307,16 @@ function resumeSession() {
    counts match the dots */
 function sessionDoneCount(s) { return Object.keys(s.results || {}).length; }
 function sessionTotal(s) { return s.keys.length + (s.relearn || []).length; }
+/* the same counts in words (C1): the positions the session started with,
+   and apart from them the ones coming back for another try, so the count
+   never seems to grow: "3 of 5 done, 2 to try again." */
+function countsWords(s) {
+  var seen = {}, first = 0, again = (s.relearn || []).length, done = 0, againDone = 0;
+  s.keys.forEach(function (k) { if (seen[k]) again++; else { seen[k] = 1; first++; } });
+  Object.keys(s.results || {}).forEach(function (k) { if (/#r$/.test(k)) againDone++; else done++; });
+  var left = Math.max(0, again - againDone);
+  return Math.min(done, first) + ' of ' + first + ' done' + (left ? ', ' + left + ' to try again' : '') + '.';
+}
 function specFilter(spec) {
   return function (it) {
     var t = patternOf(it.b);
@@ -369,6 +382,8 @@ function finishSession() {
     track('week_goal_met');
   }
   store.del(sessKey());
+  /* one position opened from a summary: back to that summary */
+  if (ss.from) ui.session = ss.from;
   /* progress now matters: ask the browser not to clear this site's storage */
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {}); } catch (e) {}
   snd('set');
@@ -386,12 +401,26 @@ function endSession(fromPop) {
   var ss = ui.session;
   if (!ss) return;
   if (ss.active && ss.active.explore) exploreExit('silent');
-  var open = ss.active, done = sessionDoneCount(ss), total = sessionTotal(ss);
+  var open = ss.active, done = sessionDoneCount(ss);
   /* a move still being checked counts as a try that did not land */
   if (open && open.phase === 'checking') { open.checkTok = ++checkSeq; open.phase = 'guess'; open.attempts = Math.max(open.attempts || 0, 1); }
   engineStop('check');
   stageReset();
   clearLive();
+  /* one position opened from a summary: × goes back to that summary, the
+     position graded as a card left is (a miss counts), never paused */
+  if (ss.from && !ss.finished) {
+    if (open && open.phase !== 'done' && (open.misses || open.hints || open.attempts)) settleLeft(open);
+    store.del(sessKey());
+    ui.session = ss.from;
+    pushSessionState();
+    renderViews();
+    renderTrain();
+    window.scrollTo(0, 0);
+    var rh0 = el('recap-h');
+    if (rh0) rh0.focus({ preventScroll: true });
+    return;
+  }
   if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints || open.attempts)) keepProgress(open);
   var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints || open.attempts)));
   if (keep) saveSession(); else store.del(sessKey());
@@ -400,7 +429,7 @@ function endSession(fromPop) {
   renderViews();
   renderTrain();
   window.scrollTo(0, 0);
-  if (keep) notice('Session paused. ' + done + ' of ' + total + ' done.', { act: 'resume', label: 'Resume' });
+  if (keep) notice('Session paused. ' + countsWords(ss), { act: 'resume', label: 'Resume' });
   makeFocusable(el('trainbox'));
   var st = document.querySelector('#trainbox .hero .btn-big, #trainbox .hero [data-act]');
   if (st) st.focus({ preventScroll: true });

@@ -399,6 +399,92 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
     ok(r1.some((r) => r.words === 'even game'), JSON.stringify(r1.map((r) => r.words)));
   });
 
+  /* ── final build round D ── */
+  /* a made-up exploration on fen: the move x played (by you or not), the parent's lines and the child's, then
+     what the sentence says at that node (and, with pick, one more node: Stockfish's pick after it) */
+  const XP = (A, fen, x, parent, child, o) => JSON.parse(A.ev(`(function () {
+    var a = ui.session.active, st = stateFromFen('${fen}'), o = ${JSON.stringify(o || {})};
+    a.explore = { root: { line: 'best', idx: -1 }, nodes: [xpNode(st, null, null)], at: 0, sel: -1, res: {}, hot: 0, k: 3, say: {}, flash: null };
+    var ex = a.explore, P = ex.nodes[0], m = uciToMove(st, '${x}'), c = cloneState(st); applyMove(c, m);
+    ex.nodes.push(xpNode(c, [m.from, m.to], { san: sanOf(st, m), uci: '${x}', byYou: o.byYou !== false, pick: false, ply: xpPly(st) }));
+    ex.at = 1;
+    ex.res[P.key] = { step: 2, lines: ${JSON.stringify(parent)} };
+    ex.res[ex.nodes[1].key] = { step: 2, lines: ${JSON.stringify(child)} };
+    var out = { say1: sayAt(a, ex, 1), v: xpVerdict(a, ex, 1) };
+    if (o.pick) {
+      var C = ex.nodes[1], pm = uciToMove(C.st, o.pick), d = cloneState(C.st); applyMove(d, pm);
+      ex.nodes.push(xpNode(d, [pm.from, pm.to], { san: sanOf(C.st, pm), uci: o.pick, byYou: false, pick: true, ply: xpPly(C.st) }));
+      ex.at = 2;
+      out.pickSan = sanOf(C.st, pm);
+      out.say2 = sayAt(a, ex, 2);
+      ex.res[ex.nodes[2].key] = { step: 2, lines: [o.pickLine] };
+      out.say2b = sayAt(a, ex, 2);
+    }
+    return JSON.stringify(out);
+  })()`));
+
+  await test('round D, T6: exploring claims material only as the card face counts it: where the line settles, in line with the score, in the captures\' own words', () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    const claim = (fen, ucis, cp) => JSON.parse(A.ev(`JSON.stringify(xpClaim(stateFromFen('${fen}'), ${JSON.stringify(ucis)}, ${cp}))`));
+    eq(JSON.stringify(claim('4k3/8/8/3n4/8/8/8/3QK3 w - - 0 1', ['d1d5', 'e8e7', 'e1e2'], 850)), '{"n":3,"w":"the knight"}', 'a knight won and kept');
+    eq(claim('4k3/8/2p5/3n4/8/8/8/3QK3 w - - 0 1', ['d1d5', 'c6d5'], -600), null, 'a line that ends on their capture counts nothing');
+    eq(claim('4k3/8/8/3n4/8/8/8/3QK3 w - - 0 1', ['d1d5', 'e8e7', 'e1e2'], 300), null, 'a count far past the score is a line cut short');
+    eq(JSON.stringify(claim('8/8/1k3Kn1/5p2/8/8/8/8 w - - 0 62', ['f6f5', 'g6f8', 'f5f6', 'b6c5', 'f6e7'], 0)), '{"n":1,"w":"the pawn"}', 'Kxf5 wins the pawn');
+    /* 184425961982:122's shape: the knight taken only on the line's last ply is not won */
+    eq(claim('8/8/1k3Kn1/5p2/8/8/8/8 w - - 0 62', ['f6f5', 'b6c5', 'f5g6'], 0), null, 'never "a knight and a pawn" on a line still in motion');
+    /* the sentence: Stockfish's pick says what its line wins, counted the same way */
+    const pick = XP(A, '8/8/1k3Kn1/5p2/8/8/8/8 w - - 0 62', 'f6f5', [{ cp: 0, mate: null, pv: ['f6f5', 'b6c5', 'f5g6'] }], [{ cp: 0, mate: null, pv: ['b6c5', 'f5g6'] }]);
+    ok(/^Kxf5 is Stockfish's pick\.$/.test(pick.v.text), 'no count on the pick: ' + pick.v.text);
+    const pick2 = XP(A, '8/8/1k3Kn1/5p2/8/8/8/8 w - - 0 62', 'f6f5', [{ cp: 0, mate: null, pv: ['f6f5', 'g6f8', 'f5f6'] }], [{ cp: 0, mate: null, pv: ['g6f8', 'f5f6', 'b6c5', 'f6e7'] }]);
+    eq(pick2.v.text, 'Kxf5 is Stockfish\'s pick. It wins the pawn.', 'the pawn it wins');
+    /* the classifier's own counts leave its sentences; the better move's gain is said as counted */
+    eq(A.ev(`xpBare('Qh3 ignores Black\\'s threat: cxd3+ takes your bishop. You lose a queen and a bishop.', { t: 'threat' }, null)`), 'Qh3 ignores Black\'s threat: cxd3+ takes your bishop.', 'the count goes');
+    eq(A.ev(`xpBare('Nf3 walks into a pin: you lose the knight.', { t: 'pinAllowed' }, null)`), 'Nf3 walks into a pin.', 'the count of a pin goes');
+    eq(A.ev(`xpBare('Qg4 loses the queen after Bxg4.', { t: 'material' }, null)`), null, 'a sentence that is only a count goes');
+    eq(A.ev(`xpBestSaid('Kxf5 wins a knight and a pawn.', 'Kxf5', { n: 1, w: 'the pawn' })`), 'Kxf5 wins the pawn.', 'the gain as counted');
+    eq(A.ev(`xpBestSaid('Kxf5 wins a knight and a pawn.', 'Kxf5', null)`), 'Best was Kxf5.', 'no count, no claim');
+  });
+
+  await test('round D, T11: the sentence is always about the move on the board now: after Stockfish\'s pick, the pick (or that it is thinking), never the move before it', () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    const r = XP(A, 'r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3', 'a2a3',
+      [{ cp: 40, mate: null, pv: ['f1b5', 'a7a6'] }, { cp: -60, mate: null, pv: ['a2a3', 'g8f6'] }], [{ cp: 60, mate: null, pv: ['g8f6', 'b1c3'] }],
+      { pick: 'g8f6', pickLine: { cp: -60, mate: null, pv: ['b1c3', 'f8b4'] } });
+    ok(r.say1.indexOf('a3 ') === 0, 'the move: ' + r.say1);
+    eq(r.say2, r.pickSan + '. Stockfish is thinking…', 'the pick before its search');
+    ok(r.say2b.indexOf(r.pickSan + ' is Stockfish\'s pick') === 0, 'the pick once searched: ' + r.say2b);
+    ok(r.say2b.indexOf('a3') < 0 && r.say2.indexOf('a3') < 0, 'never the move before it');
+  });
+
+  await test('round D, T13: a dead draw reads "a draw" on the rows, never a percentage or "even game"', async () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    const dd = JSON.parse(A.ev(`JSON.stringify(['8/8/1k6/8/8/8/8/6K1 w - - 0 1', '8/8/1k4n1/8/8/8/8/6K1 w - - 0 1', '8/8/1k2b3/8/8/2B5/8/6K1 w - - 0 1', '8/8/1k1b4/8/8/2B5/8/6K1 w - - 0 1', '8/8/1k4n1/5p2/8/8/8/6K1 w - - 0 1', '8/8/1kn3n1/8/8/8/8/6K1 w - - 0 1'].map(function (f) { return deadDraw(stateFromFen(f)); }))`));
+    eq(JSON.stringify(dd), '[true,true,false,true,false,false]', 'kings alone, one minor, bishops on one colour (d6, c3); not opposite bishops (e6, c3), a pawn, two knights');
+    const st = '8/8/1k3Kn1/5p2/8/8/8/8 w - - 0 62';
+    const drawn = JSON.parse(A.ev(`JSON.stringify([xpDrawn(stateFromFen('${st}'), { cp: 0, mate: null, pv: ['f6f5', 'g6f8', 'f5f6'] }), xpDrawn(stateFromFen('${st}'), { cp: -400, mate: null, pv: ['f6g5', 'f5f4'] }),
+      xpDrawn(stateFromFen('r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3'), { cp: 0, mate: null, pv: ['g1f3'] }), xpDrawn(stateFromFen('r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3'), { cp: 0, mate: null, pv: ['f3g1', 'c6b8', 'g1f3', 'b8c6'] })])`));
+    eq(JSON.stringify(drawn), '[true,false,false,true]', 'the pawn falls: a draw; a lost line is not; a level opening is not; 0.00 on a repetition is');
+    for (const tier of [1, 2]) {
+      const rows = JSON.parse(A.ev(`(function () { var a = ui.session.active, s0 = stateFromFen('${st}');
+        a.tier = ${tier};
+        a.explore = { root: { line: 'best', idx: -1 }, nodes: [xpNode(s0, null, null)], at: 0, sel: -1, res: {}, hot: 0, k: 3, say: {}, flash: null };
+        a.explore.res[a.explore.nodes[0].key] = { step: 2, lines: [{ cp: 0, mate: null, pv: ['f6f5', 'g6f8', 'f5f6'] }, { cp: -1500, mate: -16, pv: ['f6g5', 'f5f4'] }] };
+        return JSON.stringify(xpRows(a, a.explore)); })()`));
+      if (tier === 1) eq(rows[0].words, 'a draw', 'tier 1: ' + JSON.stringify(rows[0]));
+      else { eq(rows[0].chip, 'A draw', 'tier 2: ' + JSON.stringify(rows[0])); ok(/A draw\.$/.test(rows[0].label), rows[0].label); ok(/mate in/.test(rows[1].chip), rows[1].chip); }
+    }
+  });
+
+  await test('round D, T9: a small drop with a clear edge kept reads as small ("keeps most of your advantage"), as the card\'s "That works too" does', () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    const fen = '6k1/5pp1/7p/8/8/8/5PPP/R5K1 w - - 0 1';
+    const r = XP(A, fen, 'h2h3', [{ cp: 600, mate: null, pv: ['a1a7', 'g8h7'] }, { cp: 400, mate: null, pv: ['h2h3', 'g8h7'] }], [{ cp: 400, mate: null, pv: ['g8h7', 'a1a7'] }]);
+    eq(r.v.text, 'h3 keeps most of your advantage. Ra7 keeps more.', 'a small drop: ' + r.v.text);
+    ok(!/gives back/.test(r.v.text), 'never "gives back much of your advantage"');
+    const b = XP(A, fen, 'h2h3', [{ cp: 600, mate: null, pv: ['a1a7', 'g8h7'] }, { cp: 100, mate: null, pv: ['h2h3', 'g8h7'] }], [{ cp: 100, mate: null, pv: ['g8h7', 'a1a7'] }]);
+    ok(!/keeps most/.test(b.v.text), 'a drop to an unclear game is not small: ' + b.v.text);
+  });
+
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'exploring: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));
   process.exit(failed ? 1 : 0);

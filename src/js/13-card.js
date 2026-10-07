@@ -175,16 +175,20 @@ function prefetchCards(ss) {
 
 /* ── moves on the board ──────────────────────────────────────────────────── */
 function sessionClick(sq) {
-  /* input first; dropped while the forcing reply slides */
-  if (flushStage()) return;
+  /* input first; while the forcing reply is on its way a tap moves
+     nothing, and one on a piece of yours is kept for its landing */
+  if (flushStage(true)) { replyTap(ui.session && ui.session.active, sq); return; }
   var ss = ui.session, a = ss && ss.active;
   if (!a || a.pendingPromo) return;
+  /* under reduced motion the reply waits for its button: the same */
+  if (a.reply && !a.explore && (a.phase === 'reply' || a.phase === 'done')) { replyTap(a, sq); return; }
   if (a.phase === 'checking') {
-    /* a move being checked: a tap on it takes it back (S3); a piece of
-       theirs says which side you are (T4, under the check's own row 1); any
-       other piece of yours only says this is not a move here */
+    /* a move being checked: a tap on it takes it back (S3) with nothing
+       picked up, as a tap on a try does (I1); a piece of theirs says which
+       side you are (T4, under the check's own row 1); any other piece of
+       yours only says this is not a move here */
     var back = checkingPick(a, sq), cp = checkingFrame(a).b[sq];
-    if (back >= 0) takeBack(back);
+    if (back >= 0) takeBack();
     else if (cp && isW(cp) !== a.st.w) tapNote(a, 'T4', 2500, sq);
     else if (cp) nopeAt(a, sq);
     return;
@@ -343,6 +347,7 @@ function stepLine(m, u) {
    forcing line being solved or shown (show: after Play it). a.reply:
    {uci, from, to, show, tele (its telegraph is drawn), played} */
 function startReply(a, m, show) {
+  a.replyQ = null;
   a.reply = { uci: moveUci(m), from: m.from, to: m.to, show: !!show, tele: reducedMotion(), played: false };
 }
 /* its timeline, from t0, when the move before it lands (landIn ms from
@@ -414,8 +419,33 @@ function theirReply(a, early) {
   a.replySlide = true;
   a.moveCue = true;
   var fade = rp.show && !early && !rm ? ['fade', TEXT_OUT] : [];
-  stage(fade.concat(['board', 'land', rm ? 300 : TEXT_GAP, { run: function (a2) { replyDone(a2, rp); } }, 'text']));
+  stage(fade.concat(['board', 'land', { run: function (a2) { replyLanded(a2, rp); } }, rm ? 300 : TEXT_GAP, { run: function (a2) { replyDone(a2, rp); } }, 'text']));
   return true;
+}
+/* a tap while the forcing reply is on its way (I4) moves nothing and never
+   hurries the slide: one on a piece of yours is kept (a second tap on it
+   lets it go) and picks that piece up as the reply lands (replyLanded); any
+   other tap is dropped, so no move is ever made from a piece the player did
+   not see picked up */
+function replyTap(a, sq) {
+  if (!a || !a.reply || a.explore || sq == null || sq < 0) return;
+  var p = a.st.b[sq];
+  if (!p || isW(p) !== myPov(a.it)) return;
+  a.replyQ = a.replyQ && a.replyQ.sq === sq ? null : { sq: sq, p: p };
+}
+/* the reply has landed: the piece tapped during it is picked up, drawn at
+   once, if it still stands there and has a move to make (in a line shown,
+   only the answer's own piece); from here the board takes input again
+   (flushStage), the words still 150 ms later */
+function replyLanded(a, rp) {
+  var q = a.replyQ;
+  a.replyQ = null;
+  if (!q || a.reply !== rp || a.st.b[q.sq] !== q.p || !!a.st.w !== myPov(a.it)) return;
+  var due = rp.show && a.sol && a.sol[a.solIdx] ? uciToMove(a.st, a.sol[a.solIdx]) : null;
+  if (rp.show ? !(due && due.from === q.sq) : !legalMoves(a.st).some(function (m) { return m.from === q.sq; })) return;
+  a.sel = q.sq;
+  snd('tap');
+  paintBoard(a, true);
 }
 /* the reply's words are due (2050): the card asks for your next move (a
    shown line offers Play it again) */
@@ -580,7 +610,7 @@ function checkingFrame(a) {
   return st;
 }
 /* while a move is checked only that move answers a tap: the moved piece (a
-   castled rook too) maps to where it came from; -1 for anything else */
+   castled rook too), as where it came from; -1 for anything else */
 function checkingPick(a, sq) {
   var m = checkingMove(a);
   if (!m) return -1;
@@ -618,8 +648,10 @@ function holdMarks(a) {
   a.triedHold = hold;
 }
 /* Take back (S3): the move being checked leaves the board, ungraded. The
-   search stops and its answer is ignored (a new token), the attempt is
-   undone, and a tap on the moved piece picks it up from where it came */
+   search stops and its answer is ignored (a new token) and the attempt is
+   undone. A tap on the moved piece takes it back with nothing picked up:
+   picking it up on its old square would play from a board the player was
+   not looking at (as a tap on a try, I1) */
 function takeBack(sel) {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'checking') return;
@@ -685,6 +717,7 @@ function checkMove(m, u, inLine) {
   a.phase = 'checking';
   a.ghostMove = [m.from, m.to];
   a.checking = sanOf(a.st, m);
+  a.checkingW = moveWords(a.st, m);
   a.checkSaid = 0;
   /* the checking frame draws the move: it slides there, once */
   a.animMove = a.tapAnim; a.tapAnim = null;
@@ -1107,6 +1140,8 @@ function finishCard(result, beats) {
       ss.relearn = ss.relearn || [];
       ss.relearn.push(a.key);
       a.relearnQueued = true;
+      /* the first card ever queued says so, in the strip (C1) */
+      if (!store.get('nl:tip:retry', 0)) { a.retryTip = true; store.set('nl:tip:retry', 1); }
     }
   } else {
     a.rec = srsRec(a.it);
@@ -1184,17 +1219,72 @@ function skipCard() {
   settleLeft(a);
   nextCard();
 }
-/* "not a real mistake": the card leaves the queue and the statistics */
+/* "not a real mistake": the card leaves the queue and the statistics, and
+   this session too: its segment goes from the bar (it never reads as done),
+   a showing still to come goes with it, and the next card takes its place.
+   The toast's Undo (undoDispute) puts it all back */
+var lastDispute = null;
 function disputeCard(reason) {
   var ss = ui.session, a = ss && ss.active;
   if (!a) return;
+  if (a.explore) exploreExit('silent');
+  var key = a.key, rk = key + (ss_relearn(a) ? '#r' : ''), map = srsLoad(), copy = function (o) { return JSON.parse(JSON.stringify(o || {})); };
+  var snap = { ss: ss, a: a, key: key, x: a.it.b.x || null, rec: map[key] ? copy(map[key]) : null, day: dayLoad(),
+               keys: ss.keys.slice(), idx: ss.idx, relearn: (ss.relearn || []).slice(), relearnOf: copy(ss.relearnOf),
+               results: copy(ss.results), notes: copy(ss.notes), progress: ss.progress && ss.progress[key] ? copy(ss.progress[key]) : null };
   a.it.b.x = 'user:' + reason;
   srsHide(a.it);
   modelDirty();
   saveGames(data.games);
-  notice('Removed. It won\'t come back or count in your stats.');
-  if (a.phase !== 'done') ss.results[a.key + (ss_relearn(a) ? '#r' : '')] = 'skip';
-  nextCard();
+  engineStop('check');
+  stageReset();
+  a.menuOpen = false;
+  ss.keys.splice(ss.idx, 1);
+  ss.relearn = (ss.relearn || []).filter(function (k) { return k !== key; });
+  delete ss.results[rk];
+  if (ss.notes) delete ss.notes[rk];
+  if (ss.progress) delete ss.progress[key];
+  ss.active = null;
+  saveSession();
+  lastDispute = snap;
+  /* nothing left to show and nothing answered: the session simply ends */
+  if (ss.idx >= ss.keys.length && !ss.relearn.length && !Object.keys(ss.results).length) { snap.ended = true; endSession(); }
+  else loadCard();
+  snap.after = disputeSig(ss);
+  notice('Removed. It won\'t come back or count in your stats.', { act: 'undoDispute', label: 'Undo' });
+}
+/* what a session looks like, to tell whether anything happened in it since */
+function disputeSig(ss) { return JSON.stringify([ss.idx, ss.keys, Object.keys(ss.results || {}).sort(), !!ss.finished]); }
+/* Undo: the card is a mistake again (in the stored games and the schedule)
+   and, while nothing else happened in the session since, it is back where
+   it was, with its segment: answered, as it was left; else asked again
+   (its misses and hints kept). A session the removal ended or finished is
+   opened again on it, the day's count as it was before */
+function undoDispute() {
+  var s = lastDispute;
+  lastDispute = null;
+  if (!s) return;
+  var it = s.a.it;
+  if (s.x) it.b.x = s.x; else delete it.b.x;
+  srsRestore(s.key, s.rec);
+  modelDirty();
+  saveGames(data.games);
+  var ss = s.ss, now = ui.session;
+  if (now ? now !== ss || disputeSig(ss) !== s.after : !s.ended) { notice('Put back. It comes back in a later session.'); return; }
+  if (ss.active && ss.active.explore) exploreExit('silent');
+  engineStop('check');
+  stageReset();
+  /* the card that took its place keeps what was tried on it */
+  var cur = ss.active;
+  if (cur && cur.phase !== 'done' && (cur.misses || cur.hints || cur.attempts)) keepProgress(cur);
+  ss.keys = s.keys; ss.idx = s.idx; ss.relearn = s.relearn; ss.relearnOf = s.relearnOf; ss.results = s.results; ss.notes = s.notes;
+  if (s.progress) (ss.progress = ss.progress || {})[s.key] = s.progress;
+  if (ss.finished || s.ended) { ss.finished = false; daySave(s.day); }
+  if (!now) { ui.session = ss; setView('train', false); pushSessionState(); }
+  saveSession();
+  renderHeader();
+  if (s.a.phase === 'done') { ss.active = s.a; renderCard(); }
+  else { ss.active = null; loadCard(); }
 }
 
 /* ── after answering: the frame on screen ───────────────────────────────── */

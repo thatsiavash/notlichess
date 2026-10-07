@@ -301,7 +301,8 @@ function boardSvg(st, opts) {
     if (!st.b[g.sq] && PIECE_ID[g.p])
       ghosts += fxOpen(g, 'mk-fade') + '<use class="ghost-piece" href="#pc-' + PIECE_ID[g.p] + '" x="' + c[0] + '" y="' + c[1]
         + '" width="' + SZ + '" height="' + SZ + '" opacity=".34"/></g>';
-    crosses += fxOpen(g, 'mk-fade') + markCross(c[0] + 37.5, c[1] + 7.5, 6) + '</g>';
+    /* a castled rook's ghost goes with the king's, under its one cross */
+    if (!g.rook) crosses += fxOpen(g, 'mk-fade') + markCross(c[0] + 37.5, c[1] + 7.5, 6) + '</g>';
   });
   out += sqs + tints + (ghosts ? '<g style="pointer-events:none">' + ghosts + '</g>' : '') + pcs + slide + top
     + (crosses ? '<g style="pointer-events:none">' + crosses + '</g>' : '') + '</svg>';
@@ -470,14 +471,13 @@ function notice(msg, action) {
   n.className = 'notice';
   n.setAttribute('role', 'status');
   n.setAttribute('aria-live', 'polite');
-  n.textContent = msg;
+  n.textContent = msg + (action ? ' ' : '');
   /* one action at most, such as Resume or Undo */
   if (action) {
     var b = document.createElement('a');
     b.setAttribute('data-act', action.act);
     b.className = 'notice-act';
     b.textContent = action.label;
-    n.appendChild(document.createTextNode(' '));
     n.appendChild(b);
   }
   var old = box.querySelector('.notice');

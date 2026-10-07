@@ -1267,7 +1267,7 @@ const BAR = `(function () {
         shown: function () { window.__show(c1); reveal(); },
         exploring: function () { window.readyEngine(); settled(); startExplore({}); }
       };`;
-    const SIG = 'JSON.stringify((function (a) { return a ? [a.key, a.phase, a.view && a.view.mode, a.view && a.view.i, a.explore ? a.explore.at : -1, a.hints, a.result || null, a.tried && a.tried.kind, a.sel] : null; })(ui.session && ui.session.active))';
+    const SIG = 'JSON.stringify((function (a) { return a ? [a.key, a.phase, a.view && a.view.mode, a.view && a.view.i, a.explore ? a.explore.at : -1, a.hints, a.result || null, a.tried && a.tried.kind, a.tried && a.tried.seen, a.sel] : null; })(ui.session && ui.session.active))';
     const keyOf = { Enter: /^Enter: /, '?': /(^| )\? hint/, ArrowRight: /→/, ArrowLeft: /←/, Escape: /Esc/, ' ': /Space/ };
     const out = [], lines = {};
     for (const st of ['open', 'hint2', 'miss', 'close', 'checkingEarly', 'checking', 'settled', 'story', 'storyEnd', 'shown', 'exploring']) {
@@ -1297,7 +1297,7 @@ const BAR = `(function () {
     eq(out.length, 0, out.join(' | '));
     eq(lines.open, 'Enter: Show the answer · ? hint', 'the card asking');
     eq(lines.hint2, 'Enter: Show the answer', 'no hint left');
-    eq(lines.miss, 'Enter: Try again · ? hint', 'a miss');
+    eq(lines.miss, 'Enter: Try again · → see it · ? hint', 'a miss: → plays See it (round D)');
     eq(lines.close, 'Enter: Keep looking · ? hint', 'a close move');
     eq(lines.checking, 'Esc: take back', 'a move being checked');
     eq(lines.checkingEarly, '? hint · Esc: take back', 'a move being checked, before the band says so');
@@ -1583,7 +1583,7 @@ const BAR = `(function () {
     ok(r.n >= 8, 'castling tries ' + r.n);
     eq(r.out.length, 0, r.out.join(' | '));
     /* the same while a castling move is being checked: a tap on the king or
-       the rook takes it back, that piece picked up from where it came */
+       the rook takes it back with nothing picked up (round D, as I1) */
     const c = JSON.parse(A.ev(`(function () { ${OPEN}
       var out = [], n = 0;
       window.readyEngine(); window.__holdTry = true;
@@ -1598,7 +1598,7 @@ const BAR = `(function () {
             if (a.phase !== 'checking') { out.push(it.key + ' ' + m.castle + ': not checked but ' + a.phase); return; }
             sessionClick(p[0]);
             n++;
-            if (a.phase !== 'guess' || a.sel !== p[1] || a.attempts !== 0) out.push(it.key + ' ' + m.castle + ' being checked, a tap on ' + sqName(p[0]) + ': phase ' + a.phase + ', selected ' + (a.sel >= 0 ? sqName(a.sel) : 'none') + ', attempts ' + a.attempts);
+            if (a.phase !== 'guess' || a.sel !== -1 || a.attempts !== 0) out.push(it.key + ' ' + m.castle + ' being checked, a tap on ' + sqName(p[0]) + ': phase ' + a.phase + ', selected ' + (a.sel >= 0 ? sqName(a.sel) : 'none') + ', attempts ' + a.attempts);
           });
         });
       });
@@ -1894,7 +1894,7 @@ const BAR = `(function () {
       s = S();
       eq(s.phase, 'guess', at + ': taken back'); eq(s.attempts, 0, at + ': no attempt'); eq(s.misses, 0, at + ': no miss'); eq(s.result, null, at + ': no result');
       ok(s.stops >= 1, at + ': the check job is stopped'); ok(s.tok !== tok, at + ': a new token, so its answer is ignored');
-      eq(s.sel, way === 'tap' ? A.ev('window.__m.from') : -1, at + ': a tap picks the piece up from where it came');
+      eq(s.sel, -1, at + ': nothing picked up, a tap on the moved piece too (round D, as I1)');
       /* back by a crossfade: the old board fades over the new one, and the words wait for it */
       ok(/class="xfade"/.test(A.ev('window.__els.bwrap.innerHTML')), at + ': the board crossfades back');
       eq(A.ev('motionUntil') - tap, 150, at + ': the crossfade takes 150 ms');
@@ -2052,10 +2052,10 @@ const BAR = `(function () {
         A.ev(`(sessionClick(${ck.q}), 1)`);
         eq(JSON.stringify(S().nope), JSON.stringify([ck.q]), at + ': their piece outlined during a check');
         run(200);
-        ok(/^Checking \S+… /.test(band()) && band().slice(-c.t4.length) === c.t4, at + ': T4 under the check\'s row 1: ' + band());
+        ok(/^Checking [^…]+… /.test(band()) && band().slice(-c.t4.length) === c.t4, at + ': T4 under the check\'s row 1: ' + band());
         eq(A.ev('(function (a) { return a.phase + " " + a.attempts + " " + a.misses; })(ui.session.active)'), 'checking ' + ck.s, at + ': T4 during a check graded nothing');
         run(2600);
-        ok(/^Checking \S+…( Still checking\.)?$/.test(band()), at + ': the check\'s words are back: ' + band());
+        ok(/^Checking [^…]+…( Still checking\.)?$/.test(band()), at + ': the check\'s words are back: ' + band());
         A.ev('(window.__holdTry = false, takeBack(), 1)');
         run(1000);
         /* after an answer: any piece answers with N1, and nothing changes (no exploring, no step) */
@@ -3636,7 +3636,7 @@ const BAR = `(function () {
     eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
   });
 
-  await test('a tap during the reply never jumps the piece, and no text lands during the slide: before 1500 an input starts it (telegraph kept) and is dropped; during it and until 2050 input changes nothing', () => {
+  await test('a tap during the reply never jumps the piece, and no text lands during the slide: before 1500 an input starts it (telegraph kept) and is dropped; during the slide input changes nothing (a tap on a piece of yours is kept for the landing); landed, the board takes input again, the rest waits for the words', () => {
     const A = boot();
     A.ev(DOM);
     A.ev('(playerTier = function () { return 2; }, 1)');
@@ -3658,8 +3658,8 @@ const BAR = `(function () {
       typed: () => A.ev('(typedMove(ui.session.active.sol[2]), 1)')
     };
     const names = Object.keys(INPUTS);
-    let n = 0;
-    for (const [i, key] of keys.entries()) for (const when of [-150, 300, 1000]) {
+    let n = 0, nq = 0;
+    for (const key of keys) for (const when of [-150, 300, 1000]) {
       const name = names[n++ % names.length], at = key + ' ' + name + ' at ' + when;
       A.ev(`(window.__show(model().byKey['${key}']), 1)`);
       run(1000);
@@ -3683,21 +3683,44 @@ const BAR = `(function () {
       const s2 = JSON.parse(A.ev(STATE));
       eq(JSON.stringify([s2.mu, s2.sel, s2.hints, s2.solIdx, s2.phase, s2.result]), JSON.stringify([s.mu, -1, 0, 2, 'reply', null]), at + ': input during the slide');
       eq(WR(A, tin + 1).filter((w) => w.id === 'bwrap' || w.id === 'marks').length, 0, at + ': the board written during the slide');
-      /* landed, before its words: still nothing */
+      /* a tap on a piece of yours during the reply was kept (round D): it is picked up as the reply
+         lands, if it still stands there with a move to make */
+      const want = A.ev(`(function (a) { var q = a.replyQ; return q && a.st.b[q.sq] === q.p && legalMoves(a.st).some(function (m) { return m.from === q.sq; }) ? q.sq : -1; })(ui.session.active)`);
+      /* landed, before its words: every input but the board's changes nothing */
       A.advance(s.mu + 60 - A.getNow());
-      names.forEach((k) => INPUTS[k]());
+      names.filter((k) => k !== 'finger' && k !== 'tap').forEach((k) => INPUTS[k]());
       const s3 = JSON.parse(A.ev(STATE));
-      eq(JSON.stringify([s3.sel, s3.hints, s3.solIdx, s3.phase, s3.result]), JSON.stringify([-1, 0, 2, 'reply', null]), at + ': input after the landing, before its words');
-      /* the words 150 ms after the landing, none before them since the input */
-      A.advance(s.mu + 200 - A.getNow());
-      const words = WR(A, tin).filter((w) => w.id === 'cband');
-      ok(words.length >= 1 && words[0].t === s.mu + 150 && R1(words[0].v) === 'Your move', at + ': the words at landing + 150, ' + JSON.stringify(words.map((w) => [w.t - s.mu, R1(w.v)])));
-      eq(A.ev('ui.session.active.phase'), 'guess', at + ': then your move');
+      eq(JSON.stringify([s3.sel, s3.hints, s3.solIdx, s3.phase, s3.result]), JSON.stringify([want, 0, 2, 'reply', null]), at + ': input after the landing, before its words');
+      if (want >= 0) {
+        nq++;
+        const lastB = WR(A, s.mu - 1).filter((w) => w.id === 'bwrap').pop();
+        ok(lastB && lastB.t === s.mu && A.ev('(boardOptsFor(ui.session.active).opts.dots || []).length') > 0, at + ': the kept piece picked up at the landing, its dots drawn, ' + JSON.stringify(lastB));
+      }
+      if (n % 2) {
+        /* the words 150 ms after the landing, none before them since the input */
+        A.advance(s.mu + 200 - A.getNow());
+        const words = WR(A, tin).filter((w) => w.id === 'cband');
+        ok(words.length >= 1 && words[0].t === s.mu + 150 && R1(words[0].v) === 'Your move', at + ': the words at landing + 150, ' + JSON.stringify(words.map((w) => [w.t - s.mu, R1(w.v)])));
+        eq(A.ev('ui.session.active.phase'), 'guess', at + ': then your move');
+      } else {
+        /* the board takes input again from the landing (round D): a tap picks a piece up at once,
+           and the words come 150 ms after it, never with it */
+        const tt = A.getNow();
+        A.ev(`(function (a) { a.sel = -1; for (var q = 0; q < 64; q++) if (a.st.b[q] && isW(a.st.b[q]) === myPov(a.it) && legalMoves(a.st).some(function (m) { return m.from === q; })) { sessionClick(q); return 1; } return 0; })(ui.session.active)`);
+        eq(A.ev('ui.session.active.phase'), 'guess', at + ': a tap after the landing is your move');
+        ok(A.ev('ui.session.active.sel') >= 0, at + ': a piece picked up after the landing, before the words');
+        A.advance(200);
+        const words = WR(A, tin).filter((w) => w.id === 'cband'), b2 = WR(A, tt).filter((w) => w.id === 'bwrap');
+        ok(words.length >= 1 && words[0].t === tt + 150 && R1(words[0].v) === 'Your move', at + ': the words 150 ms after the tap, ' + JSON.stringify(words.map((w) => [w.t - tt, R1(w.v)])));
+        ok(b2.length && b2.every((w) => w.t < words[0].t), at + ': the board before the words');
+      }
       /* and the board takes moves again */
+      A.ev('(ui.session.active.sel = -1, 1)');
       INPUTS.tap();
-      ok(A.ev('ui.session.active.sel') >= 0, at + ': a piece picked up after the words');
+      ok(A.ev('ui.session.active.sel') >= 0, at + ': the board takes input after the words');
       run(600);
     }
+    ok(nq >= 2, 'kept pieces picked up at the landing: ' + nq);
     const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
     eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
   });
@@ -5230,6 +5253,187 @@ const BAR = `(function () {
     }
     ok(seen, 'their reply came');
     ok(item(), 'the item once the reply is said');
+  });
+
+  /* ── final build round D ── */
+  await test('round D, I4: a tap on a piece of yours while the forcing reply slides is kept and picked up as it lands (never hurrying it); a tap on a square then plays nothing; tapped twice it is let go; a piece the reply took is not picked up', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(FORCING)).slice(0, 6);
+    const lead = A.ev('SLIDE_LEAD');
+    /* a piece of yours with a move, in the position after their reply (a.st once it plays), and that move's square */
+    const MOVER = `JSON.stringify((function (a) { var ms = legalMoves(a.st).filter(function (m) { return a.st.b[m.to] == null; }); return ms.length ? { from: ms[0].from, to: ms[0].to } : null; })(ui.session.active))`;
+    let kept = 0, moved = 0;
+    for (const [i, key] of keys.entries()) {
+      const at = key;
+      A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      A.ev(FIRST('tap'));
+      const t0 = A.getNow() + lead + 220;
+      /* the slide is on (1500 to 1900) */
+      A.advance(t0 + 1600 - A.getNow());
+      const s0 = JSON.parse(A.ev(STATE));
+      ok(s0.hold && s0.reply && s0.reply.played, at + ': their reply slides');
+      const mv = JSON.parse(A.ev(MOVER));
+      if (!mv) continue;
+      const tin = A.getNow();
+      A.tap(mv.from);
+      if (i % 3 === 2) A.tap(mv.from);
+      A.ev(`(sessionClick(${mv.to}), 1)`);
+      const s1 = JSON.parse(A.ev(STATE));
+      eq(JSON.stringify([s1.mu, s1.sel, s1.phase, s1.solIdx]), JSON.stringify([s0.mu, -1, 'reply', s0.solIdx]), at + ': nothing moves, nothing jumps');
+      eq(WR(A, tin).length, 0, at + ': nothing written during the slide');
+      /* landed: the piece picked up at once (or let go when tapped twice), the words 150 ms later */
+      A.advance(s0.mu - A.getNow());
+      const s2 = JSON.parse(A.ev(STATE));
+      eq(s2.sel, i % 3 === 2 ? -1 : mv.from, at + ': picked up at the landing');
+      eq(s2.phase, 'reply', at + ': before the words');
+      eq(WR(A, s0.mu).filter((w) => w.id === 'cband').length, 0, at + ': no words at the landing');
+      if (i % 3 === 2) { run(600); continue; }
+      kept++;
+      ok(A.ev('(boardOptsFor(ui.session.active).opts.dots || []).indexOf(' + mv.to + ') >= 0'), at + ': its squares drawn');
+      /* a tap on its square now plays it: the selection was seen */
+      A.advance(40);
+      const n0 = A.ev('ui.session.active.attempts');
+      A.ev(`(sessionClick(${mv.to}), 1)`);
+      ok(A.ev('ui.session.active.attempts') === n0 + 1, at + ': the move played from the piece picked up');
+      moved++;
+      run(1500);
+    }
+    ok(kept >= 3 && moved >= 3, 'kept ' + kept + ', moved ' + moved);
+    /* reduced motion: the reply waits for its button; a piece of yours it takes, tapped before, is not picked up */
+    A.ev('(ui.reducedTest = true, 1)');
+    const cap = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var a = cardFor(it); if (!a || !a.sol || a.sol.length < 3) return false;
+      var st = cloneState(a.st); applyMove(st, uciToMove(st, a.sol[0])); var r = uciToMove(st, a.sol[1]); return !!(r && st.b[r.to]); }).map(function (it) { return it.key; }).slice(0, 2))`));
+    ok(cap.length >= 1, 'cards whose reply takes ' + cap.length);
+    for (const key of cap) {
+      A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      A.ev(FIRST('tap'));
+      run(800);
+      const sq = A.ev('uciToMove(ui.session.active.st, ui.session.active.sol[1]).to');
+      A.tap(sq);
+      eq(A.ev('ui.session.active.replyQ && ui.session.active.replyQ.sq'), sq, key + ': the tap on the piece it will take is kept');
+      A.click('theirReply', null, 1);
+      run(400);
+      eq(A.ev('ui.session.active.sel'), -1, key + ': gone with the reply, not picked up');
+      eq(A.ev('ui.session.active.phase'), 'guess', key + ': your move');
+    }
+    A.ev('(ui.reducedTest = false, 1)');
+  });
+
+  await test('round D, S3: a press on a move being checked takes it back with nothing picked up, its click dropped; another piece of yours is then picked up as usual', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const cards = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol; }).slice(0, 5).map(function (it) { return it.key; }))`));
+    for (const key of cards) {
+      A.ev(`(function () { ${AFTER} window.readyEngine(); window.__holdTry = true; var a = window.__show(model().byKey['${key}']); window.__m = offBook(a); return 1; })()`);
+      run(1000);
+      A.ev('(function (m) { sessionClick(m.from); sessionClick(m.to); return 1; })(window.__m)');
+      eq(A.ev('ui.session.active.phase'), 'checking', key + ': checked');
+      run(100);
+      A.tap(A.ev('window.__m.to'));
+      eq(A.ev('ui.session.active.phase + " " + ui.session.active.sel + " " + ui.session.active.attempts'), 'guess -1 0', key + ': taken back, nothing picked up');
+      run(400);
+      const other = A.ev(`(function (a, m) { for (var q = 0; q < 64; q++) if (a.st.b[q] && isW(a.st.b[q]) === a.st.w && q !== m.from) return q; return -1; })(ui.session.active, window.__m)`);
+      A.tap(other);
+      eq(A.ev('ui.session.active.sel'), other, key + ': another piece picked up after it');
+      A.ev('(window.__holdTry = false, 1)');
+    }
+  });
+
+  await test('round D, I7: → plays See it on a wrong try (after its guard, once), the key line says so only while See it is there; ↑ ↓ walk the ••• menu round from either end', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev(BAR);
+    A.ev('(playerTier = function () { return 3; }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const cards = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol && unpackUci(it.b.ru).length; }).slice(0, 4).map(function (it) { return it.key; }))`));
+    for (const key of cards) {
+      A.ev(`(function () { var a = window.__show(model().byKey['${key}']); return 1; })()`);
+      run(1000);
+      A.ev('(function (a) { a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); return 1; })(ui.session.active)');
+      A.key('ArrowRight');
+      eq(A.ev('ui.session.active.tried.seen'), false, key + ': → within the slot guard does nothing');
+      run(1500);
+      ok(/→ see it/.test(A.ev('displayFor(ui.session.active).keys')), key + ': the key line lists → see it');
+      A.key('ArrowRight');
+      eq(A.ev('ui.session.active.tried.seen'), true, key + ': → played See it');
+      run(1500);
+      ok(!/→/.test(A.ev('displayFor(ui.session.active).keys')), key + ': and no longer lists it');
+      A.key('ArrowRight');
+      eq(A.ev('ui.session.active.phase'), 'tried', key + ': a second → does nothing');
+    }
+    /* the menu: ↑ ↓ move the keyboard through its items, round from either end */
+    A.ev(`(function () {
+      var items = ['open', 'analyse', 'misclick', 'decided', 'engine', 'skip'].map(function (n) { return { n: n, focus: function () { document.activeElement = this; } }; });
+      var q0 = document.querySelectorAll;
+      document.querySelectorAll = function (sel) { return sel === '#ctop .menu-pop a' ? items : q0.call(document, sel); };
+      ui.session.active.menuOpen = true; document.activeElement = null; return 1; })()`);
+    const foc = () => A.ev('document.activeElement ? document.activeElement.n : null');
+    A.key('ArrowDown'); eq(foc(), 'open', 'the first item');
+    A.key('ArrowDown'); eq(foc(), 'analyse', 'the next');
+    A.key('ArrowUp'); A.key('ArrowUp'); eq(foc(), 'skip', 'round to the last');
+    A.key('ArrowDown'); eq(foc(), 'open', 'round to the first');
+    eq(A.ev('ui.session.active.phase'), 'tried', 'the board untouched');
+  });
+
+  await test('round D, I5: the typed-move field\'s example is a legal move of the position in both forms, never the answer or the game move; an illegal move is answered with one', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = 0, said = [];
+      notice = function (t) { said.push(t); };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var a = openCard(it);
+          if (!a) return;
+          var m = /placeholder="e\\.g\\. ([^ ]+) or ([a-h][1-8][a-h][1-8][qrbn]?)"/.exec(stripHtml(a, ui.session));
+          if (!m) { out.push(it.key + ': no example'); return; }
+          var bySan = sanToMove(a.st, m[1]), byUci = uciToMove(a.st, m[2]);
+          if (!bySan || !byUci || moveUci(bySan) !== m[2]) out.push(it.key + ': not one legal move ' + m[0]);
+          if (cardAvoid(a).indexOf(m[2]) >= 0) out.push(it.key + ': the answer or the game move ' + m[0]);
+          n++;
+        });
+      });
+      var a = openCard(allMistakes().filter(trainable)[0]);
+      typedMove('Zz9');
+      var eg = /Try one like ([^ ]+) or ([a-h][1-8][a-h][1-8][qrbn]?)\\./.exec(said[0] || '');
+      if (!eg || !uciToMove(a.st, eg[2]) || cardAvoid(a).indexOf(eg[2]) >= 0) out.push('the notice: ' + said[0]);
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n > 200, 'examples ' + r.n);
+    eq(r.out.length, 0, r.out.slice(0, 4).join(' | '));
+  });
+
+  await test('round D, C10: a castling game move\'s ghost shows the king and the rook, one cross, in S0 and on the story\'s B1', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = 0;
+      [1, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var a0 = cardFor(it);
+          if (!a0 || !a0.played.castle) return;
+          var a = openCard(it);
+          if (!a.sol) solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+          else { while (a.solIdx < a.sol.length) { var lm = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, lm); a.lastMove = [lm.from, lm.to]; a.solIdx++; } finishCard('first'); }
+          a.animMove = null; a.settle = 2;
+          var g = s0Marks(a, a.st).ghosts, short_ = a.played.castle === 'O-O', base = a.played.to < 8 ? 0 : 56;
+          var want = [a.played.to, base + (short_ ? 5 : 3)];
+          if (g.length !== 2 || g[0].sq !== want[0] || pType(g[0].p) !== 'K' || g[1].sq !== want[1] || pType(g[1].p) !== 'R' || !g[1].rook) out.push(it.key + ': S0 ghosts ' + JSON.stringify(g));
+          var f = boardOptsFor(a), svg = boardSvg(f.st, f.opts);
+          var faded = (svg.match(/class="ghost-piece"/g) || []).length, empty = want.filter(function (q) { return !f.st.b[q]; }).length;
+          if (faded !== empty || (svg.match(/r="6" fill="#d04a3a"/g) || []).length !== 1) out.push(it.key + ': drawn ' + faded + ' ghosts for ' + empty + ' empty squares');
+          n++;
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n >= 1, 'castling game moves ' + r.n);
+    eq(r.out.length, 0, r.out.join(' | '));
   });
 
   results.forEach((l) => console.log(l));

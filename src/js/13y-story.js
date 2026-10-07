@@ -65,7 +65,7 @@ var CARD_COPY = {
     var opp = sidesOf(a).opp;
     return w >= 80 ? 'you are winning' : w >= 60 ? 'you are better' : w >= 40 ? 'even game' : w >= 20 ? opp + ' is better' : opp + ' is winning';
   },
-  K1: function (a) { return 'Checking ' + (a.checking || 'your move') + '…'; },
+  K1: function (a, w) { return 'Checking ' + ((w ? a.checkingW : a.checking) || 'your move') + '…'; },
   K2: function () { return 'Still checking.'; },
   M1: function () { return 'Not this one'; },
   M2: function () { return 'Your game move again'; },
@@ -914,7 +914,7 @@ function answerRow(a, settled) {
 /* S3: the band keeps what it said for 300 ms, then says the move is
      being checked, and at 3 s that it still is */
   if (a.phase === 'checking' && a.checkSaid)
-    return { disc: 'checking', kind: 'neutral', sweep: true, row1: fitRow([CARD_COPY.K1(a)], 'row1', 'Checking…'), cands: a.checkSaid >= 2 ? [CARD_COPY.K2()] : [], fall: '' };
+    return { disc: 'checking', kind: 'neutral', sweep: true, row1: fitRow(inWords(a) && a.checkingW ? [CARD_COPY.K1(a, true), CARD_COPY.K1(a)] : [CARD_COPY.K1(a)], 'row1', 'Checking…'), cands: a.checkSaid >= 2 ? [CARD_COPY.K2()] : [], fall: '' };
   if (a.phase === 'tried' && t) {
     /* a miss's reason waits for its own beat (S4, a.reason 2): the verdict
        alone first */
@@ -1031,8 +1031,12 @@ function labelCands(a, f, seen) {
     /* "lost": the piece See it's reply took, as it lands (S4) */
     if (a.phase === 'tried' && a.tried && a.tried.seen && seen('token')) short.push(cand('lost', 'red', null, tk.sq, null, mk, 2));
   });
+  /* tier 1 names the game move in words where the label has room (alt:
+     its SAN, tried next) */
   (o.ghosts || []).forEach(function (g) {
-    if (!seen('ghost') && !first.ghost) first.ghost = cand(gameSan(a) + ' in your game', 'red', 'ghost', g.sq, null, { kind: 'ghost', sq: g.sq, p: g.p });
+    if (seen('ghost') || first.ghost || g.rook) return;
+    first.ghost = cand(gameSan(a) + ' in your game', 'red', 'ghost', g.sq, null, { kind: 'ghost', sq: g.sq, p: g.p });
+    if (inWords(a)) { first.ghost.alt = first.ghost.text; first.ghost.text = upFirst(moveWords(a.pre, a.played)) + ' in your game'; }
   });
   /* a hint's prize (S8): "free {piece}" when nothing of theirs guards it */
   (o.rings || []).forEach(function (rg) {
@@ -1054,5 +1058,5 @@ function labelRoom(a) {
   if (a.phase === 'tried' && a.tried && a.tried.kind === 'miss') v.reason = 2;
   if (a.phase === 'done' && a.view && a.view.mode === 's0' && a.settle >= 1) v.settle = 2;
   var b = bandFor(v);
-  return WORD_BUDGET - bandWords(b, ss ? barSlots(v, ss) : []) - stripWords(v);
+  return WORD_BUDGET - bandWords(b, ss ? barSlots(v, ss) : []) - stripWords(v) - (retryTipOn(a) ? wordsIn(RETRY_TIP) : 0);
 }
