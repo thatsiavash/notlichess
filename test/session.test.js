@@ -284,7 +284,7 @@ function named(a, st, m, f, ch) {
       var h = doneHtml(ss), words = [];
       h.replace(/class="res[^"]*">([^<]*)</g, function (m, w) { words.push(w); return m; });
       var habits = []; h.replace(/<li class="plan">([^<]*)</g, function (m, t) { habits.push(t); return m; });
-      if (!habits.length) h.replace(/<p class="plan">For your next game: ([^<]*)</g, function (m, t) { habits.push(t); return m; });
+      if (!habits.length) h.replace(/<p class="plan">Keep in mind: ([^<]*)</g, function (m, t) { habits.push(t); return m; });
       var fams = []; pick.slice(0, 4).forEach(function (x) { var f = familyOf(patternOf(x.b)); if (fams.indexOf(f) < 0) fams.push(f); });
       return JSON.stringify({ words: words, head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], note3: ss.notes[pick[3].key] || null, notes: ss.notes,
         habits: habits, want: fams.map(function (f) { return esc(f.habit); }), odd: !!odd, oddHabit: odd && fams.every(function (f) { return f.key !== famOf(odd); }) ? esc(familyOf(patternOf(odd.b)).habit) : null }); })()`));
@@ -296,7 +296,7 @@ function named(a, st, m, f, ch) {
     if (r.oddHabit) ok(r.habits.indexOf(r.oddHabit) < 0, 'no habit for the family met only on the skipped card');
   });
 
-  await test('small words: "Practise N more" says how many it gives, "Click a game" where a mouse points, and a session over leaves nothing in the live region (C2, C9, C11)', () => {
+  await test('small words: "Next set of N" says how many it gives, "Click a game" where a mouse points, and a session over leaves nothing in the live region (C2, C9, C11)', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       var its = allMistakes().filter(trainable), res = {}, real = morePracticeKeys;
@@ -325,9 +325,38 @@ function named(a, st, m, f, ch) {
       res.finished = live.textContent;
       document.getElementById = g0;
       return JSON.stringify(res); })()`));
-    eq(r.three, 'Practise 3 more', 'three to give'); eq(r.eight, 'Practise 5 more', 'five of eight');
+    eq(r.three, 'Next set of 3', 'three to give'); eq(r.eight, 'Next set of 8', 'all eight');
     ok(r.touch, 'Tap on a touch screen'); ok(r.mouse, 'Click where a mouse points'); eq(r.word, 'Click', 'tapWord with a fine pointer');
     eq(r.ended, '', 'nothing left in the live region when a session ends'); eq(r.finished, '', 'nor when it finishes');
+  });
+
+  await test('sets never run out by the day: each next set is as big as the set played, never repeats the last hours, and no screen after practice sends you off to play', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var res = { sizes: [], overlap: 0 }, prev = [];
+      store.set('nl:sessionSize', 10);
+      startSession('today', allMistakes().filter(trainable).slice(0, 5).map(function (x) { return x.key; }), 'Today');
+      endSession();
+      for (var n = 0; n < 4; n++) {
+        var keys = morePracticeKeys();
+        res.sizes.push(keys.length);
+        keys.forEach(function (k) { if (prev.indexOf(k) >= 0) res.overlap++; });
+        keys.forEach(function (k) { var it = model().byKey[k]; if (it) srsRecord(it, 'first', {}); });
+        prev = prev.concat(keys);
+      }
+      ui.session = { mode: 'more', label: 't', keys: prev.slice(-5), idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {}, finished: true };
+      var done = doneHtml(ui.session);
+      res.summaryPlay = /Play a game/.test(done);
+      res.summaryNext = (/data-act="keepGoing">([^<]*)</.exec(done) || [])[1];
+      res.todayPlay = /Play a game/.test(doneTodayHtml());
+      res.todayNext = /data-act="keepGoing"/.test(doneTodayHtml());
+      ui.session = null;
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify(r.sizes), JSON.stringify([5, 5, 5, 5]), 'four more sets of five, as big as the set played');
+    eq(r.overlap, 0, 'no position comes back within a few hours');
+    ok(!r.summaryPlay && !r.todayPlay, 'no "Play a game" after practice');
+    eq(r.summaryNext, 'Next set of 5', 'the summary offers the next set');
+    ok(r.todayNext, 'Today offers the next set too');
   });
 
   await test('the summary and Today in plain words: positions found come back in N days (never "moved up"), "Tomorrow: N positions to practise", "back for another look" (never "reviews")', () => {
@@ -390,14 +419,14 @@ function named(a, st, m, f, ch) {
       var fams = [];
       pick.slice(0, 6).forEach(function (x) { var f = familyOf(patternOf(x.b)); if (fams.indexOf(f) < 0) fams.push(f); });
       var habits = []; h.replace(/<li class="plan">([^<]*)</g, function (m, t) { habits.push(t); return m; });
-      if (!habits.length) h.replace(/<p class="plan">For your next game: ([^<]*)</g, function (m, t) { habits.push(t); return m; });
+      if (!habits.length) h.replace(/<p class="plan">Keep in mind: ([^<]*)</g, function (m, t) { habits.push(t); return m; });
       return JSON.stringify({ words: words, head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], notes: [ss.notes[pick[0].key], ss.notes[pick[4].key], ss.notes[pick[5].key], ss.notes[pick[6].key]],
-        habits: habits, heads: (h.match(/For your next game:/g) || []).length, want: fams.map(function (f) { return esc(f.habit); }), spotted: /spotted/i.test(h), glyphs: /[✓◐]/.test(h) }); })()`));
+        habits: habits, heads: (h.match(/Keep in mind:/g) || []).length, want: fams.map(function (f) { return esc(f.habit); }), spotted: /spotted/i.test(h), glyphs: /[✓◐]/.test(h) }); })()`));
     eq(r.words.join(' | '), 'First look | Found | With help | Found after a miss | Shown | Missed | Skipped', 'the words, in session order, the removed card gone');
     eq(r.notes.join(' | '), 'firstlook | shown | leftMiss | left', 'the notes');
     eq(r.head, '4 of 6 solved.', 'solved: found, with help, after a miss, a first look; counted: and shown, missed; a skip neither');
     eq(JSON.stringify(r.habits), JSON.stringify(r.want), 'one habit per family seen, in the order met');
-    eq(r.heads, 1, '"For your next game:" once, the habits under it (C9)');
+    eq(r.heads, 1, '"Keep in mind:" once, the habits under it (C9)');
     ok(r.habits.length >= 2, 'families ' + r.habits.length);
     ok(!r.spotted && !r.glyphs, 'no "spotted" recap line, no glyphs: words only');
   });

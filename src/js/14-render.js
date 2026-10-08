@@ -268,12 +268,15 @@ function nextDueHtml() {
   n = Math.min(n, sessionSize());
   return (w === 'tomorrow' ? 'Tomorrow' : w === 'later today' ? 'Later today' : w.charAt(0).toUpperCase() + w.slice(1)) + ': ' + plur(n, 'position') + ' to practise, about ' + Math.max(1, Math.round(n * 0.8)) + (Math.round(n * 0.8) > 1 ? ' minutes.' : ' minute.');
 }
+/* the button for the next set, its size in words */
+function nextSetWords(n) { return n === 1 ? 'One more position' : 'Next set of ' + n; }
+/* a set done is never the end of the day: the next one is the main action */
 function doneTodayHtml() {
   var more = morePracticeKeys().length;
   return '<div class="hero">'
-    + '<h2>' + ((dayLoad().sessions || 0) > 0 ? 'Done for today.' : 'Nothing due right now.') + '</h2><p class="why">' + nextDueHtml() + '</p>' + weekHtml()
-    + '<div class="acts"><a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>'
-    + (more ? '<a class="btn-quiet" data-act="keepGoing">Practise 5 more</a>' : '') + '</div></div>';
+    + '<h2>' + ((dayLoad().sessions || 0) > 0 ? 'Today\'s set is done.' : 'Nothing due right now.') + '</h2><p class="why">' + nextDueHtml() + '</p>' + weekHtml()
+    + (more ? '<div class="acts"><a class="btn-big" data-act="keepGoing">' + nextSetWords(more) + '</a></div>'
+      : '<p class="why">You have practised every position from your games so far.</p>') + '</div>';
 }
 function dueWhen(ts) {
   var days = Math.round((ts - Date.now()) / DAY);
@@ -427,16 +430,17 @@ function doneHtml(ss) {
     + '<div class="today recap-page">'
     + '<h2 class="done-big" id="recap-h" tabindex="-1">' + (answered ? solved + ' of ' + answered + ' solved.' : 'Done.') + '</h2>'
     + ladderHtml(ss, uniq)
+    /* the next set is the main way on: in reach without scrolling */
+    + '<div class="acts-row recap-acts">'
+      + (more ? '<a class="btn-big" data-act="keepGoing">' + nextSetWords(more) + '</a>' : '')
+      + '<a class="' + (more ? 'btn-quiet' : 'btn-big') + '" data-act="endSession">Back to Today</a>'
+    + '</div>'
     + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
-    + (habits.length === 1 ? '<div class="focus recap-habit"><p class="plan">For your next game: ' + esc(habits[0]) + '</p></div>'
-      : habits.length ? '<div class="focus recap-habit"><p class="plan">For your next game:</p><ul class="plans">' + habits.map(function (h) { return '<li class="plan">' + esc(h) + '</li>'; }).join('') + '</ul></div>' : '')
+    + (habits.length === 1 ? '<div class="focus recap-habit"><p class="plan">Keep in mind: ' + esc(habits[0]) + '</p></div>'
+      : habits.length ? '<div class="focus recap-habit"><p class="plan">Keep in mind:</p><ul class="plans">' + habits.map(function (h) { return '<li class="plan">' + esc(h) + '</li>'; }).join('') + '</ul></div>' : '')
     + (recap ? '<div class="recap">' + recap + '</div>' : '')
-    + '<div class="acts-row recap-acts">'
-      + '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>'
-      + (more ? '<a class="btn-line" data-act="keepGoing">Practise ' + Math.min(5, more) + ' more</a>' : '')
-      + '<a class="btn-quiet" data-act="endSession">Back to Today</a>'
-    + '</div></div>';
+    + '</div>';
 }
 
 /* ── the card ────────────────────────────────────────────────────────────── */

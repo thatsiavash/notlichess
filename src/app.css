@@ -660,7 +660,7 @@ body.in-session{padding-bottom:0}
 .recap-habit .plan:first-child{margin-top:0}
 .recap-habit .plans{margin:6px 0 0;padding-left:20px}
 .recap-habit .plans .plan{margin-top:6px}
-.recap-acts{margin-top:24px}
+.recap-acts{margin:20px 0 28px}
 @media (max-width:860px){.recap-acts .btn-big,.recap-acts .btn-line{width:100%;min-height:52px}}
 
 /* settings sheet ─────────────────────────────────────────────────────── */

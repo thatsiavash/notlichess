@@ -252,6 +252,8 @@ function startSession(mode, keys, label, spec, opts) {
   if (carried) { d0.carry = 0; daySave(d0); }
   /* one position opened from a summary goes back to that summary (I8) */
   var from = spec && spec.type === 'one' && ui.session && ui.session.finished ? ui.session : null;
+  /* the sets of a day keep the size of the one played */
+  if (mode === 'today' || mode === 'more') store.set('nl:setSize', keys.length);
   ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, carried: carried };
   if (from) ui.session.from = from;
   if (opts && opts.firstTime) ui.session.firstTime = true;
@@ -275,18 +277,35 @@ function startToday() {
      first card on */
   startSession('today', plan.keys, 'Today', null, { firstTime: !!plan.firstTime });
 }
-/* more practice: due reviews first, then new positions within the day's
-   cap, so extra taps never pile up future reviews */
+/* the next set: as big as the set just played (at least 5, at most the
+   size chosen in Settings), as often as wanted. Positions
+   due back come first, then new ones from the games, then, when both run
+   out, the ones due back soonest, so a set stays full while there is
+   anything to practise. A position answered in the last few hours waits,
+   so a set never repeats the one before it */
+function nextSetSize() {
+  var max = sessionSize();
+  return Math.max(Math.min(5, max), Math.min(max, store.get('nl:setSize', max)));
+}
 function morePracticeKeys() {
-  var keys = dueCards().map(function (x) { return x.key; });
-  var dayCap = Math.max(8, Math.round(sessionSize() * 0.8)), room = Math.max(0, dayCap - (dayLoad().fresh || 0));
-  buildCandidates(Math.min(room, Math.max(0, 5 - keys.length))).forEach(function (x) { keys.push(x.key); });
+  var size = nextSetSize(), srs = srsLoad(), now = Date.now(), recent = 3 * 3600 * 1000;
+  var keys = dueCards().slice(0, size).map(function (x) { return x.key; });
+  if (keys.length < size) buildCandidates(size - keys.length).forEach(function (x) { keys.push(x.key); });
+  if (keys.length < size) {
+    allMistakes().filter(function (it) {
+      var r = srs[it.key];
+      return r && !r.hidden && trainable(it) && keys.indexOf(it.key) === -1 && !(r.last && now - r.last < recent);
+    }).sort(function (x, y) {
+      var dx = srs[x.key].due, dy = srs[y.key].due;
+      return (dx == null ? Infinity : dx) - (dy == null ? Infinity : dy);
+    }).slice(0, size - keys.length).forEach(function (x) { keys.push(x.key); });
+  }
   return keys;
 }
 function keepGoing() {
   var keys = morePracticeKeys();
-  if (!keys.length) { notice('That is all for today. New positions join a few at a time, so tomorrow brings more.'); return; }
-  startSession('more', keys.slice(0, 5), 'More practice');
+  if (!keys.length) { notice('You have practised every position from your games so far.'); return; }
+  startSession('more', keys, 'Next set');
 }
 function resumeSession() {
   var s = savedSession();

@@ -124,7 +124,7 @@
     ok('engine is Stockfish 17.1 and ready', stats.engine === 'sf17.1' && stats.state === 'ready', stats.engine + '/' + stats.state);
     ok('account has at least 12 trainable mistakes', stats.trainable >= 12, 'trainable ' + stats.trainable);
     /* Today offers a start, or says the day is done (the daily cap on new positions) */
-    ok('Today offers a start or a finished day', !!($('[data-act=startToday]') || $('[data-act=keepGoing]') || /Done for today|Nothing due/.test(text('#trainbox'))), text('#trainbox').slice(0, 120));
+    ok('Today offers a start or a finished day', !!($('[data-act=startToday]') || $('[data-act=keepGoing]') || /Today's set is done|Nothing due/.test(text('#trainbox'))), text('#trainbox').slice(0, 120));
     ok('the header is the mark and the gear only', !!$('#bar .brand-name') && !!$('#bar [data-act=settings]') && !/▼|▲/.test(text('#bar')), text('#bar'));
     ok('Today shows the latest games rail', !!$('#latest .lg-row'));
     ok('no em dash anywhere on Today', text('#main').indexOf('—') === -1);
@@ -604,7 +604,7 @@
     await until(() => T.card().finished || !!$('.recap-item'), 20000);
     ok('the session ends in a recap', !!$('.recap-item') || /solved/i.test(text('#trainbox')), text('#trainbox').slice(0, 80));
     /* S17: each card in words, the note first (Shown, First look, Missed, Skipped), then the result;
-       no "spotted" line; one habit per family seen, "For your next game: ..." */
+       no "spotted" line; one habit per family seen, "Keep in mind: ..." */
     const words = [].map.call($$('.recap-item .res'), (e) => e.textContent);
     ok('the recap says each card in words', words.length > 0 && words.every((w) => /^(Found|With help|First look|Found after a miss|Shown|Missed|Skipped)(, then (found|found with help|found after a miss|shown again|missed again))?$/.test(w)), words.join(', '));
     ok('the cards revealed to finish read Shown', words.some((w) => /^Shown/.test(w)), words.join(', '));
@@ -612,9 +612,9 @@
     /* a card that came back counts as solved only when both showings were */
     const head = text('#recap-h'), solvedN = words.filter((w) => /^(Found|With help|First look|Found after a miss)(, then found.*)?$/.test(w)).length, countedN = words.filter((w) => w !== 'Skipped').length;
     ok('the recap counts what it says', head === (countedN ? solvedN + ' of ' + countedN + ' solved.' : 'Done.'), head + ' / ' + words.join(', '));
-    /* "For your next game:" once, the habits under it when there are more than one (C9) */
-    const habits = $$('.recap-habit li.plan').length ? [].map.call($$('.recap-habit li.plan'), (e) => e.textContent) : [].map.call($$('.recap-habit .plan'), (e) => e.textContent.replace(/^For your next game: /, ''));
-    ok('one habit per family seen, for the next game, said once', habits.length >= 1 && (text('.recap-habit').match(/For your next game:/g) || []).length === 1 && new Set(habits).size === habits.length && habits.every((h) => h.length > 10), habits.join(' | '));
+    /* "Keep in mind:" once, the habits under it when there are more than one (C9) */
+    const habits = $$('.recap-habit li.plan').length ? [].map.call($$('.recap-habit li.plan'), (e) => e.textContent) : [].map.call($$('.recap-habit .plan'), (e) => e.textContent.replace(/^Keep in mind: /, ''));
+    ok('one habit per family seen, said once', habits.length >= 1 && (text('.recap-habit').match(/Keep in mind:/g) || []).length === 1 && new Set(habits).size === habits.length && habits.every((h) => h.length > 10), habits.join(' | '));
     ok('no "spotted" line on the recap', !/spotted/i.test(text('#trainbox')));
     ok('the recap offers to play a game', !!$('.recap-acts .btn-big'));
     ok('reveal-only cards do not earn the day on their own', T.ev('ui.session ? (ui.session.attempted || 0) + (ui.session.carried || 0) >= 3 : false') || T.ev('dayLoad().sessions || 0') === sessionsBefore);
