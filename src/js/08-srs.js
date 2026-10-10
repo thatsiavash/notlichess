@@ -1,6 +1,7 @@
 /* ── Practice memory: spaced repetition, days, streaks, focus ───────────────
    One record per mistake in nl:srs:<user>, keyed gameId:ply:
-   { box, streak, due, last, lapses, learned, tricky, skips, ls, lt, n, fc }.
+   { box, streak, due, last, lapses, learned, tricky, skips, ls, lt, n, fc,
+   rs (the time of the current run's first clean find) }.
    The ladder (days): 1, 3, 7, 16, 35, 90. A position is Learned after its
    third clean solve in a row, the last one 16 or more days after the one
    before; it then returns once, 90 days later, as a spot check, and a clean
@@ -86,6 +87,8 @@ function srsRecord(it, result, info) {
     if (fresh) rec.box = info.ms != null && info.ms < 20000 ? 2 : 1;
     else if (dueNow) rec.box = Math.min(rec.box + 1, SRS_DAYS.length - 2);
     var spotCheck = rec.learned && dueNow;
+    /* the run's first clean find, for "Found 3 times over 23 days." */
+    if ((fresh || dueNow) && !(rec.streak > 0)) rec.rs = now;
     if (fresh || dueNow) rec.streak = (rec.streak || 0) + 1;
     if (!fresh && dueNow && prevGap >= 15.5 * DAY && rec.streak >= 3) rec.learned = true;
     if (spotCheck) { rec.retired = 1; rec.due = null; }
@@ -99,6 +102,7 @@ function srsRecord(it, result, info) {
     rec.streak = 0;
     rec.learned = false;
     delete rec.retired;
+    delete rec.rs;
     rec.box = Math.max(0, rec.box - 2);
     rec.due = now + SRS_DAYS[rec.box] * DAY;
   } else {
@@ -106,6 +110,7 @@ function srsRecord(it, result, info) {
     rec.streak = 0;
     rec.learned = false;
     delete rec.retired;
+    delete rec.rs;
     rec.box = rec.box >= 3 ? 1 : 0;
     rec.due = now + SRS_DAYS[rec.box] * DAY;
   }
@@ -203,12 +208,12 @@ function dayBump(result, fresh, attempted) {
   if (fresh) day.fresh = (day.fresh || 0) + 1;
   daySave(day);
 }
-/* one rule, said the same way in Settings: a day counts when you finish a
-   session in which you tried at least 3 positions, or all of them if it had
-   fewer. Tried means a move was played; skips and reveal-only taps never
-   count */
-var DAY_RULE = 'A day counts when you finish a session in which you tried at least 3 positions, or all of them if it had fewer.';
-function dayCounts(rec) { return !!(rec && (rec.sessions || 0) >= 1); }
+/* one rule, said the same way in Settings: a day counts once you try 3
+   positions, or all of a shorter set, finished or paused (counted, or a set
+   finished: sessions). Tried means a move was played; skips and reveal-only
+   taps never count */
+var DAY_RULE = 'A day counts once you try 3 positions, or all of a shorter set.';
+function dayCounts(rec) { return !!(rec && ((rec.sessions || 0) >= 1 || rec.counted)); }
 function dayRecOf(d) { return store.get(dayKeyFor(d), null); }
 function weekGoal() { return store.get('nl:weekGoal', 4); }
 function mondayOf(d) { var m = new Date(d); m.setHours(0, 0, 0, 0); m.setDate(m.getDate() - (m.getDay() + 6) % 7); return m.getTime(); }
@@ -258,22 +263,17 @@ function weekDays() {
   return n;
 }
 
-/* ── families: the habit behind a pattern ────────────────────────────────── */
+/* ── families: the patterns' groups (their check line: F2.3's step) ──────── */
 var FAMILIES = [
   { key: 'safety', name: 'Giving away material',
-    habit: 'Before every move, look at what your opponent can capture next.',
     types: ['hung', 'threat', 'forkAllowed', 'pinAllowed', 'discoveredAllowed', 'badTrade', 'material', 'promotion'] },
   { key: 'king', name: 'King danger',
-    habit: 'Before every move, look at every check your opponent could give.',
     types: ['mateAllowed', 'kingSafety'] },
   { key: 'chances', name: 'Missed chances',
-    habit: 'After every opponent move, look for your own checks, captures and threats.',
     types: ['missedMaterial', 'missedTactic', 'mateMissed'] },
   { key: 'conversion', name: 'Letting wins slip',
-    habit: 'When you are winning: trade pieces, keep your king safe, take no risks.',
     types: ['slipped'] },
   { key: 'quiet', name: 'Quiet mistakes',
-    habit: 'When nothing is happening, find your worst piece and improve it.',
     types: ['openingSlip', 'drift', 'endgame'] }
 ];
 var FAMILY_OF = {};

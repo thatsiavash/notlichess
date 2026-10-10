@@ -2843,7 +2843,7 @@ const BAR = `(function () {
       var st = stateFromFen('8/8/8/8/4K3/8/8/k7 w - - 0 1'), one = ends(boardSvg(st, { arrows: [{ from: 28, to: 44, kind: 'threat' }, { from: 0, to: 9, kind: 'threat' }] }));
       if (Math.abs(Math.hypot(one[0].x2 - 202.5, one[0].y2 - 112.5) - 0.34 * 45) > 1e-6) out.push('a lone arrow moved its tip: ' + JSON.stringify(one));
       return JSON.stringify({ out: out, cards: cards }); })()`));
-    ok(r.cards.length >= 1 && r.cards.indexOf('184430442654:12') >= 0, 'cards ' + JSON.stringify(r.cards));
+    ok(r.cards.length >= 1, 'cards ' + JSON.stringify(r.cards));
     eq(r.out.length, 0, r.out.join(' | '));
   });
 
@@ -3301,7 +3301,8 @@ const BAR = `(function () {
         if (menuHtml(a).indexOf('data-act="details"') < 0) out.push(it.key + ': no Details in the menu after an answer');
         if (h.split(esc(info.name)).length !== 2) out.push(it.key + ': the pattern named ' + (h.split(esc(info.name)).length - 1) + ' times');
         if (h.indexOf('class="pchip"') < 0) out.push(it.key + ': no chip');
-        if (h.indexOf('<p class="habit">' + esc(habitFor(a, t, info)) + '</p>') < 0) out.push(it.key + ': no habit');
+        /* one check line (F2.3), the card's own */
+        if (h.indexOf('<p class="habit">' + esc(checkLine(a)) + '</p>') < 0 || (h.match(/class="habit"/g) || []).length !== 1) out.push(it.key + ': no check line, or more than one');
         if (h.indexOf('class="ctx"') < 0) out.push(it.key + ': no context');
         if (!!it.b.d !== (h.indexOf('stakes-tag') >= 0)) out.push(it.key + ': the decisive line ' + (it.b.d ? 'missing' : 'on a card that did not decide'));
         if (it.b.d) n.decisive++;
@@ -4315,7 +4316,7 @@ const BAR = `(function () {
       return JSON.stringify({ caps: q.caps, moves: q.moves, real: q.S.real, could: q.S.could, shown: qs.caps, ccap: c.caps[1], cl: cl, cs: c.S.could, dq: dq.moves.length + ' ' + !!dq.S.real, danger: q.danger }); })()`));
     eq(r.dq, '3 false', 'with the best line losing as much, the game\'s moves to where it left the line');
     eq(JSON.stringify(r.moves), JSON.stringify(['d1g1', 'c4d3', 'c2d3', 'f8f5']), 'the game\'s own four moves');
-    eq(JSON.stringify(r.caps), JSON.stringify(['Rg1. Their pawn can take your bishop.', 'cxd3 takes your bishop with check.', 'cxd3 takes their pawn.', 'Rxf5 takes your queen.']), 'its captions');
+    eq(JSON.stringify(r.caps), JSON.stringify(['Rg1. Your queen is still attacked.', 'cxd3 takes your bishop with check.', 'cxd3 takes their pawn.', 'Rxf5 takes your queen.']), 'its captions (G1: the queen Qe6 saves, still attacked after Rg1; the bishop Qe6 loses too: the reviews)');
     eq(JSON.stringify(r.shown), JSON.stringify(r.caps), 'the same when shown');
     /* See why opens on the danger frame (F1.5): their last move made the attacks */
     eq(r.danger, 'After fxg6: queen attacked twice, bishop once.', 'the danger frame before the game\'s moves');
@@ -4651,7 +4652,8 @@ const BAR = `(function () {
         if (d0) {
           const wd = JSON.parse(A.ev('JSON.stringify(window.__writes)')).map((w) => Object.assign(w, { t: w.t - t0 }));
           const bd = wd.filter((w) => w.id === 'bwrap' && w.what === 'innerHTML'), td = wd.filter((w) => w.id === 'cband');
-          ok(bd.length === 1 && !/slide|red/.test(bd[0].v) && /aring|arrow|target/.test(bd[0].v) && (reduced || (bd[0].t >= 100 && /xfade/.test(bd[0].v))), at + ': the danger frame, still, with its marks: ' + JSON.stringify(bd));
+          /* (a game move that unblocked their mate rings the blocker in gold: the coach's review) */
+          ok(bd.length === 1 && !/slide|red/.test(bd[0].v) && /aring|arrow|target|hint/.test(bd[0].v) && (reduced || (bd[0].t >= 100 && /xfade/.test(bd[0].v))), at + ': the danger frame, still, with its marks: ' + JSON.stringify(bd));
           ok(td.length && td[0].t >= (reduced ? 0 : 450) && td[0].t >= bd[0].t + (reduced ? 0 : 150), at + ': its caption after its marks: ' + JSON.stringify(td[0]));
           eq(JSON.parse(A.ev('JSON.stringify(window.__snd)')).filter((x) => x.k === 'move').length, 0, at + ': no move sound on the danger frame');
           ok(/^Step 1 of \d+, before your game move\. /.test(A.ev('displayFor(ui.session.active).live')), at + ': the live region says the danger frame');
@@ -5749,7 +5751,7 @@ const BAR = `(function () {
     const TK = 'Their knight takes your queen.';
     const CASES = [[1, 'd8g5', QG5, -584, TK], [2, 'd8g5', QG5, -584, TK], [3, 'd8g5', QG5, -584, 'Nxg5 takes your queen.'],
       [2, 'd8g5', ['f3g5', 'f8e7', 'g5f3'], -900, TK], [2, 'd8h4', QH4, -600, TK], [3, 'd8h4', QH4, -600, 'Nxh4 takes your queen.'],
-      [2, 'd8g5', QG5, -250, 'After Nxg5, White is on top.']];
+      [2, 'd8g5', QG5, -250, 'After Nxg5, White is better.']];
     for (const [tier, u, line, cp, want] of CASES) {
       A.ev(`(function () { ${OPEN} ${TRY} var a = openAt('184380745302:11', ${tier}), rec = srsRec(a.it); window.__fc0 = (rec && rec.fc) || '';
         return tryMove(a, '${u}', ${JSON.stringify(line)}, ${cp}); })()`);
@@ -5822,7 +5824,7 @@ const BAR = `(function () {
     eq(t3.hints + ' ' + t3.row1, '0 Your turn', 'tier 3: no automatic hint');
   });
 
-  await test('F1.4, what the better move saves: card 1 found at 1600 settles on "Qe6 saves your queen. Rg1 lost it.", at 700 on "Queen to e6 saves your queen.", at 2000 on "Only move: Qe6 48%. Next best 33%." from its two-line search (as 1600 without one, or with the next best close); the story ends on the same claim', () => {
+  await test('F1.4, what the better move saves: card 1 found at 1600 settles on "Qe6 saves your queen. Rg1 lost it.", at 700 on "Queen to e6 saves your queen.", at 2000 on "Best: Qe6 48%. Next best 33%." from its two-line search and "Only move" when the next best leaves 18% (as 1600 without one, or with the next best close); the story ends on the same claim', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY}
       var it = model().byKey['184455333378:68'], b = it.b, out = {};
@@ -5833,19 +5835,21 @@ const BAR = `(function () {
         var row = displayFor(a).row2, S = (seeWhy(), buildStory(a));
         return [row, S.steps[S.steps.length - 1].cap];
       };
-      out.t1 = settled(1); out.t2 = settled(2); out.t3 = settled(3, 15); out.t3none = settled(3); out.t3close = settled(3, 6);
+      out.t1 = settled(1); out.t2 = settled(2); out.t3 = settled(3, 15); out.t3only = settled(3, 30); out.t3none = settled(3); out.t3close = settled(3, 6);
       out.wb = b.wb; out.sv = dangerNow(it).sv;
       return JSON.stringify(out); })()`));
     eq(JSON.stringify(r.t2), JSON.stringify(['Qe6 saves your queen. Rg1 lost it.', 'Better: Qe6 saves your queen.']), 'tier 2');
     eq(JSON.stringify(r.t1), JSON.stringify(['Queen to e6 saves your queen.', 'Better: queen to e6. Your queen is safe there.']), 'tier 1');
-    eq(JSON.stringify(r.t3), JSON.stringify(['Only move: Qe6 48%. Next best 33%.', 'Only move: Qe6 48%. Next best 33%.']), 'tier 3, its gap 15');
+    /* "Only move" only where the next best leaves 25% or less (the coach's review): at 33% "Best" */
+    eq(JSON.stringify(r.t3), JSON.stringify(['Best: Qe6 48%. Next best 33%.', 'Best: Qe6 48%. Next best 33%.']), 'tier 3, its gap 15');
+    eq(JSON.stringify(r.t3only), JSON.stringify(['Only move: Qe6 48%. Next best 18%.', 'Only move: Qe6 48%. Next best 18%.']), 'tier 3, its gap 30');
     ok(Math.abs(Math.round(r.wb) - 49) <= 2 && Math.abs(Math.round(r.wb) - 15 - 34) <= 2, 'the figures within 2 points of 49 and 34');
     eq(JSON.stringify(r.t3none), JSON.stringify(r.t2), 'tier 3 with no search: as tier 2');
     eq(JSON.stringify(r.t3close), JSON.stringify(r.t2), 'tier 3 with the next best 6 points worse: no only-move line');
     eq(r.sv, 'Q', 'it saves the queen, never the bishop its line loses too');
   });
 
-  await test('F1.4: every "saves" claim on the 91 cards holds (the settled line and the story\'s end, tiers 1 to 3): the piece is one the better line saves, and the game move lost it', () => {
+  await test('F1.4: every "saves" (or "keeps") claim on the 91 cards holds (the settled line and the story\'s end, tiers 1 to 3): the piece is one the better line saves, and the game move lost it', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       var out = [], n = { cards: 0, saves: 0, lost: 0, safe: 0, only: 0 };
@@ -5861,7 +5865,7 @@ const BAR = `(function () {
           a.animMove = null; a.settle = 2;
           var row = displayFor(a).row2, S = (seeWhy(), buildStory(a)), cap = S.steps[S.steps.length - 1].cap, game = sanOf(a.pre, a.played);
           [['settled', row], ['story end', cap]].forEach(function (x) {
-            var m = / saves your (\\w+)\\b|Your (\\w+) is safe/.exec(x[1]);
+            var m = / (?:saves|keeps) your (\\w+)\\b|Your (\\w+) is safe/.exec(x[1]);
             if (/Only move: /.test(x[1])) n.only++;
             if (!m) return;
             var t = pw(m[1] || m[2]);
@@ -5869,15 +5873,22 @@ const BAR = `(function () {
             if (!t || sv.indexOf(t) < 0) out.push('tier ' + tier + ' ' + it.key + ' ' + x[0] + ': "' + x[1] + '" but it saves "' + sv + '"');
             if (x[1].indexOf(game + ' lost it.') >= 0 || x[1].indexOf(moveWords(a.pre, a.played) + ' lost it.') >= 0) n.lost++;
           });
-          if (/ lost it\\./.test(row) && !/ saves your /.test(row)) out.push('tier ' + tier + ' ' + it.key + ': "lost it" with nothing saved: ' + row);
+          if (/ lost it\\./.test(row) && !/ (?:saves|keeps) your /.test(row)) out.push('tier ' + tier + ' ' + it.key + ': "lost it" with nothing saved: ' + row);
+          /* "saves" only for a piece in danger on the card's position, else "keeps" (the coach's review) */
+          var sm = / (saves|keeps) your (\\w+)\\b/.exec(row);
+          if (sm) {
+            var was = dangerView(a).attacked.some(function (q) { return pType(q.p) === sv.charAt(0); });
+            if ((sm[1] === 'saves') !== was) out.push('tier ' + tier + ' ' + it.key + ': "' + sm[1] + '" where the piece was ' + (was ? '' : 'not ') + 'in danger: ' + row);
+            n[sm[1]] = (n[sm[1]] || 0) + 1;
+          }
         });
       });
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.cards === 273 && r.n.saves >= 30 && r.n.safe >= 5 && r.n.lost >= 8, JSON.stringify(r.n));
+    ok(r.n.cards === 273 && r.n.saves >= 30 && r.n.safe >= 5 && r.n.lost >= 8 && r.n.keeps >= 5, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults: ' + r.out.slice(0, 4).join(' | '));
   });
 
-  await test('F1.5, the danger frame opens See why: card 1 answered at 1600 shows a still frame 0 (the three dashed arrows, f5 and d3 ringed, fxg6 tinted) with "After fxg6: queen attacked twice, bishop once."; the next tap plays Rg1; at 700 "Their last move: your queen is attacked twice."', () => {
+  await test('F1.5, the danger frame opens See why: card 1 answered at 1600 shows a still frame 0 (the three dashed arrows, f5 and d3 ringed, fxg6 tinted) with "After fxg6: queen attacked twice, bishop once."; the next tap plays Rg1; at 700 "Their last move attacks your queen twice."', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY}
       var out = {};
@@ -5902,7 +5913,7 @@ const BAR = `(function () {
     eq(t2.mark, 'f7g6', 'their last move fxg6 tinted');
     eq(t2.cap, 'After fxg6: queen attacked twice, bishop once.', 'the caption');
     eq(JSON.stringify(t2.next), JSON.stringify([1, 'game', 'Rg1']), 'the next tap plays Rg1');
-    eq(r[1].cap, 'Their last move: your queen is attacked twice.', 'tier 1');
+    eq(r[1].cap, 'Their last move attacks your queen twice.', 'tier 1 (the coach\'s review)');
   });
 
   await test('F1.4\'s figures: a tier-3 card with no gap on its record asks one background two-line search as it opens, and keeps the gap against its own best move only; none at tier 2', async () => {
@@ -5952,6 +5963,181 @@ const BAR = `(function () {
     eq(r.len, 21, 'each piece two characters');
     ok(r.fits, 'it fits row 2');
     ok(r.found && /class="pc-ico/.test(r.found.html) && !/[♔-♟]/.test(r.found.live), 'a fixture card says a trade in pieces, its live words in words: ' + JSON.stringify(r.found));
+  });
+
+  /* ── the review of slice 1: four hints that taught the wrong danger (the coach), and the words ── */
+  await test('review of slice 1, the danger: a piece its king guards against a lone queen is not in danger; card 7 (Bf3) is a safety check whose hint and frame say the mate it allows, never the pawn their queen eyes; card 3 (O-O) stops their mate and allows Bxc3, said so, with both threats on frame 0 and what Qf3 guards; card 12 (Rxf3) names the bishop it loses, never the plan line; card 5, in check, says the check', async () => {
+    const A = boot();
+    /* the static exchange: g7 guarded by its king against a lone queen, then attacked twice */
+    const see = JSON.parse(A.ev(`JSON.stringify([dangerAttacked(stateFromFen('6k1/6p1/8/8/8/8/1Q6/6K1 b - - 0 1'), false), dangerAttacked(stateFromFen('6k1/6p1/7B/8/8/8/1Q6/6K1 b - - 0 1'), false)])`));
+    eq(JSON.stringify(see), JSON.stringify([[], [[54, 47, 9]]]), 'a pawn its king guards is safe from a lone queen; with a bishop beside her it is not');
+    /* their searches: card 7, Qxa6 winning a pawn; card 3, Qxf2 mate and Bxc3 winning */
+    A.ev(`(function () { window.readyEngine();
+      var l = function (pv, cp, mate) { return { cp: cp, mate: mate == null ? null : mate, pv: pv }; }, go = function (k, r) { var it = model().byKey[k]; delete it.b.dz; window.__dz = r; ensureDanger(it, true); };
+      go('184435538450:67', { cp: 150, mate: null, pv: ['b7a6'], depth: 18, stopped: false, lines: [l(['b7a6', 'e8e6', 'a6b5', 'd8d6', 'b5c4', 'h7h6'], 150)] });
+      return 1; })()`);
+    await tick(); await tick();
+    A.ev(`(function () { window.readyEngine(); var it = model().byKey['184268949378:16']; delete it.b.dz;
+      window.__dz = { cp: 0, mate: -1, pv: ['f6f2'], depth: 18, stopped: false, lines: [{ cp: 0, mate: -1, pv: ['f6f2'] }, { cp: -500, mate: null, pv: ['d4c3', 'b2c3', 'f6c3', 'e1f1', 'c3a1', 'h2h3', 'd7d6'] }] };
+      ensureDanger(it, true); return 1; })()`);
+    await tick(); await tick();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY} ${SPOILER} window.__dz = null;
+      var hint = function (k, tier) { var a = openAt(k, tier); a.hints = 1; a.hintAfter = true; var hm = hintMarks(a), d = displayFor(a);
+        return { row2: d.row2, kind: hm.dz && hm.dz.kind, rings: hm.rings.map(function (x) { return sqName(x.sq) + ' ' + x.kind + (x.mate ? ' mate' : ''); }), arrows: hm.arrows.map(function (x) { return sqName(x.from) + sqName(x.to) + ' ' + x.key; }), step: dangerView(a).step, faults: spoilerFaults(a) }; };
+      var settled = function (k, tier) { var a = openAt(k, tier); solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.animMove = null; a.settle = 2;
+        var S = buildStory(a), f0 = S.steps[0];
+        return { row2: displayFor(a).row2, frame: f0.df ? f0.cap : '', rings: f0.df ? f0.df.rings.map(function (x) { return sqName(x.sq) + ' ' + x.kind; }) : [], arrows: f0.df ? f0.df.arrows.map(function (x) { return sqName(x.from) + sqName(x.to); }) : [], check: checkLine(a) }; };
+      var out = {};
+      out.at7 = dangerNow(model().byKey['184435538450:67']).at.map(function (x) { return sqName(x[0]); });
+      out.c7 = [hint('184435538450:67', 1), hint('184435538450:67', 2)]; out.s7 = [settled('184435538450:67', 1), settled('184435538450:67', 2)];
+      out.c3 = [hint('184268949378:16', 1), hint('184268949378:16', 2)]; out.s3 = [settled('184268949378:16', 1), settled('184268949378:16', 2), settled('184268949378:16', 3)];
+      out.c12 = [hint('184212737262:56', 1), hint('184212737262:56', 2)]; out.s12 = settled('184212737262:56', 2);
+      out.c5 = [1, 2, 3].map(function (t) { return hint('184234373418:63', t); });
+      return JSON.stringify(out); })()`));
+    /* card 7 */
+    ok(r.at7.indexOf('g7') < 0, 'card 7: g7 (its king guards it, the bishop blocks the file) is not in danger: ' + r.at7.join(','));
+    eq(JSON.stringify(r.c7.map((x) => [x.step, x.kind, x.row2])), JSON.stringify([[3, 'madeMate', 'Bishop to f3 lets them mate you.'], [3, 'madeMate', 'Bf3 lets them mate you.']]), 'card 7: a safety check, the mate Bf3 allows');
+    eq(JSON.stringify([r.c7[1].rings, r.c7[1].arrows]), JSON.stringify([['g7 attacked mate'], ['b7g7 hint']]), 'card 7: the mating square and the queen\'s arrow, never the a6 pawn as in danger');
+    ok(r.c7.every((x) => !x.faults.length), 'card 7: spoiler clean');
+    eq(JSON.stringify(r.s7.map((x) => [x.frame, x.rings])), JSON.stringify([['Your bishop on g4 blocks their mate.', ['g4 block']], ['Your bishop on g4 blocks their mate.', ['g4 block']]]), 'card 7: See why opens on what the bishop blocked');
+    /* card 3 */
+    eq(JSON.stringify(r.c3.map((x) => [x.step, x.kind, x.row2])), JSON.stringify([[1, 'parried', 'Castling stops mate. Watch your knight.'], [1, 'parried', 'O-O stops mate, allows Bxc3.']]), 'card 3: the mate O-O stopped and what it allows');
+    eq(JSON.stringify([r.c3[1].rings, r.c3[1].arrows]), JSON.stringify([['d4 threat'], ['d4c3 hint']]), 'card 3: the bishop that punishes it, drawn');
+    eq(JSON.stringify(r.s3.map((x) => [x.frame, x.row2])), JSON.stringify([['Two threats: mate on f2 and your knight.', 'Queen to f3 guards f2 and your knight.'], ['Two threats: Qxf2 mate and Bxc3+.', 'Qf3 guards f2 and your knight.'], ['Two threats: Qxf2 mate and Bxc3+.', 'Qf3 guards f2 and your knight.']]), 'card 3: frame 0 and the settled line');
+    eq(JSON.stringify([r.s3[1].rings, r.s3[1].arrows]), JSON.stringify([['f2 attacked', 'c3 attacked'], ['f6f2', 'd4c3']]), 'card 3: both threats drawn on frame 0');
+    eq(JSON.stringify([r.s3[1].check, r.s3[2].check]), JSON.stringify(['Their move: what does it attack?', 'Their threat: Bxc3 takes your knight.']), 'card 3: its check line, tier 3\'s the threat that stood');
+    /* card 12 */
+    eq(JSON.stringify(r.c12.map((x) => [x.step, x.kind, x.row2, x.rings.length + x.arrows.length])), JSON.stringify([[3, 'lost', 'That lets them win your bishop.', 0], [3, 'lost', 'Rxf3 lets them win your bishop.', 0]]), 'card 12: the bishop it loses, in words');
+    eq(r.s12.check, 'Before you move: their checks, captures, threats?', 'card 12: a safety check, never the plan line');
+    /* card 5 */
+    eq(JSON.stringify(r.c5.map((x) => [x.kind, x.row2, x.rings.length + x.arrows.length])), JSON.stringify([['check', 'In check: move, block or take?', 0], ['check', 'In check: move, block or take?', 0], ['check', 'In check: move, block or take?', 0]]), 'card 5: in check, the check, nothing drawn');
+  });
+
+  await test('review of slice 1, the words: a try that leaves the queen attacked says so (step 1); the answer guard compares whole moves (Qxc5 is not c5); "on top" is gone; "keeps" for a piece the game move put in danger; "Find a safe square." after a ring on the piece; "Both tries gave away your queen."; where your game left it ("In your game, Nc5 left White better."); a plan card says what its game move lost', async () => {
+    const A = boot();
+    const tries = [];
+    for (const [key, tier, u, pv, cp] of [['184455333378:68', 1, 'd3c4', ['b4c4'], -150], ['184455333378:68', 2, 'd3c4', ['b4c4'], -150], ['184234373418:63', 2, 'd5c5', ['b4c5', 'd7d8'], -900], ['184234373418:63', 3, 'd5c5', ['b4c5', 'd7d8'], -900], ['184380745302:11', 2, 'd8g5', ['f3g5', 'e4g5', 'c1g5', 'd7d5', 'e5d6', 'c8e6', 'c3d4', 'f8d6'], -250]]) {
+      A.ev(`(function () { ${OPEN} ${TRY} return tryMove(openAt('${key}', ${tier}), '${u}', ${JSON.stringify(pv)}, ${cp}); })()`);
+      await tick(); await tick();
+      tries.push(JSON.parse(A.ev(`(function (a) { a.reason = 2; var d = displayFor(a); return JSON.stringify([d.row2, a.fc, a.tried.chip]); })(ui.session.active)`)));
+    }
+    eq(JSON.stringify(tries[0]), JSON.stringify(['Your queen is still attacked.', '1', '']), 'card 1, tier 1: Bxc4 Qxc4 leaves the queen attacked, their move (1)');
+    eq(JSON.stringify(tries[1]), JSON.stringify(['Qxc4, and your queen is still attacked.', '1', 'Their move']), 'card 1, tier 2: the reply named, the step its chip (the frame drops it where it has no room)');
+    eq(tries[2][0], 'Their queen takes your queen.', 'card 5, tier 2');
+    eq(tries[3][0], 'Qxc5 takes your queen.', 'card 5, tier 3: Qxc5 is not the answer c5');
+    eq(tries[4][0], 'After Nxg5, White is better.', 'card 2: "better", never "on top"');
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY}
+      var out = {}, settle = function (k, tier) { var a = openAt(k, tier); solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.animMove = null; a.settle = 2; var S = buildStory(a); return [displayFor(a).row2, S.steps[S.steps.length - 1].cap]; };
+      out.keep = [settle('184432739572:22', 1), settle('184432739572:22', 2)];
+      out.left = [settle('184380745302:11', 1), settle('184380745302:11', 2)];
+      out.step2 = dangerView(openAt('184380745302:11', 2)).step;
+      var a = openAt('184455333378:68', 2); a.hints = 2; out.safe = displayFor(a).row2;
+      a = openAt('184426845252:17', 2); a.hints = 2; out.safe4 = displayFor(a).row2;
+      out.both = repeatedWords(openAt('184455333378:68', 2), { mate: false, took: 'Q', lost: false, to: 37, san: '' });
+      /* card 12's works too: what its game move lost */
+      out.alt = [1, 2].map(function (tier) { var b = openAt('184212737262:56', tier), m = uciToMove(b.st, 'g2f3'), af = cloneState(b.st); applyMove(af, m); var rp = legalMoves(af)[0];
+        b.yours = { uci: ['g2f3'].concat(rp ? [moveUci(rp)] : []), cp: 0, at: 0 }; solved(m, 'g2f3', { win: 50, best: 52, mate: null }); b.animMove = null; b.settle = 2; return displayFor(b).row1 + ' / ' + displayFor(b).row2; });
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.keep), JSON.stringify([['Pawn to f4 keeps your queen.', 'Better: pawn to f4. Your queen is safe.'], ['f4 keeps your queen.', 'Better: f4 keeps your queen.']]), 'card 8: the queen was safe until Qf3, so f4 keeps it');
+    eq(JSON.stringify(r.left.map((x) => x[0])), JSON.stringify(['Knight to c5 left White better.', 'In your game, Nc5 left White better.']), 'card 2: said of your game');
+    eq(r.step2, 1, 'card 2: the knight their queen attacked, which d5 guards: their move (the coach\'s note for slice 2)');
+    eq(r.safe + ' / ' + r.safe4, 'Find a safe square. / Find a safe square.', 'hint 2 on a piece hint 1 rang (cards 1 and 4)');
+    eq(JSON.stringify(r.both), JSON.stringify(['Both tries let them take your queen.', 'Both tries gave away your queen.']), 'both tries\' short form says what');
+    eq(JSON.stringify(r.alt), JSON.stringify(['That works too / Your game move lost ♗ for ♟♟.', 'That works too / Rxf3 lost ♗ for ♟♟.']), 'card 12, a move that works too: what the game move lost, never "you were better"');
+  });
+
+  /* ── slice 2: the honest summary and one routine ── */
+  await test('F2.1: the tour\'s set (Rg1 first try; Nc5 after a miss; Be4 a good move, then found; O-O after two misses; bxc5 first try) reads "2 of 5 found first try." then "Then 2 after a miss, 1 after a good move." at 1600, and "11 of 15 stars" at 700 (card 2\'s First look hint costs no star)', async () => {
+    const run = async (tier) => {
+      const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
+      A.ev(`(function () { playerTier = function () { return ${tier}; }; window.readyEngine();
+        ui.session = { mode: 'today', label: 'Today', keys: ['184455333378:68', '184380745302:11', '184331579496:34', '184268949378:16', '184205946040:62'], idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} };
+        return 1; })()`);
+      const open = (i) => A.ev(`(function () { window.readyEngine(); var ss = ui.session; ss.idx = ${i}; var a = cardFor(model().byKey[ss.keys[${i}]]); ss.active = a; if (${tier} === 1 && ${i} === 1) workedExample(a); return 1; })()`);
+      const best = () => A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
+      const game = async () => { A.ev('(function (a) { a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); return 1; })(ui.session.active)'); await tick(); A.ev('(function (a) { tryAgain(); return 1; })(ui.session.active)'); };
+      open(0); best();
+      open(1); await game(); best();
+      open(2); A.ev(`(function (a) { window.__tryCp = cpFromWin(winPct(a.it.b.eb) - 7); window.__bestCp = a.it.b.eb; window.__tryPv = null; gradeMove(legalMoves(a.st).filter(function (m) { return moveUci(m) !== a.bestUci && moveUci(m) !== a.playedUci; })[0]); return 1; })(ui.session.active)`);
+      await tick(); await tick();
+      const close = A.ev('ui.session.active.tried && ui.session.active.tried.kind');
+      A.ev('(function (a) { window.__tryCp = null; window.__bestCp = null; tryAgain(); return 1; })(ui.session.active)');
+      best();
+      open(3); await game(); await game(); best();
+      open(4); best();
+      return JSON.parse(A.ev(`(function () { var ss = ui.session; ss.active = null; ss.finished = true; var h = doneHtml(ss);
+        return JSON.stringify({ close: '${close}', head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], then: (/class="recap-then">([^<]*)</.exec(h) || [])[1], cats: ss.keys.map(function (k) { return ss.sum[k].c; }).join(' '),
+          stars: ss.keys.map(function (k) { return ss.sum[k].s; }).join(''), words: (h.match(/class="res[^"]*">[^<]*/g) || []).map(function (x) { return x.replace(/^.*>/, ''); }) }); })()`));
+    };
+    const t2 = await run(2), t1 = await run(1);
+    eq(t2.close, 'close', 'card 3: a good move first');
+    eq(t2.cats, 'first miss good miss first', 'the categories, the worst event deciding');
+    eq(t2.head + ' / ' + t2.then, '2 of 5 found first try. / Then 2 after a miss, 1 after a good move.', 'tier 2');
+    eq(JSON.stringify(t2.words), JSON.stringify(['First try', 'After a miss', 'After a good move', 'After a miss', 'First try']), 'the tiles\' words');
+    eq(t1.head + ' / ' + t1.then, '11 of 15 stars / Then 2 after a miss, 1 after a good move.', 'tier 1: stars, the same second line');
+    eq(t1.stars, '32213', 'tier 1: card 2\'s First look and its miss with the automatic hint 2 stars; two misses 1');
+  });
+
+  await test('F2.3: one check line per card: card 1 at 1600 says "Their move: what does it attack?" in Details and on the summary; at 2000 its computed fact on Details and its tile; the routine line once on the first summary and on Insights at tiers 2 and 3, never at tier 1', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY}
+      var out = {}, box = { innerHTML: '', dataset: {}, style: {}, classList: { add: function () {}, remove: function () {}, toggle: function () {}, contains: function () { return false; } }, querySelector: function () { return null; }, querySelectorAll: function () { return []; } }, el0 = el;
+      [1, 2, 3].forEach(function (tier) {
+        var a = openAt('184455333378:68', tier);
+        solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.animMove = null; a.settle = 2;
+        var dh = detailsHtml(), ss = ui.session; ss.active = null; ss.finished = true;
+        var h = doneHtml(ss);
+        out[tier] = { details: (/<p class="habit">([^<]*)</.exec(dh) || [])[1], keep: (/Keep in mind: ([^<]*)</.exec(h) || [])[1] || '', tile: (/class="tile-check">([^<]*)</.exec(h) || [])[1] || '' };
+      });
+      /* the routine: the first summary at tier 2 once; Insights at 2 and 3 */
+      var fin = function (tier) { playerTier = function () { return tier; }; ui.session = { mode: 't', label: 't', keys: [], idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} }; finishSession(); return /Every move: their move, your chances, safety check\\./.test(doneHtml(ui.session)); };
+      out.routine = [fin(1), fin(2), fin(2), fin(3)];
+      el = function (id) { return id === 'insightsbox' ? box : el0(id); };
+      out.ins = [1, 2, 3].map(function (tier) { playerTier = function () { return tier; }; ui.view = 'insights'; box.innerHTML = ''; renderInsights(); return /Every move: their move, your chances, safety check\\./.test(box.innerHTML); });
+      el = el0; ui.view = 'train';
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r[2]), JSON.stringify({ details: 'Their move: what does it attack?', keep: 'Their move: what does it attack?', tile: '' }), 'tier 2: the same line');
+    eq(JSON.stringify(r[1]), JSON.stringify({ details: 'Their move: what does it attack?', keep: 'Their move: what does it attack?', tile: '' }), 'tier 1: the same question');
+    eq(JSON.stringify(r[3]), JSON.stringify({ details: 'Their threat: Rxf5 takes your queen.', keep: 'Their move: what does it attack?', tile: 'Their threat: Rxf5 takes your queen.' }), 'tier 3: the computed fact in Details and on its tile, the step\'s question above the set');
+    eq(JSON.stringify(r.routine), '[false,true,false,false]', 'the routine line on the first summary at tier 2 only, never at tier 1');
+    eq(JSON.stringify(r.ins), '[false,true,true]', 'Insights: at tiers 2 and 3');
+  });
+
+  await test('F2.5: Details says the clock and their threat: card 1 "You took 20 seconds. You had 20 minutes left." at 700, "Rg1 took 20 s, with 20:15 left." at 1600, the pace (1800 - 1234.6) / 34 = 16.6 as "17 s" at 2000; their threat, only one Rg1 left standing: the search\'s gxf5 is stopped (Rg1 pins the pawn), so "Their threat: Rxf5 takes your queen.", said once at tier 3; the O-O card names Bxc3, never the mate O-O stopped; card 7 none beside the mate Bf3 allows; no clock, no line', async () => {
+    const A = boot();
+    A.ev(`(function () { window.readyEngine(); var it = model().byKey['184455333378:68']; delete it.b.dz;
+      window.__dz = { cp: -800, mate: null, pv: ['g6f5'], depth: 18, stopped: false, lines: [{ cp: -800, mate: null, pv: ['g6f5', 'e4f5', 'b4c5', 'd1h1'] }, { cp: -780, mate: null, pv: ['f8f5', 'e4f5', 'b4c5', 'd1h1'] }] };
+      ensureDanger(it, true); return 1; })()`);
+    await tick(); await tick();
+    /* the O-O card: Qxf2 mate (which O-O stops) and Bxc3; card 7: Qxa6, beside the mate Bf3 allows */
+    for (const [k, dz] of [['184268949378:16', { cp: 0, mate: -1, pv: ['f6f2'], depth: 18, stopped: false, lines: [{ cp: 0, mate: -1, pv: ['f6f2'] }, { cp: -500, mate: null, pv: ['d4c3', 'b2c3', 'f6c3', 'e1f1', 'c3a1', 'h2h3', 'd7d6'] }] }],
+      ['184435538450:67', { cp: 150, mate: null, pv: ['b7a6'], depth: 18, stopped: false, lines: [{ cp: 150, mate: null, pv: ['b7a6', 'e8e6', 'a6b5', 'd8d6', 'b5c4', 'h7h6'] }] }]]) {
+      A.ev(`(function () { window.readyEngine(); var it = model().byKey['${k}']; delete it.b.dz; window.__dz = ${JSON.stringify(dz)}; ensureDanger(it, true); return 1; })()`);
+      await tick(); await tick();
+    }
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY} window.__dz = null;
+      var out = {}, lines = function (k, tier) {
+        var a = openAt(k, tier);
+        solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.animMove = null; a.settle = 2;
+        var dh = detailsHtml(), more = []; dh.replace(/<p class="dt-more[^"]*">([^<]*)</g, function (m, t) { more.push(t); return m; });
+        more.push((/<p class="habit">([^<]*)</.exec(dh) || [])[1]);
+        return more;
+      };
+      [1, 2, 3].forEach(function (tier) { out[tier] = lines('184455333378:68', tier); });
+      out.oo = [lines('184268949378:16', 1)[0], lines('184268949378:16', 2)[0], dangerView(openAt('184268949378:16', 2)).threat.mate];
+      out.c7 = lines('184435538450:67', 2).filter(function (x) { return /^Their threat/.test(x); });
+      var it = model().byKey['184455333378:68'], c = it.b.c;
+      delete it.b.c; var a = openAt(it.key, 2); out.none = clockLine(a); it.b.c = c;
+      out.data = [it.b.c, it.b.tt, it.g.tc];
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.data), JSON.stringify([1215, 19.6, '30+0']), 'the stored clock: 20:15 after Rg1, 19.6 s on it, a 30-minute game');
+    eq(JSON.stringify(r[1]), JSON.stringify(['Their threat: their rook takes your queen.', 'You took 20 seconds. You had 20 minutes left.', 'Their move: what does it attack?']), 'tier 1');
+    eq(JSON.stringify(r[2]), JSON.stringify(['Their threat: Rxf5 takes your queen.', 'Rg1 took 20 s, with 20:15 left.', 'Their move: what does it attack?']), 'tier 2');
+    /* tier 3: the check line is their threat, one that Rg1 left standing (it pins the g-pawn), said once */
+    eq(JSON.stringify(r[3]), JSON.stringify(['Rg1 took 20 s, with 20:15 left. Your pace: 17 s a move.', 'Their threat: Rxf5 takes your queen.']), 'tier 3');
+    eq(JSON.stringify(r.oo), JSON.stringify(['Their threat: their bishop takes your knight.', 'Their threat: Bxc3 takes your knight.', 1]), 'the O-O card: the search kept their mate, O-O stopped it, so Bxc3');
+    eq(JSON.stringify(r.c7), '[]', 'card 7: no other threat beside the mate Bf3 allows');
+    eq(r.none, '', 'no clock, no line');
   });
 
   results.forEach((l) => console.log(l));

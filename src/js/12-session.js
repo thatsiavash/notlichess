@@ -21,7 +21,7 @@ function saveSession() {
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
-                         progress: ss.progress || {}, attempted: ss.attempted || 0, carried: ss.carried || 0, notes: ss.notes || {}, firstTime: !!ss.firstTime });
+                         progress: ss.progress || {}, attempted: ss.attempted || 0, carried: ss.carried || 0, notes: ss.notes || {}, sum: ss.sum || {}, firstTime: !!ss.firstTime });
 }
 /* a paused session that is dropped or replaced: a card left after a miss
    is graded a fail, and its tries still count toward the day */
@@ -353,7 +353,7 @@ function resumeSession() {
   if (!s) return false;
   ui.session = { mode: s.mode, label: s.label, keys: s.keys, idx: s.idx, results: s.results || {},
                  relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {},
-                 attempted: s.attempted || 0, carried: s.carried || 0, notes: s.notes || {}, firstTime: !!s.firstTime };
+                 attempted: s.attempted || 0, carried: s.carried || 0, notes: s.notes || {}, sum: s.sum || {}, firstTime: !!s.firstTime };
   setView('train', false);
   pushSessionState();
   /* a card answered before the reload is not asked again */
@@ -424,25 +424,46 @@ function startDrill(spec) {
   closeSheet();
   startSession('drill', items.map(function (x) { return x.key; }), spec.label || 'Drill', spec);
 }
+/* enough tried for the day (DAY_RULE): this set's own tries (extra: the
+   card on screen, tried and not yet answered), at least 3, or all of a
+   shorter set; or with a closed set's carried over, 3 */
+function triedEnough(ss, extra) {
+  var tried = (ss.attempted || 0) + (extra || 0), n = 0, seen = {};
+  ss.keys.forEach(function (k) { if (!seen[k]) { seen[k] = 1; n++; } });
+  return (tried >= 1 && tried >= Math.min(3, n)) || tried + (ss.carried || 0) >= 3;
+}
+/* the day counts once 3 positions are tried, or all of a shorter set,
+   finished or paused (F2.6, D5): asked as each card is answered or left
+   and as a set is paused. Once a day: the measure, then the week's goal */
+function countDay(ss, extra) {
+  if (!ss || !triedEnough(ss, extra)) return;
+  var day = dayLoad();
+  if (dayCounts(day)) return;
+  day.counted = 1;
+  daySave(day);
+  track('day_counted');
+  goalCheck();
+}
+function goalCheck() {
+  if (weekDays() >= goalThisWeek() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
+    store.set('nl:goalSent:' + playerId(), weeksAtGoal());
+    track('week_goal_met');
+  }
+}
 function finishSession() {
   var ss = ui.session;
   if (!ss) return;
   ss.finished = true;
   ss.active = null;
   clearLive();
-  /* the day counts on real tries only (DAY_RULE) */
-  var day = dayLoad(), tried = ss.attempted || 0, n = 0, seen = {}, counted = (day.sessions || 0) > 0;
-  ss.keys.forEach(function (k) { if (!seen[k]) { seen[k] = 1; n++; } });
-  /* this session's own tries, or with a closed session's, at least 3 */
-  if ((tried >= 1 && tried >= Math.min(3, n)) || tried + (ss.carried || 0) >= 3) day.sessions = (day.sessions || 0) + 1;
+  /* a set finished: on real tries only (DAY_RULE), the day counted then at
+     the latest */
+  var day = dayLoad();
+  if (triedEnough(ss, 0)) { countDay(ss, 0); day = dayLoad(); day.sessions = (day.sessions || 0) + 1; }
   else day.short = 1;
   daySave(day);
-  /* a measure: the day counts toward the week, once a day */
-  if (!counted && day.sessions > 0) track('day_counted');
-  if (weekDays() >= goalThisWeek() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
-    store.set('nl:goalSent:' + playerId(), weeksAtGoal());
-    track('week_goal_met');
-  }
+  /* the routine line, once, on a first summary at tiers 2 and 3 (F2.3) */
+  if (playerTier() >= 2 && !store.get('nl:tip:routine', 0)) { ss.routine = true; store.set('nl:tip:routine', 1); }
   store.del(sessKey());
   /* one position opened from a summary: back to that summary */
   if (ss.from) ui.session = ss.from;
@@ -484,6 +505,8 @@ function endSession(fromPop) {
     return;
   }
   if (!ss.finished && open && open.phase !== 'done' && (open.misses || open.hints || open.attempts)) keepProgress(open);
+  /* a set paused with 3 tried counts the day (F2.6) */
+  if (!ss.finished) countDay(ss, open && open.phase !== 'done' && open.attempts > 0 ? 1 : 0);
   var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints || open.attempts)));
   if (keep) saveSession(); else store.del(sessKey());
   ui.session = null;

@@ -258,7 +258,7 @@ function named(a, st, m, f, ch, t1fall) {
     eq(r.d, 1, 'fresh count');
   });
 
-  await test('a card that came back for one more try reads both showings ("Shown, then found") and counts as solved only when both were; a first look needs no miss; a family met only on a card skipped untouched gives no habit (T10, slice 14 nits)', () => {
+  await test('a card that came back for one more try reads both showings ("Shown, then found"); the score counts first showings (F2.1: tier 1 in stars); a first look needs no miss; a card skipped untouched gives no check line (T10, slice 14 nits, F2.3)', () => {
     const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
     const r = JSON.parse(A.ev(`(function () {
       playerTier = function () { return 1; };
@@ -289,15 +289,18 @@ function named(a, st, m, f, ch, t1fall) {
       h.replace(/class="res[^"]*">([^<]*)</g, function (m, w) { words.push(w); return m; });
       var habits = []; h.replace(/<li class="plan">([^<]*)</g, function (m, t) { habits.push(t); return m; });
       if (!habits.length) h.replace(/<p class="plan">Keep in mind: ([^<]*)</g, function (m, t) { habits.push(t); return m; });
-      var fams = []; pick.slice(0, 4).forEach(function (x) { var f = familyOf(patternOf(x.b)); if (fams.indexOf(f) < 0) fams.push(f); });
-      return JSON.stringify({ words: words, head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], note3: ss.notes[pick[3].key] || null, notes: ss.notes,
-        habits: habits, want: fams.map(function (f) { return esc(f.habit); }), odd: !!odd, oddHabit: odd && fams.every(function (f) { return f.key !== famOf(odd); }) ? esc(familyOf(patternOf(odd.b)).habit) : null }); })()`));
-    eq(r.words.join(' | '), 'Shown, then found | Found after a miss, then shown again | Shown | Found after a miss | Skipped', 'the words: ' + JSON.stringify(r.notes));
+      var want = []; pick.slice(0, 4).forEach(function (x) { var l = esc(ss.sum[x.key].l); if (want.indexOf(l) < 0) want.push(l); });
+      var oddLine = odd ? esc(lineOfStep(familyStep(famOf(odd)), 1)) : null;
+      return JSON.stringify({ words: words, head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], then: (/class="recap-then">([^<]*)</.exec(h) || [])[1], note3: ss.notes[pick[3].key] || null, notes: ss.notes,
+        habits: habits, want: want, odd: !!odd, oddLine: oddLine && want.indexOf(oddLine) < 0 ? oddLine : null, skip: ss.sum[pick[4].key] }); })()`));
+    eq(r.words.join(' | '), 'Shown, then found | After a miss, then shown again | Shown | After a miss | Skipped', 'the words: ' + JSON.stringify(r.notes));
     eq(r.note3, null, 'a worked example missed first is no first look');
-    eq(r.head, '1 of 4 solved.', 'solved only where both showings were (a found retry after an answer shown is not; an answer shown on the retry undoes a find)');
+    eq(r.head, '4 of 12 stars', 'tier 1: the first showings in stars (shown 0, a miss with its automatic hint 2), the skip not counted');
+    eq(r.then, 'Then 2 after a miss, 2 shown.', 'the others in one line');
     ok(r.odd, 'a card of another family');
-    eq(JSON.stringify(r.habits), JSON.stringify(r.want), 'habits of the cards played only');
-    if (r.oddHabit) ok(r.habits.indexOf(r.oddHabit) < 0, 'no habit for the family met only on the skipped card');
+    eq(JSON.stringify(r.habits), JSON.stringify(r.want), 'the check lines of the cards played only');
+    ok(r.skip && r.skip.c === 'skip' && !r.skip.l, 'a card skipped untouched has no check line');
+    if (r.oddLine) ok(r.habits.indexOf(r.oddLine) < 0, 'no line for the family met only on the skipped card');
   });
 
   await test('small words: "Next set of N" says how many it gives, "Click a game" where a mouse points, and a session over leaves nothing in the live region (C2, C9, C11)', () => {
@@ -363,7 +366,7 @@ function named(a, st, m, f, ch, t1fall) {
     ok(r.todayNext, 'Today offers the next set too');
   });
 
-  await test('the summary and Today in plain words: positions found come back in N days (never "moved up"), "Tomorrow: N positions to practise", "back for another look" (never "reviews")', () => {
+  await test('the summary and Today in plain words: positions found come back in N days, "Tomorrow: N positions, about M minutes", "back for another look" (never "reviews")', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       var its = allMistakes().filter(trainable).filter(function (it) { return !it.b.d; }), res = {}, srs = srsLoad(), now = Date.now();
@@ -383,7 +386,7 @@ function named(a, st, m, f, ch, t1fall) {
       return JSON.stringify(res); })()`));
     eq(r.two, 'The 2 positions you found come back in 3 to 7 days.', 'the ladder, two');
     eq(r.one, 'The position you found comes back in 3 days.', 'the ladder, one');
-    eq(r.next, 'Tomorrow: 1 position to practise, about 1 minute.', 'what comes next');
+    eq(r.next, 'Tomorrow: 1 position, about 1 minute.', 'what comes next (F2.6: one set, calm)');
     eq(r.why, '2 positions back for another look, and 1 new from your games.', 'the reason to start');
   });
 
@@ -397,7 +400,7 @@ function named(a, st, m, f, ch, t1fall) {
     ok(r.skipped, 'caption'); ok(!r.solved, 'not solved');
   });
 
-  await test('the summary reads the note first, then the result (S17): found, with help, found after a miss, a reveal reads Shown, left after a miss reads Missed, left untouched Skipped, a first look reads First look; a removed card is gone; one habit per family seen', () => {
+  await test('the summary\'s words for each position (F2.1): a first look, first try, with a hint, after a miss, a reveal reads Shown, left after a miss Missed, left untouched Skipped; a removed card is gone; one check line per step met (F2.3)', () => {
     const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
     const r = JSON.parse(A.ev(`(function () {
       playerTier = function () { return 1; };
@@ -419,20 +422,106 @@ function named(a, st, m, f, ch, t1fall) {
       ss.active = null; ss.finished = true;
       var h = doneHtml(ss), words = [];
       h.replace(/class="res[^"]*">([^<]*)</g, function (m, w) { words.push(w); return m; });
-      /* the families of the cards played (the one skipped untouched taught nothing) */
-      var fams = [];
-      pick.slice(0, 6).forEach(function (x) { var f = familyOf(patternOf(x.b)); if (fams.indexOf(f) < 0) fams.push(f); });
+      /* the check lines of the cards played (the one skipped untouched taught nothing), each once */
+      var want = [];
+      pick.slice(0, 6).forEach(function (x) { var e = ss.sum[x.key], l = e && esc(e.l); if (l && want.indexOf(l) < 0) want.push(l); });
       var habits = []; h.replace(/<li class="plan">([^<]*)</g, function (m, t) { habits.push(t); return m; });
       if (!habits.length) h.replace(/<p class="plan">Keep in mind: ([^<]*)</g, function (m, t) { habits.push(t); return m; });
-      return JSON.stringify({ words: words, head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], notes: [ss.notes[pick[0].key], ss.notes[pick[4].key], ss.notes[pick[5].key], ss.notes[pick[6].key]],
-        habits: habits, heads: (h.match(/Keep in mind:/g) || []).length, want: fams.map(function (f) { return esc(f.habit); }), spotted: /spotted/i.test(h), glyphs: /[✓◐]/.test(h) }); })()`));
-    eq(r.words.join(' | '), 'First look | Found | With help | Found after a miss | Shown | Missed | Skipped', 'the words, in session order, the removed card gone');
+      return JSON.stringify({ words: words, head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], then: (/class="recap-then">([^<]*)</.exec(h) || [])[1], notes: [ss.notes[pick[0].key], ss.notes[pick[4].key], ss.notes[pick[5].key], ss.notes[pick[6].key]],
+        stars: (h.match(/<span class="stars"[^>]*aria-label="(\\d) of 3 stars"/g) || []).map(function (x) { return /(\\d) of 3/.exec(x)[1]; }).join(''),
+        habits: habits, heads: (h.match(/Keep in mind:/g) || []).length, want: want, spotted: /spotted/i.test(h), glyphs: /[✓◐]/.test(h) }); })()`));
+    eq(r.words.join(' | '), 'First look | First try | With a hint | After a miss | Shown | Missed | Skipped', 'the words, in session order, the removed card gone');
     eq(r.notes.join(' | '), 'firstlook | shown | leftMiss | left', 'the notes');
-    eq(r.head, '4 of 6 solved.', 'solved: found, with help, after a miss, a first look; counted: and shown, missed; a skip neither');
-    eq(JSON.stringify(r.habits), JSON.stringify(r.want), 'one habit per family seen, in the order met');
-    eq(r.heads, 1, '"Keep in mind:" once, the habits under it (C9)');
-    ok(r.habits.length >= 2, 'families ' + r.habits.length);
+    eq(r.head, '10 of 18 stars', 'tier 1 in stars: a first look and a first try 3, a hint and a miss with its automatic hint 2, shown and missed 0; a skip not counted');
+    eq(r.stars, '332200', 'the tiles\' stars, the skip none');
+    eq(r.then, 'Then 1 after a miss, 1 with a hint, 1 first look, 1 shown, 1 missed.', 'the others in one line, in the spec\'s order');
+    eq(JSON.stringify(r.habits), JSON.stringify(r.want), 'each check line met once, in the order met');
+    eq(r.heads, 1, '"Keep in mind:" once, the lines under it (C9)');
     ok(!r.spotted && !r.glyphs, 'no "spotted" recap line, no glyphs: words only');
+  });
+
+  await test('F2.2: what moved: one due clean find, one hint and one miss read "1 moved up, 1 held, 1 back to the start." with the tiles\' rungs at tier 2; a third clean find 16 days after the second leads the tiles: "Learned: Rg1, from your loss to opponent1. Found 3 times over N days." (shiftDays)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      playerTier = function () { return 2; };
+      var its = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && x.key !== '184455333378:68'; }).slice(0, 3), now = Date.now(), srs = srsLoad();
+      its.forEach(function (x) { srs[x.key] = { box: 1, streak: 1, due: now - 3600e3, last: now - 3 * DAY, ls: now - 3 * DAY, lapses: 0, rs: now - 3 * DAY }; });
+      srsSave(srs);
+      ui.session = { mode: 'today', label: 'Today', keys: its.map(function (x) { return x.key; }), idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} };
+      var ss = ui.session, act = function (i, fn) { ss.idx = i; var a = cardFor(its[i]); ss.active = a; fn(a); };
+      var best = function (a) { solved(uciToMove(a.st, a.bestUci), a.bestUci, null); };
+      act(0, best);
+      act(1, function (a) { a.hints = 1; best(a); });
+      act(2, function (a) { a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain(); best(a); });
+      ss.active = null; ss.finished = true;
+      var h = doneHtml(ss), res = { moved: (/class="recap-moved">([^<]*)</.exec(h) || [])[1], rungs: (h.match(/class="rungs" role="img" aria-label="[^"]*"/g) || []).map(function (x) { return /label="([^"]*)"/.exec(x)[1]; }) };
+      /* card 1 found clean three times: fast at first sight (a week), again when due, then 16 days on */
+      var it = model().byKey['184455333378:68'], a = openCard(it);
+      best(a);
+      var d1 = Math.ceil((srsRec(it).due - Date.now()) / DAY);
+      shiftDays(d1);
+      a = openCard(it); best(a);
+      var d2 = Math.max(16, Math.ceil((srsRec(it).due - Date.now()) / DAY));
+      shiftDays(d2);
+      a = openCard(it); best(a);
+      ui.session.active = null; ui.session.finished = true;
+      var h2 = doneHtml(ui.session), first = (/<div class="recap">([\\s\\S]*?)<\\/div>/.exec(h2) || [])[1] || '';
+      res.learned = { rec: srsRec(it).learned, moved: (/class="recap-moved">([^<]*)</.exec(h2) || [])[1], lead: /^<div class="recap-item recap-learned"/.test(first), say: ((/class="learned-say">([\\s\\S]*?)<\\/span>/.exec(h2) || [])[1] || '').replace(/<[^>]+>/g, ''), days: d1 + d2, seal: /aria-label="Learned"><i class="on"><\\/i><i class="on"><\\/i><i class="on gold"><\\/i><\\/span>/.test(first) };
+      return JSON.stringify(res); })()`));
+    eq(r.moved, '1 moved up, 1 held, 1 back to the start.', 'what moved');
+    eq(JSON.stringify(r.rungs), JSON.stringify(['2 of 3 steps to learned', '1 of 3 steps to learned', '0 of 3 steps to learned']), 'the rungs: a clean find on a due day climbs, a hint holds, a miss empties them');
+    ok(r.learned.rec, 'card 1 is learned');
+    eq(r.learned.moved, '1 learned.', 'what moved says it');
+    ok(r.learned.lead && r.learned.seal, 'the learned position leads the tiles, its third rung gold');
+    eq(r.learned.say, 'Learned: Rg1, from your loss to opponent1. Found 3 times over ' + r.learned.days + ' days.', 'its words');
+  });
+
+  await test('F2.4: when two or more wrong tries share a step, "Keep in mind" leads with it: digits 3, 3, 3, 1 read "3 of your 4 wrong tries failed the safety check." then "Before you move: their checks, captures, threats?" at tier 2 (tier 1 in its own words); two read "Both your wrong tries ..."; one shared by none adds nothing', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var its = allMistakes().filter(trainable).slice(0, 2), k1 = its[0].key, k2 = its[1].key;
+      var keep = function (tier, fc1, fc2) {
+        playerTier = function () { return tier; };
+        var ss = { mode: 'today', label: 'Today', keys: [k1, k2], idx: 2, results: {}, notes: {}, sum: {}, relearn: [], relearnOf: {}, finished: true };
+        ss.results[k1] = ss.results[k2] = 'retry';
+        ss.sum[k1] = { c: 'miss', s: 1, fc: fc1, l: lineOfStep(3, tier), st: 3, m: 'start', p: 0 };
+        ss.sum[k2] = { c: 'miss', s: 1, fc: fc2, l: lineOfStep(1, tier), st: 1, m: 'start', p: 0 };
+        var h = doneHtml(ss), out = [];
+        h.replace(/<li class="plan">([^<]*)</g, function (m, t) { out.push(t); return m; });
+        return out;
+      };
+      return JSON.stringify({ t2: keep(2, '33', '31'), t1: keep(1, '33', '31'), both: keep(2, '3', '3'), none: keep(2, '3', '1'), mine: keep(3, '22', '') }); })()`));
+    eq(JSON.stringify(r.t2), JSON.stringify(['3 of your 4 wrong tries failed the safety check.', 'Before you move: their checks, captures, threats?', 'Their move: what does it attack?']), 'tier 2');
+    eq(JSON.stringify(r.t1), JSON.stringify(['3 of your 4 wrong tries missed what they could take.', 'Before you move: what can they take?', 'Their move: what does it attack?']), 'tier 1');
+    eq(r.both[0], 'Both your wrong tries failed the safety check.', 'two of two');
+    eq(JSON.stringify(r.none), JSON.stringify(['Before you move: their checks, captures, threats?', 'Their move: what does it attack?']), 'no step shared: the lines alone');
+    eq(r.mine[0], 'Both your wrong tries missed your chance.', 'step 2\'s words');
+  });
+
+  await test('F2.6: a calm Tomorrow: 23 due read "Tomorrow: a set of 10, about 8 minutes (23 due).", 10 "Tomorrow: a set of 10, about 8 minutes.", 3 "Tomorrow: 3 positions, about 2 minutes."; a day counts once 3 positions are tried, the set paused (2 tried do not); Settings says the rule', () => {
+    const run = (n) => {
+      const A = boot();
+      return A.ev(`(function () {
+        var its = allMistakes().filter(trainable).slice(0, ${n}), srs = {}, t = new Date(); t.setDate(t.getDate() + 1); t.setHours(12, 0, 0, 0);
+        its.forEach(function (x) { srs[x.key] = { box: 1, streak: 1, due: t.getTime(), last: Date.now() - DAY }; });
+        store.set('nl:sessionSize', 10); srsSave(srs);
+        return nextDueHtml(); })()`);
+    };
+    eq(run(23), 'Tomorrow: a set of 10, about 8 minutes (23 due).', 'more than a set');
+    eq(run(10), 'Tomorrow: a set of 10, about 8 minutes.', 'a set');
+    eq(run(3), 'Tomorrow: 3 positions, about 2 minutes.', 'fewer');
+    const day = (tried) => {
+      const A = boot();
+      return JSON.parse(A.ev(`(function () {
+        var keys = allMistakes().filter(trainable).slice(0, 5).map(function (x) { return x.key; });
+        startSession('today', keys, 'Today'); ui.session.active = null; ui.session.idx = 3; ui.session.results[keys[0]] = 'first'; ui.session.attempted = ${tried};
+        endSession();
+        return JSON.stringify({ counts: dayCounts(dayLoad()), paused: !!savedSession(), week: weekDays(), rule: settingsHtml().indexOf(DAY_RULE) >= 0 && DAY_RULE }); })()`));
+    };
+    const three = day(3), two = day(2);
+    ok(three.counts && three.paused && three.week === 1, 'a paused set with 3 tried counts the day: ' + JSON.stringify(three));
+    ok(!two.counts && two.paused, 'with 2 tried it does not: ' + JSON.stringify(two));
+    eq(three.rule, 'A day counts once you try 3 positions, or all of a shorter set.', 'Settings says the rule');
   });
 
   await test('the relearn segment joins the session bar as the card is queued, marked and named for a screen reader, and stays marked when the card comes back', () => {
@@ -628,7 +717,12 @@ function named(a, st, m, f, ch, t1fall) {
         var dz = hm.dz || hm.rep, ws = hm.rep ? repeatedWords(a, hm.rep) : dangerWords(a, hm.dz), pov = myPov(a.it), m;
         n.dz = (n.dz || 0) + 1; n['dz ' + dz.kind] = (n['dz ' + dz.kind] || 0) + 1;
         if (ws.indexOf(d.row2) < 0 && d.row2 !== h.fall) out.push(what + ': the danger hint reads ' + d.row2 + ', not one of ' + ws.join(' | '));
-        if (checkersOf(a.pre).length) return;
+        if (checkersOf(a.pre).length) {
+          /* in check: the check, in words, nothing drawn (the coach's review) */
+          if (dz.kind !== 'check' && !hm.rep) out.push(what + ': in check, a ' + dz.kind + ' hint');
+          if (dz.kind === 'check' && (d.row2 !== 'In check: move, block or take?' || hm.rings.length || hm.arrows.length)) out.push(what + ': in check reads ' + d.row2);
+          return;
+        }
         var nst = cloneState(a.pre); nst.w = !nst.w; nst.ep = -1;
         var post = cloneState(a.pre); applyMove(post, a.played);
         var ringed = function (sq) { return dz.rings.some(function (x) { return x.sq === sq; }); };
@@ -652,6 +746,15 @@ function named(a, st, m, f, ch, t1fall) {
           if (!lp || isW(lp) === pov || isDefended(a.pre.b, dz.loose.sq) || !hintPrize(a) || hintPrize(a).sq !== dz.loose.sq) out.push(what + ': the loose piece on ' + sqName(dz.loose.sq) + ' is not one');
         } else if (dz.kind === 'mine') {
           if (!(c0(a).mateFor && a.it.b.mb === 1) || hm.rings.length || hm.arrows.length) out.push(what + ': a mate in one where there is none, or drawn');
+        } else if (dz.kind === 'lost') {
+          /* a piece the better move keeps, in words: one the danger facts save */
+          var lsv = (dangerNow(a.it) || {}).sv || '';
+          if ((m = / lets them win your (\\w+)\\.$|^Watch your (\\w+)\\.$/.exec(d.row2)) && lsv.indexOf(PW[m[1] || m[2]]) < 0) out.push(what + ': ' + d.row2 + ' where it keeps ' + lsv);
+          if (hm.rings.length || hm.arrows.length) out.push(what + ': a lost piece drawn');
+        } else if (dz.kind === 'parried') {
+          /* their mate the game move stopped, and the game line's reply, drawn where it stands */
+          var g1 = threatOf(a.cls.gameLine, 1);
+          if (!g1 || !same(hm.rings, [{ sq: g1.from, kind: 'threat' }]) || hm.arrows.length !== 1 || hm.arrows[0].from !== g1.from || hm.arrows[0].to !== g1.to) out.push(what + ': a stopped mate draws ' + JSON.stringify(hm));
         }
       };
       var c0 = function (a) { return a.cls; };
@@ -664,7 +767,8 @@ function named(a, st, m, f, ch, t1fall) {
         /* nor the answer's square, inside any move it names but the game move (whose red arrow is on the card) */
         [d.row2].concat(h.cands, [h.fall]).forEach(function (x) {
           if (words(x).indexOf(dueSan) >= 0 || String(x).toLowerCase().indexOf(wordsOf(a.st, due)) >= 0) out.push(what + ' has a form naming the answer: ' + x);
-          if (String(x).split(gameSan(a)).join(' ').split(wordsOf(a.pre, a.played)).join(' ').indexOf(sqName(due.to)) >= 0) out.push(what + ' names the answer square: ' + x);
+          var gw = wordsOf(a.pre, a.played);
+          if (String(x).split(gameSan(a)).join(' ').split(gw).join(' ').split(gw.charAt(0).toUpperCase() + gw.slice(1)).join(' ').indexOf(sqName(due.to)) >= 0) out.push(what + ' names the answer square: ' + x);
         });
         /* every hint string, ladder and fallback too, in plain words at this tier */
         [d.row1, d.row2, h.fall].concat(h.cands).forEach(function (x) { var bad = unplain(x, a.tier); n.plain2++; if (bad) out.push(what + ': "' + bad + '" in a hint: ' + x); });
@@ -677,7 +781,12 @@ function named(a, st, m, f, ch, t1fall) {
         if (a.hints >= 2) {
           n.ring2++;
           if (!same(hm.rings, [{ sq: due.from, kind: 'hint' }]) || hm.arrows.length) out.push(what + ': hint 2 draws ' + JSON.stringify(hm));
-          if (d.row1 !== 'Hint 2 of 2' || d.row2 !== 'Move the circled piece.') out.push(what + ': hint 2 reads ' + d.row1 + ' / ' + d.row2);
+          /* "Find a safe square." only where hint 1 rang that piece as in danger and the answer takes it out
+             of danger (content's review) */
+          var safe = !(a.sol && a.solIdx > 0) && (dangerView(a) || { attacked: [] }).attacked.some(function (x) { return x.sq === due.from; });
+          if (safe) { var af2 = cloneState(a.st); applyMove(af2, due); safe = !(dzSee(af2.b, due.to, !myPov(a.it)) > 0); }
+          if (d.row1 !== 'Hint 2 of 2' || d.row2 !== (safe ? 'Find a safe square.' : 'Move the circled piece.')) out.push(what + ': hint 2 reads ' + d.row1 + ' / ' + d.row2);
+          n.safe = (n.safe || 0) + (safe ? 1 : 0);
           return;
         }
         if (d.row1 !== 'Hint 1 of 2') out.push(what + ': hint 1 reads ' + d.row1);
@@ -731,25 +840,18 @@ function named(a, st, m, f, ch, t1fall) {
           } else n.dropped++;
         } else if (sqs.length) out.push(what + ': marks with no losing capture or check to show ' + JSON.stringify(hm));
         if (!sqs.length) {
-          /* "runs into" only beside its marks; then H2 by family: a winning
-             position keeps it simple, a quiet one improves its worst
-             piece, safety and king say what the answer gets or keep it safe */
+          /* "runs into" only beside its marks; then the card's check line in its row-2 form (F2.3: a
+             winning position, a quiet one, a safety or king card with nothing to win), or what the
+             answer gets */
           if (/runs into/.test(d.row2)) out.push(what + ': says runs into with nothing drawn');
-          if (fam === 'conversion' && d.row2 !== 'Keep it simple and safe.') out.push(what + ': a winning position reads ' + d.row2);
-          if (fam === 'quiet' && !/^(Find your worst piece and improve it|Improve your worst piece)\.$/.test(d.row2)) out.push(what + ': a quiet position reads ' + d.row2);
+          var look = checkRow(a);
+          n.look = (n.look || 0) + (look.indexOf(d.row2) >= 0 ? 1 : 0);
+          if (h.fall !== look[0]) out.push(what + ': the fallback reads ' + h.fall + ', not ' + look[0]);
+          if ((fam === 'conversion' || fam === 'quiet') && look.indexOf(d.row2) < 0) out.push(what + ': a ' + fam + ' card reads ' + d.row2 + ', not its check line');
           if (fam === 'safety' || fam === 'king') {
             n.plain++;
             var get = c.mateFor ? 'There is a checkmate here.' : null;
-            /* else where to look (fresh-eyes C5): the king; a threat that stood before the game move
-               (true: its capture was there on the card's position); what the game move allowed */
-            var asks = function (x) { return 'Ask what ' + x + ' allows.'; };
-            var look = fam === 'king' ? 'Look at your king\\'s safety.' : c.t === 'threat' ? 'What does ' + (myPov(a.it) ? 'Black' : 'White') + ' threaten?' : named(a, a.pre, a.played, asks, 40, asks('your move'));
-            if (/threaten/.test(d.row2) && !threatExisted(a.pre, c.gameLine)) out.push(what + ': a threat named where none stood: ' + d.row2);
-            if (!(d.row2 === get || /^You can win .+ here\.$/.test(d.row2) && c.matBest >= 1 && !c.mateFor || d.row2 === look && !c.mateFor && !(c.matBest >= 1 && c.bestLine && !c.bestLine.unsettled))) out.push(what + ': a ' + fam + ' card with nothing drawn reads ' + d.row2);
-            n.look = (n.look || 0) + (d.row2 === look ? 1 : 0);
-            /* and its fallback says the same */
-            /* (tier 1 says no move in SAN: its fallback names none, F1.6) */
-            if (d.row2 === look && h.fall !== (/^Ask what/.test(look) ? asks(a.tier === 1 ? 'your move' : gameSan(a)) : look)) out.push(what + ': the fallback reads ' + h.fall + ', not ' + look);
+            if (!(d.row2 === get || /^You can win .+ here\\.$/.test(d.row2) && c.matBest >= 1 && !c.mateFor || look.indexOf(d.row2) >= 0 && !c.mateFor && !(c.matBest >= 1 && c.bestLine && !c.bestLine.unsettled))) out.push(what + ': a ' + fam + ' card with nothing drawn reads ' + d.row2);
           }
         }
       };
@@ -821,8 +923,9 @@ function named(a, st, m, f, ch, t1fall) {
           c.lossG = 0; c.mateAgainst = 3;
           try { fx.mate++; if (!hintDanger(a)) out.push(at + ': a reply leading to mate is no danger'); c.mateAgainst = null; if (hintDanger(a)) out.push(at + ': a reply that loses nothing is a danger'); } finally { c.lossG = keepL[0]; c.mateAgainst = keepL[1]; }
         }
-        /* the fork form (reached only when the best line is missing) in plain words at tiers 1 and 2 */
-        if (fam === 'chances' && !c.mateFor) {
+        /* the fork form (reached only when the best line is missing) in plain words at tiers 1 and 2 (in
+           check, the check is the hint: the coach's review) */
+        if (fam === 'chances' && !c.mateFor && !checkersOf(a.pre).length) {
           var keepF = [c.bestLine, c.missed];
           c.bestLine = null; c.missed = { fork: { ply: 1 } };
           try {
@@ -842,8 +945,8 @@ function named(a, st, m, f, ch, t1fall) {
       n.doctored = fx;
       return JSON.stringify({ out: out, n: n }); })()`));
     ok(r.n.doctored.line >= 5 && r.n.doctored.word >= 10 && r.n.doctored.named >= 20 && r.n.doctored.mate >= 20 && r.n.doctored.fork >= 5, JSON.stringify(r.n.doctored));
-    ok(r.n.frames > 600 && r.n.danger > 20 && r.n.dropped >= 3 && r.n.harmless >= 3 && r.n.plain >= 20 && r.n.look >= 10 && r.n.prize >= 6 && r.n.words >= 20 && r.n.mid > 30 && r.n.ring2 > 300 && r.n.plain2 > 4 * r.n.frames
-      && r.n.dz > 40 && r.n['dz attacked'] >= 15 && r.n['dz made'] >= 15 && r.n['dz madeMate'] >= 6 && r.n['dz loose'] >= 6, JSON.stringify(r.n));
+    ok(r.n.frames > 600 && r.n.danger >= 15 && r.n.harmless >= 3 && r.n.look >= 10 && r.n.prize >= 6 && r.n.words >= 20 && r.n.mid > 30 && r.n.ring2 > 300 && r.n.plain2 > 4 * r.n.frames
+      && r.n.dz > 40 && r.n['dz attacked'] >= 15 && r.n['dz made'] >= 15 && r.n['dz madeMate'] >= 6 && r.n['dz loose'] >= 3 && r.n['dz lost'] >= 10 && r.n['dz check'] >= 3 && r.n.safe >= 20, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
@@ -1012,15 +1115,18 @@ function named(a, st, m, f, ch, t1fall) {
           if (nx) a.answerSan = sanOf(a.st, nx); else settleShown(a);
         }
       };
-      /* R4 and F1.4: what the better move saves, a trade in the board's pieces, tier 3's figures, tier 1 without SAN */
-      var R4 = /^(\\S+ is guarded\\. |\\S+ wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\. )?\\S+ (lost|could lose) (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.$|^\\S+ (is guarded|wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?))\\.$|^\\S+ allowed checkmate\\.( They missed it\\.)?$|^\\S+ wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\. \\S+ missed it\\.$|^\\S+ leads to checkmate\\.$|^\\S+ allowed (a draw|endless checks)\\.$|^After \\S+, (you were still better|the game was even|(White|Black) was (on top|better))\\.$|^After your game move, (you were better|it was even|(White|Black) was better)\\.$|^(\\S+|Your game move) was a mistake\\.$|^\\S+ saves your (?:pawn|knight|bishop|rook|queen)( and (?:pawn|knight|bishop|rook|queen))?\\.( \\S+ (lost|could lose) (it|them)\\.)?$|^Only move: \\S+ \\d+%\\. Next best \\d+%\\.$|^\\S+ \\d+%\\. Your \\S+ \\d+%\\.$/;
+      /* R4 and F1.4: what the better move saves (or keeps), what it guards, a trade in the board's pieces, a
+         plan card's loss, where your game left it ("In your game, Nc5 left White better."), tier 3's figures,
+         tier 1 without SAN; never "on top" (content's review of slice 1) */
+      var R4 = /^(\\S+ is guarded\\. |\\S+ wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\. )?\\S+ (lost|could lose) (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.$|^\\S+ (is guarded|wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?))\\.$|^\\S+ allowed checkmate\\.( They missed it\\.)?$|^\\S+ wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\. \\S+ missed it\\.$|^\\S+ leads to checkmate\\.$|^\\S+ allowed (a draw|endless checks)\\.$|^(In your game, \\S+|\\S+|Your game move) left (you still better|the game even|(White|Black) (better|winning))\\.$|^(\\S+|Your game move) was a mistake\\.$|^Your game move (lost|could lose) (?:(?:a|an|the|two|three) [a-z ]+|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.$|^\\S+ (saves|keeps) your (?:pawn|knight|bishop|rook|queen)( and (?:pawn|knight|bishop|rook|queen))?\\.( \\S+ (lost|could lose) (it|them)\\.)?$|^\\S+ guards [a-h][1-8] and your (?:pawn|knight|bishop|rook|queen)\\.$|^(Only move|Best): \\S+ \\d+%\\. Next best \\d+%\\.$|^\\S+ \\d+%\\. Your \\S+ \\d+%\\.$/;
       /* a word for a tap that is not a move, shown as the page shows it */
       var note = function (a, id) { a.note = { id: id, key: cardStateKey(a), seq: 0 }; return a; };
       /* a miss's reason (M3), in one of its forms or its fallbacks, in plain
          words ("the exchange" is spelled out as the rook and what it went for) */
       var plain = function (what, s) { if (/exchange/.test(s)) out.push(what + ' says ' + s); };
-      /* F1.2: their one reply named (tier 3 its SAN), a trade in the board's pieces, tier 1's plain words */
-      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|After \\S+, you'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|Their (?:pawn|knight|bishop|rook|queen|king) takes your (?:pawn|knight|bishop|rook|queen)\\.|\\S+ takes your (?:pawn|knight|bishop|rook|queen)\\.|Most of your advantage is gone\\.|You are still better, but less so\\.|After \\S+, (the game is even|(White|Black) is (on top|better))\\.|That helps (White|Black)\\.|There's a stronger move here\\.)$/;
+      /* F1.2: their one reply named (tier 3 its SAN), a trade in the board's pieces, a danger left standing
+         ("Qxc4, and your queen is still attacked."), where the game stands now, tier 1's plain words */
+      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|After \\S+, you'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|Their (?:pawn|knight|bishop|rook|queen|king) takes your (?:pawn|knight|bishop|rook|queen)\\.|\\S+ takes your (?:pawn|knight|bishop|rook|queen)\\.|Most of your advantage is gone\\.|You are still better, but less so\\.|After \\S+, (the game is even|(White|Black) is (better|winning))\\.|Now (the game is even|(White|Black) is (better|winning))\\.|(\\S+, and y|Y)our (?:pawn|knight|bishop|rook|queen) is still attacked\\.|That helps (White|Black)\\.|There's a stronger move here\\.)$/;
       /* "You'd lose material." only when no form before it fits beside row
          1 and the widest bar this miss shows: as the ladder's one word for a
          trade ("a rook for a knight" is never said as its net), or as the
@@ -1486,6 +1592,11 @@ function named(a, st, m, f, ch, t1fall) {
         if ((m = /^After (\\S+): (\\w+) attacked (once|twice|three times|four times)(?:, (\\w+) (once|twice|three times|four times))?\\.$/.exec(cap))) ok = m[1] === last && made(m[2]) && att(m[2], TW[m[3]]) && (!m[4] || att(m[4], TW[m[5]]));
         else if ((m = /^After (\\S+): their (\\w+) attacks your (\\w+)\\.$/.exec(cap))) ok = m[1] === last && made(m[3]) && mine(m[3]).some(function (q) { return takers(q).some(function (f) { return pType(a.pre.b[f]) === PW[m[2]]; }); });
         else if ((m = /^Their last move: your (\\w+) is attacked (twice|three times|four times)\\.$/.exec(cap))) ok = a.tier === 1 && made(m[1]) && att(m[1], TW[m[2]]);
+        else if ((m = /^Their last move attacks your (\\w+) (twice|three times|four times)\\.$/.exec(cap))) ok = a.tier === 1 && made(m[1]) && att(m[1], TW[m[2]]);
+        /* two threats, their mate (the game move stopped it) and the game line's reply (it stood): the coach's review */
+        else if (/^Two threats: \\S+ mate and \\S+\\.$|^Two threats: mate on [a-h][1-8] and your \\w+\\.$/.test(cap)) { var tt = twoThreats(a); ok = !!tt && !!tt.mate && !dangerView(a).threat.stands; n.forms.two = (n.forms.two || 0) + 1; }
+        /* the game move's piece stood in the way of their mate */
+        else if ((m = /^Your (\\w+) on ([a-h][1-8]) blocks their mate\\.$/.exec(cap))) { var bk = mateBlocker(a); ok = !!bk && sqName(bk.sq) === m[2] && pType(bk.p) === PW[m[1]]; n.forms.block = (n.forms.block || 0) + 1; }
         else if ((m = /^Their last move attacks your (\\w+)\\.$/.exec(cap))) ok = a.tier === 1 && made(m[1]);
         else if ((m = /^Your (\\w+) is attacked (once|twice|three times|four times), your (\\w+) (once|twice|three times|four times)\\.$/.exec(cap))) ok = att(m[1], TW[m[2]]) && att(m[3], TW[m[4]]);
         else if ((m = /^Your (\\w+) is attacked (twice|three times|four times)\\.$/.exec(cap))) ok = att(m[1], TW[m[2]]);
@@ -1522,7 +1633,7 @@ function named(a, st, m, f, ch, t1fall) {
            true, "Better: Qe6 saves your queen." on B1, else "Your queen is safe." after the ply (below) */
         var lastStep = !game && i === S.steps.length - 1, m0;
         if (lastStep && !S.alt && cmp.only && cap === cmp.only) { n.forms.only = (n.forms.only || 0) + 1; return; }
-        if (firstB && (m0 = /^Better: (\\S+) saves your (\\w+)\\.$/.exec(cap))) {
+        if (firstB && (m0 = /^Better: (\\S+) (?:saves|keeps) your (\\w+)\\.$/.exec(cap))) {
           n.forms.saves = (n.forms.saves || 0) + 1;
           if (m0[1] !== bare(san) || !lastStep || S.alt || cmp.saves.indexOf(PW[m0[2]]) < 0) fail('saves what the better move does not save');
           return;
@@ -1609,6 +1720,8 @@ function named(a, st, m, f, ch, t1fall) {
           else if ((m = /^You lose ([a-z ]+|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.$/.exec(x))) { form = 'you lose'; ok = lastG && matOk(m[1], line, s.k, 0, matDiff(line.nodes[0].before.b, pov) - matDiff(b, pov)); }
           else if ((m = /^You win ([a-z ]+|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.$/.exec(x))) { form = 'you win'; ok = lastB && matOk(m[1], line, s.k, s.from, matDiff(b, pov) - matDiff(line.nodes[s.from].before.b, pov)); }
           /* F1.4: the piece the better move saves, standing at the story's end ("there": the better move moved it) */
+          /* the piece the better move saves, left in danger by the game move (the reviews of slice 1) */
+          else if ((m = /^Your (\\w+) is still attacked( twice| three times| four times)?\\.$/.exec(x))) { form = 'still attacked'; var sa = stillAfterGame(a); ok = game && s.k === 0 && !!sa && pType(sa.p) === PW[m[1]] && (m[2] ? TW[m[2].trim()] === sa.n : sa.n === 1); }
           else if ((m = /^Your (\\w+) is safe( there)?\\.$/.exec(x))) { form = 'safe'; ok = lastB && !S.alt && cmp.saves.indexOf(PW[m[1]]) >= 0 && b.some(function (p) { return p && isW(p) === pov && pType(p) === PW[m[1]]; }) && (!m[2] || (firstB && pType(nd.before.b[nd.move.from]) === PW[m[1]])); }
           if (!form) return fail('an unknown sentence: ' + x);
           if (form === 'you win' && s.from > 1) n.lineWins = (n.lineWins || 0) + 1;

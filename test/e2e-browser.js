@@ -653,20 +653,19 @@
       if (T.card().finished) break;
     }
     await until(() => T.card().finished || !!$('.recap-item'), 20000);
-    ok('the session ends in a recap', !!$('.recap-item') || /solved/i.test(text('#trainbox')), text('#trainbox').slice(0, 80));
+    ok('the session ends in a recap', !!$('.recap-item'), text('#trainbox').slice(0, 80));
     layoutCheck('the summary');
-    /* S17: each card in words, the note first (Shown, First look, Missed, Skipped), then the result;
-       no "spotted" line; one habit per family seen, "Keep in mind: ..." */
+    /* F2.1: each position by its category (a one more try after it), the honest score from them
+       (tier 1 in stars); no "spotted" line; "Keep in mind:" once with the check lines (F2.3) */
     const words = [].map.call($$('.recap-item .res'), (e) => e.textContent);
-    ok('the recap says each card in words', words.length > 0 && words.every((w) => /^(Found|With help|First look|Found after a miss|Shown|Missed|Skipped)(, then (found|found with help|found after a miss|shown again|missed again))?$/.test(w)), words.join(', '));
+    ok('the recap says each card in words', words.length > 0 && words.every((w) => /^(First try|Works too|After a good move|With a hint|First look|After a miss|Shown|Missed|Skipped)(, then (found|found with a hint|found after a miss|shown again|missed again))?$/.test(w)), words.join(', '));
     ok('the cards revealed to finish read Shown', words.some((w) => /^Shown/.test(w)), words.join(', '));
     ok('the card skipped after its miss reads Missed', words.indexOf('Missed') >= 0, words.join(', '));
-    /* a card that came back counts as solved only when both showings were */
-    const head = text('#recap-h'), solvedN = words.filter((w) => /^(Found|With help|First look|Found after a miss)(, then found.*)?$/.test(w)).length, countedN = words.filter((w) => w !== 'Skipped').length;
-    ok('the recap counts what it says', head === (countedN ? solvedN + ' of ' + countedN + ' solved.' : 'Done.'), head + ' / ' + words.join(', '));
-    /* "Keep in mind:" once, the habits under it when there are more than one (C9) */
-    const habits = $$('.recap-habit li.plan').length ? [].map.call($$('.recap-habit li.plan'), (e) => e.textContent) : [].map.call($$('.recap-habit .plan'), (e) => e.textContent.replace(/^Keep in mind: /, ''));
-    ok('one habit per family seen, said once', habits.length >= 1 && (text('.recap-habit').match(/Keep in mind:/g) || []).length === 1 && new Set(habits).size === habits.length && habits.every((h) => h.length > 10), habits.join(' | '));
+    const head = text('#recap-h'), firstN = words.filter((w) => /^First try/.test(w)).length, countedN = words.filter((w) => w !== 'Skipped').length;
+    const tier1 = T.ev('playerTier()') === 1;
+    ok('the recap counts what it says', !countedN ? head === 'Done.' : tier1 ? new RegExp('^\\d+ of ' + countedN * 3 + ' stars$').test(head) : head === firstN + ' of ' + countedN + ' found first try.', head + ' / ' + words.join(', '));
+    const habits = $$('.recap-habit li.plan').length ? [].map.call($$('.recap-habit li.plan'), (e) => e.textContent) : [].map.call($$('.recap-habit .plan:not(.routine)'), (e) => e.textContent.replace(/^Keep in mind: /, ''));
+    ok('one check line per step met, said once', habits.length >= 1 && (text('.recap-habit').match(/Keep in mind:/g) || []).length === 1 && new Set(habits).size === habits.length && habits.every((h) => h.length > 10), habits.join(' | '));
     ok('no "spotted" line on the recap', !/spotted/i.test(text('#trainbox')));
     ok('the recap offers to play a game', !!$('.recap-acts .btn-big'));
     ok('reveal-only cards do not earn the day on their own', T.ev('ui.session ? (ui.session.attempted || 0) + (ui.session.carried || 0) >= 3 : false') || T.ev('dayLoad().sessions || 0') === sessionsBefore);

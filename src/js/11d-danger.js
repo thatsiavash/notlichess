@@ -3,11 +3,11 @@
    its settled line, See why and the check line, computed once per card
    beside the deeper look and kept on the mistake record as b.dz:
      at  the player's pieces (not the king) on the card's own position that
-         stand unguarded, attacked by a cheaper piece, or attacked more often
-         than guarded: [[square, attacker squares...], ...], the most
-         valuable piece first, its cheapest attacker first; only attackers
-         that may legally take (not pinned off the line, a king only where
-         nothing guards)
+         taking would win for them (the static exchange on the square, dzSee:
+         a piece its king or a pawn guards well enough is not in danger):
+         [[square, attacker squares...], ...], the most valuable piece first,
+         its cheapest attacker first; only attackers that may legally take
+         (not pinned off the line, a king only where nothing guards)
      th  their best move if it were their turn: a null-move search (the same
          position with them to move and no en passant, 250,000 nodes, three
          lines), each line kept only when it wins material by the card
@@ -22,17 +22,21 @@
          loses), that the best line never loses; piece letters, the most
          valuable first ("Q"); '' when none
      st  the check step: 1 their move, 2 your chances, 3 safety check,
-         4 finishing wins, 5 quiet moves. The pattern sets it (DZ_STEP); on
-         a safety card a danger already on the board makes it 1: a threat
-         the search kept, when it still stands after the game move; with no
-         search run, the refutation's first move, legal before the game move
-         and already winning there (the piece it takes unguarded, or worth
-         more than the taker) or mating. A capture that was merely legal
+         4 finishing wins, 5 quiet moves. The pattern sets it (DZ_STEP); a
+         plan card (4, 5) that lost a piece the better move keeps missed a
+         safety check (3). On those cards a danger already on the board
+         makes it 1: a threat the search kept, when it still stands after the
+         game move and is the danger the game punished (it takes a piece the
+         better move keeps, the game line plays it, or on a safety card it
+         wins as much as the game line loses), never beside a mate the game
+         move allows that the threat is not; with no search run, the
+         refutation's first move, legal before the game move and already
+         winning there (dzStood) or mating. A capture that was merely legal
          before is no such danger: taking away a guard is a safety check
          missed
      v, k  the version (DZ_V) and a signature of the lines and scores it was
          read from (dzSig): a change to either reads it again */
-var DZ_V = 1;
+var DZ_V = 2;
 var DZ_STEP = { threat: 1, missedMaterial: 2, missedTactic: 2, mateMissed: 2, slipped: 4, openingSlip: 5, drift: 5, endgame: 5 };
 var DZ_NODES = 250000;
 function dzSig(b) {
@@ -73,13 +77,35 @@ function dangerAttacked(st, pov) {
     var p = b[sq];
     if (!p || colorW(p) !== pov || pType(p) === 'K') continue;
     var by = attackersOf(b, sq, !pov).filter(function (f) { return dzCanTake(b, f, sq); });
-    if (!by.length) continue;
-    var cheap = by.some(function (f) { return pType(b[f]) !== 'K' && val(f) < val(sq); });
-    if (!(isHangingAt(b, sq) || cheap || by.length > attackersOf(b, sq, pov).length)) continue;
+    /* in danger only where taking it wins for them: a pawn guarded by its
+       king against a lone queen, or a piece two attackers face across one
+       good guard, is not (the coach's review) */
+    if (!by.length || !(dzSee(b, sq, !pov) > 0)) continue;
     by.sort(function (x, y) { return val(x) - val(y) || x - y; });
     out.push([sq].concat(by));
   }
   return out.sort(function (x, y) { return val(y[0]) - val(x[0]) || x[0] - y[0]; });
+}
+/* the static exchange on square sq, side by (true: White) taking first:
+   what they net in pawns when both sides take there in turn, the cheapest
+   piece first, each free to stop (0: taking does not pay); only captures
+   that may legally be made (dzCanTake), and a king that would take into a
+   guarded square loses itself (MOTIF_VAL 99), so it never does. dzSeeMove:
+   the same after the capture from square from, paying or not */
+function dzSee(b, sq, by) {
+  if (!b[sq]) return 0;
+  var from = -1;
+  attackersOf(b, sq, by).forEach(function (f) {
+    if (dzCanTake(b, f, sq) && (from < 0 || MOTIF_VAL[pType(b[f])] < MOTIF_VAL[pType(b[from])])) from = f;
+  });
+  return from < 0 ? 0 : Math.max(0, dzSeeMove(b, from, sq));
+}
+function dzSeeMove(b, from, sq) {
+  var t = b[sq], p = b[from];
+  if (!t || !p) return 0;
+  var nb = b.slice();
+  nb[sq] = p; nb[from] = null;
+  return MOTIF_VAL[pType(t)] - dzSee(nb, sq, !colorW(p));
 }
 /* the player's pieces a line takes, net of what they take back (an equal
    swap cancels, a knight against a bishop too), nodes from..to; null when a
@@ -156,13 +182,15 @@ function dzThreatStands(a, th) {
   var t0 = nst.b[m0.to], t1 = post.b[m1.to];
   if (t0 ? t1 !== t0 : !!t1) return false;
   if (th[1] === 1) { var x = cloneState(post); applyMove(x, m1); return isMate(x); }
+  /* a capture the game move made a losing one (a guard added) is met */
+  if (t0) { var s1 = dzSeeMove(post.b, m1.from, m1.to); if (s1 <= 0 && s1 < dzSeeMove(nst.b, m0.from, m0.to)) return false; }
   return true;
 }
 /* a move of theirs (uci) stood on position st, the player to move there:
    with them to move it is legal and already won, mating, or taking the same
-   piece (took) on the same square where it stood unguarded or worth more
-   than the piece taking it (F0.1's wins-material test). A capture that was
-   merely legal there is no such danger */
+   piece (took) on the same square where the exchange that starts wins for
+   them (dzSeeMove: F0.1's wins-material test). A capture that was merely
+   legal there is no such danger */
 function dzStood(st, uci, took) {
   var nst = dzNullState(st), m = uciToMove(nst, uci);
   if (!m) return false;
@@ -170,24 +198,44 @@ function dzStood(st, uci, took) {
   applyMove(x, m);
   if (isMate(x)) return true;
   var t = nst.b[m.to];
-  return !!t && t === took && (isHangingAt(nst.b, m.to) || MOTIF_VAL[pType(nst.b[m.from])] < MOTIF_VAL[pType(t)]);
+  return !!t && t === took && dzSeeMove(nst.b, m.from, m.to) > 0;
 }
 /* with no search: the refutation's first move, legal before the game move,
-   already won material there (what it takes stood unguarded, or is worth
-   more than the piece taking it) or mated */
+   already won material there (dzStood) or mated; beside a mate the game
+   move allows, only that mate standing before it */
 function dzStoodBefore(a) {
   var r1 = a.cls.gameLine && a.cls.gameLine.nodes[1];
-  return !!(r1 && r1.move) && dzStood(a.pre, moveUci(r1.move), r1.captured);
+  if (!(r1 && r1.move) || !dzStood(a.pre, moveUci(r1.move), r1.captured)) return false;
+  if (!a.cls.mateAgainst) return true;
+  var x = dzNullState(a.pre), m = uciToMove(x, moveUci(r1.move));
+  applyMove(x, m);
+  return isMate(x);
 }
 /* th: the threat named, null (searched, none) or undefined (no search
    ran); more: the other threats the search kept. Any of them still
    standing after the game move is a danger the move ignored: Rg1 pins the
    pawn that would take the queen, and the rook still takes it */
-function dangerStep(a, th, more) {
+function dangerStep(a, th, more, sv) {
   var s = DZ_STEP[patternOf(a.it.b)] || (PATTERN[patternOf(a.it.b)] ? 3 : 5);
-  if (s !== 3) return s;
-  if (th === undefined) return dzStoodBefore(a) ? 1 : 3;
-  return th && [th].concat(more || []).some(function (x) { return dzThreatStands(a, x); }) ? 1 : 3;
+  if (s < 3) return s;
+  /* a piece lost that the better move keeps: never the plan line */
+  if (s > 3 && sv) s = 3;
+  if (th === undefined) return dzStoodBefore(a) ? 1 : s;
+  return th && [th].concat(more || []).some(function (x) { return dzRaises(a, x, sv, s); }) ? 1 : s;
+}
+/* a kept threat th makes the card "their move": it still stands after the
+   game move and it is the danger the game punished, never beside a mate
+   the game move allows that it is not (prefer the mate): it takes a piece
+   the better move keeps (sv), or the game line plays it, or on a safety
+   card it wins as much as the game line loses */
+function dzRaises(a, th, sv, s) {
+  var c = a.cls;
+  if (!dzThreatStands(a, th) || (c.mateAgainst && !(th[1] > 0))) return false;
+  if (th[1] > 0) return true;
+  var nst = dzNullState(a.pre), m = uciToMove(nst, th[0]), t = m ? nst.b[m.to] : null, gl = c.gameLine;
+  if (t && (sv || '').indexOf(pType(t)) >= 0) return true;
+  for (var k = 1; gl && k < gl.nodes.length && k <= 7; k += 2) if (gl.nodes[k].move && moveUci(gl.nodes[k].move) === th[0]) return true;
+  return s === 3 && (c.lossG || 0) >= 1 && (th[2] || 0) >= c.lossG;
 }
 /* the facts for card a; r: the null-move search's answer, null when it
    found nothing, undefined when none ran */
@@ -195,7 +243,7 @@ function dangerFacts(a, r) {
   var b = a.it.b, pov = myPov(a.it), d = { v: DZ_V, k: dzSig(b), at: dangerAttacked(a.pre, pov), sv: dangerSaves(a) }, all = [];
   if (dzInCheck(a)) d.th = null;
   else if (r !== undefined) { all = r ? dangerThreats(a, r, d.sv) : []; d.th = all[0] || null; }
-  d.st = dangerStep(a, d.th, all.slice(1));
+  d.st = dangerStep(a, d.th, all.slice(1), d.sv);
   return d;
 }
 /* the facts read now, without a search (the engine down): kept, and asked
@@ -229,16 +277,17 @@ function ensureDanger(it, prio) {
 }
 /* the facts for the card on screen, in plain parts (what the hints,
    reasons and settled lines say reads this): attacked [{sq, p, by}], threat {uci, from, to, p (the piece
-   that moves), took (what it takes, or null), mate, n} or null, saves
-   ['Q'], step; null while not read */
+   that moves), took (what it takes, or null), mate, n, stands (the game
+   move left it standing)} or null, saves ['Q'], step, check (the player in
+   check on the card's position); null while not read */
 function dangerView(a) {
   var d = dangerOf(a.it.b) || dangerNow(a.it);
   if (!d) return null;
   var b = a.pre.b, th = d.th, nst = th ? dzNullState(a.pre) : null, m = th ? uciToMove(nst, th[0]) : null;
   return {
     attacked: d.at.map(function (x) { return { sq: x[0], p: b[x[0]], by: x.slice(1) }; }),
-    threat: m ? { uci: th[0], from: m.from, to: m.to, p: b[m.from], took: b[m.to] || null, mate: th[1] || 0, n: th[2] || 0 } : null,
-    searched: th !== undefined, saves: (d.sv || '').split('').filter(Boolean), step: d.st
+    threat: m ? { uci: th[0], from: m.from, to: m.to, p: b[m.from], took: b[m.to] || null, mate: th[1] || 0, n: th[2] || 0, stands: !!a.played && dzThreatStands(a, th) } : null,
+    searched: th !== undefined, saves: (d.sv || '').split('').filter(Boolean), step: d.st, check: dzInCheck(a)
   };
 }
 /* the attacks the game move creates (a step-3 card's hint): the player's

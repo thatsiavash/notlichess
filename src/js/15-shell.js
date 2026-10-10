@@ -1063,7 +1063,7 @@ if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
   window.__nlTest.log = function () { return logLoad(); };
 }
 /* n days pass: every time this player has stored moves n days back (the
-   practice records' due, last and last-solved times, the day records,
+   practice records' due, last, last-solved and run-start times, the day records,
    renamed to their date n days earlier, first and last seen, the return
    day, the paused set's day, the weekly goal's history, the practice log,
    cue and backup times), so whatever was due in n days is due now. The
@@ -1082,7 +1082,7 @@ function shiftDays(n) {
   };
   var srs = store.get(srsKey(), null);
   if (srs) {
-    Object.keys(srs).forEach(function (k) { ['due', 'last', 'ls'].forEach(function (f) { if (srs[k][f] != null) srs[k][f] = back(srs[k][f]); }); });
+    Object.keys(srs).forEach(function (k) { ['due', 'last', 'ls', 'rs'].forEach(function (f) { if (srs[k][f] != null) srs[k][f] = back(srs[k][f]); }); });
     store.set(srsKey(), srs);
   }
   var dp = 'nl:day:' + p + ':', moved = keys.filter(function (k) { return k.indexOf(dp) === 0; }).map(function (k) {

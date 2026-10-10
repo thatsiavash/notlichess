@@ -259,7 +259,7 @@ function heroHtml() {
   /* a session finished today without enough tries: say what counts */
   var dl = dayLoad();
   var need = Math.min(3, plan.keys.length);
-  if (dl.short && !dl.sessions) why += need > 1 ? ' Try ' + need + ' positions to count today.' : ' Try it to count today.';
+  if (dl.short && !dayCounts(dl)) why += need > 1 ? ' Try ' + need + ' positions to count today.' : ' Try it to count today.';
   return '<div class="hero">'
     + '<h2 id="hero-n" data-n="' + plan.keys.length + '">' + plur(plan.keys.length, 'position') + ', about ' + plur(mins, 'minute') + '</h2>'
     + '<p class="why">' + why + '</p>' + weekHtml()
@@ -271,17 +271,19 @@ function resumeHtml(s) {
     + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.') + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">End this set</a></div></div>';
 }
-/* the next time something is due back, and how much */
+/* the next time something is due back, as one set (F2.6, calm): "Tomorrow:
+   a set of 10, about 8 minutes." with "(23 due)" when more than a set is
+   due by then; fewer, "Tomorrow: 3 positions, about 2 minutes." Counted:
+   every position due by the end of that day, those due now included */
 function nextDueHtml() {
-  var srs = srsLoad(), next = null;
-  Object.keys(srs).forEach(function (k) { var r = srs[k]; if (r.due && !r.hidden && r.due > Date.now() && (!next || r.due < next)) next = r.due; });
+  var srs = srsLoad(), m = model(), now = Date.now(), next = null;
+  var live = function (k) { var r = srs[k], it = m.byKey[k]; return r && r.due && !r.hidden && it && trainable(it); };
+  Object.keys(srs).forEach(function (k) { if (live(k) && srs[k].due > now && (!next || srs[k].due < next)) next = srs[k].due; });
   if (!next) return 'Nothing is due back yet.';
-  var d0 = new Date(next); d0.setHours(0, 0, 0, 0);
-  var d1 = new Date(d0); d1.setDate(d0.getDate() + 1);
-  var n = Object.keys(srs).filter(function (k) { var r = srs[k]; return r.due && !r.hidden && r.due >= d0.getTime() && r.due < d1.getTime(); }).length;
-  var w = dueWhen(next);
-  n = Math.min(n, sessionSize());
-  return (w === 'tomorrow' ? 'Tomorrow' : w === 'later today' ? 'Later today' : w.charAt(0).toUpperCase() + w.slice(1)) + ': ' + plur(n, 'position') + ' to practise, about ' + Math.max(1, Math.round(n * 0.8)) + (Math.round(n * 0.8) > 1 ? ' minutes.' : ' minute.');
+  var d1 = new Date(next); d1.setHours(0, 0, 0, 0); d1.setDate(d1.getDate() + 1);
+  var n = Object.keys(srs).filter(function (k) { return live(k) && srs[k].due < d1.getTime(); }).length;
+  var w = dueWhen(next), size = sessionSize(), mins = function (x) { return plur(Math.max(1, Math.round(x * 0.8)), 'minute'); };
+  return upFirst(w) + ': ' + (n >= size ? 'a set of ' + size + ', about ' + mins(size) + (n > size ? ' (' + n + ' due)' : '') : plur(n, 'position') + ', about ' + mins(n)) + '.';
 }
 /* the button for the next set, its size in words */
 function nextSetWords(n) { return n === 1 ? 'One more position' : 'Next set of ' + n; }
@@ -357,7 +359,7 @@ function focusHtml() {
     + '<div class="kicker">Your focus</div>'
     + '<div class="focus-name">' + esc(fam.name) + '</div>'
     + '<p class="sec">' + cost + (top.length ? ', mostly ' + esc(top.join(' and ')) : '') + '.</p>'
-    + '<div class="plan">' + esc(fam.habit) + '</div></div>';
+    + '<div class="plan">' + esc(lineOfStep(familyStep(fam.key), playerTier())) + '</div></div>';
 }
 /* a date outside the current year carries its year */
 function gameDateLine(g) {
@@ -367,85 +369,168 @@ function gameDateLine(g) {
     return d.toLocaleDateString('en-GB', o);
   } catch (e) { return ''; }
 }
-/* the ladder moving, in plain words: the positions found without help
-   wait longer before they come back, and when that is */
+/* the ladder moving, in plain words: the positions found first try wait
+   longer before they come back, and when that is */
 function ladderHtml(ss, keys) {
   var srs = srsLoad(), now = Date.now(), days = [];
   keys.forEach(function (k) {
-    var r = srs[k];
-    if (ss.results[k] === 'first' && r && r.due) days.push(Math.max(1, Math.round((r.due - now) / DAY)));
+    var r = srs[k], e = sumOf(ss, k);
+    if (e && e.c === 'first' && r && r.due) days.push(Math.max(1, Math.round((r.due - now) / DAY)));
   });
   if (!days.length) return '';
   var lo = Math.min.apply(null, days), hi = Math.max.apply(null, days);
   return '<p class="recap-ladder">' + (days.length === 1 ? 'The position you found comes' : 'The ' + days.length + ' positions you found come') + ' back in '
     + (lo === hi ? plur(lo, 'day') : lo + ' to ' + hi + ' days') + '.</p>';
 }
-/* one habit per screen: the drill's own family, the habit of the move that
-   decided a drilled game, or the focus after a Today session */
+/* the check line above one card (F2.3): a drill's family or pattern, the
+   family of the move that decided a drilled game, or the focus after a
+   Today set, as its step's line (tier 2's question at tier 3) */
 function recapHabit(ss) {
-  var sp = ss.spec || {}, fam = null;
-  if (sp.type === 'family') fam = FAMILIES.filter(function (x) { return x.key === sp.fam; })[0];
-  else if (sp.type === 'pattern') return patternInfo(sp.key).habit;
+  var sp = ss.spec || {}, t = playerTier(), fam = null;
+  if (sp.type === 'family') fam = sp.fam;
+  else if (sp.type === 'pattern') return lineOfStep(patternStep(sp.key), t);
   else if (sp.type === 'game' || sp.type === 'one') {
     var m = model(), its = ss.keys.map(function (k) { return m.byKey[k]; }).filter(Boolean);
     var d = its.filter(function (it) { return it.b.d; })[0] || its[0];
-    if (d) fam = familyOf(patternOf(d.b));
+    if (d) fam = familyOf(patternOf(d.b)).key;
   }
-  if (!fam) { var f = currentFocus(); fam = f && FAMILIES.filter(function (x) { return x.key === f.fam; })[0]; }
-  return fam ? fam.habit : '';
+  if (!fam) { var f = currentFocus(); fam = f && f.fam; }
+  return fam ? lineOfStep(familyStep(fam), t) : '';
 }
 /* "Tap" on a touch screen, "Click" where a mouse points (pointer: fine) */
 function tapWord() { return window.matchMedia && window.matchMedia('(pointer: fine)').matches ? 'Click' : 'Tap'; }
 /* a touch screen: the main pointer is a finger (pointer: coarse) */
 function touchScreen() { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
-/* the summary's word for a card (S17, copy Q): the note first, since it
-   carries what the result cannot (the answer shown, a worked example, a
-   card left), then the result. A close move then the answer shown is
-   graded hint but reads "Shown": the answer was shown. solved: the word
-   counts toward "N of M solved"; counted: it counts at all (a card
-   skipped is neither) */
-var RECAP_NOTE = { shown: 'Shown', firstlook: 'First look', leftMiss: 'Missed', left: 'Skipped' };
-var RECAP_RESULT = { first: 'Found', hint: 'With help', retry: 'Found after a miss', fail: 'Missed', skip: 'Skipped' };
-function recapWord(note, r) {
-  var w = RECAP_NOTE[note] || RECAP_RESULT[r] || '';
-  return { word: w, solved: w === 'Found' || w === 'With help' || w === 'Found after a miss' || w === 'First look', counted: !!w && w !== 'Skipped' };
+/* ── the summary (F2.1 to F2.4) ──────────────────────────────────────────
+   The honest score: each position by the worst event of its showing (C10),
+   "2 of 5 found first try." (tier 1: stars), the others in one line, what
+   moved on the ladders, the check lines in "Keep in mind", the tiles.
+   CAT_WORD: a tile's word; CAT_THEN: the second line's; CAT_AGAIN: a one
+   more try's, after the first showing's ("After a miss, then found") */
+var CAT_WORD = { first: 'First try', alt: 'Works too', good: 'After a good move', hint: 'With a hint', look: 'First look', miss: 'After a miss', shown: 'Shown', left: 'Missed', skip: 'Skipped' };
+var CAT_THEN = { miss: 'after a miss', hint: 'with a hint', look: 'first look', good: 'after a good move', alt: 'works too', shown: 'shown', left: 'missed' };
+var CAT_ORDER = ['miss', 'hint', 'look', 'good', 'alt', 'shown', 'left'];
+var CAT_AGAIN = { first: 'then found', alt: 'then found', good: 'then found', hint: 'then found with a hint', look: 'then found with a hint', miss: 'then found after a miss', shown: 'then shown again', left: 'then missed again' };
+/* a showing's entry (noteResult); for a set kept before this build, read
+   from its result and note */
+function sumOf(ss, k) {
+  var e = ss.sum && ss.sum[k];
+  if (e) return e;
+  var r = ss.results[k], n = (ss.notes || {})[k];
+  if (!r) return null;
+  var c = n === 'shown' ? 'shown' : n === 'leftMiss' ? 'left' : n === 'left' ? 'skip' : n === 'firstlook' ? 'look'
+    : ({ first: 'first', hint: 'hint', retry: 'miss', fail: 'shown' })[r] || 'skip';
+  return { c: c, s: { first: 3, look: 3, hint: 2, miss: 1 }[c] || 0 };
 }
-/* a one-more-try's word after the first showing's ("Shown, then found") */
-var RECAP_AGAIN = { 'Found': 'found', 'With help': 'found with help', 'Found after a miss': 'found after a miss', 'Shown': 'shown again', 'Missed': 'missed again' };
+/* the headline and its second line: "2 of 5 found first try." / "Then 2
+   after a miss, 1 after a good move." (tier 1 "11 of 15 stars"); counted:
+   every position answered (a skip is not) */
+function recapScore(ss, keys, tier) {
+  var n = 0, first = 0, stars = 0, by = {};
+  keys.forEach(function (k) {
+    var e = sumOf(ss, k);
+    if (!e || e.c === 'skip') return;
+    n++; stars += e.s || 0;
+    if (e.c === 'first') first++; else by[e.c] = (by[e.c] || 0) + 1;
+  });
+  if (!n) return { head: 'Done.', then: '' };
+  var parts = CAT_ORDER.filter(function (c) { return by[c]; }).map(function (c) { return by[c] + ' ' + CAT_THEN[c]; });
+  return { head: tier === 1 ? stars + ' of ' + n * 3 + ' stars' : first + ' of ' + n + ' found first try.', then: parts.length ? 'Then ' + parts.join(', ') + '.' : '' };
+}
+/* what moved (F2.2): "2 moved up, 1 held, 1 back to the start.", the parts
+   that are not zero, a position learned first */
+function movedWords(ss, keys) {
+  var n = { learned: 0, up: 0, held: 0, start: 0 };
+  keys.forEach(function (k) { var e = ss.sum && ss.sum[k]; if (e && n[e.m] != null) n[e.m]++; });
+  var parts = [];
+  if (n.learned) parts.push(n.learned + ' learned');
+  if (n.up) parts.push(n.up + ' moved up');
+  if (n.held) parts.push(n.held + ' held');
+  if (n.start) parts.push(n.start + ' back to the start');
+  return parts.length ? parts.join(', ') + '.' : '';
+}
+/* the step most wrong tries of the set failed, two or more (F2.4): "3 of
+   your 4 wrong tries failed the safety check." (step 1 "...missed their
+   threat.", 2 "...missed your chance."; tier 1 in its own words), with that
+   step's line under it. {line, step} or null */
+var FAILED_SAY = { 1: 'missed their threat.', 2: 'missed your chance.', 3: 'failed the safety check.' };
+var FAILED_SAY_T1 = { 1: 'missed what their move attacked.', 2: 'missed a capture or check you had.', 3: 'missed what they could take.' };
+function failedCheck(ss, tier) {
+  var n = { 1: 0, 2: 0, 3: 0 }, all = 0;
+  Object.keys(ss.sum || {}).forEach(function (k) { String(ss.sum[k].fc || '').split('').forEach(function (d) { all++; if (n[d] != null) n[d]++; }); });
+  var best = [1, 2, 3].filter(function (d) { return n[d] >= 2; }).sort(function (x, y) { return n[y] - n[x] || x - y; })[0];
+  if (!best) return null;
+  var k = n[best], lead = k < all ? k + ' of your ' + all + ' wrong tries ' : all === 2 ? 'Both your wrong tries ' : 'All ' + all + ' of your wrong tries ';
+  return { line: lead + (tier === 1 ? FAILED_SAY_T1 : FAILED_SAY)[best], step: best };
+}
+/* "Keep in mind": the failed check and its step's line first, then each
+   position's check line once, in the order met (a position left untouched
+   taught nothing). At tier 3 a computed fact sits on its tile, and the
+   card here says its step's line */
+function keepLines(ss, keys, tier) {
+  var out = [], add = function (x) { if (x && out.indexOf(x) < 0) out.push(x); };
+  var fc = failedCheck(ss, tier);
+  if (fc) { add(fc.line); add(lineOfStep(fc.step, tier)); }
+  keys.forEach(function (k) {
+    var e = ss.sum && ss.sum[k];
+    if (e && e.c !== 'skip' && e.l && model().byKey[k]) add(e.f ? lineOfStep(e.st, tier) : e.l);
+  });
+  if (!out.length) add(recapHabit(ss));
+  return out;
+}
+/* a position's rungs on its tile at tiers 2 and 3 (F2.2: three pips, the
+   third gold, lit when learned), its stars at tier 1 */
+function rungHtml(p) {
+  var h = '';
+  for (var i = 0; i < 3; i++) h += '<i' + (i < p ? ' class="on' + (i === 2 ? ' gold' : '') + '"' : '') + '></i>';
+  return '<span class="rungs" role="img" aria-label="' + (p === 3 ? 'Learned' : p + ' of 3 steps to learned') + '">' + h + '</span>';
+}
+function starsHtml(n) {
+  var h = '';
+  for (var i = 0; i < 3; i++) h += '<i' + (i < n ? ' class="on"' : '') + '>★</i>';
+  return '<span class="stars" role="img" aria-label="' + n + ' of 3 stars">' + h + '</span>';
+}
+/* a position just learned leads the tiles (F2.2): "Learned: Rg1, from
+   your loss to opponent1. Found 3 times over 23 days." (tier 1 the move in
+   words) */
+function learnedHtml(it, e, tier) {
+  var pre = stateAtPly(it.g.mv, it.b.p), pm = pre && uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
+  if (!pre || !pm) return '';
+  var g = it.g, mv = tier === 1 ? moveWords(pre, pm) : sanOf(pre, pm).replace(/[+#]$/, '');
+  var from = g.res === 'loss' ? 'loss to ' : g.res === 'draw' ? 'draw with ' : 'win against ';
+  return '<div class="recap-item recap-learned" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'One position' })) + '">'
+    + boardSvg(pre, { flip: g.color === 'black', bad: [pm.from, pm.to], decor: true })
+    + '<span class="learned-say"><b>Learned: ' + esc(mv) + ', from your ' + from + esc(g.opp) + '.</b> '
+    + (e.d != null ? 'Found ' + plur(e.n, 'time') + ' over ' + plur(e.d, 'day') + '.' : 'Found ' + plur(e.n, 'time') + ' in a row.') + '</span>'
+    + rungHtml(3) + '</div>';
+}
 function doneHtml(ss) {
-  var solved = 0, answered = 0, fams = [];
-  var uniq = [];
+  var tier = playerTier(), uniq = [];
   ss.keys.forEach(function (k) { if (uniq.indexOf(k) === -1) uniq.push(k); });
-  var recap = uniq.map(function (k) {
-    var it = model().byKey[k], r = ss.results[k], note = (ss.notes || {})[k];
+  var learned = '', recap = uniq.map(function (k) {
+    var it = model().byKey[k], e = sumOf(ss, k);
     /* a card taken out as not a real mistake has left the model: gone from the summary too */
-    if (!it || !r) return '';
-    var rw = recapWord(note, r);
-    if (!rw.word) return '';
+    if (!it || !e || !ss.results[k]) return '';
+    if (e.m === 'learned' && !learned) { learned = learnedHtml(it, e, tier); if (learned) return ''; }
     /* a card that came back for one more try says how that went too (a
-       try left untouched adds nothing), and counts as solved only when
-       both showings were (T10: an answer shown on the retry is no solve) */
-    var r2 = ss.results[k + '#r'], rw2 = r2 ? recapWord((ss.notes || {})[k + '#r'], r2) : null;
-    if (rw2 && RECAP_AGAIN[rw2.word]) rw = { word: rw.word + ', then ' + RECAP_AGAIN[rw2.word], solved: rw.solved && rw2.solved, counted: rw.counted || rw2.counted };
-    if (rw.counted) { answered++; if (rw.solved) solved++; }
-    /* the habit of each family seen today, once, in the order met; a card
-       skipped untouched taught nothing, so its family gives none */
-    var fam = familyOf(patternOf(it.b));
-    if (rw.counted && fams.indexOf(fam) === -1) fams.push(fam);
+       try left untouched adds nothing) */
+    var e2 = ss.results[k + '#r'] ? sumOf(ss, k + '#r') : null, word = CAT_WORD[e.c] + (e2 && CAT_AGAIN[e2.c] ? ', ' + CAT_AGAIN[e2.c] : '');
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
-    var pm = uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
-    /* the result in words, never in colour alone */
+    var pm = uciToMove(pre, uciOfSan(it.g.mv, it.b.p)), done = e.c !== 'skip' && e.c !== 'shown' && e.c !== 'left';
+    /* the result in words, never in colour alone; tier 3's computed check line on its tile (F2.3) */
     return '<div class="recap-item" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: k, label: 'One position' })) + '">'
       + boardSvg(pre, { flip: it.g.color === 'black', bad: pm ? [pm.from, pm.to] : null, decor: true }) + '<span>' + esc(patternInfo(patternOf(it.b)).name) + '</span>'
-      + '<span class="res' + (rw.solved ? '' : ' shown') + '">' + rw.word + '</span></div>';
+      + '<span class="res' + (done ? '' : ' shown') + '">' + word + '</span>'
+      + (e.c === 'skip' ? '' : tier === 1 ? starsHtml(e.s || 0) : e.p != null ? rungHtml(e.p) : '')
+      + (e.f && e.l ? '<span class="tile-check">' + esc(e.l) + '</span>' : '') + '</div>';
   }).join('');
-  var habits = fams.map(function (f) { return f.habit; });
-  if (!habits.length && recapHabit(ss)) habits = [recapHabit(ss)];
-  var more = morePracticeKeys().length;
+  var sc = recapScore(ss, uniq, tier), moved = movedWords(ss, uniq), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
-    + '<h2 class="done-big" id="recap-h" tabindex="-1">' + (answered ? solved + ' of ' + answered + ' solved.' : 'Done.') + '</h2>'
+    + '<h2 class="done-big" id="recap-h" tabindex="-1">' + sc.head + '</h2>'
+    + (sc.then ? '<p class="recap-then">' + sc.then + '</p>' : '')
+    + (moved ? '<p class="recap-moved">' + moved + '</p>' : '')
     + ladderHtml(ss, uniq)
     /* the next set is the main way on: in reach without scrolling */
     + '<div class="acts-row recap-acts">'
@@ -454,9 +539,11 @@ function doneHtml(ss) {
     + '</div>'
     + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
-    + (habits.length === 1 ? '<div class="focus recap-habit"><p class="plan">Keep in mind: ' + esc(habits[0]) + '</p></div>'
-      : habits.length ? '<div class="focus recap-habit"><p class="plan">Keep in mind:</p><ul class="plans">' + habits.map(function (h) { return '<li class="plan">' + esc(h) + '</li>'; }).join('') + '</ul></div>' : '')
-    + (recap ? '<div class="recap">' + recap + '</div>' : '')
+    + (keep.length || ss.routine ? '<div class="focus recap-habit">' + (ss.routine && tier >= 2 ? '<p class="plan routine">' + ROUTINE_LINE + '</p>' : '')
+      + (keep.length === 1 ? '<p class="plan">Keep in mind: ' + esc(keep[0]) + '</p>'
+        : keep.length ? '<p class="plan">Keep in mind:</p><ul class="plans">' + keep.map(function (h) { return '<li class="plan">' + esc(h) + '</li>'; }).join('') + '</ul>' : '')
+    + '</div>' : '')
+    + (learned || recap ? '<div class="recap">' + learned + recap + '</div>' : '')
     + '</div>';
 }
 
@@ -730,6 +817,7 @@ function boardAria(a, st, o) {
     if (r.kind === 'threat' && !ringed[r.sq]) out.push('Red ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' punishes it.');
     else if (r.kind === 'attacked') out.push(r.mate ? 'Red ring: they could checkmate on ' + sqName(r.sq) + '.' : b[r.sq] && isW(b[r.sq]) === myPov(a.it) ? 'Red ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is in danger.' : 'Red ring: ' + sqName(r.sq) + ', where your piece would be in danger.');
     else if (r.kind === 'hint') out.push('Gold ring: move the ' + pw(r.sq) + ' on ' + sqName(r.sq) + '.');
+    else if (r.kind === 'block') out.push('Gold ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' blocks their mate.');
     else if (r.kind === 'target') out.push('Dashed gold ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is there to win.');
   });
   /* after a forcing line, S0's tokens stand for what the line changed: it
@@ -1834,7 +1922,7 @@ function detailsGame(a) {
   var played = sanOf(a.pre, a.played), loss = w ? (cmp.found ? 'You lose ' : 'You could lose ') + w + '.' : '';
   var trapped = c.t === 'hung' && / get trapped\.$/.test(s);
   if (c.t === 'material' || trapped) {
-    if (!w) return 'After ' + played + ', ' + (b.wa >= 60 ? 'you are still better' : b.wa >= 40 ? 'the game is even' : sidesOf(a).opp + ' is on top')
+    if (!w) return 'After ' + played + ', ' + (b.wa >= 60 ? 'you are still better' : b.wa >= 40 ? 'the game is even' : sidesOf(a).opp + (b.wa >= 20 ? ' is better' : ' is winning'))
       + ' (' + Math.round(b.wb) + '% to ' + Math.round(b.wa) + '%).';
     if (trapped) return s + (w === 'the ' + /your (\w+) get trapped/.exec(s)[1] ? '' : ' ' + loss);
     /* the line to where the claim is counted, as the classifier shows one */
@@ -1883,9 +1971,13 @@ function detailsHtml() {
     + row('tl-good', esc(detailsBest(a, s, best)));
   var opp = opponentLine(a);
   if (opp) h += row('tl-opp', opp);
-  h += '</div><div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
+  /* their threat (F0.1's, as kept) and the clock (F2.5); where the check
+     line is itself their threat (tier 3), it alone says it */
+  var cl = checkLine(a), th = /^Their threat: /.test(cl) ? '' : threatLine(a), ck = clockLine(a);
+  h += '</div>' + (th ? '<p class="dt-more">' + esc(th) + '</p>' : '') + (ck ? '<p class="dt-more dt-clock">' + esc(ck) + '</p>' : '')
+    + '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
     + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>'
-    + '<p class="habit">' + esc(habitFor(a, t, info)) + '</p>';
+    + '<p class="habit">' + esc(cl) + '</p>';
   /* no engine, no exploring */
   if (SF.state !== 'failed') h += '<div class="acts-row sheet-acts"><a class="btn-line" data-act="explore">Try your own moves with Stockfish ›</a></div>';
   return h;
@@ -1984,19 +2076,52 @@ function opponentLine(a) {
   if (real === r1) return 'Your opponent found ' + esc(a.lines.game.san[1] || '') + ' right away.';
   return '';
 }
-/* the habit fits the move that was played: a king walk is not a pawn
-   shield problem, a finished opening is not a development problem, and an
-   endgame king move does not need "bring your king in" */
-function habitFor(a, t, info) {
-  var c = a.cls, pre = a.pre, mover = pType(pre.b[a.played.from]);
-  if (t === 'kingSafety' && c.kingMoved) return 'Keep your king out of the open while the queens are on the board.';
-  if (t === 'openingSlip') {
-    var home = pre.w ? 0 : 7, left = 0;
-    for (var sq = home * 8; sq < home * 8 + 8; sq++) { var p = pre.b[sq]; if (p && colorW(p) === pre.w && (pType(p) === 'N' || pType(p) === 'B')) left++; }
-    if (left === 0) return PATTERN.drift.habit;
+/* Details' clock (F2.5): time, never haste; no clocks, no line. Tier 1
+   "You took 20 seconds. You had 20 minutes left."; tier 2 "Rg1 took 20 s,
+   with 20:15 left."; tier 3 adds the pace before this move, "Your pace:
+   17 s a move.": (base + increment x (n - 1) - the clock before it) / (n -
+   1), from the stored clock after the move (b.c) and its time (b.tt) */
+function clockLine(a) {
+  var b = a.it.b, g = a.it.g, tier = a.tier || 2;
+  if (b.c == null || b.tt == null) return '';
+  var took = Math.round(b.tt), left = Math.round(b.c), secs = function (x) { return x < 60 ? x + ' s' : clockWords(x); };
+  if (tier === 1) return 'You took ' + spanWords(took) + '. You had ' + leftWords(left) + ' left.';
+  var s = capSan(a.pre, a.played) + ' took ' + secs(took) + ', with ' + clockWords(left) + ' left.';
+  var base = tcInitialSecs(g.tc), inc = parseFloat(String(g.tc || '').split('+')[1]) || 0, n = Math.floor(b.p / 2) + 1;
+  if (tier >= 3 && base && n >= 2) {
+    var pace = Math.round((base + inc * (n - 1) - (b.c + b.tt - inc)) / (n - 1));
+    if (pace >= 1) s += ' Your pace: ' + secs(pace) + ' a move.';
   }
-  if (t === 'endgame' && mover === 'K') return 'In the endgame, check every pawn race before you move your king.';
-  return info.habit;
+  return s;
+}
+/* a span of time in words at tier 1: "20 seconds", "1 minute 35 seconds" */
+function spanWords(x) {
+  if (x < 60) return plur(x, 'second');
+  var m = Math.floor(x / 60), r = x % 60;
+  return plur(m, 'minute') + (r && m < 10 ? ' ' + plur(r, 'second') : '');
+}
+/* the clock left in words at tier 1: "20 minutes", "45 seconds" */
+function leftWords(x) {
+  if (x < 60) return plur(x, 'second');
+  if (x < 3600) return plur(Math.floor(x / 60), 'minute');
+  var h = Math.floor(x / 3600), m = Math.floor((x % 3600) / 60);
+  return plur(h, 'hour') + (m ? ' ' + plur(m, 'minute') : '');
+}
+/* their threat in Details (F2.5), only one the game move left standing (a
+   threat it stopped is no danger): on a "their move" card the one tier 3's
+   check line names (standingThreat); on another the threat the danger facts
+   kept, while it stands, and beside a mate the game move allows only that
+   mate. "Their threat: Rxf5 takes your queen." (tier 1 "Their threat: their
+   rook takes your queen.") */
+function threatLine(a) {
+  var v = dangerView(a), th = v && v.searched ? v.threat : null, t = null;
+  if (!v) return '';
+  if (v.step === 1) t = standingThreat(a);
+  else if (th && th.stands && (th.mate || !a.cls.mateAgainst)) {
+    var nst = dzNullState(a.pre), m = uciToMove(nst, th.uci);
+    if (m) t = { st: nst, m: m, took: th.took, mate: th.mate };
+  }
+  return t ? threatWords(t, a.tier || 2) : '';
 }
 /* when the card comes back, in a few words */
 function scheduleWords(rec, a) {
@@ -2058,6 +2183,8 @@ function renderInsights() {
       + '<span class="fr-n">' + (a.cost >= 1 ? fmtGames(a.cost) : plur(a.count, 'position')) + '</span><span class="fr-go" aria-hidden="true">›</span></a>';
   });
   h += '</div>';
+  /* the routine, at tiers 2 and 3 (F2.3) */
+  if (playerTier() >= 2) h += '<p class="routine">' + ROUTINE_LINE + '</p>';
   if (r.ready) {
     h += '<h3 class="ins-h">Where it happens</h3>';
     if (r.slices.length) {
@@ -2123,7 +2250,7 @@ function sheetHtml(kind) {
     return '<div class="kicker">Mistake family</div><h3>' + esc(fam.name) + '</h3>'
       + '<p class="sheet-sum">' + (agg.cost >= 1 ? 'Decided ' + fmtGames(agg.cost) + ' of yours. ' : '') + plur(agg.count, 'position') + ' from your games.'
         + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
-      + '<div class="habit-block"><div class="kicker">The habit that fixes it</div><div class="plan">' + esc(fam.habit) + '</div></div>'
+      + '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(familyStep(k), playerTier())) + '</div></div>'
       + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'family', fam: k, label: fam.name })) + '">Drill ' + plur(nDrill, 'position') + '</a>' : '')
       + (focus && focus.fam === k ? '<span class="pill">Focus</span>' : '') + '</div>'
       + (rows ? '<div class="pat-list">' + rows + '</div>' : '')
@@ -2136,7 +2263,7 @@ function sheetHtml(kind) {
     var fk = familyOf(k);
     return '<a class="sheet-back" data-act="sheet" data-k="family:' + fk.key + '">‹ ' + esc(fk.name) + '</a><h3>' + esc(info.plural) + '</h3>'
       + '<p class="sheet-sum">' + (s ? plur(s.count, 'position') + ' from your games' + (s.cost >= 1 ? ', which decided ' + fmtGames(s.cost) : '') + '.' + (s.fixed ? ' ' + s.fixed + ' learned.' : '') : 'None in your games yet.') + '</p>'
-      + '<div class="habit-block"><div class="kicker">The habit</div><div class="plan">' + esc(info.habit) + '</div></div>'
+      + '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(patternStep(k), playerTier())) + '</div></div>'
       + (s ? '<div class="acts-row sheet-acts"><a class="btn-big" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'pattern', key: k, label: info.plural })) + '">Drill ' + plur(Math.min(8, s.count), 'position') + '</a></div>' : '')
       + examplesHtml({ type: 'pattern', key: k });
   }

@@ -866,13 +866,18 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
 
   /* the copy lint (test/copylint.js) walks the same frames, at tiers 1 to 3, with Today, the summary
      and Insights: nothing new against its baseline, and nothing left on it that is gone */
-  await test('copy lint: banned words by tier, the caps, one check line per card, against its baseline', () => {
+  await test('copy lint: banned words by tier ("on top" at every tier), the caps, one check line per card (the summary\'s, in Details), no old habit sentence, no routine line at tier 1, against its baseline', () => {
     const r = require('./copylint')(boot(), OPEN, FRAMES);
     ok(r.frames > 2000 && r.strings > 10000, 'walked ' + r.frames + ' frames, ' + r.strings + ' strings');
     eq(r.fresh.length, 0, r.fresh.length + ' new violations (first: ' + r.fresh.slice(0, 4).join(' || ') + ')');
     eq(r.gone.length, 0, r.gone.length + ' baseline entries no longer seen, take them off data/copylint-baseline.json (first: ' + r.gone.slice(0, 4).join(' || ') + ')');
     /* F1.6: the card's strings are clear at tier 1, and the baseline holds none of them */
     eq(r.t1card.length, 0, r.t1card.length + ' tier 1 words banned on the card (first: ' + r.t1card.slice(0, 4).join(' || ') + ')');
+    /* F2.3: one check line, the same in Details and on the summary for every card at every tier (none
+       left on the baseline), no old habit sentence anywhere, and never the routine line at tier 1 */
+    ok(r.habits >= 200, 'cards whose check lines were compared: ' + r.habits);
+    eq(r.habit.length, 0, r.habit.length + ' old habit sentences on screen (first: ' + r.habit.slice(0, 4).join(' || ') + ')');
+    eq(r.routine.length, 0, r.routine.length + ' tier 1 screens with the routine line (first: ' + r.routine.slice(0, 4).join(' || ') + ')');
   });
 
   results.forEach((l) => console.log(l));

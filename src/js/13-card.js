@@ -90,7 +90,7 @@ function cardFor(it) {
   };
   var kept = ui.session && ui.session.progress && ui.session.progress[it.key];
   if (kept) {
-    a.misses = kept.m || 0; a.hints = kept.h || 0; a.triedGameMove = !!kept.g; a.foundGood = kept.f || null; a.attempts = kept.a || 0; a.predraw = !!kept.p;
+    a.misses = kept.m || 0; a.hints = kept.h || 0; a.triedGameMove = !!kept.g; a.foundGood = kept.f || null; a.attempts = kept.a || 0; a.predraw = !!kept.p; a.autoH = kept.au || 0;
     a.fc = kept.fc || ''; a.tries = (kept.tr || []).map(function (x) { return { d: x[0], u: x[1], took: x[2] || '', mate: !!x[3], lost: !!x[4], san: x[5] || '' }; });
   }
   /* prior move, to show how the position arose */
@@ -506,7 +506,7 @@ function keepProgress(a) {
   var ss = ui.session;
   if (!ss || !a) return;
   ss.progress = ss.progress || {};
-  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts, p: a.predraw ? 1 : 0,
+  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts, p: a.predraw ? 1 : 0, au: a.autoH || 0,
                          fc: a.fc || '', tr: (a.tries || []).slice(-2).map(function (x) { return [x.d, x.u, x.took, x.mate ? 1 : 0, x.lost ? 1 : 0, x.san]; }) };
   saveSession();
 }
@@ -518,7 +518,9 @@ function keepProgress(a) {
    misses shows the answer */
 function escalate() {
   var a = ui.session.active, autoAt = a.tier === 1 ? 1 : (a.tier === 2 ? 2 : 0);
-  if (autoAt && a.misses === autoAt && a.hints < 2) { a.hints++; a.hintAt = a.misses; }
+  /* the automatic hint is counted apart: at tier 1 it comes with its miss
+     as one help step (F2.1's stars) */
+  if (autoAt && a.misses === autoAt && a.hints < 2) { a.hints++; a.hintAt = a.misses; a.autoH = (a.autoH || 0) + 1; }
   keepProgress(a);
 }
 /* a wrong try's check step (F1.2), as its reason found it (why.d: 3 the
@@ -1136,23 +1138,35 @@ function hintMarks(a) {
      3, a safety check: the attacks the game move creates (dangerCreated,
        drawn as the board stands after it), when that is the danger the game
        line plays (the piece it takes, or what its first reply takes), or
-       the mate in one it allows.
-   Their threat is claimed only from a search that ran (searched): with the
-   engine down, the attacked pieces alone. No mark on the answer's
-   to-square. {kind: mate, attacked, mine, loose, made or madeMate, rings,
-   arrows, ...} or null: none, and today's hint stays */
+       the mate in one it allows; else a piece the better move keeps that
+       the game line wins later, in words.
+   In check, the check, in words. Their mate only while the game move leaves
+   it standing; one it stopped gives what the game move allows instead
+   (parried). Their threat is claimed only from a search that ran
+   (searched): with the engine down, the attacked pieces alone. No mark on
+   the answer's to-square. {kind: check, mate, parried, attacked, mine,
+   loose, made, madeMate or lost, rings, arrows, ...} or null: none, and the
+   step's check line stays (F2.3) */
 function dangerHint(a) {
   var v = a.sol && a.solIdx > 0 ? null : dangerView(a);
   if (!v) return null;
   var due = dueMove(a), c = a.cls, b = a.it.b, threat = function (x, key) { return { from: x.from, to: x.to, kind: 'threat', key: key }; };
   var skip = function (f, t) { return f === due.to || t === due.to; };
+  /* in check, the check is the danger, and no capture elsewhere is legal:
+     words only (the coach's review: never their loose rook then) */
+  if (v.check) return { kind: 'check', rings: [], arrows: [] };
   if (v.step === 1) {
     var th = v.searched && v.threat && v.threat.mate === 1 ? v.threat : null;
-    if (th) {
+    if (th && th.stands) {
       var nst = dzNullState(a.pre);
       return { kind: 'mate', mate: { from: th.from, to: th.to, san: capSan(nst, uciToMove(nst, th.uci)) },
                rings: skip(th.to, th.to) ? [] : [{ sq: th.to, kind: 'attacked', mate: true }], arrows: skip(th.from, th.to) ? [] : [threat(th, 'danger')] };
     }
+    /* their mate, which the game move stopped: what it allows instead (the
+       game line's reply that punishes it, drawn as hintDanger draws it) */
+    var hd = th ? hintDanger(a) : null;
+    if (hd && !skip(hd.from, hd.to) && hd.from !== due.from && hd.to !== due.from)
+      return { kind: 'parried', reply: hd, rings: [{ sq: hd.from, kind: 'threat' }], arrows: [threat(hd, 'hint')] };
     var pk = dangerPick(v.attacked, v.saves, skip);
     return pk ? { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return threat(x, 'danger'); }) } : null;
   }
@@ -1169,7 +1183,10 @@ function dangerHint(a) {
   }
   var cr = dangerCreated(a), plays = function (x) { return v.saves.indexOf(pType(x.p)) >= 0 || !!(g1 && g1.captured && g1.move.to === x.sq); };
   var rel = cr.filter(plays);
-  if (!rel.length) return null;
+  /* a piece the better move keeps that the game line wins later, with no
+     attack on the board yet: in words (the coach's review, never the plan
+     line then) */
+  if (!rel.length) return v.saves.length ? { kind: 'lost', piece: v.saves[0], rings: [], arrows: [] } : null;
   var pk3 = dangerPick(rel.concat(cr.filter(function (x) { return !plays(x); })), v.saves, skip);
   return { kind: 'made', named: pk3.named, second: pk3.second, rings: pk3.rings, arrows: pk3.arrows.map(function (x) { return threat(x, 'hint'); }) };
 }
@@ -1254,7 +1271,7 @@ function finishCard(result, beats) {
   if (ss.progress) delete ss.progress[a.key];
   if (!relearn) {
     var rec = srsRecord(a.it, result, { ms: a.ms, gameMove: a.triedGameMove, attempted: a.attempts > 0, alt: !!a.alt, fc: a.fc });
-    if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
+    if (a.attempts > 0) { ss.attempted = (ss.attempted || 0) + 1; countDay(ss, 0); }
     a.rec = rec;
     ss.results[a.key] = result;
     if ((result === 'fail' || result === 'retry') && (ss.relearn || []).length < 3) {
@@ -1280,7 +1297,8 @@ function finishCard(result, beats) {
     if (!a.revealed && !relearn && !a.misses) (ss.notes = ss.notes || {})[a.key] = 'firstlook';
   }
   a.lines = cardLines(a);
-  /* the habit is in Details and, once per family, on the summary (S17) */
+  noteResult(ss, a, result, relearn, prev);
+  /* the check line is in Details and on the summary (F2.3) */
   /* the board keeps showing what was just played (S6: the move found, the
      alternative that also works, or the end of the forcing line), its tick
      landing with the piece, then settles (S0); a shown answer is its green
@@ -1331,15 +1349,17 @@ function settleLeft(a) {
   var ss = ui.session;
   if (!ss || !a || a.phase === 'done') return;
   var again = ss_relearn(a), result = a.misses ? 'fail' : (a.hints ? 'hint' : 'skip'), prev = logPrev(a), first = !again && !Object.keys(srsLoad()).length;
-  if (!again) srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove, fc: a.fc });
+  if (!again) a.rec = srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove, fc: a.fc });
   else srsNoteTries(a.it, a.fc);
   logCard(a, result, prev, again);
   if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
-  if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
+  if (a.attempts > 0) { ss.attempted = (ss.attempted || 0) + 1; countDay(ss, 0); }
   if (ss.progress) delete ss.progress[a.key];
   ss.results[a.key + (again ? '#r' : '')] = result;
   (ss.notes = ss.notes || {})[a.key + (again ? '#r' : '')] = a.misses ? 'leftMiss' : 'left';
   a.phase = 'done';
+  /* a card left after a miss taught its check: the summary says it */
+  noteResult(ss, a, result, again, prev, true);
 }
 /* the honest result of one showing, the worst event deciding: 'shown'
    (the answer shown), 'miss' (after a miss), 'hint' (with a hint, the
@@ -1353,8 +1373,71 @@ function cardCategory(a, result) {
   if (a.foundGood || a.alt) return 'good';
   return 'first';
 }
-/* what the practice log needs from the record before this answer */
-function logPrev(a) { var r = srsRec(a.it); return r ? { n: r.n, last: r.last, lf: r.lf } : null; }
+/* the summary's finer category of one showing (F2.1, C10), the worst event
+   deciding: 'shown' (the answer shown), 'left' (left after a miss), 'miss'
+   (found after a miss), 'hint' (with a hint pressed), 'look' (the worked
+   example's drawn hint alone: a first look), 'good' (a good move, then
+   found), 'alt' (another move that works, found first), 'first' (the best
+   move, no help: the finds that climb), 'skip' (left untouched, or after a
+   hint only: not counted) */
+function resultCategory(a, result, left) {
+  if (left) return a.misses ? 'left' : 'skip';
+  if (result === 'skip') return 'skip';
+  if (a.revealed) return 'shown';
+  if (a.misses) return 'miss';
+  var pressed = (a.hints || 0) - (a.predraw ? 1 : 0) - (a.autoH || 0);
+  if (pressed > 0) return 'hint';
+  if (a.predraw) return 'look';
+  if (a.foundGood) return 'good';
+  if (a.alt) return 'alt';
+  return 'first';
+}
+/* tier 1's stars (C10): 3 found with no help step (first try, works too,
+   a first look: the hint the app draws by itself is no step); 2 after one
+   step (a close move, one hint, or one miss with its automatic hint); 1
+   after more; 0 shown or left */
+function cardStars(a, cat) {
+  if (cat === 'shown' || cat === 'left' || cat === 'skip') return 0;
+  var steps = (a.foundGood ? 1 : 0) + (a.misses || 0) + Math.max(0, (a.hints || 0) - (a.predraw ? 1 : 0) - (a.autoH || 0));
+  return steps === 0 ? 3 : steps === 1 ? 2 : 1;
+}
+/* the rungs a record stands on (F2.2): 3 (gold) learned, else its run of
+   clean finds, at most 2 */
+function rungsOf(rec) { return rec ? (rec.learned ? 3 : Math.min(2, rec.streak || 0)) : 0; }
+/* what one showing did on its ladder (F2.2): 'learned' (it became learned),
+   'up' (a clean find that climbed), 'held' (works too, a good move first, a
+   hint or a first look), 'start' (a miss or the answer shown), '' (a find
+   before its due date, a spot check, a skip) */
+function ladderMove(cat, prev, rec) {
+  if (cat === 'skip' || !rec) return '';
+  if (rec.learned && !(prev && prev.learned)) return 'learned';
+  if (cat === 'first') return (rec.streak || 0) > ((prev && prev.streak) || 0) && !(prev && prev.learned) ? 'up' : '';
+  if (cat === 'miss' || cat === 'shown' || cat === 'left') return 'start';
+  return 'held';
+}
+/* what the summary keeps of a showing (ss.sum, by key, '#r' for one more
+   try): c its category, s its stars, l its check line and st its step
+   (F2.3), f whether that line is tier 3's computed fact, fc its wrong
+   tries' steps (F2.4); for a first showing m what moved, p its rungs after
+   it, and for a position just learned n its clean finds and d the days
+   they took */
+function noteResult(ss, a, result, again, prev, left) {
+  var k = a.key + (again ? '#r' : ''), cat = resultCategory(a, result, left), e = { c: cat, s: cardStars(a, cat), fc: a.fc || '' };
+  if (cat !== 'skip') {
+    a.lines = a.lines || cardLines(a);
+    e.l = checkLine(a); e.st = cardStep(a);
+    e.f = (a.tier || 2) >= 3 && e.l !== lineOfStep(e.st, 3);
+  }
+  if (!again) {
+    var rec = a.rec || srsRec(a.it);
+    e.m = ladderMove(cat, prev, rec); e.p = rungsOf(rec);
+    if (e.m === 'learned') { e.n = rec.streak || 3; if (rec.rs) e.d = Math.round((Date.now() - rec.rs) / DAY); }
+  }
+  (ss.sum = ss.sum || {})[k] = e;
+}
+/* what the practice log needs from the record before this answer (and
+   the summary, its rungs: run and learned) */
+function logPrev(a) { var r = srsRec(a.it); return r ? { n: r.n, last: r.last, lf: r.lf, streak: r.streak || 0, learned: !!r.learned } : null; }
 /* one card answered, in the practice log (08-srs.js): mode is 'cued' for
    every card for now; review number 0 at first sight (unknown, null, for a
    record older than the count) */
@@ -1390,7 +1473,7 @@ function disputeCard(reason) {
   var key = a.key, rk = key + (ss_relearn(a) ? '#r' : ''), map = srsLoad(), copy = function (o) { return JSON.parse(JSON.stringify(o || {})); };
   var snap = { ss: ss, a: a, key: key, x: a.it.b.x || null, rec: map[key] ? copy(map[key]) : null, day: dayLoad(),
                keys: ss.keys.slice(), idx: ss.idx, relearn: (ss.relearn || []).slice(), relearnOf: copy(ss.relearnOf),
-               results: copy(ss.results), notes: copy(ss.notes), progress: ss.progress && ss.progress[key] ? copy(ss.progress[key]) : null };
+               results: copy(ss.results), notes: copy(ss.notes), sum: copy(ss.sum), progress: ss.progress && ss.progress[key] ? copy(ss.progress[key]) : null };
   a.it.b.x = 'user:' + reason;
   srsHide(a.it);
   modelDirty();
@@ -1402,6 +1485,7 @@ function disputeCard(reason) {
   ss.relearn = (ss.relearn || []).filter(function (k) { return k !== key; });
   delete ss.results[rk];
   if (ss.notes) delete ss.notes[rk];
+  if (ss.sum) delete ss.sum[rk];
   if (ss.progress) delete ss.progress[key];
   ss.active = null;
   saveSession();
@@ -1436,7 +1520,7 @@ function undoDispute() {
   /* the card that took its place keeps what was tried on it */
   var cur = ss.active;
   if (cur && cur.phase !== 'done' && (cur.misses || cur.hints || cur.attempts)) keepProgress(cur);
-  ss.keys = s.keys; ss.idx = s.idx; ss.relearn = s.relearn; ss.relearnOf = s.relearnOf; ss.results = s.results; ss.notes = s.notes;
+  ss.keys = s.keys; ss.idx = s.idx; ss.relearn = s.relearn; ss.relearnOf = s.relearnOf; ss.results = s.results; ss.notes = s.notes; ss.sum = s.sum;
   if (s.progress) (ss.progress = ss.progress || {})[s.key] = s.progress;
   if (ss.finished || s.ended) { ss.finished = false; daySave(s.day); }
   if (!now) { ui.session = ss; setView('train', false); pushSessionState(); }
