@@ -178,6 +178,8 @@ function renderTrain() {
   }
   var since = sinceHtml();
   if (n.ready < 3) { box.innerHTML = '<div class="today">' + since + findingHtml(n) + '</div>'; return; }
+  /* the day's first opening: the extra-set rule, once a day (F7.1) */
+  absorbOpen();
   var saved = savedSession();
   var day = dayLoad();
   /* the day has a finish line: the chosen session done means done for today */
@@ -260,8 +262,13 @@ function heroHtml() {
   var dl = dayLoad();
   var need = Math.min(3, plan.keys.length);
   if (dl.short && !dayCounts(dl)) why += need > 1 ? ' Try ' + need + ' positions to count today.' : ' Try it to count today.';
+  /* the title names one set; the rest, when there is more, in line 2 (F7.2) */
+  var ab = absorbToday(), dueN = dueCards().length, more = [];
+  if (ab && ab.sp) more.push(ab.sp + ' more spread over the next 3 weeks.');
+  if (dueN > sessionSize()) more.push(dueN + ' due in all. Each set takes the most important first.');
   return '<div class="hero">'
     + '<h2 id="hero-n" data-n="' + plan.keys.length + '">' + plur(plan.keys.length, 'position') + ', about ' + plur(mins, 'minute') + '</h2>'
+    + (more.length ? '<p class="why hero-more">' + more.join(' ') + '</p>' : '')
     + '<p class="why">' + why + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="startToday">Start</a></div></div>';
 }
@@ -271,19 +278,40 @@ function resumeHtml(s) {
     + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.') + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">End this set</a></div></div>';
 }
-/* the next time something is due back, as one set (F2.6, calm): "Tomorrow:
-   a set of 10, about 8 minutes." with "(23 due)" when more than a set is
-   due by then; fewer, "Tomorrow: 3 positions, about 2 minutes." Counted:
-   every position due by the end of that day, those due now included */
+/* the next time something is due back, as one set (F2.6, F7.2, calm):
+   "Tomorrow: a set of 10, about 8 minutes." (fewer: "Tomorrow: 3
+   positions, about 2 minutes."); when more than a set comes due by then,
+   what that day's first opening will do (absorbPlan): "... 13 more over
+   the next 3 weeks." where it spreads them, "... 23 due in all." where
+   there is no room. While more are due today: "13 more due today; any
+   left spread over the next 3 weeks." Counted: every position due by the
+   end of that day, those due now included */
+var SPREAD_SAY = 'over the next 3 weeks';
 function nextDueHtml() {
-  var srs = srsLoad(), m = model(), now = Date.now(), next = null;
+  var srs = srsLoad(), m = model(), now = Date.now(), next = null, size = sessionSize();
+  var mins = function (x) { return plur(Math.max(1, Math.round(x * 0.8)), 'minute'); };
+  var setOf = function (n) { return n >= size ? 'a set of ' + size + ', about ' + mins(size) : plur(n, 'position') + ', about ' + mins(n); };
+  var dayWord = function (d) { return d <= 0 ? 'Later today' : d === 1 ? 'Tomorrow' : 'In ' + d + ' days'; };
+  /* the first opening d days on (as at noon): what it keeps due, spreads
+     and leaves due for want of room */
+  var opening = function (d) { return absorbPlan(dayStart(now, d) + 12 * 3600 * 1000); };
+  var plan = function (d, p) {
+    var kept = p.keep.length + p.left.length;
+    return dayWord(d) + ': ' + setOf(kept) + '.' + (p.spread.length ? ' ' + p.spread.length + ' more ' + SPREAD_SAY + '.' : '') + (p.left.length ? ' ' + kept + ' due in all.' : '');
+  };
+  var left = dueCards().length;
+  if (left) {
+    var pt = opening(1);
+    if (pt.spread.length) return left + ' more due today; any left spread ' + SPREAD_SAY + '.';
+    return left + ' more due today. ' + (pt.left.length ? 'Each set takes the most important first.' : plan(1, pt));
+  }
   var live = function (k) { var r = srs[k], it = m.byKey[k]; return r && r.due && !r.hidden && it && trainable(it); };
   Object.keys(srs).forEach(function (k) { if (live(k) && srs[k].due > now && (!next || srs[k].due < next)) next = srs[k].due; });
   if (!next) return 'Nothing is due back yet.';
-  var d1 = new Date(next); d1.setHours(0, 0, 0, 0); d1.setDate(d1.getDate() + 1);
-  var n = Object.keys(srs).filter(function (k) { return live(k) && srs[k].due < d1.getTime(); }).length;
-  var w = dueWhen(next), size = sessionSize(), mins = function (x) { return plur(Math.max(1, Math.round(x * 0.8)), 'minute'); };
-  return upFirst(w) + ': ' + (n >= size ? 'a set of ' + size + ', about ' + mins(size) + (n > size ? ' (' + n + ' due)' : '') : plur(n, 'position') + ', about ' + mins(n)) + '.';
+  var d = daysFrom(now, next), end = dayStart(next, 1);
+  var n = Object.keys(srs).filter(function (k) { return live(k) && srs[k].due < end; }).length;
+  if (n <= size) return dayWord(d) + ': ' + setOf(n) + '.';
+  return d >= 1 ? plan(d, opening(d)) : dayWord(d) + ': ' + setOf(n) + '. ' + n + ' due in all.';
 }
 /* the button for the next set, its size in words */
 function nextSetWords(n) { return n === 1 ? 'One more position' : 'Next set of ' + n; }

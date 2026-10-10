@@ -471,7 +471,8 @@ function uciToMove(st, uci) {
 /* ── 12. Notices ─────────────────────────────────────────────────────── */
 
 var noticeTimer = null;
-function notice(msg, action) {
+/* ms: how long it stays (a longer message reads longer) */
+function notice(msg, action, ms) {
   var box = el('overlay');
   var n = document.createElement('div');
   n.className = 'notice';
@@ -490,7 +491,7 @@ function notice(msg, action) {
   if (old) old.remove();
   box.appendChild(n);
   clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(function () { n.remove(); }, action ? 8000 : 5000);
+  noticeTimer = setTimeout(function () { n.remove(); }, ms || (action ? 8000 : 5000));
 }
 
 /* ── 14. Actions ─────────────────────────────────────────────────────── */

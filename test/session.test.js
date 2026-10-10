@@ -60,6 +60,70 @@ function named(a, st, m, f, ch, t1fall) {
   if (a.tier !== 1) return f(sanOf(st, m));
   return w.length <= (ch || 40) && unit(w).split(/\\s+/).length <= 7 ? w : t1fall;
 }`;
+/* the extra-set rule (F7.1): growPool(n) adds n trainable positions as
+   clones of the fixture's games with their cards (a player who keeps
+   playing); heroWords() reads Today's title and its line 2 */
+const POOL = `function growPool(n) {
+  var proto = data.games.filter(function (g) { return g.mv && !/^sim/.test(g.id) && (g.bl || []).some(function (b) { return !b.x && b.bu; }); })
+    .sort(function (x, y) { return x.ts - y.ts || (x.id < y.id ? -1 : 1); });
+  var want = allMistakes().filter(trainable).length + n;
+  while (allMistakes().filter(trainable).length < want) {
+    var g = JSON.parse(JSON.stringify(proto[(window.__grown = (window.__grown || 0) + 1) % proto.length]));
+    g.id = 'sim' + window.__grown; g.ts = Date.now() - 3600e3;
+    data.games.unshift(g); modelDirty();
+  }
+}
+function heroWords() {
+  var h = heroHtml();
+  return { title: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], more: (/class="why hero-more">([^<]*)</.exec(h) || [])[1] || '' };
+}`;
+/* learning's simulator (absorb-sim.js, absorb-r3c.js) on the real
+   schedule: a day is shiftDays(1) and the pool grows by 5 positions; the
+   day opens (absorbOpen), then Today and extra sets; each position
+   answered by learning's learner (first sight 45% clean, 60% of them fast,
+   15% hint, 25% after a miss, 15% shown; a review clean at 0.70 + 0.05 x
+   rung, at most .92 (.90 learned), 2 points less a day late) */
+const SIM = `function simRun(seed, days, plan, noRule) {
+  SF.state = 'failed'; store.set('nl:sessionSize', 10);
+  var ideal = {}, out = { days: [], late: 0, reviews: 0, starved: 0 }, pool = 91;
+  var rnd = function () { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  var answer = function (k, day) {
+    var it = model().byKey[k], r = srsLoad()[k], now = Date.now(), first = !r || !!r.q, res, ms = 30000, u = rnd();
+    var early = !first && !r.sp && r.due != null && r.due > now + 12 * 3600e3;
+    if (first) { res = u < 0.45 ? 'first' : u < 0.60 ? 'hint' : u < 0.85 ? 'retry' : 'fail'; if (res === 'first' && rnd() < 0.6) ms = 8000; }
+    else {
+      var late = early || ideal[k] == null ? 0 : Math.max(0, day - ideal[k]);
+      var p = r.learned ? 0.9 - 0.02 * late : Math.min(0.92, 0.70 + 0.05 * (r.box || 0)) - 0.02 * late;
+      res = u < p ? 'first' : u < p + 0.08 ? 'hint' : (rnd() < 0.6 ? 'retry' : 'fail');
+      if (!early) { out.late += late; out.reviews++; }
+    }
+    var rec = srsRecord(it, res, { ms: ms, attempted: true });
+    if (rec.due != null) ideal[k] = day + daysFrom(now, rec.due);
+  };
+  for (var day = 0; day < days; day++) {
+    if (day) { shiftDays(1); var before = allMistakes().filter(trainable).length; growPool(Math.max(0, 91 + 5 * day - before)); }
+    var ab = noRule ? null : absorbOpen(), opened = dueCards().length;
+    for (var s = 0; s < plan(day); s++) {
+      var keys = s ? morePracticeKeys() : todayPlan().keys;
+      if (!keys.length) break;
+      /* practice only once no new own position is left out of the set */
+      if (s && keys.some(function (k) { var r = srsLoad()[k]; return r && !r.q && !r.sp && !(r.due != null && r.due <= Date.now() + 12 * 3600e3); })
+        && buildCandidates(1000, null, true).some(function (x) { return keys.indexOf(x.key) < 0; })) out.starved++;
+      store.set('nl:setSize', keys.length);
+      keys.forEach(function (k) { answer(k, day); });
+    }
+    var srs = srsLoad(), m = model(), end = dayStart(Date.now(), 1), d = { opened: opened, left: ab ? ab.left : 0, over: 0, learned: 0, queued: 0 };
+    Object.keys(srs).forEach(function (k) {
+      var r = srs[k], it = m.byKey[k];
+      if (!it || r.hidden) return;
+      if (r.q) d.queued++;
+      else { if (r.learned || r.retired) d.learned++; if (r.due != null && r.due < end) d.over++; }
+    });
+    out.days.push(d);
+  }
+  out.queuedEver = logLoad().filter(function (e) { return e.e === 'o'; }).reduce(function (a, e) { return a + e.q; }, 0);
+  return out;
+}`;
 (async () => {
   await test('the fixture boots with its games and cards', () => {
     const A = boot();
@@ -498,7 +562,7 @@ function named(a, st, m, f, ch, t1fall) {
     eq(r.mine[0], 'Both your wrong tries missed your chance.', 'step 2\'s words');
   });
 
-  await test('F2.6: a calm Tomorrow: 23 due read "Tomorrow: a set of 10, about 8 minutes (23 due).", 10 "Tomorrow: a set of 10, about 8 minutes.", 3 "Tomorrow: 3 positions, about 2 minutes."; a day counts once 3 positions are tried, the set paused (2 tried do not); Settings says the rule', () => {
+  await test('F2.6: a calm Tomorrow: 23 due read "Tomorrow: a set of 10, about 8 minutes. 13 more over the next 3 weeks." (F7.2\'s words), 10 "Tomorrow: a set of 10, about 8 minutes.", 3 "Tomorrow: 3 positions, about 2 minutes."; a day counts once 3 positions are tried, the set paused (2 tried do not); Settings says the rule', () => {
     const run = (n) => {
       const A = boot();
       return A.ev(`(function () {
@@ -507,7 +571,7 @@ function named(a, st, m, f, ch, t1fall) {
         store.set('nl:sessionSize', 10); srsSave(srs);
         return nextDueHtml(); })()`);
     };
-    eq(run(23), 'Tomorrow: a set of 10, about 8 minutes (23 due).', 'more than a set');
+    eq(run(23), 'Tomorrow: a set of 10, about 8 minutes. 13 more over the next 3 weeks.', 'more than a set');
     eq(run(10), 'Tomorrow: a set of 10, about 8 minutes.', 'a set');
     eq(run(3), 'Tomorrow: 3 positions, about 2 minutes.', 'fewer');
     const day = (tried) => {
@@ -522,6 +586,194 @@ function named(a, st, m, f, ch, t1fall) {
     ok(three.counts && three.paused && three.week === 1, 'a paused set with 3 tried counts the day: ' + JSON.stringify(three));
     ok(!two.counts && two.paused, 'with 2 tried it does not: ' + JSON.stringify(two));
     eq(three.rule, 'A day counts once you try 3 positions, or all of a shorter set.', 'Settings says the rule');
+  });
+
+  await test('F7.1: extra sets keep bringing new positions: with 85 unpractised, Today and every extra set after it take new ones while any remain, far past the day\'s 8; then practice, where a clean find moves no date and a miss comes back tomorrow', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      SF.state = 'failed'; store.set('nl:sessionSize', 10);
+      var its = allMistakes().filter(trainable), now = Date.now(), srs = srsLoad(), res = { sets: [] }, n = 0;
+      its.slice(0, 6).forEach(function (x, i) { srs[x.key] = { box: 2, streak: 1, due: now + (3 + i) * DAY, last: now - 2 * DAY, ls: now - 2 * DAY, lapses: 0 }; });
+      srsSave(srs);
+      res.unpractised = buildCandidates(500).length;
+      var play = function (mode, keys) {
+        store.set('nl:setSize', keys.length); logSet(mode, keys);
+        keys.forEach(function (k) { srsRecord(model().byKey[k], n++ % 3 ? 'first' : 'retry', { ms: 30000, attempted: true }); });
+      };
+      var today = todayPlan().keys;
+      res.today = [today.length, today.filter(function (k) { return !srsLoad()[k]; }).length];
+      play('today', today);
+      for (var s = 0; s < 40; s++) {
+        var left = buildCandidates(500).length, keys = morePracticeKeys();
+        if (!keys.length) break;
+        res.sets.push([keys.length, keys.filter(function (k) { return !srsLoad()[k]; }).length, left]);
+        if (left) { play('more', keys); continue; }
+        /* new ones all gone: practice; a clean find moves nothing, a miss comes back tomorrow */
+        var before = keys.map(function (k) { var x = srsLoad()[k]; return JSON.stringify([x.due, x.box, x.streak, x.ls]); });
+        logSet('more', keys);
+        res.practice = keys.map(function (k, i) {
+          var rec = srsRecord(model().byKey[k], i ? 'first' : 'retry', { ms: 9000, attempted: true });
+          return i ? JSON.stringify([rec.due, rec.box, rec.streak, rec.ls]) === before[i] : rec.due - Date.now() === DAY;
+        });
+        break;
+      }
+      res.dayNew = dayLoad().fresh;
+      res.log = logLoad().filter(function (e) { return e.e === 's'; }).map(function (e) { return [e.mo, e.n, e.new, e.due, e.sp, e.pr]; });
+      return JSON.stringify(res); })()`));
+    eq(r.unpractised, 85, '85 unpractised positions');
+    eq(JSON.stringify(r.today), '[4,4]', 'Today keeps today\'s rule: 4 new');
+    ok(r.sets.length >= 7, 'Today and 6 extra sets, and more: ' + r.sets.length);
+    r.sets.forEach((x, i) => ok(x[1] === Math.min(x[0], x[2]), 'extra set ' + (i + 1) + ' takes every new position it has room for: ' + JSON.stringify(x)));
+    ok(r.sets.slice(0, 6).every((x) => x[1] > 0), 'new positions in each of the first 6 extra sets');
+    eq(r.dayNew, 85, 'all 85 new today, no daily limit');
+    ok(r.practice && r.practice.length >= 2 && r.practice.every(Boolean), 'practice: a miss back tomorrow, clean finds move nothing: ' + JSON.stringify(r.practice));
+    const last = r.log[r.log.length - 1];
+    ok(last[2] === 0 && last[5] === last[1] && last[1] >= 2, 'the log says the last set is practice: ' + JSON.stringify(last));
+  });
+
+  await test('F7.1: when only the focus family has new positions left, an extra set still fills with them (practice only once none is left); Today keeps the family to half', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      SF.state = 'failed'; store.set('nl:sessionSize', 10); store.set('nl:setSize', 10);
+      var f = currentFocus(), srs = {}, now = Date.now();
+      allMistakes().filter(trainable).forEach(function (it) { if (familyOf(patternOf(it.b)).key !== f.fam) srs[it.key] = { box: 2, streak: 1, due: now + 5 * DAY, last: now - 2 * DAY, ls: now - 2 * DAY, lapses: 0 }; });
+      srsSave(srs);
+      var keys = morePracticeKeys();
+      return JSON.stringify({ left: buildCandidates(500).length, today: buildCandidates(10).length, more: keys.filter(function (k) { return !srsLoad()[k]; }).length }); })()`));
+    ok(r.left >= 10, 'focus positions left: ' + r.left);
+    eq(r.today, 5, 'Today: the focus family at most half');
+    eq(r.more, 10, 'an extra set: all ten new');
+  });
+
+  await test('F7.1: the day\'s first opening with 40 due (shiftDays): the 12 that decided no game, are outside the focus and are overdue by more than twice their interval go back to the queue (no date, new again), the 10 most valuable stay due, the other 18 spread over the next 21 days with no day above 10; the notices show once, the opening is logged and measured; extra sets take due, then spread, then new; a spread position found clean moves up a rung', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${POOL}
+      SF.state = 'failed'; store.set('nl:sessionSize', 10);
+      var calls = [], notes = [], n0 = notice, res = {};
+      window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
+      notice = function (m) { notes.push(m); };
+      var fam = currentFocus().fam, P = Date.now(), its = allMistakes().filter(trainable);
+      var inF = function (x) { return familyOf(patternOf(x.b)).key === fam; };
+      var dec = its.filter(function (x) { return x.b.d; }), foc = its.filter(function (x) { return !x.b.d && inF(x); }), low = its.filter(function (x) { return !x.b.d && !inF(x); });
+      var Q = low.slice(0, 12), D = dec.slice(0, 10), KF = foc.slice(0, 9), KL = low.slice(12, 21), used = Q.concat(D, KF, KL);
+      var F = its.filter(function (x) { return used.indexOf(x) < 0; }).slice(0, 8), srs = {};
+      /* as they will stand four days on, after shiftDays(4) */
+      var put = function (x, box, last, due) { srs[x.key] = { box: box, streak: box ? 1 : 0, due: due + 4 * DAY, last: last + 4 * DAY, ls: last + 4 * DAY, lapses: 0 }; };
+      Q.forEach(function (x) { put(x, 0, P - 4 * DAY, P - 3 * DAY); });           /* a day's interval, 3 days late */
+      D.forEach(function (x) { put(x, 1, P - 4 * DAY, P - DAY); });
+      KF.forEach(function (x) { put(x, 0, P - 4 * DAY, P - 3 * DAY); });          /* as late, but the focus */
+      KL.forEach(function (x) { put(x, 2, P - 8 * DAY, P - DAY); });              /* a week's interval, a day late */
+      F.forEach(function (x) { put(x, 2, P - 6 * DAY, dayStart(P, 1) + 12 * 3600e3); });
+      srsSave(srs);
+      store.set(absorbKey(), { d: dayStamp(), due: 0, sp: 0, q: 0, left: 0 });   /* today already opened */
+      res.before = [dueCards().length, absorbOpen()];
+      window.__nlTest.shiftDays(4);
+      res.s = absorbOpen();
+      res.again = absorbOpen();
+      var map = srsLoad(), key = function (x) { return x.key; };
+      res.queued = Q.every(function (x) { return map[x.key].due === null && map[x.key].q > 0; });
+      var cand = buildCandidates(500).map(key);
+      res.asNew = Q.every(function (x) { return cand.indexOf(x.key) >= 0; });
+      res.dueKeys = dueCards().map(key).sort().join() === D.map(key).sort().join();
+      var spread = KF.concat(KL), perDay = {};
+      res.spreadAll = spread.every(function (x) { var d = daysFrom(Date.now(), map[x.key].due); return map[x.key].sp > 0 && d >= 1 && d <= 21; });
+      Object.keys(map).forEach(function (k) { var r = map[k]; if (r.due != null && r.due > Date.now() + 12 * 3600e3) { var d = daysFrom(Date.now(), r.due); perDay[d] = (perDay[d] || 0) + 1; } });
+      res.perDay = perDay;
+      res.hero = heroWords();
+      res.notes = notes.slice();
+      res.log = logLoad().filter(function (e) { return e.e === 'o'; }).map(function (e) { return [e.due, e.kept, e.sp, e.q, e.left, e.od]; });
+      res.events = calls.filter(function (c) { return c[0] === 'event'; }).map(function (c) { return c[1]; });
+      /* extra sets: the due first, then the spread ones (graded as due), then new */
+      var k1 = morePracticeKeys();
+      res.first = k1.length === 10 && k1.every(function (k) { return D.some(function (x) { return x.key === k; }); });
+      k1.forEach(function (k) { srsRecord(model().byKey[k], 'first', { ms: 30000, attempted: true }); });
+      var k2 = morePracticeKeys(), m2 = srsLoad();
+      res.second = k2.length === 10 && k2.every(function (k) { return m2[k] && m2[k].sp; }) && k2.slice(0, 9).every(function (k) { return KF.some(function (x) { return x.key === k; }); });
+      /* a spread position found clean in that set: up a rung */
+      var sp = model().byKey[k2.filter(function (k) { var c = cardFor(model().byKey[k]); return c && !c.sol; })[0]], rec0 = JSON.parse(JSON.stringify(srsLoad()[sp.key]));
+      var a = openCard(sp); solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+      var rec1 = srsLoad()[sp.key];
+      res.up = { box: [rec0.box, rec1.box], streak: [rec0.streak, rec1.streak], sp: rec1.sp === undefined, moved: ui.session.sum[sp.key].m, due: Math.round((rec1.due - Date.now()) / DAY) };
+      k2.forEach(function (k) { if (k !== sp.key) srsRecord(model().byKey[k], 'first', { ms: 30000, attempted: true }); });
+      var k3 = morePracticeKeys(), m3 = srsLoad();
+      res.third = [k3.filter(function (k) { return m3[k] && m3[k].sp; }).length, k3.filter(function (k) { return !m3[k] || m3[k].q; }).length];
+      notice = n0;
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify(r.before), '[0,null]', 'nothing due before, today already opened');
+    eq(JSON.stringify(r.s), JSON.stringify({ d: r.s.d, due: 40, sp: 18, q: 12, left: 0 }), 'the opening: 40 due, 18 spread, 12 queued');
+    eq(r.again, null, 'once a day');
+    ok(r.queued && r.asNew, 'the 12 have no due date and count as new');
+    ok(r.dueKeys, 'the 10 that decided games stay due');
+    ok(r.spreadAll, 'the other 18 get dates within 21 days');
+    eq(JSON.stringify(r.perDay), JSON.stringify({ 1: 10, 2: 10, 3: 6 }), 'onto the first days with room, no day above 10 (8 were due tomorrow already)');
+    eq(JSON.stringify(r.hero), JSON.stringify({ title: '10 positions, about 8 minutes', more: '18 more spread over the next 3 weeks.' }), 'Today leads with one set, the rest in line 2');
+    eq(JSON.stringify(r.notes), JSON.stringify(['18 reviews spread over the next 3 weeks, so today stays at one set. 12 older positions went back to your queue, to return later.']), 'the notices, once');
+    eq(JSON.stringify(r.log), JSON.stringify([[40, 10, 18, 12, 0, 40]]), 'the opening in the log');
+    eq(JSON.stringify(r.events.filter((e) => /^overdue_|^queued$/.test(e))), JSON.stringify(['overdue_30_plus', 'queued']), 'measured once: how far behind, a queue used');
+    ok(r.first, 'an extra set takes the due ones first');
+    ok(r.second, 'then the spread ones, most valuable first');
+    eq(JSON.stringify(r.up), JSON.stringify({ box: [0, 1], streak: [0, 1], sp: true, moved: 'up', due: 3 }), 'a spread position found clean moves up a rung, graded as due');
+    eq(JSON.stringify(r.third), JSON.stringify([8, 2]), 'then the last spread ones, then new ones');
+  });
+
+  await test('F7.2: one set leads, the total follows: 23 due tomorrow with room, the summary says "Tomorrow: a set of 10, about 8 minutes. 13 more over the next 3 weeks." and the next day agrees ("10 positions, about 8 minutes", "13 more spread over the next 3 weeks.", the notice once); with no room the title still names one set and line 2 reads "23 due in all. Each set takes the most important first."; more left today reads "13 more due today; any left spread over the next 3 weeks."', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${POOL}
+      SF.state = 'failed'; store.set('nl:sessionSize', 10);
+      var its = allMistakes().filter(trainable), now = Date.now(), srs = {}, t = dayStart(now, 1) + 12 * 3600e3, res = {}, notes = [], n0 = notice;
+      notice = function (m) { notes.push(m); };
+      its.slice(0, 23).forEach(function (x) { srs[x.key] = { box: 1, streak: 1, due: t, last: now - 2 * DAY, ls: now - 2 * DAY, lapses: 0 }; });
+      srsSave(srs);
+      absorbOpen();
+      var keys = its.slice(30, 33).map(function (x) { return x.key; });
+      var ss = { mode: 'today', label: 'Today', keys: keys, idx: 3, results: {}, relearn: [], relearnOf: {}, notes: {}, finished: true };
+      res.summary = (/class="recap-next">([^<]*)</.exec(doneHtml(ss)) || [])[1];
+      window.__nlTest.shiftDays(1);
+      absorbOpen();
+      res.hero = heroWords(); res.notes = notes.slice();
+      /* after Today's set (9 due, 1 new), the summary and Today say what is left */
+      todayPlan().keys.forEach(function (k) { srsRecord(model().byKey[k], 'first', { ms: 30000, attempted: true }); });
+      res.after = nextDueHtml();
+      /* no room: the next 21 days already hold 10 each */
+      growPool(150);
+      its = allMistakes().filter(trainable);
+      var map = {}, i = 0;
+      its.slice(0, 23).forEach(function (x) { map[x.key] = { box: 1, streak: 1, due: Date.now() - 3600e3, last: Date.now() - 3 * DAY, ls: Date.now() - 3 * DAY, lapses: 0 }; });
+      for (var d = 1; d <= 21; d++) for (var j = 0; j < 10; j++) { var x = its[23 + i++]; map[x.key] = { box: 3, streak: 2, due: dayStart(Date.now(), d) + 12 * 3600e3, last: Date.now() - 10 * DAY, ls: Date.now() - 10 * DAY, lapses: 0 }; }
+      store.set(srsKey(), map); srsMem = null; srsRevision++;
+      store.del(absorbKey()); notes.length = 0;
+      res.full = absorbOpen();
+      res.fullHero = heroWords(); res.fullNotes = notes.slice();
+      res.fullLeft = nextDueHtml();
+      notice = n0;
+      return JSON.stringify(res); })()`));
+    eq(r.summary, 'Tomorrow: a set of 10, about 8 minutes. 13 more over the next 3 weeks.', 'the summary\'s Tomorrow');
+    eq(JSON.stringify(r.hero), JSON.stringify({ title: '10 positions, about 8 minutes', more: '13 more spread over the next 3 weeks.' }), 'the next day agrees: a set of 10, 13 spread');
+    eq(JSON.stringify(r.notes), JSON.stringify(['13 reviews spread over the next 3 weeks, so today stays at one set.']), 'the notice, once');
+    eq(r.after, '1 more due today; any left spread over the next 3 weeks.', 'after Today\'s set: the one left, and tomorrow\'s 11 would spread');
+    eq(JSON.stringify([r.full.sp, r.full.q, r.full.left]), '[0,0,13]', 'no room: nothing spread, 13 left due');
+    eq(JSON.stringify(r.fullHero), JSON.stringify({ title: '10 positions, about 8 minutes', more: '23 due in all. Each set takes the most important first.' }), 'the title names one set, the total in line 2');
+    eq(JSON.stringify(r.fullNotes), '[]', 'nothing spread or queued: no notice');
+    ok(/^23 more due today[;.] /.test(r.fullLeft), 'the summary says what is left today: ' + r.fullLeft);
+  });
+
+  await test('F7.1 simulated (shiftDays, learning\'s learner and scenario): a keen fortnight of 4 sets a day, then Today only, 90 days: every opening leads with one set, about one position overdue on an average day from day 21 (Appendix A: 1.0), reviews less than 3.5 days late, low-value overdue positions go back to the queue, practice only once no new position is left; without the opening\'s rule the overdue pile passes 50', () => {
+    const run = (noRule) => {
+      const A = boot();
+      return JSON.parse(A.ev(`(function () { ${POOL} ${SIM}
+        return JSON.stringify(simRun(8, 90, function (d) { return d < 14 ? 4 : 1; }, ${noRule ? 'true' : 'false'})); })()`));
+    };
+    const rule = run(false), none = run(true);
+    const mean = (o) => o.days.slice(20).reduce((a, d) => a + d.over, 0) / 70;
+    const late = rule.late / rule.reviews, maxOpen = Math.max(...rule.days.slice(1).map((d) => (d.left ? 0 : d.opened)));
+    ok(maxOpen <= 10, 'every opening with room leads with at most one set due: ' + maxOpen);
+    ok(rule.days.every((d) => !d.left), 'room every day');
+    ok(mean(rule) <= 2, 'overdue on an average day from day 21: ' + mean(rule).toFixed(1));
+    ok(late <= 3.5, 'days late: ' + late.toFixed(2));
+    ok(rule.queuedEver >= 5, 'positions back to the queue: ' + rule.queuedEver);
+    eq(rule.starved, 0, 'no practice while a new own position was left');
+    ok(rule.days[89].learned >= 80, 'learned by day 90: ' + rule.days[89].learned);
+    ok(mean(none) >= 50, 'without the rule, overdue on an average day: ' + mean(none).toFixed(1));
   });
 
   await test('the relearn segment joins the session bar as the card is queued, marked and named for a screen reader, and stays marked when the card comes back', () => {

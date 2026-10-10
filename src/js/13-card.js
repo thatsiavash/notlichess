@@ -86,7 +86,7 @@ function cardFor(it) {
     it: it, key: it.key, pre: pre, st: cloneState(pre), phase: 'guess', best: best, bestUci: b.bu,
     playedUci: playedUci, played: uciToMove(pre, playedUci),
     attempts: 0, misses: 0, hints: 0, sel: -1, shapes: [], t0: Date.now(),
-    firstSight: !rec, tier: playerTier(), view: null
+    firstSight: !rec || !!rec.q, tier: playerTier(), view: null
   };
   var kept = ui.session && ui.session.progress && ui.session.progress[it.key];
   if (kept) {
@@ -1437,7 +1437,13 @@ function noteResult(ss, a, result, again, prev, left) {
 }
 /* what the practice log needs from the record before this answer (and
    the summary, its rungs: run and learned) */
-function logPrev(a) { var r = srsRec(a.it); return r ? { n: r.n, last: r.last, lf: r.lf, streak: r.streak || 0, learned: !!r.learned } : null; }
+function logPrev(a) {
+  var r = srsRec(a.it);
+  /* why it was in the set (F7.1): spread to a later day, back from the
+     queue (its ladder starting again), or practice before its due date */
+  return r ? { n: r.n, last: r.last, lf: r.lf, streak: r.q ? 0 : r.streak || 0, learned: !r.q && !!r.learned, sp: !!r.sp, q: !!r.q,
+               pr: !r.sp && !r.q && r.due != null && r.due > Date.now() + 12 * 3600 * 1000 } : null;
+}
 /* one card answered, in the practice log (08-srs.js): mode is 'cued' for
    every card for now; review number 0 at first sight (unknown, null, for a
    record older than the count) */
@@ -1453,6 +1459,9 @@ function logCard(a, result, prev, again) {
   if (prev && prev.lf) e.lf = 1;
   if (a.predraw) e.pd = 1;
   if (again) e.ag = 1;
+  if (prev && prev.sp) e.sp = 1;
+  if (prev && prev.q) e.q = 1;
+  if (prev && prev.pr) e.pr = 1;
   logAdd(e);
 }
 function skipCard() {

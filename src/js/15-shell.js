@@ -406,10 +406,10 @@ function importProgress() {
       }
       Object.keys(d.keys).forEach(function (k) {
         if (k.indexOf('nl:srs:') === 0) {
-          /* merge by position: keep whichever record was practised last */
+          /* merge by position: keep whichever record changed last */
           var mine = store.get(k, {}), theirs = d.keys[k];
           Object.keys(theirs).forEach(function (p) {
-            if (!mine[p] || (theirs[p].last || 0) > (mine[p].last || 0)) mine[p] = theirs[p];
+            if (!mine[p] || srsTouched(theirs[p]) > srsTouched(mine[p])) mine[p] = theirs[p];
           });
           store.set(k, mine);
         } else if (!store.get(k, null)) store.set(k, d.keys[k]);
@@ -586,6 +586,7 @@ document.addEventListener('click', function (e) {
         del.forEach(function (x) { store.del(x); });
         store.del('nl:srs:' + u);
         store.del(logKey());
+        store.del(absorbKey());
       } catch (e2) {}
       srsMem = null; srsRevision++; ui.session = null; ui.resetArmed = false; modelDirty();
       notice('Practice history reset. Your games and analysis are kept.');
@@ -1063,11 +1064,12 @@ if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
   window.__nlTest.log = function () { return logLoad(); };
 }
 /* n days pass: every time this player has stored moves n days back (the
-   practice records' due, last, last-solved and run-start times, the day records,
-   renamed to their date n days earlier, first and last seen, the return
-   day, the paused set's day, the weekly goal's history, the practice log,
-   cue and backup times), so whatever was due in n days is due now. The
-   games keep their dates: they come back from the chess site as they are */
+   practice records' due, last, last-solved, run-start, spread and queued
+   times, the day records, renamed to their date n days earlier, first and
+   last seen, the return day, the day's first opening, the paused set's
+   day, the weekly goal's history, the practice log, cue and backup
+   times), so whatever was due in n days is due now. The games keep their
+   dates: they come back from the chess site as they are */
 function shiftDays(n) {
   n = Math.round(+n || 0);
   var ms = n * DAY, p = playerId(), keys = Object.keys(mem);
@@ -1082,7 +1084,7 @@ function shiftDays(n) {
   };
   var srs = store.get(srsKey(), null);
   if (srs) {
-    Object.keys(srs).forEach(function (k) { ['due', 'last', 'ls', 'rs'].forEach(function (f) { if (srs[k][f] != null) srs[k][f] = back(srs[k][f]); }); });
+    Object.keys(srs).forEach(function (k) { ['due', 'last', 'ls', 'rs', 'sp', 'q'].forEach(function (f) { if (srs[k][f] != null) srs[k][f] = back(srs[k][f]); }); });
     store.set(srsKey(), srs);
   }
   var dp = 'nl:day:' + p + ':', moved = keys.filter(function (k) { return k.indexOf(dp) === 0; }).map(function (k) {
@@ -1093,6 +1095,9 @@ function shiftDays(n) {
   ['nl:firstSeen:', 'nl:lastSeen:'].forEach(function (k0) { var v = store.get(k0 + p, null); if (typeof v === 'number') store.set(k0 + p, back(v)); });
   var rd = store.get('nl:retDay:' + p, null);
   if (rd) store.set('nl:retDay:' + p, stampBack(rd));
+  /* the day's first opening (F7.1) moves back too, so today opens again */
+  var ab = store.get(absorbKey(), null);
+  if (ab && ab.d) { ab.d = stampBack(ab.d); store.set(absorbKey(), ab); }
   if (data.prevSeen) data.prevSeen = back(data.prevSeen);
   var sv = store.get(sessKey(), null);
   if (sv && sv.date) { sv.date = stampBack(sv.date); store.set(sessKey(), sv); }

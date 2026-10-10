@@ -1,13 +1,15 @@
 /* ── Practice memory: spaced repetition, days, streaks, focus ───────────────
    One record per mistake in nl:srs:<user>, keyed gameId:ply:
    { box, streak, due, last, lapses, learned, tricky, skips, ls, lt, n, fc,
-   rs (the time of the current run's first clean find) }.
+   rs (the time of the current run's first clean find), sp (the time it was
+   spread to a later day, F7.1), q (the time it went back to the queue) }.
    The ladder (days): 1, 3, 7, 16, 35, 90. A position is Learned after its
    third clean solve in a row, the last one 16 or more days after the one
    before; it then returns once, 90 days later, as a spot check, and a clean
    spot check retires it. Intervals of three days or more are spread by up to
    15% either way, fixed per position, so one busy day does not come back as
-   one busy day. */
+   one busy day. An answer before the due date never moves the date later
+   (a clean find changes nothing; a hint or a miss may bring it sooner). */
 
 var SRS_DAYS = [1, 3, 7, 16, 35, 90];
 var DAY = 864e5;
@@ -21,13 +23,16 @@ function srsLoad() {
   srsMem = { key: srsKey(), map: store.get(srsKey(), {}) };
   return srsMem.map;
 }
+/* when a record last changed: answered, spread or queued (F7.1) */
+function srsTouched(r) { return Math.max(r.last || 0, r.sp || 0, r.q || 0); }
 function srsSave(map) {
   /* another tab may have saved since this one read: per position, the
-     record practised last wins, so two open tabs never erase each other */
+     record changed last wins, so two open tabs never erase each other's
+     answers, nor the day's spreading */
   var disk = store.get(srsKey(), {});
   Object.keys(disk).forEach(function (k) {
     var d = disk[k], m = map[k];
-    if (!m || (d.last || 0) > (m.last || 0)) map[k] = d;
+    if (!m || srsTouched(d) > srsTouched(m)) map[k] = d;
   });
   srsMem = { key: srsKey(), map: map };
   practiceWrite(srsKey(), map);
@@ -72,25 +77,35 @@ function srsRecord(it, result, info) {
   var map = srsLoad(), now = Date.now();
   var rec = map[it.key], fresh = !rec;
   rec = rec || { box: 0, streak: 0, due: null, last: null, lapses: 0 };
+  /* a position back from the queue (F7.1) comes back as new: its history
+     (lapses, answers, wrong tries) is kept, its ladder starts again */
+  var anew = fresh || !!rec.q;
+  if (rec.q) { rec.box = 0; rec.streak = 0; rec.due = null; rec.learned = false; delete rec.rs; delete rec.retired; delete rec.q; }
   var wasLearned = !!rec.learned;
-  var dueNow = fresh || rec.due == null || rec.due <= now + 12 * 3600 * 1000;
+  /* a spread position is graded as due, so it still climbs (F7.1) */
+  var dueNow = anew || !!rec.sp || rec.due == null || rec.due <= now + 12 * 3600 * 1000;
   var prevGap = rec.ls ? now - rec.ls : 0;
   if (result === 'skip') {
     rec.skips = (rec.skips || 0) + 1;
     if (dueNow) rec.due = now + DAY;
+  } else if (!dueNow && result !== 'retry' && result !== 'fail') {
+    /* found before its due date (practice, a drill): never an early
+       review that moves the date (F7.1). A clean find changes nothing; a
+       hint brings it back no later than a hint would */
+    if (result === 'hint') rec.due = Math.min(rec.due, now + spreadDays(Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)), it.key) * DAY);
   } else if (result === 'first' && info.alt) {
     /* a move that works too is a pass, not the lesson: sooner, like a hint */
     rec.due = now + Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)) * DAY;
     rec.ls = now;
   } else if (result === 'first') {
     /* a first sighting solved fast may still be a lucky guess: a week, not 16 days */
-    if (fresh) rec.box = info.ms != null && info.ms < 20000 ? 2 : 1;
-    else if (dueNow) rec.box = Math.min(rec.box + 1, SRS_DAYS.length - 2);
-    var spotCheck = rec.learned && dueNow;
+    if (anew) rec.box = info.ms != null && info.ms < 20000 ? 2 : 1;
+    else rec.box = Math.min(rec.box + 1, SRS_DAYS.length - 2);
+    var spotCheck = !!rec.learned;
     /* the run's first clean find, for "Found 3 times over 23 days." */
-    if ((fresh || dueNow) && !(rec.streak > 0)) rec.rs = now;
-    if (fresh || dueNow) rec.streak = (rec.streak || 0) + 1;
-    if (!fresh && dueNow && prevGap >= 15.5 * DAY && rec.streak >= 3) rec.learned = true;
+    if (!(rec.streak > 0)) rec.rs = now;
+    rec.streak = (rec.streak || 0) + 1;
+    if (!anew && prevGap >= 15.5 * DAY && rec.streak >= 3) rec.learned = true;
     if (spotCheck) { rec.retired = 1; rec.due = null; }
     else rec.due = now + spreadDays(rec.learned ? SRS_DAYS[SRS_DAYS.length - 1] : SRS_DAYS[rec.box], it.key) * DAY;
     rec.ls = now;
@@ -114,7 +129,11 @@ function srsRecord(it, result, info) {
     rec.box = rec.box >= 3 ? 1 : 0;
     rec.due = now + SRS_DAYS[rec.box] * DAY;
   }
+  /* a miss before its due date brings it back tomorrow (F7.1) */
+  if (!dueNow && (result === 'retry' || result === 'fail')) rec.due = Math.min(rec.due, now + DAY);
   if (info.gameMove) { rec.box = 0; rec.due = now + DAY; rec.learned = false; }
+  /* answered: back on its own schedule */
+  if (result !== 'skip') delete rec.sp;
   if ((rec.lapses || 0) >= 4) rec.tricky = 1;
   if (info.ms != null) rec.lt = info.ms;
   /* each wrong try's check step (F1.2: 1 their move, 2 your chances, 3
@@ -126,7 +145,7 @@ function srsRecord(it, result, info) {
   rec.last = now;
   map[it.key] = rec;
   srsSave(map);
-  dayBump(result, fresh, info.attempted);
+  dayBump(result, anew, info.attempted);
   /* a measure: a position learned, never which one */
   if (rec.learned && !wasLearned && typeof track === 'function') track('learned');
   return rec;
@@ -174,9 +193,12 @@ function srsHide(it) {
    nl:log:<player>: one entry for each card answered (e 'c': key, tier,
    mode, review number, days since last shown, category, tries, hints, time
    to the first move, solve time, the game move replayed, a long first
-   interval's first review) and one for each set started (e 's': mode, size,
-   due, new, spread, practice, overdue, a healthy load), the last 500
-   (about 40 KB). For testing: a progress file carries it.
+   interval's first review, a spread position, one back from the queue, a
+   practice position), one for each set started (e 's': mode, size, due,
+   new, of them back from the queue, spread, practice, overdue, a healthy
+   load) and one for each day's first opening (e 'o': due, kept, spread,
+   queued, left due for want of room, overdue), the last 500 (about 40
+   KB). For testing: a progress file carries it.
    Written after the practice records and only where there is room, so it
    never pushes them (or the games) out */
 var LOG_MAX = 500;

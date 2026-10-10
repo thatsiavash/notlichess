@@ -80,8 +80,8 @@ test('a solve after a miss drops two steps and breaks the run', () => {
   const s = sandbox(T0);
   s.srsRecord(card(), 'first', { ms: 8000 });            /* box 2 */
   s.advance(7);
-  s.srsRecord(card(), 'first', { ms: 8000 });            /* box 3 */
-  s.advance(16);
+  s.srsRecord(card(), 'first', { ms: 8000 });            /* box 3, due in 16 days, spread by up to 15% */
+  s.advance(19);
   const r = s.srsRecord(card(), 'retry', {});
   eq(r.box, 1, 'box'); eq(r.streak, 0, 'streak'); near(r.due - s.clock.now, 3);
 });
@@ -89,8 +89,8 @@ test('a failed card from a high step restarts at 3 days and counts a lapse', () 
   const s = sandbox(T0);
   s.srsRecord(card(), 'first', { ms: 8000 });            /* box 2 */
   s.advance(7);
-  s.srsRecord(card(), 'first', { ms: 8000 });            /* box 3 */
-  s.advance(16);
+  s.srsRecord(card(), 'first', { ms: 8000 });            /* box 3, due in 16 days, spread by up to 15% */
+  s.advance(19);
   const r = s.srsRecord(card(), 'fail', {});
   eq(r.box, 1, 'box'); eq(r.lapses, 1, 'lapses'); near(r.due - s.clock.now, 3);
 });
@@ -167,6 +167,74 @@ test('skipping a due card brings it back tomorrow', () => {
   s.advance(1);
   const r = s.srsRecord(card(), 'skip', {});
   near(r.due - s.clock.now, 1);
+});
+/* ── the extra-set rule (F7.1) ─────────────────────────────────────────── */
+test('practice before the due date never moves the date later: a clean find changes nothing, a hint brings it sooner only', () => {
+  const s = sandbox(T0);
+  const r1 = s.srsRecord(card(), 'first', { ms: 45000 });            /* box 1, due in about 3 days */
+  const due = r1.due, ls = r1.ls;
+  s.advance(1);
+  const r2 = s.srsRecord(card(), 'first', { ms: 5000 });
+  eq(JSON.stringify([r2.box, r2.streak, r2.due, r2.ls, r2.rs]), JSON.stringify([1, 1, due, ls, r1.rs]), 'a clean find a day early: nothing moves');
+  eq(r2.n, 2, 'it still counts as an answer');
+  const r3 = s.srsRecord(card(), 'hint', {});
+  ok3(r3.due <= due && r3.box === 1, 'a hint early: no later than before, the step kept');
+  s.srsRecord(card('g2:4'), 'first', { ms: 8000 });                   /* box 2, due in about a week */
+  s.advance(1);
+  const r4 = s.srsRecord(card('g2:4'), 'hint', {});
+  near(r4.due - s.clock.now, 4, 'a hint a day after a week-long find: back in its hint interval, sooner than its date');
+});
+test('a miss before the due date brings it back tomorrow, its ladder as any miss', () => {
+  const s = sandbox(T0);
+  s.srsRecord(card(), 'first', { ms: 8000 });                         /* box 2 */
+  s.advance(8);
+  s.srsRecord(card(), 'first', { ms: 8000 });                         /* box 3, 16 days */
+  s.advance(4);
+  const r = s.srsRecord(card(), 'retry', {});
+  eq(r.box, 1, 'two steps down'); eq(r.streak, 0, 'run broken'); near(r.due - s.clock.now, 1, 'back tomorrow');
+  s.advance(1.2);
+  const r2 = s.srsRecord(card(), 'first', { ms: 30000 });
+  eq(r2.box, 2, 'found when due, it climbs again');
+});
+test('a spread position is graded as due: a clean find before its new date climbs a rung, and it is back on its own schedule', () => {
+  const s = sandbox(T0);
+  const map = s.srsLoad();
+  map['g1:10'] = { box: 1, streak: 1, due: T0 + 9 * DAY, last: T0 - 6 * DAY, ls: T0 - 6 * DAY, lapses: 0, sp: T0 - DAY };
+  s.srsSave(map);
+  const r = s.srsRecord(card(), 'first', { ms: 30000 });
+  eq(r.box, 2, 'up a rung'); eq(r.streak, 2, 'the run grows'); eq(r.sp, undefined, 'no longer spread'); near(r.due - s.clock.now, 7, 'its next interval');
+});
+test('a position back from the queue comes back as new: its ladder starts again, its history is kept, and it counts as new today', () => {
+  const s = sandbox(T0);
+  const map = s.srsLoad();
+  map['g1:10'] = { box: 3, streak: 2, due: null, last: T0 - 60 * DAY, ls: T0 - 70 * DAY, lapses: 2, n: 5, fc: '31', learned: false, q: T0 - 5 * DAY };
+  s.srsSave(map);
+  const r = s.srsRecord(card(), 'first', { ms: 8000 });
+  eq(JSON.stringify([r.box, r.streak, !!r.learned, r.q]), JSON.stringify([2, 1, false, undefined]), 'a fast first find: a week, a run of one, not learned');
+  eq(JSON.stringify([r.lapses, r.n, r.fc]), JSON.stringify([2, 6, '31']), 'the history kept');
+  near(r.due - s.clock.now, 7);
+  eq(s.dayLoad().fresh, 1, 'it took a new position\'s place today');
+  map['g1:11'] = { box: 2, streak: 1, due: null, last: T0 - 60 * DAY, lapses: 0, q: T0 - 5 * DAY };
+  s.srsSave(map);
+  const m = s.srsRecord(card('g1:11'), 'retry', {});
+  eq(JSON.stringify([m.box, m.streak, m.q]), JSON.stringify([0, 0, undefined]), 'a miss: from the start, not two steps down from its old rung');
+});
+test('two open tabs: a position spread or queued in one tab stays so when the other, which read before, saves', () => {
+  const s = sandbox(T0);
+  s.srsRecord(card('a'), 'first', { ms: 8000 });
+  s.srsRecord(card('b'), 'first', { ms: 8000 });
+  s.srsLoad();                                                        /* this tab has read both */
+  const other = s.store.get(s.srsKey(), {});                          /* the other tab spreads one and queues the other */
+  other.a = Object.assign({}, other.a, { sp: T0 + 1000, due: T0 + 12 * DAY });
+  other.b = Object.assign({}, other.b, { q: T0 + 1000, due: null });
+  s.store.set(s.srsKey(), other);
+  s.advance(0.01);
+  s.srsRecord(card('c'), 'first', { ms: 45000 });                     /* this tab saves */
+  const disk = s.store.get(s.srsKey(), {});
+  eq(JSON.stringify([disk.a.sp, disk.a.due, disk.b.q, disk.b.due]), JSON.stringify([T0 + 1000, T0 + 12 * DAY, T0 + 1000, null]), 'the spreading and the queue survive');
+  s.advance(0.01);
+  s.srsRecord(card('a'), 'first', { ms: 45000 });                     /* an answer after it wins */
+  eq(s.store.get(s.srsKey(), {}).a.sp, undefined, 'answered later: the answer stands');
 });
 test('a miss note breaks the run at once and reports the run it broke', () => {
   const s = sandbox(T0);

@@ -2513,7 +2513,8 @@ function uciToMove(st, uci) {
 /* ── 12. Notices ─────────────────────────────────────────────────────── */
 
 var noticeTimer = null;
-function notice(msg, action) {
+/* ms: how long it stays (a longer message reads longer) */
+function notice(msg, action, ms) {
   var box = el('overlay');
   var n = document.createElement('div');
   n.className = 'notice';
@@ -2532,7 +2533,7 @@ function notice(msg, action) {
   if (old) old.remove();
   box.appendChild(n);
   clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(function () { n.remove(); }, action ? 8000 : 5000);
+  noticeTimer = setTimeout(function () { n.remove(); }, ms || (action ? 8000 : 5000));
 }
 
 /* ── 14. Actions ─────────────────────────────────────────────────────── */
@@ -4656,7 +4657,8 @@ function patternStats() {
     s.pts += Math.max(0, it.b.wb - it.b.wa) / 100;
     s.items.push(it);
     var rec = srs[it.key];
-    if (!rec) s.fresh++;
+    /* one back in the queue (F7.1) is to go again */
+    if (!rec || rec.q) s.fresh++;
     else if (isLearned(rec)) s.fixed++;
     else { s.practising++; if (rec.due == null || rec.due <= now) s.due++; }
     var age = (now - it.g.ts) / 864e5;
@@ -4698,13 +4700,15 @@ function coverage() {
 /* ── Practice memory: spaced repetition, days, streaks, focus ───────────────
    One record per mistake in nl:srs:<user>, keyed gameId:ply:
    { box, streak, due, last, lapses, learned, tricky, skips, ls, lt, n, fc,
-   rs (the time of the current run's first clean find) }.
+   rs (the time of the current run's first clean find), sp (the time it was
+   spread to a later day, F7.1), q (the time it went back to the queue) }.
    The ladder (days): 1, 3, 7, 16, 35, 90. A position is Learned after its
    third clean solve in a row, the last one 16 or more days after the one
    before; it then returns once, 90 days later, as a spot check, and a clean
    spot check retires it. Intervals of three days or more are spread by up to
    15% either way, fixed per position, so one busy day does not come back as
-   one busy day. */
+   one busy day. An answer before the due date never moves the date later
+   (a clean find changes nothing; a hint or a miss may bring it sooner). */
 
 var SRS_DAYS = [1, 3, 7, 16, 35, 90];
 var DAY = 864e5;
@@ -4718,13 +4722,16 @@ function srsLoad() {
   srsMem = { key: srsKey(), map: store.get(srsKey(), {}) };
   return srsMem.map;
 }
+/* when a record last changed: answered, spread or queued (F7.1) */
+function srsTouched(r) { return Math.max(r.last || 0, r.sp || 0, r.q || 0); }
 function srsSave(map) {
   /* another tab may have saved since this one read: per position, the
-     record practised last wins, so two open tabs never erase each other */
+     record changed last wins, so two open tabs never erase each other's
+     answers, nor the day's spreading */
   var disk = store.get(srsKey(), {});
   Object.keys(disk).forEach(function (k) {
     var d = disk[k], m = map[k];
-    if (!m || (d.last || 0) > (m.last || 0)) map[k] = d;
+    if (!m || srsTouched(d) > srsTouched(m)) map[k] = d;
   });
   srsMem = { key: srsKey(), map: map };
   practiceWrite(srsKey(), map);
@@ -4769,25 +4776,35 @@ function srsRecord(it, result, info) {
   var map = srsLoad(), now = Date.now();
   var rec = map[it.key], fresh = !rec;
   rec = rec || { box: 0, streak: 0, due: null, last: null, lapses: 0 };
+  /* a position back from the queue (F7.1) comes back as new: its history
+     (lapses, answers, wrong tries) is kept, its ladder starts again */
+  var anew = fresh || !!rec.q;
+  if (rec.q) { rec.box = 0; rec.streak = 0; rec.due = null; rec.learned = false; delete rec.rs; delete rec.retired; delete rec.q; }
   var wasLearned = !!rec.learned;
-  var dueNow = fresh || rec.due == null || rec.due <= now + 12 * 3600 * 1000;
+  /* a spread position is graded as due, so it still climbs (F7.1) */
+  var dueNow = anew || !!rec.sp || rec.due == null || rec.due <= now + 12 * 3600 * 1000;
   var prevGap = rec.ls ? now - rec.ls : 0;
   if (result === 'skip') {
     rec.skips = (rec.skips || 0) + 1;
     if (dueNow) rec.due = now + DAY;
+  } else if (!dueNow && result !== 'retry' && result !== 'fail') {
+    /* found before its due date (practice, a drill): never an early
+       review that moves the date (F7.1). A clean find changes nothing; a
+       hint brings it back no later than a hint would */
+    if (result === 'hint') rec.due = Math.min(rec.due, now + spreadDays(Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)), it.key) * DAY);
   } else if (result === 'first' && info.alt) {
     /* a move that works too is a pass, not the lesson: sooner, like a hint */
     rec.due = now + Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)) * DAY;
     rec.ls = now;
   } else if (result === 'first') {
     /* a first sighting solved fast may still be a lucky guess: a week, not 16 days */
-    if (fresh) rec.box = info.ms != null && info.ms < 20000 ? 2 : 1;
-    else if (dueNow) rec.box = Math.min(rec.box + 1, SRS_DAYS.length - 2);
-    var spotCheck = rec.learned && dueNow;
+    if (anew) rec.box = info.ms != null && info.ms < 20000 ? 2 : 1;
+    else rec.box = Math.min(rec.box + 1, SRS_DAYS.length - 2);
+    var spotCheck = !!rec.learned;
     /* the run's first clean find, for "Found 3 times over 23 days." */
-    if ((fresh || dueNow) && !(rec.streak > 0)) rec.rs = now;
-    if (fresh || dueNow) rec.streak = (rec.streak || 0) + 1;
-    if (!fresh && dueNow && prevGap >= 15.5 * DAY && rec.streak >= 3) rec.learned = true;
+    if (!(rec.streak > 0)) rec.rs = now;
+    rec.streak = (rec.streak || 0) + 1;
+    if (!anew && prevGap >= 15.5 * DAY && rec.streak >= 3) rec.learned = true;
     if (spotCheck) { rec.retired = 1; rec.due = null; }
     else rec.due = now + spreadDays(rec.learned ? SRS_DAYS[SRS_DAYS.length - 1] : SRS_DAYS[rec.box], it.key) * DAY;
     rec.ls = now;
@@ -4811,7 +4828,11 @@ function srsRecord(it, result, info) {
     rec.box = rec.box >= 3 ? 1 : 0;
     rec.due = now + SRS_DAYS[rec.box] * DAY;
   }
+  /* a miss before its due date brings it back tomorrow (F7.1) */
+  if (!dueNow && (result === 'retry' || result === 'fail')) rec.due = Math.min(rec.due, now + DAY);
   if (info.gameMove) { rec.box = 0; rec.due = now + DAY; rec.learned = false; }
+  /* answered: back on its own schedule */
+  if (result !== 'skip') delete rec.sp;
   if ((rec.lapses || 0) >= 4) rec.tricky = 1;
   if (info.ms != null) rec.lt = info.ms;
   /* each wrong try's check step (F1.2: 1 their move, 2 your chances, 3
@@ -4823,7 +4844,7 @@ function srsRecord(it, result, info) {
   rec.last = now;
   map[it.key] = rec;
   srsSave(map);
-  dayBump(result, fresh, info.attempted);
+  dayBump(result, anew, info.attempted);
   /* a measure: a position learned, never which one */
   if (rec.learned && !wasLearned && typeof track === 'function') track('learned');
   return rec;
@@ -4871,9 +4892,12 @@ function srsHide(it) {
    nl:log:<player>: one entry for each card answered (e 'c': key, tier,
    mode, review number, days since last shown, category, tries, hints, time
    to the first move, solve time, the game move replayed, a long first
-   interval's first review) and one for each set started (e 's': mode, size,
-   due, new, spread, practice, overdue, a healthy load), the last 500
-   (about 40 KB). For testing: a progress file carries it.
+   interval's first review, a spread position, one back from the queue, a
+   practice position), one for each set started (e 's': mode, size, due,
+   new, of them back from the queue, spread, practice, overdue, a healthy
+   load) and one for each day's first opening (e 'o': due, kept, spread,
+   queued, left due for want of room, overdue), the last 500 (about 40
+   KB). For testing: a progress file carries it.
    Written after the practice records and only where there is room, so it
    never pushes them (or the games) out */
 var LOG_MAX = 500;
@@ -6202,15 +6226,19 @@ function newCardScore(it, since) {
   s *= 0.3 + Math.min(1, (it.b.wb - it.b.wa) / 60);
   return s;
 }
-/* candidates never seen before, best first */
-function buildCandidates(n, spec) {
+/* candidates never seen before, best first; fill: an extra set past the
+   focus family's half when nothing else new is left (F7.1: practice only
+   once no new own position remains) */
+function buildCandidates(n, spec, fill) {
   var srs = srsLoad(), focus = currentFocus(), since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
   var filter = spec ? specFilter(spec) : null;
   /* Today deals positions with one idea: a quiet card where a second move is
      as good as the best stays for drills */
   var twoAnswers = function (it) { return !spec && it.b.g2 != null && it.b.g2 <= SOLVE_TOL && familyOf(patternOf(it.b)).key === 'quiet'; };
+  /* never seen, or back in the queue (F7.1): those count as new */
   var list = allMistakes().filter(function (it) {
-    return trainable(it) && !srs[it.key] && (!filter || filter(it)) && !twoAnswers(it);
+    var r = srs[it.key];
+    return trainable(it) && (!r || (r.q && !r.hidden)) && (!filter || filter(it)) && !twoAnswers(it);
   });
   /* each score once: the ease check replays the game */
   var score = {};
@@ -6228,6 +6256,7 @@ function buildCandidates(n, spec) {
     else if (fi < mine.length && fi < capF) out.push(mine[fi++]);
     takeF = !takeF;
   }
+  while (fill && out.length < n && fi < mine.length) out.push(mine[fi++]);
   return out;
 }
 function dueCards(spec) {
@@ -6236,11 +6265,111 @@ function dueCards(spec) {
   return allMistakes().filter(function (it) {
     var r = srs[it.key];
     return r && !r.hidden && r.due != null && r.due <= end && trainable(it) && (!filter || filter(it));
-  }).sort(function (x, y) {
-    /* most costly first, then the most overdue */
-    var cx = (x.b.d ? 2 : 1) * teachability(x), cy = (y.b.d ? 2 : 1) * teachability(y);
-    return cy - cx || srs[x.key].due - srs[y.key].due;
+  }).sort(valueOrder(srs));
+}
+/* the most valuable first (F7.1): a move that decided a game, then the
+   focus family, then the longest wait */
+function valueOrder(srs) {
+  var f = currentFocus(), fam = f && f.fam;
+  var inF = function (it) { return fam && familyOf(patternOf(it.b)).key === fam ? 1 : 0; };
+  return function (x, y) { return (y.b.d ? 1 : 0) - (x.b.d ? 1 : 0) || inF(y) - inF(x) || idealDue(srs[x.key]) - idealDue(srs[y.key]); };
+}
+/* a record's interval on the ladder, in days */
+function ladderDays(r) { return r.learned ? SRS_DAYS[SRS_DAYS.length - 1] : SRS_DAYS[r.box || 0]; }
+/* when a position was meant to come back: its due date, or, once spread
+   to a later day, its last answer plus its interval, so a spread position
+   keeps the wait it had */
+function idealDue(r) { return r.sp && r.last ? r.last + ladderDays(r) * DAY : r.due; }
+/* positions spread to a later day (F7.1), not yet answered: an extra set
+   takes them after the due ones, graded as due */
+function spreadCards() {
+  var srs = srsLoad();
+  return allMistakes().filter(function (it) {
+    var r = srs[it.key];
+    return r && r.sp && !r.hidden && r.due != null && trainable(it);
+  }).sort(valueOrder(srs));
+}
+
+/* ── the extra-set rule (F7.1) ────────────────────────────────────────────
+   Extra sets bring new positions with no daily limit, and the schedule
+   absorbs the reviews they create. At the day's first opening, when more
+   than one set is due: positions that decided no game, are not in the
+   focus family and are overdue by more than twice their interval go back
+   to the queue (no date, their history kept: they return as new when
+   there is room); of the rest, the most valuable set's worth stays due and
+   the others spread over the next 21 days, each onto the first day with
+   room, no day above one set. Due here: by the end of the day, or within
+   the 12 hours a set looks ahead, whichever is later */
+var SPREAD_DAYS = 21;
+/* local midnight of the day ms falls on, k days later (DST-safe) */
+function dayStart(ms, k) { var d = new Date(ms); d.setHours(0, 0, 0, 0); if (k) d.setDate(d.getDate() + k); return d.getTime(); }
+/* whole calendar days from the day of a to the day of b */
+function daysFrom(a, b) { return Math.round((dayStart(b) - dayStart(a)) / DAY); }
+/* what the day's first opening at time at would do, without doing it:
+   { due, keep, queue, spread [{ it, day }], left (due for want of room) } */
+function absorbPlan(at) {
+  var srs = srsLoad(), m = model(), size = sessionSize(), f = currentFocus(), fam = f && f.fam;
+  var horizon = Math.max(dayStart(at, 1), at + 12 * 3600 * 1000), due = [], perDay = {};
+  var paused = savedSession(), skip = {};
+  if (paused) paused.keys.forEach(function (k) { skip[k] = 1; });
+  Object.keys(srs).forEach(function (k) {
+    var r = srs[k], it = m.byKey[k];
+    if (!r || r.hidden || r.due == null || !it || !trainable(it)) return;
+    if (r.due <= horizon) { if (!skip[k]) due.push(it); return; }
+    var d = daysFrom(at, r.due);
+    if (d <= SPREAD_DAYS) perDay[d] = (perDay[d] || 0) + 1;
   });
+  var out = { due: due.length, keep: due, queue: [], spread: [], left: [] };
+  if (due.length <= size) return out;
+  var rest = [];
+  due.sort(valueOrder(srs)).forEach(function (it) {
+    var r = srs[it.key], low = !it.b.d && !(fam && familyOf(patternOf(it.b)).key === fam);
+    if (low && daysFrom(idealDue(r), at) > 2 * ladderDays(r)) out.queue.push(it); else rest.push(it);
+  });
+  out.keep = rest.slice(0, size);
+  rest.slice(size).forEach(function (it) {
+    for (var d = 1; d <= SPREAD_DAYS; d++) {
+      if ((perDay[d] || 0) < size) { perDay[d] = (perDay[d] || 0) + 1; out.spread.push({ it: it, day: d }); return; }
+    }
+    out.left.push(it);
+  });
+  return out;
+}
+function absorbKey() { return 'nl:absorb:' + playerId(); }
+/* what today's first opening did: { d, due, sp, q, left }, or null */
+function absorbToday() { var s = store.get(absorbKey(), null); return s && s.d === dayStamp() ? s : null; }
+/* the day's first opening (Today drawn, a set started): the rule applied
+   once a day, the opening logged and measured, and what it did said once
+   (absorbWords) */
+function absorbOpen() {
+  if (!cfg.user || absorbToday()) return null;
+  var now = Date.now(), od = overdueCount(), p = absorbPlan(now), srs = srsLoad(), prev = store.get(absorbKey(), null);
+  p.queue.forEach(function (it) { var r = srs[it.key]; r.q = now; r.due = null; delete r.sp; });
+  /* a spread position comes due at noon of its day: all that day */
+  p.spread.forEach(function (x) { var r = srs[x.it.key]; r.sp = now; r.due = dayStart(now, x.day) + 12 * 3600 * 1000; });
+  if (p.queue.length || p.spread.length) srsSave(srs);
+  var s = { d: dayStamp(), due: p.due, sp: p.spread.length, q: p.queue.length, left: p.left.length };
+  store.set(absorbKey(), s);
+  logAdd({ e: 'o', due: s.due, kept: p.keep.length, sp: s.sp, q: s.q, left: s.left, od: od });
+  /* measures (F0.7): how far behind the opening was, and a queue used */
+  track('overdue_' + (od === 0 ? '0' : od < 10 ? '1_9' : od < 30 ? '10_29' : '30_plus'));
+  if (s.q) track('queued');
+  var say = absorbWords(s, !prev || daysFrom(stampTime(prev.d), now) >= 2);
+  if (say) notice(say, null, 9000);
+  return s;
+}
+/* "2026-10-9" (dayStamp) as noon of that day */
+function stampTime(s) { var m = /^(\d+)-(\d+)-(\d+)$/.exec(String(s || '')); return m ? new Date(+m[1], +m[2] - 1, +m[3], 12).getTime() : 0; }
+/* the one-time notices (F7.2), each the first time it happens and on a
+   return after a break (no opening the day before), never daily: line 2
+   on Today says the day's spread: "13 reviews spread over the next 3
+   weeks, so today stays at one set." and "8 older positions went back to
+   your queue, to return later." */
+function absorbWords(s, back) {
+  var out = [], say = function (tip) { if (!back && store.get('nl:tip:' + tip, 0)) return false; store.set('nl:tip:' + tip, 1); return true; };
+  if (s.sp && say('spread')) out.push(plur(s.sp, 'review') + ' spread over the next 3 weeks' + (s.left ? '.' : ', so today stays at one set.'));
+  if (s.q && say('queue')) out.push(plur(s.q, 'older position') + ' went back to your queue, to return later.');
+  return out.join(' ');
 }
 function todayPlan() {
   var size = sessionSize(), day = dayLoad();
@@ -6323,19 +6452,21 @@ function startSession(mode, keys, label, spec, opts) {
   track('session_start_' + mode);
   return true;
 }
-/* one set started, in the practice log: what it holds (due, new, and the
-   early reviews an extra set takes once both run out; spread and practice
-   positions come with the extra-set rule, 0 until then), how many
-   positions are overdue and whether the day's load is healthy */
+/* one set started, in the practice log: what it holds (due; new, q of
+   them back from the queue; spread, graded as due; practice, positions
+   not due, whose dates never move later: F7.1), how many positions are
+   overdue and whether the day's load is healthy */
 function logSet(mode, keys) {
-  var srs = srsLoad(), end = Date.now() + 12 * 3600 * 1000, due = 0, fresh = 0, seen = {}, n = 0;
+  var srs = srsLoad(), end = Date.now() + 12 * 3600 * 1000, due = 0, fresh = 0, q = 0, sp = 0, seen = {}, n = 0;
   keys.forEach(function (k) {
     if (seen[k]) return;
     seen[k] = 1; n++;
     var r = srs[k];
-    if (!r) fresh++; else if (r.due != null && r.due <= end) due++;
+    if (!r || r.q) { fresh++; if (r) q++; }
+    else if (r.sp) sp++;
+    else if (r.due != null && r.due <= end) due++;
   });
-  logAdd({ e: 's', mo: mode, n: n, due: due, new: fresh, ea: n - due - fresh, sp: 0, pr: 0, od: overdueCount(), hl: healthyLoad() ? 1 : 0 });
+  logAdd({ e: 's', mo: mode, n: n, due: due, new: fresh, q: q, sp: sp, pr: n - due - fresh - sp, od: overdueCount(), hl: healthyLoad() ? 1 : 0 });
 }
 /* the trainable positions whose day to come back was before today */
 function overdueCount() {
@@ -6349,8 +6480,9 @@ function overdueCount() {
 }
 /* the day's load, healthy when today's new positions stay under
    max(8, 0.8 x set size), those due by the end of tomorrow under one set,
-   those due in the next 14 days at most 0.8 x 14 x set size (the log's
-   flag; the extra-set rule will own the real test) */
+   those due in the next 14 days at most 0.8 x 14 x set size: a flag in
+   the log only (extra sets never stop at it; the day's first opening
+   absorbs the load, absorbOpen) */
 function healthyLoad() {
   var size = sessionSize(), srs = srsLoad(), m = model(), now = Date.now(), d = new Date(), tom = 0, two = 0;
   d.setHours(0, 0, 0, 0);
@@ -6369,6 +6501,7 @@ function pushSessionState() {
   try { if (!(history.state && history.state.nlSession)) history.pushState({ nlSession: 1 }, '', location.pathname + '#train'); } catch (e) {}
 }
 function startToday() {
+  absorbOpen();
   var plan = todayPlan();
   if (!plan.keys.length) { notice('Nothing to practise yet. Your mistakes are still being found.'); return; }
   /* its head rule is kept if a card drops out before it is shown, from the
@@ -6376,31 +6509,37 @@ function startToday() {
   startSession('today', plan.keys, 'Today', null, { firstTime: !!plan.firstTime });
 }
 /* the next set: as big as the set just played (at least 5, at most the
-   size chosen in Settings), as often as wanted. Positions
-   due back come first, then new ones from the games, then, when both run
-   out, the ones due back soonest, so a set stays full while there is
-   anything to practise. A position answered in the last few hours waits,
-   so a set never repeats the one before it */
+   size chosen in Settings), as often as wanted (F7.1): positions due back
+   first, the most valuable first; then those spread to a later day,
+   graded as due; then new ones from the games, with no daily limit (the
+   schedule absorbs them, absorbOpen); then, when none is left, practice
+   that never moves a date (positions not due, the soonest first: a miss
+   brings one back tomorrow, a clean find changes nothing). A position
+   answered in the last few hours waits, so a set never repeats the one
+   before it */
 function nextSetSize() {
   var max = sessionSize();
   return Math.max(Math.min(5, max), Math.min(max, store.get('nl:setSize', max)));
 }
 function morePracticeKeys() {
-  var size = nextSetSize(), srs = srsLoad(), now = Date.now(), recent = 3 * 3600 * 1000;
-  var keys = dueCards().slice(0, size).map(function (x) { return x.key; });
-  if (keys.length < size) buildCandidates(size - keys.length).forEach(function (x) { keys.push(x.key); });
+  var size = nextSetSize(), srs = srsLoad(), now = Date.now(), recent = 3 * 3600 * 1000, keys = [];
+  var add = function (it) { if (keys.length < size && keys.indexOf(it.key) < 0) keys.push(it.key); };
+  dueCards().forEach(add);
+  if (keys.length < size) spreadCards().forEach(add);
+  if (keys.length < size) buildCandidates(size - keys.length, null, true).forEach(add);
   if (keys.length < size) {
     allMistakes().filter(function (it) {
       var r = srs[it.key];
-      return r && !r.hidden && trainable(it) && keys.indexOf(it.key) === -1 && !(r.last && now - r.last < recent);
+      return r && !r.hidden && !r.q && trainable(it) && keys.indexOf(it.key) === -1 && !(r.last && now - r.last < recent);
     }).sort(function (x, y) {
       var dx = srs[x.key].due, dy = srs[y.key].due;
       return (dx == null ? Infinity : dx) - (dy == null ? Infinity : dy);
-    }).slice(0, size - keys.length).forEach(function (x) { keys.push(x.key); });
+    }).forEach(add);
   }
   return keys;
 }
 function keepGoing() {
+  absorbOpen();
   var keys = morePracticeKeys();
   if (!keys.length) { notice('You have practised every position from your games so far.'); return; }
   startSession('more', keys, 'Next set');
@@ -6458,7 +6597,7 @@ function drillItems(spec, n) {
   var list = allMistakes().filter(function (it) { return trainable(it) && f(it) && !(srs[it.key] && srs[it.key].hidden); });
   var band = function (it) {
     var r = srs[it.key];
-    if (!r) return 1;
+    if (!r || r.q) return 1;
     if (r.due == null || r.due <= now) return 0;
     return isLearned(r) ? 3 : 2;
   };
@@ -6696,7 +6835,7 @@ function cardFor(it) {
     it: it, key: it.key, pre: pre, st: cloneState(pre), phase: 'guess', best: best, bestUci: b.bu,
     playedUci: playedUci, played: uciToMove(pre, playedUci),
     attempts: 0, misses: 0, hints: 0, sel: -1, shapes: [], t0: Date.now(),
-    firstSight: !rec, tier: playerTier(), view: null
+    firstSight: !rec || !!rec.q, tier: playerTier(), view: null
   };
   var kept = ui.session && ui.session.progress && ui.session.progress[it.key];
   if (kept) {
@@ -8047,7 +8186,13 @@ function noteResult(ss, a, result, again, prev, left) {
 }
 /* what the practice log needs from the record before this answer (and
    the summary, its rungs: run and learned) */
-function logPrev(a) { var r = srsRec(a.it); return r ? { n: r.n, last: r.last, lf: r.lf, streak: r.streak || 0, learned: !!r.learned } : null; }
+function logPrev(a) {
+  var r = srsRec(a.it);
+  /* why it was in the set (F7.1): spread to a later day, back from the
+     queue (its ladder starting again), or practice before its due date */
+  return r ? { n: r.n, last: r.last, lf: r.lf, streak: r.q ? 0 : r.streak || 0, learned: !r.q && !!r.learned, sp: !!r.sp, q: !!r.q,
+               pr: !r.sp && !r.q && r.due != null && r.due > Date.now() + 12 * 3600 * 1000 } : null;
+}
 /* one card answered, in the practice log (08-srs.js): mode is 'cued' for
    every card for now; review number 0 at first sight (unknown, null, for a
    record older than the count) */
@@ -8063,6 +8208,9 @@ function logCard(a, result, prev, again) {
   if (prev && prev.lf) e.lf = 1;
   if (a.predraw) e.pd = 1;
   if (again) e.ag = 1;
+  if (prev && prev.sp) e.sp = 1;
+  if (prev && prev.q) e.q = 1;
+  if (prev && prev.pr) e.pr = 1;
   logAdd(e);
 }
 function skipCard() {
@@ -10489,6 +10637,8 @@ function renderTrain() {
   }
   var since = sinceHtml();
   if (n.ready < 3) { box.innerHTML = '<div class="today">' + since + findingHtml(n) + '</div>'; return; }
+  /* the day's first opening: the extra-set rule, once a day (F7.1) */
+  absorbOpen();
   var saved = savedSession();
   var day = dayLoad();
   /* the day has a finish line: the chosen session done means done for today */
@@ -10571,8 +10721,13 @@ function heroHtml() {
   var dl = dayLoad();
   var need = Math.min(3, plan.keys.length);
   if (dl.short && !dayCounts(dl)) why += need > 1 ? ' Try ' + need + ' positions to count today.' : ' Try it to count today.';
+  /* the title names one set; the rest, when there is more, in line 2 (F7.2) */
+  var ab = absorbToday(), dueN = dueCards().length, more = [];
+  if (ab && ab.sp) more.push(ab.sp + ' more spread over the next 3 weeks.');
+  if (dueN > sessionSize()) more.push(dueN + ' due in all. Each set takes the most important first.');
   return '<div class="hero">'
     + '<h2 id="hero-n" data-n="' + plan.keys.length + '">' + plur(plan.keys.length, 'position') + ', about ' + plur(mins, 'minute') + '</h2>'
+    + (more.length ? '<p class="why hero-more">' + more.join(' ') + '</p>' : '')
     + '<p class="why">' + why + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="startToday">Start</a></div></div>';
 }
@@ -10582,19 +10737,40 @@ function resumeHtml(s) {
     + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.') + '</p>' + weekHtml()
     + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">End this set</a></div></div>';
 }
-/* the next time something is due back, as one set (F2.6, calm): "Tomorrow:
-   a set of 10, about 8 minutes." with "(23 due)" when more than a set is
-   due by then; fewer, "Tomorrow: 3 positions, about 2 minutes." Counted:
-   every position due by the end of that day, those due now included */
+/* the next time something is due back, as one set (F2.6, F7.2, calm):
+   "Tomorrow: a set of 10, about 8 minutes." (fewer: "Tomorrow: 3
+   positions, about 2 minutes."); when more than a set comes due by then,
+   what that day's first opening will do (absorbPlan): "... 13 more over
+   the next 3 weeks." where it spreads them, "... 23 due in all." where
+   there is no room. While more are due today: "13 more due today; any
+   left spread over the next 3 weeks." Counted: every position due by the
+   end of that day, those due now included */
+var SPREAD_SAY = 'over the next 3 weeks';
 function nextDueHtml() {
-  var srs = srsLoad(), m = model(), now = Date.now(), next = null;
+  var srs = srsLoad(), m = model(), now = Date.now(), next = null, size = sessionSize();
+  var mins = function (x) { return plur(Math.max(1, Math.round(x * 0.8)), 'minute'); };
+  var setOf = function (n) { return n >= size ? 'a set of ' + size + ', about ' + mins(size) : plur(n, 'position') + ', about ' + mins(n); };
+  var dayWord = function (d) { return d <= 0 ? 'Later today' : d === 1 ? 'Tomorrow' : 'In ' + d + ' days'; };
+  /* the first opening d days on (as at noon): what it keeps due, spreads
+     and leaves due for want of room */
+  var opening = function (d) { return absorbPlan(dayStart(now, d) + 12 * 3600 * 1000); };
+  var plan = function (d, p) {
+    var kept = p.keep.length + p.left.length;
+    return dayWord(d) + ': ' + setOf(kept) + '.' + (p.spread.length ? ' ' + p.spread.length + ' more ' + SPREAD_SAY + '.' : '') + (p.left.length ? ' ' + kept + ' due in all.' : '');
+  };
+  var left = dueCards().length;
+  if (left) {
+    var pt = opening(1);
+    if (pt.spread.length) return left + ' more due today; any left spread ' + SPREAD_SAY + '.';
+    return left + ' more due today. ' + (pt.left.length ? 'Each set takes the most important first.' : plan(1, pt));
+  }
   var live = function (k) { var r = srs[k], it = m.byKey[k]; return r && r.due && !r.hidden && it && trainable(it); };
   Object.keys(srs).forEach(function (k) { if (live(k) && srs[k].due > now && (!next || srs[k].due < next)) next = srs[k].due; });
   if (!next) return 'Nothing is due back yet.';
-  var d1 = new Date(next); d1.setHours(0, 0, 0, 0); d1.setDate(d1.getDate() + 1);
-  var n = Object.keys(srs).filter(function (k) { return live(k) && srs[k].due < d1.getTime(); }).length;
-  var w = dueWhen(next), size = sessionSize(), mins = function (x) { return plur(Math.max(1, Math.round(x * 0.8)), 'minute'); };
-  return upFirst(w) + ': ' + (n >= size ? 'a set of ' + size + ', about ' + mins(size) + (n > size ? ' (' + n + ' due)' : '') : plur(n, 'position') + ', about ' + mins(n)) + '.';
+  var d = daysFrom(now, next), end = dayStart(next, 1);
+  var n = Object.keys(srs).filter(function (k) { return live(k) && srs[k].due < end; }).length;
+  if (n <= size) return dayWord(d) + ': ' + setOf(n) + '.';
+  return d >= 1 ? plan(d, opening(d)) : dayWord(d) + ': ' + setOf(n) + '. ' + n + ' due in all.';
 }
 /* the button for the next set, its size in words */
 function nextSetWords(n) { return n === 1 ? 'One more position' : 'Next set of ' + n; }
@@ -13288,10 +13464,10 @@ function importProgress() {
       }
       Object.keys(d.keys).forEach(function (k) {
         if (k.indexOf('nl:srs:') === 0) {
-          /* merge by position: keep whichever record was practised last */
+          /* merge by position: keep whichever record changed last */
           var mine = store.get(k, {}), theirs = d.keys[k];
           Object.keys(theirs).forEach(function (p) {
-            if (!mine[p] || (theirs[p].last || 0) > (mine[p].last || 0)) mine[p] = theirs[p];
+            if (!mine[p] || srsTouched(theirs[p]) > srsTouched(mine[p])) mine[p] = theirs[p];
           });
           store.set(k, mine);
         } else if (!store.get(k, null)) store.set(k, d.keys[k]);
@@ -13468,6 +13644,7 @@ document.addEventListener('click', function (e) {
         del.forEach(function (x) { store.del(x); });
         store.del('nl:srs:' + u);
         store.del(logKey());
+        store.del(absorbKey());
       } catch (e2) {}
       srsMem = null; srsRevision++; ui.session = null; ui.resetArmed = false; modelDirty();
       notice('Practice history reset. Your games and analysis are kept.');
@@ -13945,11 +14122,12 @@ if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
   window.__nlTest.log = function () { return logLoad(); };
 }
 /* n days pass: every time this player has stored moves n days back (the
-   practice records' due, last, last-solved and run-start times, the day records,
-   renamed to their date n days earlier, first and last seen, the return
-   day, the paused set's day, the weekly goal's history, the practice log,
-   cue and backup times), so whatever was due in n days is due now. The
-   games keep their dates: they come back from the chess site as they are */
+   practice records' due, last, last-solved, run-start, spread and queued
+   times, the day records, renamed to their date n days earlier, first and
+   last seen, the return day, the day's first opening, the paused set's
+   day, the weekly goal's history, the practice log, cue and backup
+   times), so whatever was due in n days is due now. The games keep their
+   dates: they come back from the chess site as they are */
 function shiftDays(n) {
   n = Math.round(+n || 0);
   var ms = n * DAY, p = playerId(), keys = Object.keys(mem);
@@ -13964,7 +14142,7 @@ function shiftDays(n) {
   };
   var srs = store.get(srsKey(), null);
   if (srs) {
-    Object.keys(srs).forEach(function (k) { ['due', 'last', 'ls', 'rs'].forEach(function (f) { if (srs[k][f] != null) srs[k][f] = back(srs[k][f]); }); });
+    Object.keys(srs).forEach(function (k) { ['due', 'last', 'ls', 'rs', 'sp', 'q'].forEach(function (f) { if (srs[k][f] != null) srs[k][f] = back(srs[k][f]); }); });
     store.set(srsKey(), srs);
   }
   var dp = 'nl:day:' + p + ':', moved = keys.filter(function (k) { return k.indexOf(dp) === 0; }).map(function (k) {
@@ -13975,6 +14153,9 @@ function shiftDays(n) {
   ['nl:firstSeen:', 'nl:lastSeen:'].forEach(function (k0) { var v = store.get(k0 + p, null); if (typeof v === 'number') store.set(k0 + p, back(v)); });
   var rd = store.get('nl:retDay:' + p, null);
   if (rd) store.set('nl:retDay:' + p, stampBack(rd));
+  /* the day's first opening (F7.1) moves back too, so today opens again */
+  var ab = store.get(absorbKey(), null);
+  if (ab && ab.d) { ab.d = stampBack(ab.d); store.set(absorbKey(), ab); }
   if (data.prevSeen) data.prevSeen = back(data.prevSeen);
   var sv = store.get(sessKey(), null);
   if (sv && sv.date) { sv.date = stampBack(sv.date); store.set(sessKey(), sv); }
