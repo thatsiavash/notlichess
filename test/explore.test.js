@@ -485,6 +485,73 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
     ok(!/keeps most/.test(b.v.text), 'a drop to an unclear game is not small: ' + b.v.text);
   });
 
+  /* ── groundwork: truth fixes ─────────────────────────────────────── */
+  await test('the gold arrow and its "Stockfish" name mark only the top line\'s move, whichever row is lit; rows for their moves show your winning chances, lowest first', async () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    A.ev(`(function () { SF.state = 'ready'; startExplore({}); return 1; })()`);
+    A.ev('window.__answer(window.__jobs[0], [80, 20, -40])');
+    await flush(A);
+    const r = JSON.parse(A.ev(`(function () { var a = ui.session.active, ex = a.explore, n = xpCur(ex), top = ex.res[n.key].lines[0], m = uciToMove(n.st, top.pv[0]), out = {};
+      out.want = [m.from, m.to];
+      ex.hot = 1; out.lit = boardOptsFor(a).opts.ghost; out.aria = boardOptsFor(a).opts.label; out.pick = sqName(m.from) + ' to ' + sqName(m.to);
+      ex.hot = 0;
+      /* their move: play a row of yours, and their three replies come in */
+      explorePlay(m, false);
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.lit), JSON.stringify(r.want), 'with row 2 lit, the arrow is still the top line\'s');
+    ok(r.aria.indexOf('Gold arrow: Stockfish\'s pick, ') >= 0 && r.aria.indexOf(r.pick) >= 0, 'the board\'s name: ' + r.aria);
+    const j = A.ev(`window.__jobs.map(function (x) { return x.fen; }).indexOf(xpCur(ui.session.active.explore).fen)`);
+    ok(j >= 0, 'their position searched');
+    A.ev(`window.__answer(window.__jobs[${j}], [90, 30, -50])`);
+    await flush(A);
+    const t = JSON.parse(A.ev(`(function () { var a = ui.session.active, ex = a.explore, n = xpCur(ex), me = myPov(a.it), ls = ex.res[n.key].lines;
+      return JSON.stringify({ theirs: !!n.st.w !== me, chips: xpRows(a, ex).map(function (r) { return r.chip; }), want: ls.map(function (l) { return 'You ' + Math.max(1, Math.min(99, Math.round(winPct(me ? l.cp : -l.cp)))) + '%'; }) }); })()`));
+    ok(t.theirs, 'their move');
+    eq(JSON.stringify(t.chips), JSON.stringify(t.want), 'your winning chances on their rows');
+    ok(parseInt(t.chips[0].slice(4), 10) < parseInt(t.chips[2].slice(4), 10), 'their best reply first, so your lowest figure first: ' + t.chips.join(', '));
+  });
+
+  await test('at tier 1 the card\'s own answer, on the card\'s position, is never told as a loss on the rows (Details calls it the better move)', () => {
+    const A = boot(); A.ev(STUB);
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var it = model().byKey['184455333378:68'], a = openCard(it);
+      a.tier = 1; reveal(); SF.state = 'ready'; startExplore({});
+      /* Qe6 cxd3+ Rxd3: the bishop goes for a pawn, as Stockfish's line can say */
+      var n = a.explore.nodes[0], line = { cp: 30, mate: null, pv: ['f5e6', 'c4d3', 'd1d3', 'b7b5', 'b2b3', 'f8f6'] }, out = {};
+      out.answer = xpRowWords(a, n, line, line);
+      var bu = a.bestUci; a.bestUci = 'h1h2';
+      out.other = xpRowWords(a, n, line, line);
+      a.bestUci = bu;
+      out.x3 = CARD_COPY.X3(a, winPct(30));
+      return JSON.stringify(out); })()`));
+    eq(r.answer, r.x3, 'the answer\'s row: where it stands');
+    eq(r.other, 'gives up a bishop for a pawn', 'the same line for another move still says what it gives up');
+  });
+
+  await test('Back to the lesson takes the first tap after a row was played: the focus leaving a held row lets the rows catch up 400 ms later, never under the finger; a pointer leaving them, at once', async () => {
+    const A = boot(); A.ev(STUB); A.ev(ANSWERED);
+    A.ev(`(function () { SF.state = 'ready'; startExplore({}); return 1; })()`);
+    A.ev('window.__answer(window.__jobs[0])');
+    await flush(A);
+    const r = JSON.parse(A.ev(`(function () { var a = ui.session.active, ex = a.explore, n = xpCur(ex), out = {}, calls = 0, rc = renderCard;
+      renderCard = function () { calls++; };
+      ex.frozen = { key: n.key, lines: ex.res[n.key].lines };
+      xpHover(null, true);
+      out.now = [!!ex.frozen, calls];
+      window.__ex = ex; window.__calls = function () { return calls; }; window.__rc = rc;
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.now), '[true,0]', 'nothing repainted as the focus leaves');
+    A.advance(400);
+    eq(A.ev('JSON.stringify([!!window.__ex.frozen, window.__calls()])'), '[false,1]', 'the rows catch up 400 ms later');
+    const m = JSON.parse(A.ev(`(function () { var ex = window.__ex, n = xpCur(ex), mm = window.matchMedia;
+      window.matchMedia = function (q) { return { matches: /hover: hover/.test(q) }; };
+      ex.frozen = { key: n.key, lines: ex.res[n.key].lines };
+      var c0 = window.__calls(); xpHover(null, false);
+      window.matchMedia = mm; renderCard = window.__rc;
+      return JSON.stringify([!!ex.frozen, window.__calls() - c0]); })()`));
+    eq(JSON.stringify(m), '[false,1]', 'a mouse leaving the rows: at once');
+  });
+
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'exploring: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));
   process.exit(failed ? 1 : 0);

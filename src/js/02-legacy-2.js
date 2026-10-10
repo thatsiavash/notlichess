@@ -345,14 +345,16 @@ function boardSvg(st, opts) {
   /* z 10: rings; the older hint ring is hint 2's */
   var rings = (opts.hint != null ? [{ sq: opts.hint, kind: 'hint' }] : []).concat(opts.rings || []);
   rings.forEach(function (rg) { var c = corner(rg.sq); marks += markRing(c[0], c[1], rg.kind); });
-  /* z 11: a piece captured here, as a token at the square's bottom-left:
+  /* z 11: a piece captured here, as a token at the square's bottom-left
+     (or at, [x, y, radius] from the square's corner, a smaller one tucked
+     into another corner when an arrow's head or the badge needs that one):
      a red ring and a slash for one you lost, a green ring for one you won */
   (opts.tokens || []).forEach(function (t) {
-    var c = corner(t.sq), cx = c[0] + 12.5, cy = c[1] + 32.5, lost = t.kind !== 'won';
+    var c = corner(t.sq), at = t.at || [12.5, 32.5, 12.5], cx = c[0] + at[0], cy = c[1] + at[1], r = at[2], k = r / 12.5, lost = t.kind !== 'won';
     marks += '<g class="token token-' + (lost ? 'lost' : 'won') + '">' + fxOpen(t, 'mk-fade')
-      + '<circle cx="' + cx + '" cy="' + cy + '" r="12.5" fill="rgba(244,236,222,.94)" stroke="' + (lost ? '#d6452f' : '#3d9142') + '" stroke-width="2.4"/>'
-      + (PIECE_ID[t.p] ? '<use href="#pc-' + PIECE_ID[t.p] + '" x="' + (cx - 10.8) + '" y="' + (cy - 10.8) + '" width="21.6" height="21.6" opacity=".82"/>' : '')
-      + (lost ? '<line x1="' + (cx - 8.8) + '" y1="' + (cy + 8.8) + '" x2="' + (cx + 8.8) + '" y2="' + (cy - 8.8) + '" stroke="#d6452f" stroke-width="2.4" stroke-linecap="round"/>' : '')
+      + '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="rgba(244,236,222,.94)" stroke="' + (lost ? '#d6452f' : '#3d9142') + '" stroke-width="2.4"/>'
+      + (PIECE_ID[t.p] ? '<use href="#pc-' + PIECE_ID[t.p] + '" x="' + (cx - 10.8 * k) + '" y="' + (cy - 10.8 * k) + '" width="' + 21.6 * k + '" height="' + 21.6 * k + '" opacity=".82"/>' : '')
+      + (lost ? '<line x1="' + (cx - 8.8 * k) + '" y1="' + (cy + 8.8 * k) + '" x2="' + (cx + 8.8 * k) + '" y2="' + (cy - 8.8 * k) + '" stroke="#d6452f" stroke-width="2.4" stroke-linecap="round"/>' : '')
       + '</g></g>';
   });
   /* z 12: the verdict badge, at the landing square's top-right (or the

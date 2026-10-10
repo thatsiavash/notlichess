@@ -859,6 +859,15 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     eq(m.after, 3, 'measured again once a font has arrived');
   });
 
+  /* the copy lint (test/copylint.js) walks the same frames, at tiers 1 to 3, with Today, the summary
+     and Insights: nothing new against its baseline, and nothing left on it that is gone */
+  await test('copy lint: banned words by tier, the caps, one check line per card, against its baseline', () => {
+    const r = require('./copylint')(boot(), OPEN, FRAMES);
+    ok(r.frames > 2000 && r.strings > 10000, 'walked ' + r.frames + ' frames, ' + r.strings + ' strings');
+    eq(r.fresh.length, 0, r.fresh.length + ' new violations (first: ' + r.fresh.slice(0, 4).join(' || ') + ')');
+    eq(r.gone.length, 0, r.gone.length + ' baseline entries no longer seen, take them off data/copylint-baseline.json (first: ' + r.gone.slice(0, 4).join(' || ') + ')');
+  });
+
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'labels: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));
   process.exit(failed ? 1 : 0);

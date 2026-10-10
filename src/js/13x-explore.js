@@ -493,6 +493,9 @@ function xpRowWords(a, n, line, best) {
   var c = classifyMistake(n.st, m0, { pv: best.pv, mate: null }, { pv: line.pv.slice(1), mate: null }, winPct(cpB), winPct(cpL), xpPly(n.st));
   /* material as the card face counts it, on this row's own line */
   var cl = xpClaim(n.st, line.pv, cpL);
+  /* the card's own answer, at the card's position, is never told as a loss
+     (Details calls it the better move): what it wins, else where it stands */
+  if (n.key === (a.preKey || posKey(a.pre)) && m0 === a.bestUci) return cl && cl.n > 0 ? 'wins ' + cl.w : CARD_COPY.X3(a, winPct(myPov(a.it) ? line.cp : -line.cp));
   if (isBest) {
     if (cl) return (cl.n > 0 ? 'wins ' : 'gives up ') + cl.w;
   } else {

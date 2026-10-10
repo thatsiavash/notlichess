@@ -33,15 +33,19 @@ function ok(c, what) { if (!c) throw new Error(what || 'condition failed'); }
    readyEngine() says it is up. A test can score the try (window.__tryCp)
    and the expected move (window.__bestCp) itself, in centipawns from the
    solver's side, or hold the try's answer (window.__holdTry: it waits in
-   window.__evals like an explore search) */
+   window.__evals like an explore search). The danger facts' null-move
+   search (11d-danger.js, opts.dz) is answered at once, with window.__dz when
+   a test sets it, else with no threat, and kept in window.__dzJobs */
 const ENGINE = `(function () {
   window.__evals = [];
   window.__stops = [];
+  window.__dzJobs = [];
   var realStop = engineStop;
   engineStop = function (tag) { window.__stops.push(tag); return realStop.apply(this, arguments); };
   engineEval = function (fen, mt, prio, opts) {
     opts = opts || {};
-    var job = { fen: fen, nodes: mt && mt.nodes, opts: opts };
+    var job = { fen: fen, nodes: mt && mt.nodes, opts: opts, prio: prio };
+    if (opts.dz) { window.__dzJobs.push(job); return Promise.resolve(window.__dz || { cp: 0, mate: null, pv: [], lines: [], depth: 18, stopped: false }); }
     window.__evals.push(job);
     var a = ui.session && ui.session.active, sm = opts.searchmoves;
     if (!a || !sm) return new Promise(function (res, rej) { job.res = res; job.rej = rej; });
@@ -5434,6 +5438,182 @@ const BAR = `(function () {
       return JSON.stringify({ out: out, n: n }); })()`));
     ok(r.n >= 1, 'castling game moves ' + r.n);
     eq(r.out.length, 0, r.out.join(' | '));
+  });
+
+  /* ── groundwork: the shared danger facts (11d-danger.js) ───────────── */
+  await test('danger facts: card 1 lists the queen on f5 attacked by g6 and f8 and the bishop on d3 by c4, saves the queen, and is step 1, from one null-move search', async () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      window.readyEngine();
+      var it = model().byKey['184455333378:68'];
+      delete it.b.dz;
+      /* their best move if it were their turn: gxf5, and the line settles */
+      var l = function (pv, cp) { return { cp: cp, mate: null, pv: pv }; };
+      window.__dz = { cp: -800, mate: null, pv: ['g6f5', 'e4f5', 'b4c5', 'd1h1'], depth: 18, stopped: false,
+        lines: [l(['g6f5', 'e4f5', 'b4c5', 'd1h1'], -800), l(['f8f5', 'e4f5', 'b4c5', 'd1h1'], -780), l(['c4d3', 'c2d3', 'b4c5', 'd1h1'], -500)] };
+      window.__p = ensureDanger(it, true);
+      return JSON.stringify({ jobs: window.__dzJobs.map(function (j) { return { fen: j.fen, nodes: j.nodes, mpv: j.opts.multipv, tag: j.opts.tag, prio: j.prio }; }) });
+    })()`));
+    await tick(); await tick();
+    const d = JSON.parse(A.ev(`(function () { var it = model().byKey['184455333378:68'], v = dangerView(cardFor(it)), a = dangerCard(it); window.__dz = null;
+      return JSON.stringify({ dz: it.b.dz, ready: dangerReady(it.b), v: v, stands: [dzThreatStands(a, ['g6f5', 0, 8]), dzThreatStands(a, ['f8f5', 0, 4])] }); })()`));
+    eq(r.jobs.length, 1, 'one search');
+    eq(r.jobs[0].fen, '5r2/1p4k1/6p1/p3pQ2/Pqp1Pb2/3B1P2/1PP1KP2/3R4 b - - 0 35', 'the card position with Black to move, no en passant');
+    eq(JSON.stringify([r.jobs[0].nodes, r.jobs[0].mpv, r.jobs[0].tag, r.jobs[0].prio]), JSON.stringify([250000, 3, '184455333378:68', true]), 'nodes, lines, tag, the player waiting');
+    eq(JSON.stringify(d.dz.at.slice(0, 2)), JSON.stringify([[37, 46, 61], [19, 26]]), 'the queen on f5 by g6 and f8, then the bishop on d3 by c4');
+    eq(JSON.stringify([d.v.attacked[0].p, d.v.attacked[1].p]), '["Q","B"]', 'by value');
+    eq(d.dz.sv, 'Q', 'the better move saves the queen (not the bishop, which its line loses too)');
+    eq(JSON.stringify(d.dz.th), JSON.stringify(['g6f5', 0, 8]), 'their threat: gxf5, a queen for a pawn');
+    eq(JSON.stringify([d.v.threat.p, d.v.threat.took, d.v.step]), '["p","Q",1]', 'a pawn takes the queen; step 1');
+    eq(d.dz.st, 1, 'step 1: their threat still stands after Rg1');
+    eq(JSON.stringify(d.stands), '[false,true]', 'Rg1 pins the g-pawn, so gxf5 is gone; Rxf5 still takes the queen');
+    ok(d.ready && d.dz.v === A.ev('DZ_V') && JSON.stringify(d.dz).length <= 120, 'stored, current, small: ' + JSON.stringify(d.dz));
+  });
+
+  await test('danger facts on every fixture card: saves names only a piece the game line lost and the best line keeps, attackers may legally take, and a card met again reads nothing again', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var out = [], n = { cards: 0, saves: 0, attacked: 0, steps: {} };
+      allMistakes().filter(trainable).forEach(function (it) {
+        delete it.b.dz;
+        var d = dangerNow(it), a = dangerCard(it);
+        if (!d || !a) { out.push(it.key + ': no facts'); return; }
+        n.cards++;
+        n.steps[d.st] = (n.steps[d.st] || 0) + 1;
+        if (d.th !== undefined && !(checkersOf(a.pre).length && d.th === null)) out.push(it.key + ': a threat with no search ' + JSON.stringify(d.th));
+        var pov = myPov(it), bl = a.cls.bestLine, gl = a.cls.gameLine;
+        (d.sv || '').split('').forEach(function (t) {
+          n.saves++;
+          for (var i = 1; i < bl.nodes.length; i++) if (bl.nodes[i].captured && colorW(bl.nodes[i].captured) === pov && pType(bl.nodes[i].captured) === t) out.push(it.key + ': saves ' + t + ' but the best line loses one at ' + i);
+          var lost = 0;
+          gl.nodes.forEach(function (x) { if (x.captured && pType(x.captured) === t && colorW(x.captured) === pov) lost++; });
+          if (!lost) out.push(it.key + ': saves ' + t + ' that the game line does not lose');
+        });
+        var nst = dzNullState(a.pre);
+        d.at.forEach(function (x) {
+          n.attacked++;
+          if (colorW(a.pre.b[x[0]]) !== pov || pType(a.pre.b[x[0]]) === 'K') out.push(it.key + ': attacked ' + x[0] + ' is not a piece of the player');
+          x.slice(1).forEach(function (f) { if (!checkersOf(a.pre).length && !uciToMove(nst, sqName(f) + sqName(x[0]))) out.push(it.key + ': ' + sqName(f) + ' cannot take on ' + sqName(x[0])); });
+        });
+        if (dangerOf(it.b) !== d || dangerNow(it) !== d) out.push(it.key + ': read again');
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.cards === 91 && r.n.saves >= 20 && r.n.attacked >= 40, JSON.stringify(r.n));
+    ok(Object.keys(r.n.steps).length === 5, 'all five steps occur: ' + JSON.stringify(r.n.steps));
+    eq(r.out.length, 0, r.out.length + ' faults: ' + r.out.slice(0, 4).join(' | '));
+  });
+
+  await test('danger facts: no null-move search with the player in check, and the engine down reads them without one and asks again later', async () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      window.readyEngine();
+      var it = model().byKey['184234373418:63'], a = dangerCard(it);
+      delete it.b.dz;
+      window.__dzJobs = [];
+      ensureDanger(it, true);
+      var inCheck = { check: checkersOf(a.pre).length > 0, jobs: window.__dzJobs.length, th: it.b.dz && it.b.dz.th, ready: dangerReady(it.b) };
+      /* the engine down: the facts without a search, their threat still to ask */
+      var it2 = model().byKey['184455333378:68'];
+      delete it2.b.dz;
+      SF.state = 'failed';
+      ensureDanger(it2, true);
+      var down = { jobs: window.__dzJobs.length, has: 'th' in it2.b.dz, ready: dangerReady(it2.b), st: it2.b.dz.st };
+      SF.state = 'ready';
+      ensureDanger(it2, true);
+      return JSON.stringify({ inCheck: inCheck, down: down, jobs: window.__dzJobs.length }); })()`));
+    await tick(); await tick();
+    eq(JSON.stringify(r.inCheck), JSON.stringify({ check: true, jobs: 0, th: null, ready: true }), 'in check: no search, no threat, ready');
+    eq(JSON.stringify(r.down), JSON.stringify({ jobs: 0, has: false, ready: false, st: 1 }), 'engine down: the facts read, no threat asked, step from the refutation');
+    eq(r.jobs, 1, 'asked once the engine is up');
+    eq(A.ev(`JSON.stringify(model().byKey['184455333378:68'].b.dz.th)`), 'null', 'no threat in the stub\'s answer');
+  });
+
+  await test('danger facts: step 1 only for a danger that wins and stood before the game move (a guard taken away is a safety check), and their threat only while the game move left it standing', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var mk = function (fen, played, best, ref) {
+        var pre = stateFromFen(fen), cls = classifyMistake(pre, played, { pv: best, mate: null }, { pv: ref, mate: null }, 60, 20, 40);
+        return { it: { key: 'x:1', g: { color: pre.w ? 'white' : 'black' }, b: { t: cls.t } }, pre: pre, played: uciToMove(pre, played), best: uciToMove(pre, best[0]), cls: cls };
+      };
+      /* d5 takes away the knight's guard: Rxe5 was legal before, and losing for them */
+      var guard = mk('4r1k1/8/8/4N3/3P4/8/8/6K1 w - - 0 1', 'd4d5', ['e5f3'], ['e8e5', 'g1f2']);
+      /* the knight hangs to Rxe5 and Bh6 hangs the bishop too: the threat stands */
+      var stands = mk('4r1k1/6p1/8/4N3/8/8/8/2B3K1 w - - 0 1', 'c1h6', ['e5f3'], ['g7h6', 'g1f2']);
+      /* Nc6 moves the knight out of the threat and hangs it to bxc6: the threat was met */
+      var met = mk('4r1k1/1p6/8/4N3/8/8/8/6K1 w - - 0 1', 'e5c6', ['e5f3'], ['b7c6', 'g1f2']);
+      var th = ['e8e5', 0, 3];
+      return JSON.stringify({
+        guard: [guard.it.b.t, dangerStep(guard, null), dangerStep(guard, undefined)],
+        stands: [stands.it.b.t, dangerStep(stands, th), dangerStep(stands, null), dangerStep(stands, undefined)],
+        met: [met.it.b.t, dangerStep(met, th), dangerStep(met, undefined)]
+      }); })()`));
+    eq(JSON.stringify(r.guard.slice(1)), '[3,3]', 'a guard taken away: step 3 with no threat found and with no search (' + r.guard[0] + ')');
+    eq(JSON.stringify(r.stands.slice(1)), '[1,3,3]', 'a threat that stands: step 1; none found or no search: 3 (' + r.stands[0] + ')');
+    eq(JSON.stringify(r.met.slice(1)), '[3,3]', 'a threat the game move met: step 3 (' + r.met[0] + ')');
+    ok(['hung', 'material'].indexOf(r.guard[0]) >= 0 && r.stands[0] === 'hung' && r.met[0] === 'hung', 'safety patterns: ' + JSON.stringify([r.guard[0], r.stands[0], r.met[0]]));
+  });
+
+  await test('tokens: the forcing card\'s settled board never sets a won token on a piece of theirs that took back there, and a token takes a corner clear of the arrow head and the tick on its square (every story frame)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = { tokens: 0, moved: 0, frames: 0 }, res = {};
+      /* play a card's forcing line through, their replies included */
+      var through = function (a) {
+        for (var g = 0; g < 12 && a.phase !== 'done'; g++) {
+          gradeMove(uciToMove(a.st, a.sol[a.solIdx]));
+          var rp = a.reply;
+          if (rp) { theirReply(a, false); replyDone(a, rp); }
+        }
+        a.animMove = null; a.settle = 2;
+        return a;
+      };
+      var clearOf = function (o, t, sp) {
+        var arrows = [].concat(o.ghost ? [{ from: o.ghost[0], to: o.ghost[1] }] : [], o.good ? [{ from: o.good[0], to: o.good[1] }] : [], o.bad ? [{ from: o.bad[0], to: o.bad[1] }] : [], o.arrows || []);
+        var bd = (o.badges || []).filter(function (b) { return b.sq === t.sq; })[0], bat = bd ? bd.at || [36, 9] : null;
+        return arrows.every(function (ar) { return ar.to !== t.sq || ar.from === ar.to || headClear(ar.from, ar.to, !!o.flip, sp, sp[2]); }) && !(bat && Math.hypot(sp[0] - bat[0], sp[1] - bat[1]) < sp[2] + 9.8);
+      };
+      var check = function (a, at) {
+        var o = boardOptsFor(a).opts;
+        n.frames++;
+        (o.tokens || []).forEach(function (t) {
+          n.tokens++;
+          if (t.at) n.moved++;
+          var any = TOKEN_AT.some(function (sp) { return clearOf(o, t, sp); });
+          if (any && !clearOf(o, t, t.at || TOKEN_AT[0])) out.push(at + ': the token on ' + sqName(t.sq) + ' under an arrow head or the tick');
+          if (t.at && clearOf(o, t, TOKEN_AT[0])) out.push(at + ': the token on ' + sqName(t.sq) + ' moved off a clear bottom-left');
+        });
+      };
+      playerTier = function () { return 2; };
+      var a = through(openCard(model().byKey['184215516284:63']));
+      res.won = (a.won || []).map(function (w) { return sqName(w.sq); });
+      res.s0 = s0Marks(a, a.st).tokens.map(function (t) { return sqName(t.sq); });
+      res.held = a.st.b[sqIndex('c2')];
+      seeWhy();
+      var S = buildStory(a);
+      S.steps.forEach(function (st, i) {
+        a.view = { mode: 'story', i: i }; a.animMove = null;
+        if (st.seg === 'better' && st.k === st.from) {
+          var o = boardOptsFor(a).opts, t = (o.tokens || [])[0], svg = boardSvg(boardOptsFor(a).st, o);
+          res.b1 = t ? { sq: sqName(t.sq), at: t.at || null, clear: clearOf(o, t, t.at || TOKEN_AT[0]), drawn: svg.indexOf('cx="' + ((o.flip ? 7 - t.sq % 8 : t.sq % 8) * 45 + (t.at || TOKEN_AT[0])[0]) + '" cy="' + ((o.flip ? t.sq >> 3 : 7 - (t.sq >> 3)) * 45 + (t.at || TOKEN_AT[0])[1]) + '"') >= 0 } : null;
+        }
+      });
+      allMistakes().filter(trainable).forEach(function (it) {
+        var a1 = openCard(it);
+        if (!a1) return;
+        if (a1.sol) through(a1); else { solved(uciToMove(a1.st, a1.bestUci), a1.bestUci, null); a1.animMove = null; a1.settle = 2; }
+        check(a1, it.key + ' S0');
+        seeWhy();
+        var S1 = buildStory(a1);
+        for (var i = 0; i < S1.steps.length; i++) { a1.view = { mode: 'story', i: i }; a1.animMove = null; check(a1, it.key + ' story ' + i); }
+      });
+      res.out = out; res.n = n;
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify(r.won), '["c2","f4"]', 'the line won a bishop on c2 and one on f4');
+    eq(r.held, 'Q', 'their queen took back on c2');
+    eq(JSON.stringify(r.s0), '["f4"]', 'the settled board draws the f4 token only');
+    ok(r.b1 && r.b1.sq === 'c2' && r.b1.at && r.b1.clear && r.b1.drawn, 'B1: the token on c2 in a corner clear of the arrow head and the tick, drawn there: ' + JSON.stringify(r.b1));
+    ok(r.n.tokens >= 20 && r.n.moved >= 1, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults: ' + r.out.slice(0, 4).join(' | '));
   });
 
   results.forEach((l) => console.log(l));

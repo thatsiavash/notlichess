@@ -42,7 +42,8 @@ function deepEnrich(it, prio, bg) {
      positions checked at the standard depth are checked again */
   var deep = !!bg && !prio && scanDepth() === 'thorough';
   var recheck = deep && (b.v || 0) >= 2 && b.dv !== 1 && b.j !== 'l' && !b.x;
-  if ((b.v || 0) >= 2 && !recheck) return Promise.resolve(it);
+  /* a card already looked at still needs its danger facts (11d-danger.js) */
+  if ((b.v || 0) >= 2 && !recheck) return ensureDanger(it, prio).then(function () { return it; });
   var DN = deep ? CONFIRM_NODES : DEEP_NODES;
   if (enrichPending[it.key]) {
     var c0 = enrichCtx[it.key];
@@ -136,6 +137,9 @@ function deepEnrich(it, prio, bg) {
         });
       });
   }
+  /* the danger facts are read once the lines have landed, inside the same
+     wait: one search more, and the loading frame covers it */
+  p = p.then(function () { if (!stale(myGen) && (b.v || 0) >= 2 && !b.x) return ensureDanger(it, ctx.prio); });
   enrichPending[key] = p.then(done, function () { enrichState.failed[key] = 1; return done(); });
   return enrichPending[key];
 }

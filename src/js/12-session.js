@@ -246,7 +246,7 @@ function startSession(mode, keys, label, spec, opts) {
   var prev = savedSession();
   if (prev) {
     settleSaved(prev);
-    if (sessionDoneCount(prev) > 0) notice('Your paused session is closed. Its answers are kept and its tries count toward today.');
+    if (sessionDoneCount(prev) > 0) notice('Your paused set is closed. Its answers are kept and its tries count toward today.');
   }
   var d0 = dayLoad(), carried = d0.carry || 0;
   if (carried) { d0.carry = 0; daySave(d0); }
@@ -258,12 +258,53 @@ function startSession(mode, keys, label, spec, opts) {
   if (from) ui.session.from = from;
   if (opts && opts.firstTime) ui.session.firstTime = true;
   data.freshOnboard = false;
+  logSet(mode, keys);
   saveSession();
   setView('train', false);
   pushSessionState();
   loadCard();
   track('session_start_' + mode);
   return true;
+}
+/* one set started, in the practice log: what it holds (due, new, and the
+   early reviews an extra set takes once both run out; spread and practice
+   positions come with the extra-set rule, 0 until then), how many
+   positions are overdue and whether the day's load is healthy */
+function logSet(mode, keys) {
+  var srs = srsLoad(), end = Date.now() + 12 * 3600 * 1000, due = 0, fresh = 0, seen = {}, n = 0;
+  keys.forEach(function (k) {
+    if (seen[k]) return;
+    seen[k] = 1; n++;
+    var r = srs[k];
+    if (!r) fresh++; else if (r.due != null && r.due <= end) due++;
+  });
+  logAdd({ e: 's', mo: mode, n: n, due: due, new: fresh, ea: n - due - fresh, sp: 0, pr: 0, od: overdueCount(), hl: healthyLoad() ? 1 : 0 });
+}
+/* the trainable positions whose day to come back was before today */
+function overdueCount() {
+  var srs = srsLoad(), m = model(), d0 = new Date(), n = 0;
+  d0.setHours(0, 0, 0, 0);
+  Object.keys(srs).forEach(function (k) {
+    var r = srs[k], it = m.byKey[k];
+    if (r && !r.hidden && r.due != null && r.due < d0.getTime() && it && trainable(it)) n++;
+  });
+  return n;
+}
+/* the day's load, healthy when today's new positions stay under
+   max(8, 0.8 x set size), those due by the end of tomorrow under one set,
+   those due in the next 14 days at most 0.8 x 14 x set size (the log's
+   flag; the extra-set rule will own the real test) */
+function healthyLoad() {
+  var size = sessionSize(), srs = srsLoad(), m = model(), now = Date.now(), d = new Date(), tom = 0, two = 0;
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 2);
+  Object.keys(srs).forEach(function (k) {
+    var r = srs[k], it = m.byKey[k];
+    if (!r || r.hidden || r.due == null || !it || !trainable(it)) return;
+    if (r.due < d.getTime()) tom++;
+    if (r.due <= now + 14 * DAY) two++;
+  });
+  return (dayLoad().fresh || 0) < Math.max(8, 0.8 * size) && tom < size && two <= 0.8 * 14 * size;
 }
 /* a session is a place in the history: Back ends it (and keeps every
    answer) instead of leaving the site */
@@ -390,12 +431,14 @@ function finishSession() {
   ss.active = null;
   clearLive();
   /* the day counts on real tries only (DAY_RULE) */
-  var day = dayLoad(), tried = ss.attempted || 0, n = 0, seen = {};
+  var day = dayLoad(), tried = ss.attempted || 0, n = 0, seen = {}, counted = (day.sessions || 0) > 0;
   ss.keys.forEach(function (k) { if (!seen[k]) { seen[k] = 1; n++; } });
   /* this session's own tries, or with a closed session's, at least 3 */
   if ((tried >= 1 && tried >= Math.min(3, n)) || tried + (ss.carried || 0) >= 3) day.sessions = (day.sessions || 0) + 1;
   else day.short = 1;
   daySave(day);
+  /* a measure: the day counts toward the week, once a day */
+  if (!counted && day.sessions > 0) track('day_counted');
   if (weekDays() >= goalThisWeek() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
     store.set('nl:goalSent:' + playerId(), weeksAtGoal());
     track('week_goal_met');
@@ -448,7 +491,7 @@ function endSession(fromPop) {
   renderViews();
   renderTrain();
   window.scrollTo(0, 0);
-  if (keep) notice('Session paused. ' + countsWords(ss), { act: 'resume', label: 'Resume' });
+  if (keep) notice('Set paused. ' + countsWords(ss), { act: 'resume', label: 'Resume' });
   makeFocusable(el('trainbox'));
   var st = document.querySelector('#trainbox .hero .btn-big, #trainbox .hero [data-act]');
   if (st) st.focus({ preventScroll: true });
@@ -465,10 +508,15 @@ function currentFocus() {
   if (!fams.length) return null;
   var lead = fams[0], L = lead.cost, R = fams[1] ? fams[1].cost : 0;
   var n = analysisNumbers();
-  var readDone = n.total > 0 && n.covered >= n.total && !n.working;
-  if (!(readDone || n.covered >= 60)) return null;
+  if (!(readOver(n) || n.covered >= 60)) return null;
   if (!(L >= 5 && L - R >= 1.645 * Math.sqrt(L + R))) return null;
   return { fam: lead.fam.key };
+}
+/* every game read: the scan is done. The deeper look that goes on in the
+   background is not reading, and never hides what waited for the read */
+function readOver(n) {
+  n = n || analysisNumbers();
+  return n.total > 0 && n.covered >= n.total && !(SF.state !== 'failed' && (scanState.running || scanState.pending));
 }
 function insightFamiliesQuick() {
   var stats = patternStats();

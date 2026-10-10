@@ -1002,8 +1002,8 @@ try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:li
    away in the edit panel. */
 var PERF_TCS = { bullet: ['1+0'], blitz: ['5+0','3+0'],
                  rapid: ['10+0'], classical: ['30+0'] };
-var PERF_HINT = { bullet: '1–2 min games', blitz: '3–5 min',
-                  rapid: '10–15 min', classical: '30+ min' };
+var PERF_HINT = { bullet: '1 to 2 min', blitz: '3 to 5 min',
+                  rapid: '10 to 15 min', classical: '30+ min' };
 var cfg = {
   user: urlUser || store.get('nl:user', ''),
   tcs: linkVisit ? DEFAULT_TC.slice() : store.get('nl:tcs', DEFAULT_TC.slice()),
@@ -1501,7 +1501,11 @@ function trimGames(games) {
   return out;
 }
 
-function saveGames(games) {
+/* room: a practice write the browser refused (practiceWrite), tried again
+   after each step of the ladder below that wrote a smaller cache; the
+   ladder stops at the first step where it fits, since practice cannot be
+   fetched again and games can */
+function saveGames(games, room) {
   if (!cfg.user) return { games: games };
   var live = trimGames(games);
   var copy = function (g, lean) {
@@ -1529,12 +1533,13 @@ function saveGames(games) {
     return store.set(cacheKey(), p);
   };
   var out = function (list) { var p = {}, k; for (k in head) p[k] = head[k]; p.games = list; return p; };
-  if (!data.leanSave && write(live, false)) return out(live);
+  var fits = function () { return !room || room(); };
+  if (!room && !data.leanSave && write(live, false)) return out(live);
   /* out of room, cheapest losses first: retained movetext, then other
      accounts' game caches (their practice history stays), then old games
      that hold no cards; games with cards are the last to go */
   data.leanSave = true;
-  if (write(live, true)) return out(live);
+  if (write(live, true) && fits()) return out(live);
   try {
     var mine = cacheKey(), drop = [];
     for (var i = 0; i < localStorage.length; i++) {
@@ -1545,23 +1550,25 @@ function saveGames(games) {
     if (drop.length) notice('This browser ran out of room, so the saved games of the other player' + (drop.length > 1 ? 's' : '')
       + ' here were cleared. Their practice history is kept, and their games come back on their next visit.');
   } catch (e) {}
-  if (write(live, true)) return out(live);
+  if (write(live, true) && fits()) return out(live);
   var keep = live.slice();
   for (var cut = 0; cut < 6; cut++) {
     var plain = keep.filter(function (g) { return !g.bl; });
     if (!plain.length) break;
     var gone = plain.slice(Math.floor(plain.length / 2));
     keep = keep.filter(function (g) { return gone.indexOf(g) === -1; });
-    if (write(keep, true)) { storageNotice(keep.length); return out(keep); }
+    if (write(keep, true) && fits()) { storageNotice(keep.length, true); return out(keep); }
   }
   keep = keep.slice(0, Math.ceil(keep.length / 2));
-  if (write(keep, true)) storageNotice(keep.length);
+  if (write(keep, true) && fits()) storageNotice(keep.length, false);
   return out(keep);
 }
-function storageNotice(n) {
+/* all: every game you practise from is still kept (the last step of the
+   ladder drops some of those too, and then the notice does not say so) */
+function storageNotice(n, all) {
   if (data.storageWarned) return;
   data.storageWarned = true;
-  notice('This browser is short on storage, so ' + n + ' games are kept, including every game you practise from.');
+  notice('This browser is short on storage, so ' + n + ' games are kept' + (all ? ', including every game you practise from.' : '.'));
 }
 
 /* evals=true AND division=true together are what make
@@ -2356,14 +2363,16 @@ function boardSvg(st, opts) {
   /* z 10: rings; the older hint ring is hint 2's */
   var rings = (opts.hint != null ? [{ sq: opts.hint, kind: 'hint' }] : []).concat(opts.rings || []);
   rings.forEach(function (rg) { var c = corner(rg.sq); marks += markRing(c[0], c[1], rg.kind); });
-  /* z 11: a piece captured here, as a token at the square's bottom-left:
+  /* z 11: a piece captured here, as a token at the square's bottom-left
+     (or at, [x, y, radius] from the square's corner, a smaller one tucked
+     into another corner when an arrow's head or the badge needs that one):
      a red ring and a slash for one you lost, a green ring for one you won */
   (opts.tokens || []).forEach(function (t) {
-    var c = corner(t.sq), cx = c[0] + 12.5, cy = c[1] + 32.5, lost = t.kind !== 'won';
+    var c = corner(t.sq), at = t.at || [12.5, 32.5, 12.5], cx = c[0] + at[0], cy = c[1] + at[1], r = at[2], k = r / 12.5, lost = t.kind !== 'won';
     marks += '<g class="token token-' + (lost ? 'lost' : 'won') + '">' + fxOpen(t, 'mk-fade')
-      + '<circle cx="' + cx + '" cy="' + cy + '" r="12.5" fill="rgba(244,236,222,.94)" stroke="' + (lost ? '#d6452f' : '#3d9142') + '" stroke-width="2.4"/>'
-      + (PIECE_ID[t.p] ? '<use href="#pc-' + PIECE_ID[t.p] + '" x="' + (cx - 10.8) + '" y="' + (cy - 10.8) + '" width="21.6" height="21.6" opacity=".82"/>' : '')
-      + (lost ? '<line x1="' + (cx - 8.8) + '" y1="' + (cy + 8.8) + '" x2="' + (cx + 8.8) + '" y2="' + (cy - 8.8) + '" stroke="#d6452f" stroke-width="2.4" stroke-linecap="round"/>' : '')
+      + '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="rgba(244,236,222,.94)" stroke="' + (lost ? '#d6452f' : '#3d9142') + '" stroke-width="2.4"/>'
+      + (PIECE_ID[t.p] ? '<use href="#pc-' + PIECE_ID[t.p] + '" x="' + (cx - 10.8 * k) + '" y="' + (cy - 10.8 * k) + '" width="' + 21.6 * k + '" height="' + 21.6 * k + '" opacity=".82"/>' : '')
+      + (lost ? '<line x1="' + (cx - 8.8 * k) + '" y1="' + (cy + 8.8 * k) + '" x2="' + (cx + 8.8 * k) + '" y2="' + (cy - 8.8 * k) + '" stroke="#d6452f" stroke-width="2.4" stroke-linecap="round"/>' : '')
       + '</g></g>';
   });
   /* z 12: the verdict badge, at the landing square's top-right (or the
@@ -4706,8 +4715,30 @@ function srsSave(map) {
     if (!m || (d.last || 0) > (m.last || 0)) map[k] = d;
   });
   srsMem = { key: srsKey(), map: map };
-  store.set(srsKey(), map);
+  practiceWrite(srsKey(), map);
   srsRevision++;
+}
+/* a practice write (the schedule, a day) the browser refuses, out of room:
+   the game cache gives way first, step by step down its own ladder
+   (saveGames: movetext kept for later scans, other players' games, games
+   without cards, then the rest), the write tried again after each step.
+   If it still fails, one notice a visit says so and offers the progress
+   file; a private window that keeps nothing gets the same notice once. The
+   value stays in the store's memory for this visit either way, and after
+   one failure the ladder is not walked again this visit */
+var ROOM_NOTE = 'This browser is out of room, so your last answers may not be kept. Save a progress file in Settings.';
+function practiceWrite(k, v) {
+  if (store.set(k, v)) return true;
+  var ok = false;
+  if (!data.roomFailed && cfg.user && data.games && data.games.length && !data.wiped)
+    saveGames(data.games, function () { return (ok = store.set(k, v)); });
+  if (ok) return true;
+  data.roomFailed = true;
+  if (!data.roomWarned) {
+    data.roomWarned = true;
+    notice(ROOM_NOTE, { act: 'exportProgress', label: 'Save' });
+  }
+  return false;
 }
 function srsRec(it) { return srsLoad()[it.key] || null; }
 function isLearned(rec) { return !!(rec && rec.learned); }
@@ -4726,6 +4757,7 @@ function srsRecord(it, result, info) {
   var map = srsLoad(), now = Date.now();
   var rec = map[it.key], fresh = !rec;
   rec = rec || { box: 0, streak: 0, due: null, last: null, lapses: 0 };
+  var wasLearned = !!rec.learned;
   var dueNow = fresh || rec.due == null || rec.due <= now + 12 * 3600 * 1000;
   var prevGap = rec.ls ? now - rec.ls : 0;
   if (result === 'skip') {
@@ -4766,10 +4798,15 @@ function srsRecord(it, result, info) {
   if (info.gameMove) { rec.box = 0; rec.due = now + DAY; rec.learned = false; }
   if ((rec.lapses || 0) >= 4) rec.tricky = 1;
   if (info.ms != null) rec.lt = info.ms;
+  /* how many times it was answered (a skip is not an answer): the
+     practice log's review number */
+  if (result !== 'skip') rec.n = (rec.n || 0) + 1;
   rec.last = now;
   map[it.key] = rec;
   srsSave(map);
   dayBump(result, fresh, info.attempted);
+  /* a measure: a position learned, never which one */
+  if (rec.learned && !wasLearned && typeof track === 'function') track('learned');
   return rec;
 }
 /* a miss breaks the run the moment it happens (the meter shows it) */
@@ -4792,7 +4829,7 @@ function srsRestore(key, rec) {
   /* srsSave keeps a record the disk has: one that was not there goes from both */
   var disk = store.get(srsKey(), {});
   delete disk[key];
-  store.set(srsKey(), disk);
+  practiceWrite(srsKey(), disk);
   srsMem = { key: srsKey(), map: disk };
   srsRevision++;
 }
@@ -4803,6 +4840,26 @@ function srsHide(it) {
   srsSave(map);
 }
 
+/* ── the practice log ───────────────────────────────────────────────────
+   nl:log:<player>: one entry for each card answered (e 'c': key, tier,
+   mode, review number, days since last shown, category, tries, hints, time
+   to the first move, solve time, the game move replayed, a long first
+   interval's first review) and one for each set started (e 's': mode, size,
+   due, new, spread, practice, overdue, a healthy load), the last 500
+   (about 40 KB). For testing: a progress file carries it.
+   Written after the practice records and only where there is room, so it
+   never pushes them (or the games) out */
+var LOG_MAX = 500;
+function logKey() { return 'nl:log:' + playerId(); }
+function logLoad() { var l = store.get(logKey(), []); return Array.isArray(l) ? l : []; }
+function logAdd(e) {
+  var l = logLoad();
+  e.t = Date.now();
+  l.push(e);
+  if (l.length > LOG_MAX) l = l.slice(l.length - LOG_MAX);
+  if (!store.set(logKey(), l) && l.length > 50) store.set(logKey(), l.slice(-Math.floor(l.length / 2)));
+}
+
 /* ── days, the streak and the weekly goal ────────────────────────────────── */
 function dayStamp(d) {
   d = d || new Date();
@@ -4811,7 +4868,7 @@ function dayStamp(d) {
 function dayKeyFor(d) { return 'nl:day:' + playerId() + ':' + dayStamp(d); }
 function dayKey() { return dayKeyFor(new Date()); }
 function dayLoad() { return store.get(dayKey(), { answered: 0, solved: 0, first: 0, fresh: 0 }); }
-function daySave(day) { store.set(dayKey(), day); }
+function daySave(day) { practiceWrite(dayKey(), day); }
 function dayBump(result, fresh, attempted) {
   var day = dayLoad();
   if (result !== 'skip') day.answered = (day.answered || 0) + 1;
@@ -5465,7 +5522,8 @@ function deepEnrich(it, prio, bg) {
      positions checked at the standard depth are checked again */
   var deep = !!bg && !prio && scanDepth() === 'thorough';
   var recheck = deep && (b.v || 0) >= 2 && b.dv !== 1 && b.j !== 'l' && !b.x;
-  if ((b.v || 0) >= 2 && !recheck) return Promise.resolve(it);
+  /* a card already looked at still needs its danger facts (11d-danger.js) */
+  if ((b.v || 0) >= 2 && !recheck) return ensureDanger(it, prio).then(function () { return it; });
   var DN = deep ? CONFIRM_NODES : DEEP_NODES;
   if (enrichPending[it.key]) {
     var c0 = enrichCtx[it.key];
@@ -5559,6 +5617,9 @@ function deepEnrich(it, prio, bg) {
         });
       });
   }
+  /* the danger facts are read once the lines have landed, inside the same
+     wait: one search more, and the loading frame covers it */
+  p = p.then(function () { if (!stale(myGen) && (b.v || 0) >= 2 && !b.x) return ensureDanger(it, ctx.prio); });
   enrichPending[key] = p.then(done, function () { enrichState.failed[key] = 1; return done(); });
   return enrichPending[key];
 }
@@ -5624,6 +5685,242 @@ function autoEnrich() {
   });
 }
 
+/* ── Danger facts: what the card's position holds for the player ───────────
+   One shared reading of the danger on a card, for its hints, its reasons,
+   its settled line, See why and the check line, computed once per card
+   beside the deeper look and kept on the mistake record as b.dz:
+     at  the player's pieces (not the king) on the card's own position that
+         stand unguarded, attacked by a cheaper piece, or attacked more often
+         than guarded: [[square, attacker squares...], ...], the most
+         valuable piece first, its cheapest attacker first; only attackers
+         that may legally take (not pinned off the line, a king only where
+         nothing guards)
+     th  their best move if it were their turn: a null-move search (the same
+         position with them to move and no en passant, 250,000 nodes, three
+         lines), each line kept only when it wins material by the card
+         face's own claim rule (xpClaim) or mates; the one named, as [uci,
+         mate in n or 0, pawns won]: a mate beats material, then the threat
+         the better move meets, then the biggest. null: searched and none
+         (or the player is in check, where no search runs); absent: not
+         searched yet (the engine down), so a later load asks again
+     sv  what the better move saves: the pieces the game line takes from
+         the player, net of what it gives back, up to where its loss is
+         claimed (lossClaim: in line with the score, more than the best line
+         loses), that the best line never loses; piece letters, the most
+         valuable first ("Q"); '' when none
+     st  the check step: 1 their move, 2 your chances, 3 safety check,
+         4 finishing wins, 5 quiet moves. The pattern sets it (DZ_STEP); on
+         a safety card a danger already on the board makes it 1: a threat
+         the search kept, when it still stands after the game move; with no
+         search run, the refutation's first move, legal before the game move
+         and already winning there (the piece it takes unguarded, or worth
+         more than the taker) or mating. A capture that was merely legal
+         before is no such danger: taking away a guard is a safety check
+         missed
+     v, k  the version (DZ_V) and a signature of the lines and scores it was
+         read from (dzSig): a change to either reads it again */
+var DZ_V = 1;
+var DZ_STEP = { threat: 1, missedMaterial: 2, missedTactic: 2, mateMissed: 2, slipped: 4, openingSlip: 5, drift: 5, endgame: 5 };
+var DZ_NODES = 250000;
+function dzSig(b) {
+  var s = [b.bu, b.lu, b.ru, b.t, b.mb, b.ma, b.eb, b.ea].join('|'), h = 5381;
+  for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+/* the stored facts while they are current, else null */
+function dangerOf(b) {
+  var d = b && b.dz;
+  return d && d.v === DZ_V && d.k === dzSig(b) ? d : null;
+}
+/* current, and their threat asked (or no search needed) */
+function dangerReady(b) { var d = dangerOf(b); return !!d && d.th !== undefined; }
+/* the card as the facts read it: its position, the game move and the
+   classifier's two lines, as cardFor builds them; null when the record
+   cannot be read */
+function dangerCard(it) {
+  var g = it.g, b = it.b, pre = g && g.mv ? stateAtPly(g.mv, b.p) : null, pu = pre ? uciOfSan(g.mv, b.p) : null;
+  var played = pu ? uciToMove(pre, pu) : null, best = b.bu && pre ? uciToMove(pre, b.bu) : null;
+  if (!played || !best || b.bu === pu) return null;
+  var cls = classifyMistake(pre, pu, { pv: unpackUci(b.lu), mate: b.mb }, { pv: unpackUci(b.ru), mate: b.ma }, b.wb, b.wa, b.p);
+  return { it: it, key: it.key, pre: pre, played: played, playedUci: pu, best: best, cls: cls };
+}
+/* the same position with them to move: castling kept, no en passant */
+function dzNullState(st) { var n = cloneState(st); n.w = !n.w; n.ep = -1; return n; }
+function dzInCheck(a) { return checkersOf(a.pre).length > 0; }
+/* the attacker on `from` may legally take on `to` (with them to move): not
+   pinned off that line, and a king only takes what nothing guards */
+function dzCanTake(b, from, to) {
+  var ray = pinRay(b, from);
+  if (ray && ray.indexOf(to) < 0) return false;
+  return !(pType(b[from]) === 'K' && isDefended(b, to));
+}
+function dangerAttacked(st, pov) {
+  var b = st.b, out = [], val = function (sq) { return MOTIF_VAL[pType(b[sq])]; };
+  for (var sq = 0; sq < 64; sq++) {
+    var p = b[sq];
+    if (!p || colorW(p) !== pov || pType(p) === 'K') continue;
+    var by = attackersOf(b, sq, !pov).filter(function (f) { return dzCanTake(b, f, sq); });
+    if (!by.length) continue;
+    var cheap = by.some(function (f) { return pType(b[f]) !== 'K' && val(f) < val(sq); });
+    if (!(isHangingAt(b, sq) || cheap || by.length > attackersOf(b, sq, pov).length)) continue;
+    by.sort(function (x, y) { return val(x) - val(y) || x - y; });
+    out.push([sq].concat(by));
+  }
+  return out.sort(function (x, y) { return val(y[0]) - val(x[0]) || x[0] - y[0]; });
+}
+/* the player's pieces a line takes, net of what they take back (an equal
+   swap cancels, a knight against a bishop too), nodes from..to; null when a
+   pawn promotes on the way (the count is no longer pieces) */
+function dzNetLost(line, from, to, pov) {
+  var lost = [], won = [];
+  for (var i = from; i <= to && i < line.nodes.length; i++) {
+    var n = line.nodes[i];
+    if (n.move && n.move.promo) return null;
+    if (n.captured) (colorW(n.captured) === pov ? lost : won).push(pType(n.captured));
+  }
+  [false, true].forEach(function (cross) {
+    for (var w = won.length - 1; w >= 0; w--) {
+      var j = lost.indexOf(won[w]);
+      if (j < 0 && cross && (won[w] === 'N' || won[w] === 'B')) j = lost.indexOf(won[w] === 'N' ? 'B' : 'N');
+      if (j >= 0) { won.splice(w, 1); lost.splice(j, 1); }
+    }
+  });
+  return lost;
+}
+function dangerSaves(a) {
+  var c = a.cls, b = a.it.b, pov = myPov(a.it), bl = c.bestLine;
+  if (!c.gameLine || !bl || c.mateAgainst || !(c.lossG >= 1)) return '';
+  var lc = lossClaim(a, c.gameLine, c.lossAt, 0, gameCpAfter(b), b.eb, bestLossFrom(a, 0));
+  var lost = lc ? dzNetLost(c.gameLine, 0, lc.k, pov) : null;
+  if (!lost || !lost.length) return '';
+  var keeps = function (t) {
+    for (var i = 1; i < bl.nodes.length; i++) { var n = bl.nodes[i]; if (n.captured && colorW(n.captured) === pov && pType(n.captured) === t) return false; }
+    return true;
+  };
+  var out = [];
+  lost.forEach(function (t) { if (t !== 'K' && out.indexOf(t) < 0 && keeps(t)) out.push(t); });
+  return out.sort(function (x, y) { return MOTIF_VAL[y] - MOTIF_VAL[x]; }).join('');
+}
+/* their threats from the null-move search r (scores from White's side):
+   each kept line as [uci, mate, pawns], the one to name first (a mate,
+   then what the better move meets, then the biggest); [] when none */
+function dangerThreats(a, r, sv) {
+  var nst = dzNullState(a.pre), them = !myPov(a.it), cands = [];
+  var lines = r && r.lines && r.lines.length ? r.lines : r && r.pv ? [{ cp: r.cp, mate: r.mate, pv: r.pv }] : [];
+  lines.forEach(function (l, i) {
+    var u = l && l.pv && l.pv[0], m = u ? uciToMove(nst, u) : null;
+    if (!m) return;
+    var mate = l.mate != null ? (them ? l.mate : -l.mate) : null;
+    if (mate != null && mate > 0) { cands.push({ u: u, m: m, mate: mate, n: 0, i: i }); return; }
+    var cl = xpClaim(nst, l.pv, them ? l.cp : -l.cp);
+    if (cl && cl.n >= 1) cands.push({ u: u, m: m, mate: 0, n: cl.n, i: i });
+  });
+  if (!cands.length) return [];
+  /* the better move meets it: after it their move is gone, or takes
+     something else, or what it would take is what the better move saves */
+  var after = cloneState(a.pre);
+  applyMove(after, a.best);
+  var meets = function (x) {
+    var m2 = uciToMove(after, x.u), t0 = nst.b[x.m.to];
+    if (!m2) return true;
+    if (t0 && after.b[m2.to] !== t0) return true;
+    return !!t0 && (sv || '').indexOf(pType(t0)) >= 0;
+  };
+  cands.forEach(function (x) { x.met = meets(x) ? 1 : 0; });
+  cands.sort(function (x, y) {
+    return (y.mate ? 1 : 0) - (x.mate ? 1 : 0) || (x.mate && y.mate ? x.mate - y.mate : 0) || y.met - x.met || y.n - x.n || x.i - y.i;
+  });
+  return cands.map(function (x) { return [x.u, x.mate, x.n]; });
+}
+/* their threat still stands once the game move is on the board: the same
+   piece makes the same move there and takes the same piece (a mate in one
+   still mates); a threat the game move met is no "their move" miss */
+function dzThreatStands(a, th) {
+  var nst = dzNullState(a.pre), post = cloneState(a.pre);
+  applyMove(post, a.played);
+  var m0 = uciToMove(nst, th[0]), m1 = uciToMove(post, th[0]);
+  if (!m0 || !m1 || nst.b[m0.from] !== post.b[m1.from]) return false;
+  var t0 = nst.b[m0.to], t1 = post.b[m1.to];
+  if (t0 ? t1 !== t0 : !!t1) return false;
+  if (th[1] === 1) { var x = cloneState(post); applyMove(x, m1); return isMate(x); }
+  return true;
+}
+/* with no search: the refutation's first move, legal before the game move,
+   already won material there (what it takes stood unguarded, or is worth
+   more than the piece taking it) or mated */
+function dzStoodBefore(a) {
+  var r1 = a.cls.gameLine && a.cls.gameLine.nodes[1];
+  if (!r1 || !r1.move) return false;
+  var nst = dzNullState(a.pre), m = uciToMove(nst, moveUci(r1.move));
+  if (!m) return false;
+  var x = cloneState(nst);
+  applyMove(x, m);
+  if (isMate(x)) return true;
+  var t = nst.b[m.to];
+  return !!t && t === r1.captured && (isHangingAt(nst.b, m.to) || MOTIF_VAL[pType(nst.b[m.from])] < MOTIF_VAL[pType(t)]);
+}
+/* th: the threat named, null (searched, none) or undefined (no search
+   ran); more: the other threats the search kept. Any of them still
+   standing after the game move is a danger the move ignored: Rg1 pins the
+   pawn that would take the queen, and the rook still takes it */
+function dangerStep(a, th, more) {
+  var s = DZ_STEP[patternOf(a.it.b)] || (PATTERN[patternOf(a.it.b)] ? 3 : 5);
+  if (s !== 3) return s;
+  if (th === undefined) return dzStoodBefore(a) ? 1 : 3;
+  return th && [th].concat(more || []).some(function (x) { return dzThreatStands(a, x); }) ? 1 : 3;
+}
+/* the facts for card a; r: the null-move search's answer, null when it
+   found nothing, undefined when none ran */
+function dangerFacts(a, r) {
+  var b = a.it.b, pov = myPov(a.it), d = { v: DZ_V, k: dzSig(b), at: dangerAttacked(a.pre, pov), sv: dangerSaves(a) }, all = [];
+  if (dzInCheck(a)) d.th = null;
+  else if (r !== undefined) { all = r ? dangerThreats(a, r, d.sv) : []; d.th = all[0] || null; }
+  d.st = dangerStep(a, d.th, all.slice(1));
+  return d;
+}
+/* the facts read now, without a search (the engine down): kept, and asked
+   again on a later load */
+function dangerNow(it) {
+  if (dangerOf(it.b)) return it.b.dz;
+  var a = dangerCard(it);
+  if (a) it.b.dz = dangerFacts(a, undefined);
+  return it.b.dz || null;
+}
+/* the facts made current: read at once, then their threat from one search
+   (prio: the player is waiting on it, in the loading frame). Resolves with
+   the item once they are stored, or when no search can run */
+var dangerPending = {};
+function ensureDanger(it, prio) {
+  var b = it.b, key = it.key, myGen = gen;
+  if (dangerReady(b) || b.x) return Promise.resolve(it);
+  if (dangerPending[key]) { if (prio) promoteTag(key); return dangerPending[key]; }
+  var a = dangerCard(it);
+  if (!a) return Promise.resolve(it);
+  if (!dangerOf(b)) b.dz = dangerFacts(a, undefined);
+  if (dzInCheck(a) || SF.state === 'failed') return Promise.resolve(it);
+  var sig = dzSig(b), done = function () { delete dangerPending[key]; return it; };
+  var p = engineEval(stateFen(dzNullState(a.pre)), { nodes: DZ_NODES }, !!prio, { multipv: 3, tag: key, dz: 1 }).then(function (r) {
+    if (!r || r.stopped || stale(myGen) || b.x || dzSig(b) !== sig) return;
+    b.dz = dangerFacts(a, r);
+    scheduleSave();
+  }, function () {});
+  dangerPending[key] = p.then(done, done);
+  return dangerPending[key];
+}
+/* the facts for the card on screen, in plain parts (what the hints,
+   reasons and settled lines say reads this): attacked [{sq, p, by}], threat {uci, from, to, p (the piece
+   that moves), took (what it takes, or null), mate, n} or null, saves
+   ['Q'], step; null while not read */
+function dangerView(a) {
+  var d = dangerOf(a.it.b) || dangerNow(a.it);
+  if (!d) return null;
+  var b = a.pre.b, th = d.th, nst = th ? dzNullState(a.pre) : null, m = th ? uciToMove(nst, th[0]) : null;
+  return {
+    attacked: d.at.map(function (x) { return { sq: x[0], p: b[x[0]], by: x.slice(1) }; }),
+    threat: m ? { uci: th[0], from: m.from, to: m.to, p: b[m.from], took: b[m.to] || null, mate: th[1] || 0, n: th[2] || 0 } : null,
+    searched: th !== undefined, saves: (d.sv || '').split('').filter(Boolean), step: d.st
+  };
+}
 /* ── Sessions: Today, drills, and the focus ─────────────────────────────────
    One container for every kind of practice. Today = reviews that are due
    plus a few new mistakes, sized to what the day can hold. A drill = up to
@@ -5872,7 +6169,7 @@ function startSession(mode, keys, label, spec, opts) {
   var prev = savedSession();
   if (prev) {
     settleSaved(prev);
-    if (sessionDoneCount(prev) > 0) notice('Your paused session is closed. Its answers are kept and its tries count toward today.');
+    if (sessionDoneCount(prev) > 0) notice('Your paused set is closed. Its answers are kept and its tries count toward today.');
   }
   var d0 = dayLoad(), carried = d0.carry || 0;
   if (carried) { d0.carry = 0; daySave(d0); }
@@ -5884,12 +6181,53 @@ function startSession(mode, keys, label, spec, opts) {
   if (from) ui.session.from = from;
   if (opts && opts.firstTime) ui.session.firstTime = true;
   data.freshOnboard = false;
+  logSet(mode, keys);
   saveSession();
   setView('train', false);
   pushSessionState();
   loadCard();
   track('session_start_' + mode);
   return true;
+}
+/* one set started, in the practice log: what it holds (due, new, and the
+   early reviews an extra set takes once both run out; spread and practice
+   positions come with the extra-set rule, 0 until then), how many
+   positions are overdue and whether the day's load is healthy */
+function logSet(mode, keys) {
+  var srs = srsLoad(), end = Date.now() + 12 * 3600 * 1000, due = 0, fresh = 0, seen = {}, n = 0;
+  keys.forEach(function (k) {
+    if (seen[k]) return;
+    seen[k] = 1; n++;
+    var r = srs[k];
+    if (!r) fresh++; else if (r.due != null && r.due <= end) due++;
+  });
+  logAdd({ e: 's', mo: mode, n: n, due: due, new: fresh, ea: n - due - fresh, sp: 0, pr: 0, od: overdueCount(), hl: healthyLoad() ? 1 : 0 });
+}
+/* the trainable positions whose day to come back was before today */
+function overdueCount() {
+  var srs = srsLoad(), m = model(), d0 = new Date(), n = 0;
+  d0.setHours(0, 0, 0, 0);
+  Object.keys(srs).forEach(function (k) {
+    var r = srs[k], it = m.byKey[k];
+    if (r && !r.hidden && r.due != null && r.due < d0.getTime() && it && trainable(it)) n++;
+  });
+  return n;
+}
+/* the day's load, healthy when today's new positions stay under
+   max(8, 0.8 x set size), those due by the end of tomorrow under one set,
+   those due in the next 14 days at most 0.8 x 14 x set size (the log's
+   flag; the extra-set rule will own the real test) */
+function healthyLoad() {
+  var size = sessionSize(), srs = srsLoad(), m = model(), now = Date.now(), d = new Date(), tom = 0, two = 0;
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 2);
+  Object.keys(srs).forEach(function (k) {
+    var r = srs[k], it = m.byKey[k];
+    if (!r || r.hidden || r.due == null || !it || !trainable(it)) return;
+    if (r.due < d.getTime()) tom++;
+    if (r.due <= now + 14 * DAY) two++;
+  });
+  return (dayLoad().fresh || 0) < Math.max(8, 0.8 * size) && tom < size && two <= 0.8 * 14 * size;
 }
 /* a session is a place in the history: Back ends it (and keeps every
    answer) instead of leaving the site */
@@ -6016,12 +6354,14 @@ function finishSession() {
   ss.active = null;
   clearLive();
   /* the day counts on real tries only (DAY_RULE) */
-  var day = dayLoad(), tried = ss.attempted || 0, n = 0, seen = {};
+  var day = dayLoad(), tried = ss.attempted || 0, n = 0, seen = {}, counted = (day.sessions || 0) > 0;
   ss.keys.forEach(function (k) { if (!seen[k]) { seen[k] = 1; n++; } });
   /* this session's own tries, or with a closed session's, at least 3 */
   if ((tried >= 1 && tried >= Math.min(3, n)) || tried + (ss.carried || 0) >= 3) day.sessions = (day.sessions || 0) + 1;
   else day.short = 1;
   daySave(day);
+  /* a measure: the day counts toward the week, once a day */
+  if (!counted && day.sessions > 0) track('day_counted');
   if (weekDays() >= goalThisWeek() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
     store.set('nl:goalSent:' + playerId(), weeksAtGoal());
     track('week_goal_met');
@@ -6074,7 +6414,7 @@ function endSession(fromPop) {
   renderViews();
   renderTrain();
   window.scrollTo(0, 0);
-  if (keep) notice('Session paused. ' + countsWords(ss), { act: 'resume', label: 'Resume' });
+  if (keep) notice('Set paused. ' + countsWords(ss), { act: 'resume', label: 'Resume' });
   makeFocusable(el('trainbox'));
   var st = document.querySelector('#trainbox .hero .btn-big, #trainbox .hero [data-act]');
   if (st) st.focus({ preventScroll: true });
@@ -6091,10 +6431,15 @@ function currentFocus() {
   if (!fams.length) return null;
   var lead = fams[0], L = lead.cost, R = fams[1] ? fams[1].cost : 0;
   var n = analysisNumbers();
-  var readDone = n.total > 0 && n.covered >= n.total && !n.working;
-  if (!(readDone || n.covered >= 60)) return null;
+  if (!(readOver(n) || n.covered >= 60)) return null;
   if (!(L >= 5 && L - R >= 1.645 * Math.sqrt(L + R))) return null;
   return { fam: lead.fam.key };
+}
+/* every game read: the scan is done. The deeper look that goes on in the
+   background is not reading, and never hides what waited for the read */
+function readOver(n) {
+  n = n || analysisNumbers();
+  return n.total > 0 && n.covered >= n.total && !(SF.state !== 'failed' && (scanState.running || scanState.pending));
 }
 function insightFamiliesQuick() {
   var stats = patternStats();
@@ -6266,18 +6611,27 @@ function loadCard() {
     prefetchCards(ss);
     track('card_shown');
   };
-  if ((it.b.v || 0) >= 2 || SF.state === 'failed') go();
-  else {
+  /* a card looked at before still waits for its danger facts' one search
+     while the engine is up (the loading frame); with the engine down or
+     still loading it opens at once on the facts read without it, and asks
+     for their threat as soon as it can */
+  var dzWait = !dangerReady(it.b) && SF.state === 'ready';
+  if (((it.b.v || 0) >= 2 && !dzWait) || SF.state === 'failed') {
+    if (!dangerReady(it.b)) { if (SF.state === 'failed') dangerNow(it); else ensureDanger(it, true); }
+    go();
+  } else {
     ss.loadingKey = key;
     renderCard();
     deepEnrich(it, true).then(go, go);
   }
 }
-/* the next two cards get their deeper look while this one is solved */
+/* the next two cards get their deeper look (and danger facts) while this
+   one is solved */
 function prefetchCards(ss) {
   for (var i = ss.idx + 1; i < Math.min(ss.keys.length, ss.idx + 3); i++) {
     var it = model().byKey[ss.keys[i]];
     if (it && (it.b.v || 0) < 2) deepEnrich(it, false);
+    else if (it && !dangerReady(it.b) && SF.state !== 'failed') ensureDanger(it, false);
   }
 }
 
@@ -6397,6 +6751,8 @@ function gradeMove(m) {
   a.sel = -1;
   a.shapes = [];
   a.verdict = null; a.hintAfter = false;
+  /* the practice log's time to the first move */
+  if (!a.firstAt) a.firstAt = Date.now();
   a.attempts++;
   /* each move tried has its own effect id, so its badge pops once */
   a.fxn = (a.fxn || 0) + 1;
@@ -7237,7 +7593,7 @@ function finishCard(result, beats) {
   a.phase = 'done';
   a.result = result;
   a.ms = Date.now() - a.t0;
-  var relearn = ss.relearnOf && ss.relearnOf[a.key];
+  var relearn = ss.relearnOf && ss.relearnOf[a.key], prev = logPrev(a), first = !relearn && !Object.keys(srsLoad()).length;
   if (ss.progress) delete ss.progress[a.key];
   if (!relearn) {
     var rec = srsRecord(a.it, result, { ms: a.ms, gameMove: a.triedGameMove, attempted: a.attempts > 0, alt: !!a.alt });
@@ -7255,6 +7611,9 @@ function finishCard(result, beats) {
     a.rec = srsRec(a.it);
     ss.results[a.key + '#r'] = result;
   }
+  logCard(a, result, prev, relearn);
+  /* a measure: the result of a player's first card ever, as a word */
+  if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
   /* the worked example done (S9): the family counts as seen, and the
      summary says it was a first look (a shown answer stays "Shown") */
   if (a.predraw) {
@@ -7313,13 +7672,44 @@ function nextCard() {
 function settleLeft(a) {
   var ss = ui.session;
   if (!ss || !a || a.phase === 'done') return;
-  var again = ss_relearn(a), result = a.misses ? 'fail' : (a.hints ? 'hint' : 'skip');
+  var again = ss_relearn(a), result = a.misses ? 'fail' : (a.hints ? 'hint' : 'skip'), prev = logPrev(a), first = !again && !Object.keys(srsLoad()).length;
   if (!again) srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove });
+  logCard(a, result, prev, again);
+  if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
   if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
   if (ss.progress) delete ss.progress[a.key];
   ss.results[a.key + (again ? '#r' : '')] = result;
   (ss.notes = ss.notes || {})[a.key + (again ? '#r' : '')] = a.misses ? 'leftMiss' : 'left';
   a.phase = 'done';
+}
+/* the honest result of one showing, the worst event deciding: 'shown'
+   (the answer shown), 'miss' (after a miss), 'hint' (with a hint, the
+   worked example's own included), 'good' (a good move before the best, or
+   one that works too), 'first' (found first try), 'skip' (left untouched) */
+function cardCategory(a, result) {
+  if (result === 'skip') return 'skip';
+  if (a.revealed) return 'shown';
+  if (a.misses) return 'miss';
+  if (a.hints) return 'hint';
+  if (a.foundGood || a.alt) return 'good';
+  return 'first';
+}
+/* what the practice log needs from the record before this answer */
+function logPrev(a) { var r = srsRec(a.it); return r ? { n: r.n, last: r.last, lf: r.lf } : null; }
+/* one card answered, in the practice log (08-srs.js): mode is 'cued' for
+   every card for now; review number 0 at first sight (unknown, null, for a
+   record older than the count) */
+function logCard(a, result, prev, again) {
+  var now = Date.now(), e = { e: 'c', k: a.key, tr: a.tier, m: 'cued', c: cardCategory(a, result), r: result, a: a.attempts || 0, h: a.hints || 0 };
+  e.n = prev ? (prev.n != null ? prev.n : null) : 0;
+  e.d = prev && prev.last ? Math.round((now - prev.last) / DAY * 10) / 10 : null;
+  e.f = a.firstAt ? a.firstAt - (a.shownAt || a.t0) : null;
+  e.s = a.ms != null ? a.ms : now - a.t0;
+  if (a.triedGameMove) e.g = 1;
+  if (prev && prev.lf) e.lf = 1;
+  if (a.predraw) e.pd = 1;
+  if (again) e.ag = 1;
+  logAdd(e);
 }
 function skipCard() {
   var ss = ui.session, a = ss && ss.active;
@@ -7903,6 +8293,9 @@ function xpRowWords(a, n, line, best) {
   var c = classifyMistake(n.st, m0, { pv: best.pv, mate: null }, { pv: line.pv.slice(1), mate: null }, winPct(cpB), winPct(cpL), xpPly(n.st));
   /* material as the card face counts it, on this row's own line */
   var cl = xpClaim(n.st, line.pv, cpL);
+  /* the card's own answer, at the card's position, is never told as a loss
+     (Details calls it the better move): what it wins, else where it stands */
+  if (n.key === (a.preKey || posKey(a.pre)) && m0 === a.bestUci) return cl && cl.n > 0 ? 'wins ' + cl.w : CARD_COPY.X3(a, winPct(myPov(a.it) ? line.cp : -line.cp));
   if (isBest) {
     if (cl) return (cl.n > 0 ? 'wins ' : 'gives up ') + cl.w;
   } else {
@@ -9031,6 +9424,11 @@ function plur(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + '
 function track(name) {
   try { if (window.clarity) window.clarity('event', name); } catch (e) {}
 }
+/* a tag on this visit's recording (Clarity's set): coarse words only,
+   never a name, a rating or a position */
+function measureTag(key, value) {
+  try { if (window.clarity) window.clarity('set', key, String(value)); } catch (e) {}
+}
 var saveTimer = null, saveCount = 0;
 function scheduleSave() {
   saveCount++;
@@ -9048,6 +9446,8 @@ window.addEventListener('pagehide', flushSave);
 var VIEWS = [['train', 'Today'], ['insights', 'Insights']];
 function setView(v, fromPop) {
   if (v !== 'insights') v = 'train';
+  /* a measure: Insights opened */
+  if (v === 'insights' && ui.view !== 'insights') track('insights_open');
   ui.view = v;
   store.set('nl:view', v);
   if (!fromPop && location.hash !== '#' + v) {
@@ -9073,7 +9473,7 @@ function renderViews() {
   var nav = el('views');
   if (!nav) return;
   /* a quiet dot while today's session is not done: never a count */
-  var pending = cfg.user && !(dayLoad().sessions > 0) && (dueCards().length > 0 || todayPlan().keys.length > 0);
+  var pending = tabDot();
   nav.innerHTML = VIEWS.map(function (v) {
     return '<a class="view-tab' + (ui.view === v[0] ? ' view-on' : '') + '" data-act="view" data-k="' + v[0] + '" role="tab" aria-selected="' + (ui.view === v[0]) + '">'
       + v[1] + (v[0] === 'train' && pending && !(ui.session && ui.session.active) ? '<span class="tab-dot" aria-label="practice waiting"></span>' : '') + '</a>';
@@ -9083,6 +9483,7 @@ function renderViews() {
   /* session mode: the board and nothing else */
   document.body.classList.toggle('in-session', !!ui.session && ui.view === 'train');
 }
+function tabDot() { return !!(cfg.user && !(dayLoad().sessions > 0) && (dueCards().length > 0 || todayPlan().keys.length > 0)); }
 function renderShell() {
   if (location.search) {
     try { history.replaceState(null, '', location.pathname + (location.hash || '#train')); } catch (e) {}
@@ -9122,7 +9523,7 @@ function analysisNumbers() {
   return { covered: c.covered, total: c.total, ready: ready,
            working: SF.state !== 'failed' && (scanState.running || scanState.pending || enrichState.running) };
 }
-var lastReadyShown = -1, lastTodaySig = '', lastSigCheck = 0;
+var lastReadyShown = -1, lastTodaySig = '', lastSigCheck = 0, lastDotKey = '', lastReadOver = null;
 /* what Today says depends on the plan and the focus: both move while reading */
 function todaySig(fh) { return todayPlan().keys.join(',') + '|' + (fh == null ? focusHtml() : fh); }
 function renderAnalysisStatus() {
@@ -9151,6 +9552,13 @@ function renderAnalysisStatus() {
       if (lg) lg.outerHTML = latestGamesHtml();
     }
   }
+  /* what waits for the read shows the moment it ends, not at the next
+     repaint: the focus (Today) and the tab's dot; the dot also follows the
+     positions as they arrive */
+  var over = readOver(n), dk = n.ready + '|' + over;
+  if (lastReadOver === false && over && ui.view === 'train' && !ui.session) renderTrain();
+  lastReadOver = over;
+  if (dk !== lastDotKey) { lastDotKey = dk; renderViews(); }
 }
 function analysisLine(n) {
   if (SF.state === 'failed') return '<span class="loss">Stockfish could not start in this browser.</span> <a data-act="engineRetry">Try again</a>';
@@ -9276,7 +9684,7 @@ function resumeHtml(s) {
   return '<div class="hero">'
     + '<h2>Pick up where you left off.</h2><p class="why">' + countsWords(s)
     + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.') + '</p>' + weekHtml()
-    + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">Start over</a></div></div>';
+    + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">End this set</a></div></div>';
 }
 /* the next time something is due back, and how much */
 function nextDueHtml() {
@@ -9403,6 +9811,8 @@ function recapHabit(ss) {
 }
 /* "Tap" on a touch screen, "Click" where a mouse points (pointer: fine) */
 function tapWord() { return window.matchMedia && window.matchMedia('(pointer: fine)').matches ? 'Click' : 'Tap'; }
+/* a touch screen: the main pointer is a finger (pointer: coarse) */
+function touchScreen() { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
 /* the summary's word for a card (S17, copy Q): the note first, since it
    carries what the result cannot (the answer shown, a worked example, a
    card left), then the result. A close move then the answer shown is
@@ -9488,8 +9898,10 @@ function boardOptsFor(a) {
     if (xr && xr.lines[0] && !quiet) { ev = myPov(it) ? xr.lines[0].cp : -xr.lines[0].cp; evLive = true; }
     view = { st: ex.st, last: ex.last, ev: ev != null ? ev : it.b.eb };
     opts.sel = ex.sel;
-    /* one arrow: Stockfish's move, or the row under the pointer */
-    var xs = xpShown(ex, xn), hl = xs && !quiet && xs[ex.hot || 0] ? uciToMove(ex.st, xs[ex.hot || 0].pv[0]) : null;
+    /* one arrow, gold and named Stockfish's pick: the top line's move only
+       (a row under the pointer or the keyboard is lit in the list, never on
+       the board, where the label would call another move the pick) */
+    var xs = xpShown(ex, xn), hl = xs && !quiet && xs[0] ? uciToMove(ex.st, xs[0].pv[0]) : null;
     if (hl) opts.ghost = [hl.from, hl.to];
     if (ex.anim) { opts.anim = ex.anim; slideMs = 220; }
     if (ex.sel >= 0) opts.dots = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel; }).map(function (m) { return m.to; });
@@ -9644,6 +10056,7 @@ function boardOptsFor(a) {
      rest of what lands */
   var ck = checkedKingSq(view.st);
   if (ck != null && !land) opts.check = ck;
+  tokenSpots(opts);
   /* the board's name says what it draws (S20), mark by mark */
   opts.label = boardAria(a, view.st, opts);
   return {
@@ -9778,6 +10191,45 @@ function badgeCorner(from, to, flip) {
   }
   return spots[0];
 }
+/* a token sits at its square's bottom-left (2.1) unless an arrow's head
+   comes into that square there, or the square's badge sits beside it: then
+   in the first corner clear of both (bottom-right, top-left, top-right),
+   smaller and tucked into that corner, so token, tick and arrow head never
+   pile up on the piece that took, and that piece stays in view. Sets t.at,
+   [x, y, radius] from the square's corner, when it moves */
+var TOKEN_AT = [[12.5, 32.5, 12.5], [35, 35, 10], [10, 10, 10], [35, 10, 10]];
+function tokenSpots(opts) {
+  if (!opts.tokens || !opts.tokens.length) return;
+  var flip = !!opts.flip, arrows = [];
+  if (opts.ghost) arrows.push({ from: opts.ghost[0], to: opts.ghost[1] });
+  if (opts.good) arrows.push({ from: opts.good[0], to: opts.good[1] });
+  if (opts.bad) arrows.push({ from: opts.bad[0], to: opts.bad[1] });
+  arrows = arrows.concat(opts.arrows || []);
+  opts.tokens.forEach(function (t) {
+    var heads = arrows.filter(function (ar) { return ar.to === t.sq && ar.from !== ar.to; });
+    var bd = (opts.badges || []).filter(function (b) { return b.sq === t.sq; })[0], bat = bd ? bd.at || [36, 9] : null;
+    if (!heads.length && !bat) return;
+    for (var i = 0; i < TOKEN_AT.length; i++) {
+      var at = TOKEN_AT[i];
+      /* the token's disc and the badge's halo (9.8) apart */
+      if (bat && Math.sqrt(Math.pow(at[0] - bat[0], 2) + Math.pow(at[1] - bat[1], 2)) < at[2] + BADGE_HALO) continue;
+      if (heads.every(function (ar) { return headClear(ar.from, ar.to, flip, at, at[2]); })) { if (i) t.at = at; return; }
+    }
+  });
+}
+/* a disc of radius r at `at` (from the corner of the arrow's last square)
+   stays clear of the arrow's head and the end of its shaft, as markArrow
+   draws them (the same reading badgeCorner makes for a badge) */
+function headClear(from, to, flip, at, r) {
+  var xy = function (sq) { return [(flip ? 7 - sq % 8 : sq % 8) * 45 + 22.5, (flip ? sq >> 3 : 7 - (sq >> 3)) * 45 + 22.5]; };
+  var p = xy(from), q = xy(to), dx = p[0] - q[0], dy = p[1] - q[1], len = Math.sqrt(dx * dx + dy * dy) || 1;
+  var ux = dx / len, uy = dy / len, tip = 45 * (len < 45 * 1.6 ? 0.22 : 0.34) - 6.3, bx = at[0] - 22.5, by = at[1] - 22.5;
+  for (var s = 0; s <= 40; s++) {
+    var px = ux * (tip + s) - bx, py = uy * (tip + s) - by, half = s < 21 ? 10.5 * s / 21 : 3.7;
+    if (Math.sqrt(px * px + py * py) < r + half) return false;
+  }
+  return true;
+}
 /* ── labels: one pill a frame, beside the mark it names ───────────────────
    The pill's size: its words measured in the font the page draws them in
    (12 px on a phone, 14 on the desktop, Lora 600 or whatever stands in for
@@ -9846,7 +10298,7 @@ function labelGeom(f, px, c, avoid) {
   });
   (o.ghosts || []).forEach(function (gh) { var k = cell(gh.sq); g.pieces.push(sqBox(gh.sq)); if (!gh.rook) g.boxes.push(disc((k[0] * 45 + 37.5) * s, (k[1] * 45 + 7.5) * s, 7 * s)); });
   (o.badges || []).forEach(function (bd) { var k = cell(bd.sq), xy = badgeXY([k[0] * 45, k[1] * 45], bd.at); g.boxes.push(disc(xy[0] * s, xy[1] * s, BADGE_HALO * s)); });
-  (o.tokens || []).forEach(function (tk) { var k = cell(tk.sq); g.boxes.push(disc((k[0] * 45 + 12.5) * s, (k[1] * 45 + 32.5) * s, 13.7 * s)); });
+  (o.tokens || []).forEach(function (tk) { var k = cell(tk.sq), at = tk.at || TOKEN_AT[0]; g.boxes.push(disc((k[0] * 45 + at[0]) * s, (k[1] * 45 + at[1]) * s, (at[2] + 1.2) * s)); });
   (o.hint != null ? [{ sq: o.hint }] : []).concat(o.rings || []).forEach(function (rg) { var m = ctr(rg.sq); g.boxes.push(disc(m[0], m[1], 23.25 * s)); });
   (o.guards || []).forEach(function (gd) { var a0 = ctr(gd.from), b0 = ctr(gd.to); g.segs.push({ x1: a0[0], y1: a0[1], x2: b0[0], y2: b0[1], r: 3.5 * s + 4 }); });
   (o.tried || []).forEach(function (t) {
@@ -9999,7 +10451,12 @@ function s0Marks(a, st) {
     out.rings.push({ sq: th.from, kind: 'threat' });
     out.arrows.push({ from: th.from, to: th.to, kind: 'threat', key: 'threat' });
   }
-  if (line) (a.won || []).slice(-2).forEach(function (w) { out.tokens.push({ sq: w.sq, p: w.p, kind: 'won', fx: a.key + ':s0', s0: true }); });
+  /* never over a piece of theirs that took back on that square: the token
+     would seem to name that piece (the band and the board's name say the
+     whole line) */
+  if (line) (a.won || []).filter(function (w) { return !(st.b[w.sq] && colorW(st.b[w.sq]) !== myPov(a.it)); }).slice(-2).forEach(function (w) {
+    out.tokens.push({ sq: w.sq, p: w.p, kind: 'won', fx: a.key + ':s0', s0: true });
+  });
   if (line && out.tokens.length) out.lineTakes = lineTakes(a);
   return out;
 }
@@ -10652,14 +11109,16 @@ function menuHtml(a) {
     + '<span class="sep"></span>'
     + '<a data-act="dispute" data-k="misclick">Not a real mistake: a misclick or premove</a>'
     + '<a data-act="dispute" data-k="decided">Not a real mistake: the game was already decided</a>'
-    + '<a data-act="dispute" data-k="engine">Not a real mistake: I think the engine is wrong</a>'
+    + '<a data-act="dispute" data-k="engine">Not a real mistake: I think ' + (a.tier === 1 ? 'the computer' : 'Stockfish') + ' is wrong</a>'
     + '<span class="sep"></span>'
     + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '<a data-act="details">Details</a>')
     /* exploring, on an answered card while the engine works (S14, S11);
        not while a shown line's reply is on its way, when a tap is input to
        the reply (S10) */
     + (xpOpen(a) && !a.reply ? '<a data-act="explore" data-k="menu">Try your own moves</a>' : '')
-    + '<span class="menu-keys">↑ ↓: this menu · Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>'
+    /* the keys only where there is a keyboard to press them: never on a
+       touch screen */
+    + (!touchScreen() ? '<span class="menu-keys">↑ ↓: this menu · Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>' : '')
     + '</div>';
 }
 function ctxHtml(a) {
@@ -11128,7 +11587,8 @@ function settingsHtml() {
       + '<a class="btn-line" data-act="logout" data-k="confirm">' + (ui.logoutArmed ? 'Tap again to switch' : 'Switch player') + '</a></div>'
     + '<div class="set-block"><span class="kicker">Games to learn from</span><p>Which of your rated games to read. Most players pick the one or two they play most.</p><div class="chips">'
       + ['rapid', 'blitz', 'bullet', 'classical'].filter(function (p) { return !isCC() || p !== 'classical'; }).map(function (p) {
-        return chip('perf', p, perfLabel(p) + ' <span class="dim">' + PERF_HINT[p] + '</span>', perfs.indexOf(p) !== -1);
+        /* one text: a chip is a flex box, and the space before a span would go */
+        return chip('perf', p, upFirst(perfLabel(p)) + ' · ' + PERF_HINT[p], perfs.indexOf(p) !== -1);
       }).join('') + '</div></div>'
     + '<div class="set-block"><span class="kicker">Practice</span><p>Positions in a day\'s session. New positions join a few at a time.</p><div class="chips">'
       + [[5, 'Short · 5'], [10, 'Normal · 10'], [20, 'Long · 20']].map(function (o) { return chip('size', o[0], o[1], sessionSize() === o[0]); }).join('')
@@ -11145,16 +11605,19 @@ function settingsHtml() {
       + '<p class="dim">' + engineLine() + '</p></div>'
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
-      + '<p class="dim">' + gamesLine() + '</p>'
-      + '<p>Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p></div>'
-    + '<div class="set-block"><span class="kicker">Start over</span>'
+      + '<p>' + gamesLine() + '</p>'
+      + '<p>None of it is kept on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p></div>'
+    + '<div class="set-block"><span class="kicker">Reset</span>'
       + '<a data-act="resetProgress" class="danger-row' + (ui.resetArmed ? ' armed' : '') + '">' + (ui.resetArmed ? 'Tap again to reset your practice history' : 'Reset practice history') + '</a>'
       + '<a data-act="wipe" class="danger-row' + (ui.wipeArmed ? ' armed' : '') + '">' + (ui.wipeArmed ? 'Tap again to erase everything' : 'Erase everything') + '</a></div>';
 }
+/* what this browser holds, and what clearing it costs */
 function gamesLine() {
   if (data.sections.games === 'loading') return 'Reading games…';
   var c = loadCachedGames();
-  return plur(data.games.length, 'game') + (c.fetchedAt ? ' · checked ' + ago(c.fetchedAt) : '');
+  var a = c.fetchedAt ? ago(c.fetchedAt) : '', when = a === 'just now' ? a : /^\d+[mhd]$/.test(a) ? a + ' ago' : 'in ' + a;
+  return 'Saved in this browser: ' + plur(data.games.length, 'game') + ' and your practice. Clearing browser data erases them.'
+    + (a ? ' <span class="dim">Games checked ' + when + '.</span>' : '');
 }
 
 /* ── footer ──────────────────────────────────────────────────────────────── */
@@ -11163,7 +11626,8 @@ function renderFoot() {
   if (!f) return;
   f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</span>'
     + '<span class="foot-links"><a data-act="coffee">Support the developer</a>'
-    + (isCC() ? '' : '<a href="https://lichess.org/patron">Donate to lichess</a>')
+    /* for lichess players only: a first visit plays nowhere yet */
+    + (cfg.user && !isCC() ? '<a href="https://lichess.org/patron">Donate to lichess</a>' : '')
     + '<a href="https://github.com/thatsiavash/notlichess">Source</a></span>';
 }
 
@@ -11401,7 +11865,7 @@ function renderFirstVisit(prefill) {
     + '<div id="whichSite" aria-live="polite"></div>'
     + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
     + '<figure class="proof"><figcaption>What a 1350 rapid player saw</figcaption>'
-      + '<blockquote>169 of your 237 losses came down to one big mistake. The biggest leak is giving away material. It decided 107 games.</blockquote></figure>'
+      + '<blockquote>In 169 of their 237 losses, one move turned the game for good. Piece safety decided 107.</blockquote></figure>'
     + '</div>'
     + (ex ? '<div class="landing-ex" aria-hidden="true"><div class="kicker">Example</div>'
       + boardSvg(ex, { flip: true, bad: [45, 35], mark: [28, 35], decor: true })
@@ -11409,7 +11873,7 @@ function renderFirstVisit(prefill) {
     + '<div class="value">'
       + valueItem('Every game, not one at a time', 'Your last year of rated games in the format you play most. Your first position is ready in seconds.')
       + valueItem('Ranked by what it cost you', 'Hanging pieces, forks, missed mates: sorted by how many games each one decided.')
-      + valueItem('A few minutes a day', 'Five of your own positions. Each comes back just before you would forget it.')
+      + valueItem('A few minutes a day', 'A set is 5 to 10 of your own positions. Each comes back, with longer gaps as you get it right.')
       + valueItem('Free, no account', 'Nothing to buy. Open source.')
     + '</div>'
     + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device.</p>'
@@ -11473,12 +11937,13 @@ function findUser(name) {
       box.innerHTML = '<p class="which-none">Could not reach ' + down + '. Check your connection and try again.</p>';
       return;
     }
-    /* both, or one while the other did not answer: ask */
-    var offer = found.concat(silent && found.length === 1 ? [{ site: found[0].site === 'chesscom' ? 'lichess' : 'chesscom', best: null }] : []);
-    box.innerHTML = '<p class="which-q">Which one is you?</p><div class="which-row">' + offer.map(function (f) {
+    /* both: ask which. One while the other did not answer: only the site
+       that confirmed the name is offered, and the silent one is named */
+    var one = found.length === 1, quiet = one ? (found[0].site === 'chesscom' ? 'lichess' : 'chess.com') : '';
+    box.innerHTML = '<p class="which-q">' + (one ? 'Is this you?' : 'Which one is you?') + '</p><div class="which-row">' + found.map(function (f) {
       return '<button class="btn-line" data-act="pickSite" data-k="' + f.site + '" data-n="' + esc(name) + '">' + (f.site === 'chesscom' ? 'chess.com' : 'lichess')
         + (f.best && f.best.r ? ' · ' + f.best.p + ' ' + f.best.r : (!f.best && !silent ? ' · no rated games' : '')) + '</button>';
-    }).join('') + '</div>';
+    }).join('') + '</div>' + (one ? '<p class="which-none">' + quiet + ' did not answer, so the name could not be checked there. Try again in a moment.</p>' : '');
   });
 }
 function valueItem(title, body) {
@@ -11514,6 +11979,11 @@ function returnEvents() {
   try {
     var k = 'nl:firstSeen:' + playerId(), first = store.get(k, 0), now = Date.now();
     if (linkVisit) { if (!linkTracked) { linkTracked = true; track('open_link'); } return; }
+    /* coarse tags for this visit's recording: the ISO week of the
+       first visit, the help tier, an installed app or a browser tab */
+    measureTag('first_week', isoWeek(first || now));
+    measureTag('tier', playerTier());
+    measureTag('installed', installedApp() ? 'yes' : 'no');
     var utm = linkStore.get('nl:utm');
     if (utm && window.clarity) window.clarity('set', 'utm_source', utm.slice(0, 40));
     var sent = 'nl:retDay:' + playerId();
@@ -11527,6 +11997,19 @@ function returnEvents() {
     for (var i = 0; i < 28; i++) { var d = new Date(now - i * DAY); if (dayCounts(dayRecOf(d))) act++; }
     if (window.clarity) window.clarity('set', 'active_days', act === 0 ? '0' : act === 1 ? '1' : act <= 3 ? '2-3' : act <= 7 ? '4-7' : act <= 14 ? '8-14' : '15+');
   } catch (e) {}
+}
+/* "2026-W41": the ISO week a time falls in (weeks start on Monday; week 1
+   holds the year's first Thursday) */
+function isoWeek(ms) {
+  var d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+  var w1 = new Date(d.getFullYear(), 0, 4), w = 1 + Math.round(((d.getTime() - w1.getTime()) / DAY - 3 + (w1.getDay() + 6) % 7) / 7);
+  return d.getFullYear() + '-W' + (w < 10 ? '0' : '') + w;
+}
+/* opened from the home screen (an installed app), not a browser tab */
+function installedApp() {
+  try { return !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true); } catch (e) { return false; }
 }
 function forgetLink() { linkVisit = false; }
 /* the saved formats are this player's (older saves carry no owner: theirs) */
@@ -11569,7 +12052,7 @@ var NARR_WISDOM = [
   'Stockfish checks every move you made, right here in your browser.',
   'Most players replay their wins. The rating lives in the losses.',
   'A mistake you retry from the exact position is worth ten you read about.',
-  'Each position comes back just before you would forget it.',
+  'Each position comes back, with longer gaps as you get it right.',
   'Ten minutes on your own mistakes beats ten more blitz games.',
   'The mistakes that cost you games come first.'
 ];
@@ -11734,7 +12217,7 @@ function exportProgress() {
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
       if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0)
+      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u)
         out.keys[k] = JSON.parse(localStorage.getItem(k));
     }
   } catch (e) {}
@@ -11745,6 +12228,7 @@ function exportProgress() {
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  track('export_done');
 }
 function importProgress() {
   var inp = document.createElement('input');
@@ -11944,6 +12428,7 @@ document.addEventListener('click', function (e) {
         keys.forEach(function (kk) { if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === sessKey()) && del.indexOf(kk) === -1) del.push(kk); });
         del.forEach(function (x) { store.del(x); });
         store.del('nl:srs:' + u);
+        store.del(logKey());
       } catch (e2) {}
       srsMem = null; srsRevision++; ui.session = null; ui.resetArmed = false; modelDirty();
       notice('Practice history reset. Your games and analysis are kept.');
@@ -12302,14 +12787,21 @@ function xpHover(k, byFocus) {
   if (!ex || (!byFocus && !(window.matchMedia && window.matchMedia('(hover: hover)').matches))) return;
   var want = k == null ? 0 : k;
   ex.hover = k;
+  /* the row is lit in the list; the board keeps the top line's arrow */
   if (ex.hot !== want) {
     ex.hot = want;
-    renderCardBoard(a);
     var rows = document.querySelectorAll('#xp .xp-row[data-act="xpRow"]');
     for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('on', parseInt(rows[i].getAttribute('data-k'), 10) === want);
   }
-  /* rows held while pointed at: the latest lines show once the pointer leaves */
-  if (k == null && xpThaw(ex)) renderCard();
+  /* rows held while pointed at: the latest lines show once the pointer
+     leaves. The focus leaves a row when something else is pressed (Back to
+     the lesson, a tap anywhere): that press's click must land on the panel
+     it pressed, so the rows catch up a moment later, never under the finger */
+  if (k == null && ex.frozen) {
+    if (!byFocus) { if (xpThaw(ex)) renderCard(); return; }
+    clearTimeout(ex.frozenT);
+    ex.frozenT = setTimeout(function () { var a3 = ui.session && ui.session.active; if (xpThaw(ex) && a3 && a3.explore === ex) renderCard(); }, 400);
+  }
 }
 /* the key line names what Enter presses: it follows the keyboard (2.0) */
 document.addEventListener('focusin', function () { if (ui.session && ui.session.active) paintKeys(ui.session.active); });
@@ -12372,7 +12864,7 @@ window.__nlTest = {
              story: a.phase === 'done' && a.view && a.view.mode === 'story' ? (function (S) { return { i: a.view.i, n: S.steps.length, g: S.g, cap: S.steps[a.view.i].cap, pre: !!a.view.pre }; })(buildStory(a)) : null,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
              sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null,
-             verdict: a.verdict ? { kind: a.verdict.kind, row1: a.verdict.row1, row2: a.verdict.row2 } : null };
+             verdict: a.verdict ? { kind: a.verdict.kind, row1: a.verdict.row1, row2: a.verdict.row2 } : null, danger: dangerView(a) };
   },
   play: function (uci) {
     var a = ui.session && ui.session.active;
@@ -12406,6 +12898,117 @@ window.__nlTest = {
   }
 };
 if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__nlTest.ev = function (code) { return eval(code); };
+/* tester helpers, on localhost only: days simulated, synthetic later
+   games, the practice log */
+if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+  window.__nlTest.shiftDays = function (n) { return shiftDays(n); };
+  window.__nlTest.seedAfterGames = function (spec) { return seedAfterGames(spec); };
+  window.__nlTest.log = function () { return logLoad(); };
+}
+/* n days pass: every time this player has stored moves n days back (the
+   practice records' due, last and last-solved times, the day records,
+   renamed to their date n days earlier, first and last seen, the return
+   day, the paused set's day, the weekly goal's history, the practice log,
+   cue and backup times), so whatever was due in n days is due now. The
+   games keep their dates: they come back from the chess site as they are */
+function shiftDays(n) {
+  n = Math.round(+n || 0);
+  var ms = n * DAY, p = playerId(), keys = Object.keys(mem);
+  try { for (var i = 0; i < localStorage.length; i++) if (keys.indexOf(localStorage.key(i)) < 0) keys.push(localStorage.key(i)); } catch (e) {}
+  var back = function (t) { return typeof t === 'number' && t > 1e12 ? t - ms : t; };
+  var stampBack = function (s) {
+    var m = /^(\d+)-(\d+)-(\d+)$/.exec(String(s || ''));
+    if (!m) return s;
+    var d = new Date(+m[1], +m[2] - 1, +m[3], 12);
+    d.setDate(d.getDate() - n);
+    return dayStamp(d);
+  };
+  var srs = store.get(srsKey(), null);
+  if (srs) {
+    Object.keys(srs).forEach(function (k) { ['due', 'last', 'ls'].forEach(function (f) { if (srs[k][f] != null) srs[k][f] = back(srs[k][f]); }); });
+    store.set(srsKey(), srs);
+  }
+  var dp = 'nl:day:' + p + ':', moved = keys.filter(function (k) { return k.indexOf(dp) === 0; }).map(function (k) {
+    return { from: k, to: dp + stampBack(k.slice(dp.length)), v: store.get(k, null) };
+  });
+  moved.forEach(function (m) { store.del(m.from); });
+  moved.forEach(function (m) { if (m.v) store.set(m.to, m.v); });
+  ['nl:firstSeen:', 'nl:lastSeen:'].forEach(function (k0) { var v = store.get(k0 + p, null); if (typeof v === 'number') store.set(k0 + p, back(v)); });
+  var rd = store.get('nl:retDay:' + p, null);
+  if (rd) store.set('nl:retDay:' + p, stampBack(rd));
+  if (data.prevSeen) data.prevSeen = back(data.prevSeen);
+  var sv = store.get(sessKey(), null);
+  if (sv && sv.date) { sv.date = stampBack(sv.date); store.set(sessKey(), sv); }
+  var gh = store.get('nl:goalHist', null);
+  if (Array.isArray(gh)) store.set('nl:goalHist', gh.map(function (e) { return { from: back(e.from), goal: e.goal }; }));
+  var lg = store.get(logKey(), null);
+  if (Array.isArray(lg)) store.set(logKey(), lg.map(function (e) { e.t = back(e.t); return e; }));
+  var cue = store.get('nl:cue:' + p, null);
+  if (cue && typeof cue === 'object') { Object.keys(cue).forEach(function (k) { cue[k] = back(cue[k]); }); store.set('nl:cue:' + p, cue); }
+  srsMem = null;
+  srsRevision++;
+  modelDirty();
+  if (!ui.session) { renderViews(); renderTrain(); }
+  return { days: n, records: srs ? Object.keys(srs).length : 0, dayKeys: moved.length };
+}
+/* games played after the start, for testing what practice changed in real
+   games: spec.n clones of the tracked format's games
+   that carry a win-chance series, dated evenly from spec.from (the first
+   visit, else 30 days ago) to now; in each, every big mistake of the
+   player's is flattened under the threshold with chance spec.cut, and
+   spec.plus more big mistakes are added; spec.rating sets the player's
+   rating in them; spec.seed (7) fixes the draw. The clones carry no cards
+   and no moves, so they change only what is counted from the series */
+function seedAfterGames(spec) {
+  spec = spec || {};
+  var n = Math.max(0, Math.round(spec.n == null ? 10 : spec.n)), cut = +spec.cut || 0, plus = Math.max(0, Math.round(spec.plus || 0));
+  var seed = spec.seed == null ? 7 : +spec.seed, now = Date.now();
+  var from = spec.from || store.get('nl:firstSeen:' + playerId(), 0) || now - 30 * DAY, tp = trackedPerfs();
+  /* in a fixed order, so the seed alone decides the draw */
+  var pool = data.games.filter(function (g) { return g.wp && !g.syn && tp.indexOf(g.perf) >= 0; }).sort(function (x, y) { return x.ts - y.ts || (x.id < y.id ? -1 : 1); });
+  if (!pool.length || !n) return { added: 0 };
+  var t = seed >>> 0, rnd = function () {
+    t = (t + 0x6D2B79F5) | 0;
+    var r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+  var out = [];
+  for (var i = 0; i < n; i++) {
+    var g = JSON.parse(JSON.stringify(pool[Math.floor(rnd() * pool.length)]));
+    ['bl', 'mv', 'ck', 'mvTmp', 'ckTmp'].forEach(function (k) { delete g[k]; });
+    g.id = 'syn' + seed + '-' + i;
+    g.syn = 1;
+    g.scanned = true;
+    g.ts = Math.round(from + (now - from) * (i + 1) / (n + 1));
+    if (spec.rating) g.myR = +spec.rating;
+    g.wp = seededSeries(g, cut, plus, rnd);
+    out.push(g);
+  }
+  data.games = data.games.concat(out).sort(function (x, y) { return y.ts - x.ts; });
+  saveGames(data.games);
+  modelDirty();
+  renderAll();
+  return { added: out.length, from: from, to: now };
+}
+/* a clone's series with its big mistakes flattened (chance cut) and plus
+   more added, on the player's own plies, at the clone's threshold */
+function seededSeries(g, cut, plus, rnd) {
+  var min = mistakeMinFor(g), mine = g.color === 'white' ? 0 : 1, chars = g.wp.split(''), calm = [];
+  var put = function (i, w) { chars[i] = wpChar(g.color === 'white' ? w : 100 - w); };
+  for (var i = 1; i < chars.length; i++) {
+    if (i % 2 !== mine) continue;
+    var w0 = wpAt(g, i - 1), w1 = wpAt(g, i);
+    if (w0 == null || w1 == null) continue;
+    if (w0 - w1 >= min) { if (rnd() < cut) put(i, Math.max(0, w0 - min / 2)); }
+    else if (w0 >= min + 5) calm.push(i);
+  }
+  for (var k = 0; k < plus && calm.length; k++) {
+    var j = calm.splice(Math.floor(rnd() * calm.length), 1)[0];
+    put(j, wpAt(g, j - 1) - min - 5);
+  }
+  return chars.join('');
+}
 
 /* chess.com games carry their start time in the PGN headers */
 function ccStartMs(g) {

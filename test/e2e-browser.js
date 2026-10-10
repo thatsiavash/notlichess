@@ -88,7 +88,38 @@
     }
     if (bx && W.h0 == null) W.h0 = bx.offsetHeight;
     else if (bx && bx.offsetHeight !== W.h0) W.fit.push(what + ': the band is ' + bx.offsetHeight + ' px tall, not ' + W.h0);
+    layoutCheck(what);
   };
+  /* the layout at this size, for every state the run reaches: on the phone grid (360 x 640, 390 x 844)
+     nothing but the board's own marks and label sits on the board, and the gold button is wholly on
+     screen and on top; on the desktop grid (1024 x 768, 1280 x 900) the side column never overlaps the
+     board; on every screen nothing scrolls sideways. Run in each real-page pass, not in CI */
+  W.lay = [];
+  const rectOf = (e) => e.getBoundingClientRect();
+  const meets = (r, q) => r.width > 0 && r.height > 0 && r.left < q.right - 1 && q.left < r.right - 1 && r.top < q.bottom - 1 && q.top < r.bottom - 1;
+  const phoneGrid = () => matchMedia('(max-width: 860px)').matches;
+  const shown = (e) => { const cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && +cs.opacity !== 0; };
+  /* the screen's own size: a phone widens innerWidth to fit a page that overflows, the layout viewport
+     (clientWidth) keeps the device's width */
+  const vw = () => document.documentElement.clientWidth, vh = () => document.documentElement.clientHeight;
+  function layoutCheck(what) {
+    const de = document.documentElement;
+    if (Math.max(de.scrollWidth, document.body.scrollWidth) > vw() + 1) W.lay.push(what + ': the page scrolls sideways, ' + Math.max(de.scrollWidth, document.body.scrollWidth) + ' px wide');
+    const bd = $('#bwrap svg.board');
+    if (!bd) return;
+    const q = rectOf(bd);
+    if (phoneGrid()) {
+      ['#ctop', '#cband', '#cstrip', '#cbar', '#ckeys', '#xp', '#ebar', '#overlay .notice'].forEach((sel) => [].forEach.call($$(sel), (e) => {
+        if (shown(e) && meets(rectOf(e), q)) W.lay.push(what + ': ' + sel + ' meets the board (' + ['top', 'bottom'].map((k) => Math.round(rectOf(e)[k])).join('-') + ' against ' + Math.round(q.top) + '-' + Math.round(q.bottom) + ')');
+      }));
+      const pb = $('#cbar .btn-big');
+      if (pb && shown(pb)) {
+        const r = rectOf(pb), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        if (r.left < -0.5 || r.top < -0.5 || r.right > vw() + 0.5 || r.bottom > vh() + 0.5) W.lay.push(what + ': the gold button is not wholly on screen (' + [r.top, r.bottom].map(Math.round).join('-') + ')');
+        else if (!hit || !(hit === pb || pb.contains(hit))) W.lay.push(what + ': the gold button is covered by ' + (hit ? hit.className || hit.tagName : 'nothing'));
+      }
+    } else ['#ctop', '#cband', '#cpanel'].forEach((sel) => { const e = $(sel); if (e && shown(e) && meets(rectOf(e), q)) W.lay.push(what + ': ' + sel + ' overlaps the board'); });
+  }
   const $$ = (s) => document.querySelectorAll(s);
   /* the story: wait for step i to have landed (its caption painted) */
   const storyLanded = async (i) => {
@@ -127,6 +158,7 @@
     ok('Today offers a start or a finished day', !!($('[data-act=startToday]') || $('[data-act=keepGoing]') || /Today's set is done|Nothing due/.test(text('#trainbox'))), text('#trainbox').slice(0, 120));
     ok('the header is the mark and the gear only', !!$('#bar .brand-name') && !!$('#bar [data-act=settings]') && !/▼|▲/.test(text('#bar')), text('#bar'));
     ok('Today shows the latest games rail', !!$('#latest .lg-row'));
+    layoutCheck('Today');
     ok('no em dash anywhere on Today', text('#main').indexOf('—') === -1);
 
     /* ── a session: solve the first card ─────────────────────────────── */
@@ -297,6 +329,7 @@
     ok('exploring shows Stockfish\'s best moves', !!xr && document.querySelectorAll('#xp .xp-row:not(.skel)').length >= 2);
     ok('the panel says Stockfish\'s sentence and keeps Back to the lesson', text('#xp .xp-say') === T.explore().say && !!$('#xp [data-act=exploreOff]'), text('#xp .xp-say'));
     ok('exploring makes the board live', !$('#bwrap').classList.contains('static'));
+    layoutCheck('exploring');
     ok('rows say your winning chances or words, never a pawn number', !/[+-]\d+\.\d/.test(text('#xp')) && (T.ev('ui.session.active.tier') === 1 || /You \d{1,2}%|mate in \d/.test(text('#xp .xp-rows'))), text('#xp .xp-rows'));
     ok('one arrow at a time while exploring', document.querySelectorAll('#bwrap .ghost-arrow, #bwrap .good-arrow, #bwrap .bad-arrow').length <= 1);
     if (innerWidth <= 860) {
@@ -603,6 +636,7 @@
     }
     await until(() => T.card().finished || !!$('.recap-item'), 20000);
     ok('the session ends in a recap', !!$('.recap-item') || /solved/i.test(text('#trainbox')), text('#trainbox').slice(0, 80));
+    layoutCheck('the summary');
     /* S17: each card in words, the note first (Shown, First look, Missed, Skipped), then the result;
        no "spotted" line; one habit per family seen, "Keep in mind: ..." */
     const words = [].map.call($$('.recap-item .res'), (e) => e.textContent);
@@ -680,6 +714,7 @@
   }
   window.removeEventListener('error', onErr);
   window.removeEventListener('unhandledrejection', onErr);
+  ok('the layout holds at ' + innerWidth + ' x ' + innerHeight + ' (' + (phoneGrid() ? 'phone' : 'desktop') + ' grid) in every state reached', W.lay.length === 0, W.lay.length + ': ' + W.lay.slice(0, 4).join(' | '));
   ok('no uncaught errors during the run', errors.length === 0, errors.slice(0, 3).join(' | '));
   return { passed, failed, log };
 })();

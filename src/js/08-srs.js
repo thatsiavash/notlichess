@@ -29,8 +29,30 @@ function srsSave(map) {
     if (!m || (d.last || 0) > (m.last || 0)) map[k] = d;
   });
   srsMem = { key: srsKey(), map: map };
-  store.set(srsKey(), map);
+  practiceWrite(srsKey(), map);
   srsRevision++;
+}
+/* a practice write (the schedule, a day) the browser refuses, out of room:
+   the game cache gives way first, step by step down its own ladder
+   (saveGames: movetext kept for later scans, other players' games, games
+   without cards, then the rest), the write tried again after each step.
+   If it still fails, one notice a visit says so and offers the progress
+   file; a private window that keeps nothing gets the same notice once. The
+   value stays in the store's memory for this visit either way, and after
+   one failure the ladder is not walked again this visit */
+var ROOM_NOTE = 'This browser is out of room, so your last answers may not be kept. Save a progress file in Settings.';
+function practiceWrite(k, v) {
+  if (store.set(k, v)) return true;
+  var ok = false;
+  if (!data.roomFailed && cfg.user && data.games && data.games.length && !data.wiped)
+    saveGames(data.games, function () { return (ok = store.set(k, v)); });
+  if (ok) return true;
+  data.roomFailed = true;
+  if (!data.roomWarned) {
+    data.roomWarned = true;
+    notice(ROOM_NOTE, { act: 'exportProgress', label: 'Save' });
+  }
+  return false;
 }
 function srsRec(it) { return srsLoad()[it.key] || null; }
 function isLearned(rec) { return !!(rec && rec.learned); }
@@ -49,6 +71,7 @@ function srsRecord(it, result, info) {
   var map = srsLoad(), now = Date.now();
   var rec = map[it.key], fresh = !rec;
   rec = rec || { box: 0, streak: 0, due: null, last: null, lapses: 0 };
+  var wasLearned = !!rec.learned;
   var dueNow = fresh || rec.due == null || rec.due <= now + 12 * 3600 * 1000;
   var prevGap = rec.ls ? now - rec.ls : 0;
   if (result === 'skip') {
@@ -89,10 +112,15 @@ function srsRecord(it, result, info) {
   if (info.gameMove) { rec.box = 0; rec.due = now + DAY; rec.learned = false; }
   if ((rec.lapses || 0) >= 4) rec.tricky = 1;
   if (info.ms != null) rec.lt = info.ms;
+  /* how many times it was answered (a skip is not an answer): the
+     practice log's review number */
+  if (result !== 'skip') rec.n = (rec.n || 0) + 1;
   rec.last = now;
   map[it.key] = rec;
   srsSave(map);
   dayBump(result, fresh, info.attempted);
+  /* a measure: a position learned, never which one */
+  if (rec.learned && !wasLearned && typeof track === 'function') track('learned');
   return rec;
 }
 /* a miss breaks the run the moment it happens (the meter shows it) */
@@ -115,7 +143,7 @@ function srsRestore(key, rec) {
   /* srsSave keeps a record the disk has: one that was not there goes from both */
   var disk = store.get(srsKey(), {});
   delete disk[key];
-  store.set(srsKey(), disk);
+  practiceWrite(srsKey(), disk);
   srsMem = { key: srsKey(), map: disk };
   srsRevision++;
 }
@@ -126,6 +154,26 @@ function srsHide(it) {
   srsSave(map);
 }
 
+/* ── the practice log ───────────────────────────────────────────────────
+   nl:log:<player>: one entry for each card answered (e 'c': key, tier,
+   mode, review number, days since last shown, category, tries, hints, time
+   to the first move, solve time, the game move replayed, a long first
+   interval's first review) and one for each set started (e 's': mode, size,
+   due, new, spread, practice, overdue, a healthy load), the last 500
+   (about 40 KB). For testing: a progress file carries it.
+   Written after the practice records and only where there is room, so it
+   never pushes them (or the games) out */
+var LOG_MAX = 500;
+function logKey() { return 'nl:log:' + playerId(); }
+function logLoad() { var l = store.get(logKey(), []); return Array.isArray(l) ? l : []; }
+function logAdd(e) {
+  var l = logLoad();
+  e.t = Date.now();
+  l.push(e);
+  if (l.length > LOG_MAX) l = l.slice(l.length - LOG_MAX);
+  if (!store.set(logKey(), l) && l.length > 50) store.set(logKey(), l.slice(-Math.floor(l.length / 2)));
+}
+
 /* ── days, the streak and the weekly goal ────────────────────────────────── */
 function dayStamp(d) {
   d = d || new Date();
@@ -134,7 +182,7 @@ function dayStamp(d) {
 function dayKeyFor(d) { return 'nl:day:' + playerId() + ':' + dayStamp(d); }
 function dayKey() { return dayKeyFor(new Date()); }
 function dayLoad() { return store.get(dayKey(), { answered: 0, solved: 0, first: 0, fresh: 0 }); }
-function daySave(day) { store.set(dayKey(), day); }
+function daySave(day) { practiceWrite(dayKey(), day); }
 function dayBump(result, fresh, attempted) {
   var day = dayLoad();
   if (result !== 'skip') day.answered = (day.answered || 0) + 1;

@@ -1870,6 +1870,225 @@ function named(a, st, m, f, ch) {
     eq(JSON.stringify(r.tip), '[1,0,0,1,1]', 'said once, on the first card queued, within 15 words');
   });
 
+  /* ── groundwork ─────────────────────────────────────────────────── */
+  await test('a practice write the browser refuses: the game cache gives way down its own ladder and the record is kept; a store that cannot recover says so once, with the progress file', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      SF.state = 'failed';
+      var notes = [], n0 = notice, real = localStorage.setItem;
+      notice = function (t, o) { notes.push([t, o ? o.act : null]); };
+      var size = function (skip) { var n = 0; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k !== skip) n += k.length + String(localStorage.getItem(k)).length; } return n; };
+      /* full: a little room left, less than one record needs */
+      window.__quota = size(null) + 60;
+      localStorage.setItem = function (k, v) { if (size(k) + k.length + String(v).length > window.__quota) throw new Error('QuotaExceededError'); real(k, v); };
+      var g0 = JSON.parse(localStorage.getItem('nl:games:cc:tester')).games.length, its = allMistakes().filter(trainable);
+      srsRecord(its[0], 'first', { ms: 30000, attempted: true });
+      var disk = JSON.parse(localStorage.getItem('nl:srs:cc:tester') || '{}');
+      var first = { kept: !!disk[its[0].key], games: [g0, JSON.parse(localStorage.getItem('nl:games:cc:tester')).games.length], notes: notes.slice() };
+      /* nothing fits any more: one notice for the visit, however many writes fail */
+      window.__quota = 0;
+      notes.length = 0;
+      srsRecord(its[1], 'first', {}); srsRecord(its[2], 'fail', {}); daySave(dayLoad());
+      var second = { notes: notes.slice(), mem: !!srsLoad()[its[2].key] };
+      localStorage.setItem = real; notice = n0;
+      return JSON.stringify({ first: first, second: second }); })()`));
+    eq(r.first.kept, true, 'the record is on disk');
+    ok(r.first.games[1] < r.first.games[0], 'the game cache shrank to make room: ' + r.first.games.join(' -> '));
+    eq(JSON.stringify(r.first.notes), JSON.stringify([['This browser is short on storage, so ' + r.first.games[1] + ' games are kept, including every game you practise from.', null]]), 'only the games notice');
+    eq(JSON.stringify(r.second.notes), JSON.stringify([['This browser is out of room, so your last answers may not be kept. Save a progress file in Settings.', 'exportProgress']]), 'one notice, with Save');
+    eq(r.second.mem, true, 'kept in memory for this visit');
+  });
+
+  await test('tester helpers: after shiftDays(1) a card due tomorrow is due today, the day records, first and last seen and the paused set move back with it; the practice log keeps one entry per answered card and one per set, the last 500', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      SF.state = 'failed';
+      var its = allMistakes().filter(trainable), res = {};
+      openCard(its[0]); reveal();
+      res.due0 = dueCards().some(function (x) { return x.key === its[0].key; });
+      var now = Date.now(), rec0 = JSON.parse(JSON.stringify(srsLoad()[its[0].key]));
+      store.set('nl:firstSeen:cc:tester', now - 2 * DAY); store.set('nl:lastSeen:cc:tester', now - DAY);
+      var day0 = dayKey(), sess = { date: dayStamp(), mode: 'today', label: 'Today', keys: [its[1].key, its[2].key], idx: 1, results: {}, relearn: [], relearnOf: {} };
+      store.set(sessKey(), sess);
+      res.saved0 = !!savedSession();
+      res.shift = window.__nlTest.shiftDays(1);
+      var rec1 = srsLoad()[its[0].key];
+      res.moved = [rec0.due - rec1.due, rec0.last - rec1.last];
+      res.due1 = dueCards().some(function (x) { return x.key === its[0].key; });
+      res.days = [!!store.get(day0, null), !!store.get(dayKeyFor(new Date(now - DAY)), null)];
+      res.seen = [now - 3 * DAY === store.get('nl:firstSeen:cc:tester', 0), now - 2 * DAY === store.get('nl:lastSeen:cc:tester', 0)];
+      res.saved1 = !!savedSession();
+      /* the log: one entry per set started, one per card answered */
+      store.del(logKey());
+      var plain = its.filter(function (x) { var c = cardFor(x); return c && !c.sol; });
+      startSession('more', [plain[3].key, plain[4].key, plain[5].key], 'Next set');
+      var a = ui.session.active; gradeMove(uciToMove(a.st, a.bestUci)); nextCard();
+      a = ui.session.active; a.hints = 1; gradeMove(uciToMove(a.st, a.bestUci)); nextCard();
+      a = ui.session.active; reveal(); nextCard();
+      res.log = window.__nlTest.log();
+      for (var i = 0; i < 510; i++) logAdd({ e: 'x', i: i });
+      res.cap = [logLoad().length, logLoad()[0].i];
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify([r.due0, r.due1]), '[false,true]', 'due tomorrow, then due today');
+    eq(JSON.stringify(r.moved), JSON.stringify([864e5, 864e5]), 'due and last moved back a day');
+    eq(JSON.stringify(r.days), '[false,true]', 'today\'s record is now yesterday\'s');
+    eq(JSON.stringify(r.seen), '[true,true]', 'first and last seen a day earlier');
+    eq(JSON.stringify([r.saved0, r.saved1]), '[true,false]', 'the paused set is yesterday\'s now, so it is gone');
+    eq(r.shift.days, 1, 'shifted a day');
+    const sets = r.log.filter((e) => e.e === 's'), cards = r.log.filter((e) => e.e === 'c');
+    eq(JSON.stringify(sets.map((e) => [e.mo, e.n, e.new, e.due])), '[["more",3,3,0]]', 'one set: three new positions');
+    ok(sets[0].od != null && sets[0].hl != null && sets[0].t, 'overdue, the healthy load and the time: ' + JSON.stringify(sets[0]));
+    eq(JSON.stringify(cards.map((e) => [e.c, e.r, e.m, e.n, e.a, e.h])), '[["first","first","cued",0,1,0],["hint","hint","cued",0,1,1],["shown","fail","cued",0,0,0]]', 'one entry per card, in its category');
+    ok(cards.every((e) => e.k && e.tr === 2 && e.s >= 0 && e.d == null) && typeof cards[0].f === 'number' && typeof cards[1].f === 'number' && cards[2].f === null, 'key, tier, solve time, no days at first sight, time to the first move: ' + JSON.stringify(cards));
+    eq(JSON.stringify(r.cap), '[500,10]', 'the last 500 kept');
+  });
+
+  await test('tester helpers: seedAfterGames adds clones of the fixture after the start, with their big mistakes flattened by share or one added, at a rating, the same for the same seed', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      SF.state = 'failed';
+      var res = {}, from = Date.now() - 20 * DAY, before = data.games.length;
+      var real = function () { return data.games.filter(function (g) { return !g.syn && g.wp; }); };
+      var byId = {}; real().forEach(function (g) { byId[g.id] = g; });
+      var src = function (g) { var o = null; real().forEach(function (x) { if (!o && x.opp === g.opp && x.plies === g.plies && x.ts !== g.ts && x.color === g.color && x.res === g.res) o = x; }); return o; };
+      res.a = window.__nlTest.seedAfterGames({ n: 24, cut: 0, from: from });
+      var syn = data.games.filter(function (g) { return g.syn; });
+      res.n = [before, data.games.length, syn.length];
+      res.dated = syn.every(function (g) { return g.ts > from && g.ts < Date.now(); });
+      res.bare = syn.every(function (g) { return !g.bl && !g.mv && g.scanned && /^syn7-\\d+$/.test(g.id); });
+      res.same = syn.every(function (g) { var o = src(g); return o && gameMistakeCount(g) === gameMistakeCount(o); });
+      res.ids = syn.map(function (g) { return g.opp + g.plies; }).join(',');
+      data.games = data.games.filter(function (g) { return !g.syn; });
+      window.__nlTest.seedAfterGames({ n: 24, cut: 0, from: from });
+      res.again = data.games.filter(function (g) { return g.syn; }).map(function (g) { return g.opp + g.plies; }).join(',') === res.ids;
+      data.games = data.games.filter(function (g) { return !g.syn; });
+      window.__nlTest.seedAfterGames({ n: 24, cut: 1, from: from });
+      res.flat = data.games.filter(function (g) { return g.syn; }).every(function (g) { return gameMistakeCount(g) === 0; });
+      data.games = data.games.filter(function (g) { return !g.syn; });
+      window.__nlTest.seedAfterGames({ n: 24, plus: 1, from: from, rating: 1210 });
+      var p = data.games.filter(function (g) { return g.syn; });
+      res.plus = p.filter(function (g) { var o = src(g); return o && gameMistakeCount(g) === gameMistakeCount(o) + 1; }).length;
+      res.rated = p.every(function (g) { return g.myR === 1210 && mistakeMinFor(g) === 15; });
+      res.stored = JSON.parse(localStorage.getItem('nl:games:cc:tester')).games.filter(function (g) { return g.syn; }).length;
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify(r.n), JSON.stringify([50, 74, 24]), '24 games added');
+    eq(r.a.added, 24, 'it says so');
+    ok(r.dated && r.bare, 'dated after the start, no cards and no moves');
+    eq(r.same, true, 'with no share flattened, each counts the big mistakes of the game it copies');
+    eq(r.again, true, 'the same draw for the same seed');
+    eq(r.flat, true, 'every big mistake flattened: none counted');
+    ok(r.plus >= 20, 'one more big mistake in each where there is room: ' + r.plus);
+    eq(r.rated, true, 'at the rating asked');
+    eq(r.stored, 24, 'saved with the games');
+  });
+
+  await test('truth fixes off the card: the landing, the footer, Settings, the paused set, the ••• menu and the site picker say only true things', async () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      SF.state = 'failed';
+      var res = {}, boxes = {}, el0 = el;
+      el = function (id) { if (/^(foot|whichSite|findBtn)$/.test(id)) return boxes[id] || (boxes[id] = { innerHTML: '', textContent: '', classList: { add: function () {}, remove: function () {} } }); return el0(id); };
+      renderFirstVisit(); res.landing = el('main').innerHTML;
+      var user = cfg.user, src = cfg.src;
+      cfg.user = ''; cfg.src = 'lichess'; renderFoot(); res.footNone = boxes.foot.innerHTML;
+      cfg.user = 'someone'; renderFoot(); res.footLi = boxes.foot.innerHTML;
+      cfg.user = user; cfg.src = src; renderFoot(); res.footCc = boxes.foot.innerHTML;
+      data.sections.games = 'ok'; res.settings = settingsHtml();
+      res.resume = resumeHtml({ keys: ['a', 'b'], results: { a: 'first' }, relearn: [] });
+      var a = openCard(allMistakes().filter(trainable)[0]);
+      a.tier = 2; res.menu2 = menuHtml(a); a.tier = 1; res.menu1 = menuHtml(a);
+      var mm = window.matchMedia;
+      window.matchMedia = function (q) { return { matches: /pointer: coarse/.test(q) }; }; res.menuTouch = menuHtml(a);
+      window.matchMedia = function (q) { return { matches: /pointer: fine/.test(q) }; }; res.menuMouse = menuHtml(a);
+      window.matchMedia = mm;
+      var notes = [], n0 = notice; notice = function (t) { notes.push(t); };
+      a.attempts = 1; endSession(); res.paused = notes.slice(); notice = n0;
+      /* the site picker: lichess silent, chess.com has the name */
+      getJSON = function () { return Promise.reject({ code: 500 }); };
+      ccJSON = function (p) { return Promise.resolve(/stats$/.test(p) ? { chess_rapid: { last: { rating: 1351 }, record: { win: 3, loss: 2, draw: 0 } } } : { username: 'tester2' }); };
+      findUser('tester2');
+      window.__boxes = boxes;
+      return JSON.stringify(res); })()`));
+    await tick(); await tick(); await tick();
+    const which = A.ev('window.__boxes.whichSite.innerHTML');
+    ok(r.landing.indexOf('In 169 of their 237 losses, one move turned the game for good. Piece safety decided 107.') >= 0 && !/biggest leak|came down to one big mistake|169 of your/.test(r.landing), 'the landing\'s proof');
+    ok(r.landing.indexOf('A set is 5 to 10 of your own positions. Each comes back, with longer gaps as you get it right.') >= 0 && !/Five of your own|before you would forget/.test(r.landing), 'the landing\'s set');
+    eq(JSON.stringify([/Donate to lichess/.test(r.footNone), /Donate to lichess/.test(r.footLi), /Donate to lichess/.test(r.footCc)]), '[false,true,false]', 'Donate to lichess for a lichess player only');
+    ok(r.settings.indexOf('Saved in this browser: 50 games and your practice. Clearing browser data erases them.') >= 0, 'what this browser holds');
+    ok(/>Reset</.test(r.settings) && !/>Start over</.test(r.settings), 'the data section is Reset');
+    ok(r.settings.indexOf('Rapid · 10 to 15 min') >= 0 && r.settings.indexOf('Blitz · 3 to 5 min') >= 0 && !/–/.test(r.settings), 'the format chips read whole');
+    ok(/>End this set</.test(r.resume) && !/Start over/.test(r.resume), 'the paused set ends with End this set');
+    ok(/I think Stockfish is wrong/.test(r.menu2) && /I think the computer is wrong/.test(r.menu1) && !/engine/.test((r.menu1 + r.menu2).replace(/<[^>]+>/g, ' ')), 'the menu says who is wrong, never "engine"');
+    eq(JSON.stringify([/menu-keys/.test(r.menuTouch), /menu-keys/.test(r.menuMouse), /menu-keys/.test(r.menu2)]), '[false,true,true]', 'the keys never on a touch screen, kept where a mouse or no pointer is reported');
+    ok(r.paused.length === 1 && /^Set paused\. /.test(r.paused[0]), 'the toast: ' + r.paused.join(' | '));
+    ok(/Is this you\?/.test(which) && /data-k="chesscom"/.test(which) && !/data-k="lichess"/.test(which) && /lichess did not answer/.test(which), 'only the site that confirmed the name: ' + which);
+  });
+
+  await test('the focus and the tab\'s dot show the moment the read ends: the deeper look running in the background never hides the focus', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      SF.state = 'failed';
+      var res = {}, calls = { train: 0, views: 0 }, rt = renderTrain, rv = renderViews;
+      SF.state = 'ready'; scanState.running = false; scanState.pending = false; enrichState.running = true;
+      res.focus = currentFocus();
+      scanState.running = true; res.reading = currentFocus();
+      renderTrain = function () { calls.train++; }; renderViews = function () { calls.views++; };
+      ui.view = 'train'; ui.session = null; lastSigCheck = Date.now(); lastReadyShown = 3;
+      renderAnalysisStatus();
+      var before = { train: calls.train, views: calls.views };
+      lastSigCheck = Date.now();
+      scanState.running = false;
+      renderAnalysisStatus();
+      res.end = { train: calls.train - before.train, views: calls.views - before.views };
+      lastSigCheck = Date.now();
+      renderAnalysisStatus();
+      res.again = { train: calls.train - before.train, views: calls.views - before.views };
+      renderTrain = rt; renderViews = rv; enrichState.running = false; SF.state = 'failed';
+      res.dot = tabDot();
+      return JSON.stringify(res); })()`));
+    ok(r.focus && r.focus.fam === 'safety', 'the focus while the deeper look runs: ' + JSON.stringify(r.focus));
+    eq(r.reading, null, 'no focus while the games are still read');
+    eq(JSON.stringify(r.end), JSON.stringify({ train: 1, views: 1 }), 'Today and the tabs repainted as the read ends');
+    eq(JSON.stringify(r.again), JSON.stringify({ train: 1, views: 1 }), 'once');
+    eq(r.dot, true, 'practice waiting: the dot');
+  });
+
+  await test('measures: the visit\'s tags and the events that have a place today fire once at their trigger and carry no name, rating or position', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      SF.state = 'failed';
+      var calls = [];
+      window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
+      document.createElement = function () { return { click: function () {}, remove: function () {}, setAttribute: function () {}, style: {} }; };
+      var blob = ''; Blob = function (parts) { blob = parts[0]; };
+      returnEvents();
+      var its = allMistakes().filter(trainable);
+      var a = openCard(its[0]); solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+      a = openCard(its[1]); reveal();
+      setView('insights'); setView('insights'); setView('train'); setView('insights'); setView('train');
+      exportProgress();
+      var map = srsLoad(), now = Date.now();
+      map[its[2].key] = { box: 3, streak: 2, due: now - 1000, last: now - 17 * DAY, ls: now - 17 * DAY, lapses: 0 };
+      srsSave(map);
+      srsRecord(its[2], 'first', { ms: 9000, attempted: true });
+      srsRecord(its[2], 'first', { ms: 9000, attempted: true });
+      ui.session = { mode: 'more', label: 'x', keys: [its[3].key, its[4].key, its[5].key], idx: 3, results: {}, relearn: [], relearnOf: {}, attempted: 3 };
+      finishSession();
+      ui.session = { mode: 'more', label: 'x', keys: [its[3].key], idx: 1, results: {}, relearn: [], relearnOf: {}, attempted: 3 };
+      finishSession();
+      return JSON.stringify({ calls: calls, logged: /nl:log:cc:tester/.test(blob) }); })()`));
+    const ev = (n) => r.calls.filter((c) => c[0] === 'event' && c[1] === n).length, tag = (k) => r.calls.filter((c) => c[0] === 'set' && c[1] === k).map((c) => c[2]);
+    eq(JSON.stringify([tag('first_week'), tag('tier'), tag('installed')]), JSON.stringify([['2026-W40'], ['2'], ['no']]), 'the visit\'s tags');
+    eq(JSON.stringify([ev('first_card_result'), tag('first_card')]), JSON.stringify([1, ['first']]), 'the first card\'s result, once');
+    eq(ev('insights_open'), 2, 'each time Insights opens');
+    eq(ev('export_done'), 1, 'a progress file saved');
+    eq(r.logged, true, 'the file carries the practice log');
+    eq(ev('learned'), 1, 'a position learned, once');
+    eq(ev('day_counted'), 1, 'the day counted, once');
+    const flat = JSON.stringify(r.calls);
+    ok(!/tester|135\d|\b\d{12}\b|[a-h][1-8][a-h][1-8]|\//.test(flat), 'no name, rating, key or position: ' + flat);
+  });
+
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'sessions and bookkeeping: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));
   process.exit(failed ? 1 : 0);

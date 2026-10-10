@@ -158,18 +158,27 @@ function loadCard() {
     prefetchCards(ss);
     track('card_shown');
   };
-  if ((it.b.v || 0) >= 2 || SF.state === 'failed') go();
-  else {
+  /* a card looked at before still waits for its danger facts' one search
+     while the engine is up (the loading frame); with the engine down or
+     still loading it opens at once on the facts read without it, and asks
+     for their threat as soon as it can */
+  var dzWait = !dangerReady(it.b) && SF.state === 'ready';
+  if (((it.b.v || 0) >= 2 && !dzWait) || SF.state === 'failed') {
+    if (!dangerReady(it.b)) { if (SF.state === 'failed') dangerNow(it); else ensureDanger(it, true); }
+    go();
+  } else {
     ss.loadingKey = key;
     renderCard();
     deepEnrich(it, true).then(go, go);
   }
 }
-/* the next two cards get their deeper look while this one is solved */
+/* the next two cards get their deeper look (and danger facts) while this
+   one is solved */
 function prefetchCards(ss) {
   for (var i = ss.idx + 1; i < Math.min(ss.keys.length, ss.idx + 3); i++) {
     var it = model().byKey[ss.keys[i]];
     if (it && (it.b.v || 0) < 2) deepEnrich(it, false);
+    else if (it && !dangerReady(it.b) && SF.state !== 'failed') ensureDanger(it, false);
   }
 }
 
@@ -289,6 +298,8 @@ function gradeMove(m) {
   a.sel = -1;
   a.shapes = [];
   a.verdict = null; a.hintAfter = false;
+  /* the practice log's time to the first move */
+  if (!a.firstAt) a.firstAt = Date.now();
   a.attempts++;
   /* each move tried has its own effect id, so its badge pops once */
   a.fxn = (a.fxn || 0) + 1;
@@ -1129,7 +1140,7 @@ function finishCard(result, beats) {
   a.phase = 'done';
   a.result = result;
   a.ms = Date.now() - a.t0;
-  var relearn = ss.relearnOf && ss.relearnOf[a.key];
+  var relearn = ss.relearnOf && ss.relearnOf[a.key], prev = logPrev(a), first = !relearn && !Object.keys(srsLoad()).length;
   if (ss.progress) delete ss.progress[a.key];
   if (!relearn) {
     var rec = srsRecord(a.it, result, { ms: a.ms, gameMove: a.triedGameMove, attempted: a.attempts > 0, alt: !!a.alt });
@@ -1147,6 +1158,9 @@ function finishCard(result, beats) {
     a.rec = srsRec(a.it);
     ss.results[a.key + '#r'] = result;
   }
+  logCard(a, result, prev, relearn);
+  /* a measure: the result of a player's first card ever, as a word */
+  if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
   /* the worked example done (S9): the family counts as seen, and the
      summary says it was a first look (a shown answer stays "Shown") */
   if (a.predraw) {
@@ -1205,13 +1219,44 @@ function nextCard() {
 function settleLeft(a) {
   var ss = ui.session;
   if (!ss || !a || a.phase === 'done') return;
-  var again = ss_relearn(a), result = a.misses ? 'fail' : (a.hints ? 'hint' : 'skip');
+  var again = ss_relearn(a), result = a.misses ? 'fail' : (a.hints ? 'hint' : 'skip'), prev = logPrev(a), first = !again && !Object.keys(srsLoad()).length;
   if (!again) srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove });
+  logCard(a, result, prev, again);
+  if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
   if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
   if (ss.progress) delete ss.progress[a.key];
   ss.results[a.key + (again ? '#r' : '')] = result;
   (ss.notes = ss.notes || {})[a.key + (again ? '#r' : '')] = a.misses ? 'leftMiss' : 'left';
   a.phase = 'done';
+}
+/* the honest result of one showing, the worst event deciding: 'shown'
+   (the answer shown), 'miss' (after a miss), 'hint' (with a hint, the
+   worked example's own included), 'good' (a good move before the best, or
+   one that works too), 'first' (found first try), 'skip' (left untouched) */
+function cardCategory(a, result) {
+  if (result === 'skip') return 'skip';
+  if (a.revealed) return 'shown';
+  if (a.misses) return 'miss';
+  if (a.hints) return 'hint';
+  if (a.foundGood || a.alt) return 'good';
+  return 'first';
+}
+/* what the practice log needs from the record before this answer */
+function logPrev(a) { var r = srsRec(a.it); return r ? { n: r.n, last: r.last, lf: r.lf } : null; }
+/* one card answered, in the practice log (08-srs.js): mode is 'cued' for
+   every card for now; review number 0 at first sight (unknown, null, for a
+   record older than the count) */
+function logCard(a, result, prev, again) {
+  var now = Date.now(), e = { e: 'c', k: a.key, tr: a.tier, m: 'cued', c: cardCategory(a, result), r: result, a: a.attempts || 0, h: a.hints || 0 };
+  e.n = prev ? (prev.n != null ? prev.n : null) : 0;
+  e.d = prev && prev.last ? Math.round((now - prev.last) / DAY * 10) / 10 : null;
+  e.f = a.firstAt ? a.firstAt - (a.shownAt || a.t0) : null;
+  e.s = a.ms != null ? a.ms : now - a.t0;
+  if (a.triedGameMove) e.g = 1;
+  if (prev && prev.lf) e.lf = 1;
+  if (a.predraw) e.pd = 1;
+  if (again) e.ag = 1;
+  logAdd(e);
 }
 function skipCard() {
   var ss = ui.session, a = ss && ss.active;

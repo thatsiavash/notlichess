@@ -9,6 +9,11 @@ function plur(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + '
 function track(name) {
   try { if (window.clarity) window.clarity('event', name); } catch (e) {}
 }
+/* a tag on this visit's recording (Clarity's set): coarse words only,
+   never a name, a rating or a position */
+function measureTag(key, value) {
+  try { if (window.clarity) window.clarity('set', key, String(value)); } catch (e) {}
+}
 var saveTimer = null, saveCount = 0;
 function scheduleSave() {
   saveCount++;
@@ -26,6 +31,8 @@ window.addEventListener('pagehide', flushSave);
 var VIEWS = [['train', 'Today'], ['insights', 'Insights']];
 function setView(v, fromPop) {
   if (v !== 'insights') v = 'train';
+  /* a measure: Insights opened */
+  if (v === 'insights' && ui.view !== 'insights') track('insights_open');
   ui.view = v;
   store.set('nl:view', v);
   if (!fromPop && location.hash !== '#' + v) {
@@ -51,7 +58,7 @@ function renderViews() {
   var nav = el('views');
   if (!nav) return;
   /* a quiet dot while today's session is not done: never a count */
-  var pending = cfg.user && !(dayLoad().sessions > 0) && (dueCards().length > 0 || todayPlan().keys.length > 0);
+  var pending = tabDot();
   nav.innerHTML = VIEWS.map(function (v) {
     return '<a class="view-tab' + (ui.view === v[0] ? ' view-on' : '') + '" data-act="view" data-k="' + v[0] + '" role="tab" aria-selected="' + (ui.view === v[0]) + '">'
       + v[1] + (v[0] === 'train' && pending && !(ui.session && ui.session.active) ? '<span class="tab-dot" aria-label="practice waiting"></span>' : '') + '</a>';
@@ -61,6 +68,7 @@ function renderViews() {
   /* session mode: the board and nothing else */
   document.body.classList.toggle('in-session', !!ui.session && ui.view === 'train');
 }
+function tabDot() { return !!(cfg.user && !(dayLoad().sessions > 0) && (dueCards().length > 0 || todayPlan().keys.length > 0)); }
 function renderShell() {
   if (location.search) {
     try { history.replaceState(null, '', location.pathname + (location.hash || '#train')); } catch (e) {}
@@ -100,7 +108,7 @@ function analysisNumbers() {
   return { covered: c.covered, total: c.total, ready: ready,
            working: SF.state !== 'failed' && (scanState.running || scanState.pending || enrichState.running) };
 }
-var lastReadyShown = -1, lastTodaySig = '', lastSigCheck = 0;
+var lastReadyShown = -1, lastTodaySig = '', lastSigCheck = 0, lastDotKey = '', lastReadOver = null;
 /* what Today says depends on the plan and the focus: both move while reading */
 function todaySig(fh) { return todayPlan().keys.join(',') + '|' + (fh == null ? focusHtml() : fh); }
 function renderAnalysisStatus() {
@@ -129,6 +137,13 @@ function renderAnalysisStatus() {
       if (lg) lg.outerHTML = latestGamesHtml();
     }
   }
+  /* what waits for the read shows the moment it ends, not at the next
+     repaint: the focus (Today) and the tab's dot; the dot also follows the
+     positions as they arrive */
+  var over = readOver(n), dk = n.ready + '|' + over;
+  if (lastReadOver === false && over && ui.view === 'train' && !ui.session) renderTrain();
+  lastReadOver = over;
+  if (dk !== lastDotKey) { lastDotKey = dk; renderViews(); }
 }
 function analysisLine(n) {
   if (SF.state === 'failed') return '<span class="loss">Stockfish could not start in this browser.</span> <a data-act="engineRetry">Try again</a>';
@@ -254,7 +269,7 @@ function resumeHtml(s) {
   return '<div class="hero">'
     + '<h2>Pick up where you left off.</h2><p class="why">' + countsWords(s)
     + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.') + '</p>' + weekHtml()
-    + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">Start over</a></div></div>';
+    + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">End this set</a></div></div>';
 }
 /* the next time something is due back, and how much */
 function nextDueHtml() {
@@ -381,6 +396,8 @@ function recapHabit(ss) {
 }
 /* "Tap" on a touch screen, "Click" where a mouse points (pointer: fine) */
 function tapWord() { return window.matchMedia && window.matchMedia('(pointer: fine)').matches ? 'Click' : 'Tap'; }
+/* a touch screen: the main pointer is a finger (pointer: coarse) */
+function touchScreen() { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
 /* the summary's word for a card (S17, copy Q): the note first, since it
    carries what the result cannot (the answer shown, a worked example, a
    card left), then the result. A close move then the answer shown is
@@ -466,8 +483,10 @@ function boardOptsFor(a) {
     if (xr && xr.lines[0] && !quiet) { ev = myPov(it) ? xr.lines[0].cp : -xr.lines[0].cp; evLive = true; }
     view = { st: ex.st, last: ex.last, ev: ev != null ? ev : it.b.eb };
     opts.sel = ex.sel;
-    /* one arrow: Stockfish's move, or the row under the pointer */
-    var xs = xpShown(ex, xn), hl = xs && !quiet && xs[ex.hot || 0] ? uciToMove(ex.st, xs[ex.hot || 0].pv[0]) : null;
+    /* one arrow, gold and named Stockfish's pick: the top line's move only
+       (a row under the pointer or the keyboard is lit in the list, never on
+       the board, where the label would call another move the pick) */
+    var xs = xpShown(ex, xn), hl = xs && !quiet && xs[0] ? uciToMove(ex.st, xs[0].pv[0]) : null;
     if (hl) opts.ghost = [hl.from, hl.to];
     if (ex.anim) { opts.anim = ex.anim; slideMs = 220; }
     if (ex.sel >= 0) opts.dots = legalMoves(ex.st).filter(function (m) { return m.from === ex.sel; }).map(function (m) { return m.to; });
@@ -622,6 +641,7 @@ function boardOptsFor(a) {
      rest of what lands */
   var ck = checkedKingSq(view.st);
   if (ck != null && !land) opts.check = ck;
+  tokenSpots(opts);
   /* the board's name says what it draws (S20), mark by mark */
   opts.label = boardAria(a, view.st, opts);
   return {
@@ -756,6 +776,45 @@ function badgeCorner(from, to, flip) {
   }
   return spots[0];
 }
+/* a token sits at its square's bottom-left (2.1) unless an arrow's head
+   comes into that square there, or the square's badge sits beside it: then
+   in the first corner clear of both (bottom-right, top-left, top-right),
+   smaller and tucked into that corner, so token, tick and arrow head never
+   pile up on the piece that took, and that piece stays in view. Sets t.at,
+   [x, y, radius] from the square's corner, when it moves */
+var TOKEN_AT = [[12.5, 32.5, 12.5], [35, 35, 10], [10, 10, 10], [35, 10, 10]];
+function tokenSpots(opts) {
+  if (!opts.tokens || !opts.tokens.length) return;
+  var flip = !!opts.flip, arrows = [];
+  if (opts.ghost) arrows.push({ from: opts.ghost[0], to: opts.ghost[1] });
+  if (opts.good) arrows.push({ from: opts.good[0], to: opts.good[1] });
+  if (opts.bad) arrows.push({ from: opts.bad[0], to: opts.bad[1] });
+  arrows = arrows.concat(opts.arrows || []);
+  opts.tokens.forEach(function (t) {
+    var heads = arrows.filter(function (ar) { return ar.to === t.sq && ar.from !== ar.to; });
+    var bd = (opts.badges || []).filter(function (b) { return b.sq === t.sq; })[0], bat = bd ? bd.at || [36, 9] : null;
+    if (!heads.length && !bat) return;
+    for (var i = 0; i < TOKEN_AT.length; i++) {
+      var at = TOKEN_AT[i];
+      /* the token's disc and the badge's halo (9.8) apart */
+      if (bat && Math.sqrt(Math.pow(at[0] - bat[0], 2) + Math.pow(at[1] - bat[1], 2)) < at[2] + BADGE_HALO) continue;
+      if (heads.every(function (ar) { return headClear(ar.from, ar.to, flip, at, at[2]); })) { if (i) t.at = at; return; }
+    }
+  });
+}
+/* a disc of radius r at `at` (from the corner of the arrow's last square)
+   stays clear of the arrow's head and the end of its shaft, as markArrow
+   draws them (the same reading badgeCorner makes for a badge) */
+function headClear(from, to, flip, at, r) {
+  var xy = function (sq) { return [(flip ? 7 - sq % 8 : sq % 8) * 45 + 22.5, (flip ? sq >> 3 : 7 - (sq >> 3)) * 45 + 22.5]; };
+  var p = xy(from), q = xy(to), dx = p[0] - q[0], dy = p[1] - q[1], len = Math.sqrt(dx * dx + dy * dy) || 1;
+  var ux = dx / len, uy = dy / len, tip = 45 * (len < 45 * 1.6 ? 0.22 : 0.34) - 6.3, bx = at[0] - 22.5, by = at[1] - 22.5;
+  for (var s = 0; s <= 40; s++) {
+    var px = ux * (tip + s) - bx, py = uy * (tip + s) - by, half = s < 21 ? 10.5 * s / 21 : 3.7;
+    if (Math.sqrt(px * px + py * py) < r + half) return false;
+  }
+  return true;
+}
 /* ── labels: one pill a frame, beside the mark it names ───────────────────
    The pill's size: its words measured in the font the page draws them in
    (12 px on a phone, 14 on the desktop, Lora 600 or whatever stands in for
@@ -824,7 +883,7 @@ function labelGeom(f, px, c, avoid) {
   });
   (o.ghosts || []).forEach(function (gh) { var k = cell(gh.sq); g.pieces.push(sqBox(gh.sq)); if (!gh.rook) g.boxes.push(disc((k[0] * 45 + 37.5) * s, (k[1] * 45 + 7.5) * s, 7 * s)); });
   (o.badges || []).forEach(function (bd) { var k = cell(bd.sq), xy = badgeXY([k[0] * 45, k[1] * 45], bd.at); g.boxes.push(disc(xy[0] * s, xy[1] * s, BADGE_HALO * s)); });
-  (o.tokens || []).forEach(function (tk) { var k = cell(tk.sq); g.boxes.push(disc((k[0] * 45 + 12.5) * s, (k[1] * 45 + 32.5) * s, 13.7 * s)); });
+  (o.tokens || []).forEach(function (tk) { var k = cell(tk.sq), at = tk.at || TOKEN_AT[0]; g.boxes.push(disc((k[0] * 45 + at[0]) * s, (k[1] * 45 + at[1]) * s, (at[2] + 1.2) * s)); });
   (o.hint != null ? [{ sq: o.hint }] : []).concat(o.rings || []).forEach(function (rg) { var m = ctr(rg.sq); g.boxes.push(disc(m[0], m[1], 23.25 * s)); });
   (o.guards || []).forEach(function (gd) { var a0 = ctr(gd.from), b0 = ctr(gd.to); g.segs.push({ x1: a0[0], y1: a0[1], x2: b0[0], y2: b0[1], r: 3.5 * s + 4 }); });
   (o.tried || []).forEach(function (t) {
@@ -977,7 +1036,12 @@ function s0Marks(a, st) {
     out.rings.push({ sq: th.from, kind: 'threat' });
     out.arrows.push({ from: th.from, to: th.to, kind: 'threat', key: 'threat' });
   }
-  if (line) (a.won || []).slice(-2).forEach(function (w) { out.tokens.push({ sq: w.sq, p: w.p, kind: 'won', fx: a.key + ':s0', s0: true }); });
+  /* never over a piece of theirs that took back on that square: the token
+     would seem to name that piece (the band and the board's name say the
+     whole line) */
+  if (line) (a.won || []).filter(function (w) { return !(st.b[w.sq] && colorW(st.b[w.sq]) !== myPov(a.it)); }).slice(-2).forEach(function (w) {
+    out.tokens.push({ sq: w.sq, p: w.p, kind: 'won', fx: a.key + ':s0', s0: true });
+  });
   if (line && out.tokens.length) out.lineTakes = lineTakes(a);
   return out;
 }
@@ -1630,14 +1694,16 @@ function menuHtml(a) {
     + '<span class="sep"></span>'
     + '<a data-act="dispute" data-k="misclick">Not a real mistake: a misclick or premove</a>'
     + '<a data-act="dispute" data-k="decided">Not a real mistake: the game was already decided</a>'
-    + '<a data-act="dispute" data-k="engine">Not a real mistake: I think the engine is wrong</a>'
+    + '<a data-act="dispute" data-k="engine">Not a real mistake: I think ' + (a.tier === 1 ? 'the computer' : 'Stockfish') + ' is wrong</a>'
     + '<span class="sep"></span>'
     + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '<a data-act="details">Details</a>')
     /* exploring, on an answered card while the engine works (S14, S11);
        not while a shown line's reply is on its way, when a tap is input to
        the reply (S10) */
     + (xpOpen(a) && !a.reply ? '<a data-act="explore" data-k="menu">Try your own moves</a>' : '')
-    + '<span class="menu-keys">↑ ↓: this menu · Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>'
+    /* the keys only where there is a keyboard to press them: never on a
+       touch screen */
+    + (!touchScreen() ? '<span class="menu-keys">↑ ↓: this menu · Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>' : '')
     + '</div>';
 }
 function ctxHtml(a) {
@@ -2106,7 +2172,8 @@ function settingsHtml() {
       + '<a class="btn-line" data-act="logout" data-k="confirm">' + (ui.logoutArmed ? 'Tap again to switch' : 'Switch player') + '</a></div>'
     + '<div class="set-block"><span class="kicker">Games to learn from</span><p>Which of your rated games to read. Most players pick the one or two they play most.</p><div class="chips">'
       + ['rapid', 'blitz', 'bullet', 'classical'].filter(function (p) { return !isCC() || p !== 'classical'; }).map(function (p) {
-        return chip('perf', p, perfLabel(p) + ' <span class="dim">' + PERF_HINT[p] + '</span>', perfs.indexOf(p) !== -1);
+        /* one text: a chip is a flex box, and the space before a span would go */
+        return chip('perf', p, upFirst(perfLabel(p)) + ' · ' + PERF_HINT[p], perfs.indexOf(p) !== -1);
       }).join('') + '</div></div>'
     + '<div class="set-block"><span class="kicker">Practice</span><p>Positions in a day\'s session. New positions join a few at a time.</p><div class="chips">'
       + [[5, 'Short · 5'], [10, 'Normal · 10'], [20, 'Long · 20']].map(function (o) { return chip('size', o[0], o[1], sessionSize() === o[0]); }).join('')
@@ -2123,16 +2190,19 @@ function settingsHtml() {
       + '<p class="dim">' + engineLine() + '</p></div>'
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
-      + '<p class="dim">' + gamesLine() + '</p>'
-      + '<p>Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p></div>'
-    + '<div class="set-block"><span class="kicker">Start over</span>'
+      + '<p>' + gamesLine() + '</p>'
+      + '<p>None of it is kept on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p></div>'
+    + '<div class="set-block"><span class="kicker">Reset</span>'
       + '<a data-act="resetProgress" class="danger-row' + (ui.resetArmed ? ' armed' : '') + '">' + (ui.resetArmed ? 'Tap again to reset your practice history' : 'Reset practice history') + '</a>'
       + '<a data-act="wipe" class="danger-row' + (ui.wipeArmed ? ' armed' : '') + '">' + (ui.wipeArmed ? 'Tap again to erase everything' : 'Erase everything') + '</a></div>';
 }
+/* what this browser holds, and what clearing it costs */
 function gamesLine() {
   if (data.sections.games === 'loading') return 'Reading games…';
   var c = loadCachedGames();
-  return plur(data.games.length, 'game') + (c.fetchedAt ? ' · checked ' + ago(c.fetchedAt) : '');
+  var a = c.fetchedAt ? ago(c.fetchedAt) : '', when = a === 'just now' ? a : /^\d+[mhd]$/.test(a) ? a + ' ago' : 'in ' + a;
+  return 'Saved in this browser: ' + plur(data.games.length, 'game') + ' and your practice. Clearing browser data erases them.'
+    + (a ? ' <span class="dim">Games checked ' + when + '.</span>' : '');
 }
 
 /* ── footer ──────────────────────────────────────────────────────────────── */
@@ -2141,7 +2211,8 @@ function renderFoot() {
   if (!f) return;
   f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</span>'
     + '<span class="foot-links"><a data-act="coffee">Support the developer</a>'
-    + (isCC() ? '' : '<a href="https://lichess.org/patron">Donate to lichess</a>')
+    /* for lichess players only: a first visit plays nowhere yet */
+    + (cfg.user && !isCC() ? '<a href="https://lichess.org/patron">Donate to lichess</a>' : '')
     + '<a href="https://github.com/thatsiavash/notlichess">Source</a></span>';
 }
 

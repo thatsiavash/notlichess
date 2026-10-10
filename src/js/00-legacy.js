@@ -64,8 +64,8 @@ try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:li
    away in the edit panel. */
 var PERF_TCS = { bullet: ['1+0'], blitz: ['5+0','3+0'],
                  rapid: ['10+0'], classical: ['30+0'] };
-var PERF_HINT = { bullet: '1–2 min games', blitz: '3–5 min',
-                  rapid: '10–15 min', classical: '30+ min' };
+var PERF_HINT = { bullet: '1 to 2 min', blitz: '3 to 5 min',
+                  rapid: '10 to 15 min', classical: '30+ min' };
 var cfg = {
   user: urlUser || store.get('nl:user', ''),
   tcs: linkVisit ? DEFAULT_TC.slice() : store.get('nl:tcs', DEFAULT_TC.slice()),
@@ -563,7 +563,11 @@ function trimGames(games) {
   return out;
 }
 
-function saveGames(games) {
+/* room: a practice write the browser refused (practiceWrite), tried again
+   after each step of the ladder below that wrote a smaller cache; the
+   ladder stops at the first step where it fits, since practice cannot be
+   fetched again and games can */
+function saveGames(games, room) {
   if (!cfg.user) return { games: games };
   var live = trimGames(games);
   var copy = function (g, lean) {
@@ -591,12 +595,13 @@ function saveGames(games) {
     return store.set(cacheKey(), p);
   };
   var out = function (list) { var p = {}, k; for (k in head) p[k] = head[k]; p.games = list; return p; };
-  if (!data.leanSave && write(live, false)) return out(live);
+  var fits = function () { return !room || room(); };
+  if (!room && !data.leanSave && write(live, false)) return out(live);
   /* out of room, cheapest losses first: retained movetext, then other
      accounts' game caches (their practice history stays), then old games
      that hold no cards; games with cards are the last to go */
   data.leanSave = true;
-  if (write(live, true)) return out(live);
+  if (write(live, true) && fits()) return out(live);
   try {
     var mine = cacheKey(), drop = [];
     for (var i = 0; i < localStorage.length; i++) {
@@ -607,23 +612,25 @@ function saveGames(games) {
     if (drop.length) notice('This browser ran out of room, so the saved games of the other player' + (drop.length > 1 ? 's' : '')
       + ' here were cleared. Their practice history is kept, and their games come back on their next visit.');
   } catch (e) {}
-  if (write(live, true)) return out(live);
+  if (write(live, true) && fits()) return out(live);
   var keep = live.slice();
   for (var cut = 0; cut < 6; cut++) {
     var plain = keep.filter(function (g) { return !g.bl; });
     if (!plain.length) break;
     var gone = plain.slice(Math.floor(plain.length / 2));
     keep = keep.filter(function (g) { return gone.indexOf(g) === -1; });
-    if (write(keep, true)) { storageNotice(keep.length); return out(keep); }
+    if (write(keep, true) && fits()) { storageNotice(keep.length, true); return out(keep); }
   }
   keep = keep.slice(0, Math.ceil(keep.length / 2));
-  if (write(keep, true)) storageNotice(keep.length);
+  if (write(keep, true) && fits()) storageNotice(keep.length, false);
   return out(keep);
 }
-function storageNotice(n) {
+/* all: every game you practise from is still kept (the last step of the
+   ladder drops some of those too, and then the notice does not say so) */
+function storageNotice(n, all) {
   if (data.storageWarned) return;
   data.storageWarned = true;
-  notice('This browser is short on storage, so ' + n + ' games are kept, including every game you practise from.');
+  notice('This browser is short on storage, so ' + n + ' games are kept' + (all ? ', including every game you practise from.' : '.'));
 }
 
 /* evals=true AND division=true together are what make

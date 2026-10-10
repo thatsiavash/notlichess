@@ -22,7 +22,7 @@ function renderFirstVisit(prefill) {
     + '<div id="whichSite" aria-live="polite"></div>'
     + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
     + '<figure class="proof"><figcaption>What a 1350 rapid player saw</figcaption>'
-      + '<blockquote>169 of your 237 losses came down to one big mistake. The biggest leak is giving away material. It decided 107 games.</blockquote></figure>'
+      + '<blockquote>In 169 of their 237 losses, one move turned the game for good. Piece safety decided 107.</blockquote></figure>'
     + '</div>'
     + (ex ? '<div class="landing-ex" aria-hidden="true"><div class="kicker">Example</div>'
       + boardSvg(ex, { flip: true, bad: [45, 35], mark: [28, 35], decor: true })
@@ -30,7 +30,7 @@ function renderFirstVisit(prefill) {
     + '<div class="value">'
       + valueItem('Every game, not one at a time', 'Your last year of rated games in the format you play most. Your first position is ready in seconds.')
       + valueItem('Ranked by what it cost you', 'Hanging pieces, forks, missed mates: sorted by how many games each one decided.')
-      + valueItem('A few minutes a day', 'Five of your own positions. Each comes back just before you would forget it.')
+      + valueItem('A few minutes a day', 'A set is 5 to 10 of your own positions. Each comes back, with longer gaps as you get it right.')
       + valueItem('Free, no account', 'Nothing to buy. Open source.')
     + '</div>'
     + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device.</p>'
@@ -94,12 +94,13 @@ function findUser(name) {
       box.innerHTML = '<p class="which-none">Could not reach ' + down + '. Check your connection and try again.</p>';
       return;
     }
-    /* both, or one while the other did not answer: ask */
-    var offer = found.concat(silent && found.length === 1 ? [{ site: found[0].site === 'chesscom' ? 'lichess' : 'chesscom', best: null }] : []);
-    box.innerHTML = '<p class="which-q">Which one is you?</p><div class="which-row">' + offer.map(function (f) {
+    /* both: ask which. One while the other did not answer: only the site
+       that confirmed the name is offered, and the silent one is named */
+    var one = found.length === 1, quiet = one ? (found[0].site === 'chesscom' ? 'lichess' : 'chess.com') : '';
+    box.innerHTML = '<p class="which-q">' + (one ? 'Is this you?' : 'Which one is you?') + '</p><div class="which-row">' + found.map(function (f) {
       return '<button class="btn-line" data-act="pickSite" data-k="' + f.site + '" data-n="' + esc(name) + '">' + (f.site === 'chesscom' ? 'chess.com' : 'lichess')
         + (f.best && f.best.r ? ' · ' + f.best.p + ' ' + f.best.r : (!f.best && !silent ? ' · no rated games' : '')) + '</button>';
-    }).join('') + '</div>';
+    }).join('') + '</div>' + (one ? '<p class="which-none">' + quiet + ' did not answer, so the name could not be checked there. Try again in a moment.</p>' : '');
   });
 }
 function valueItem(title, body) {
@@ -135,6 +136,11 @@ function returnEvents() {
   try {
     var k = 'nl:firstSeen:' + playerId(), first = store.get(k, 0), now = Date.now();
     if (linkVisit) { if (!linkTracked) { linkTracked = true; track('open_link'); } return; }
+    /* coarse tags for this visit's recording: the ISO week of the
+       first visit, the help tier, an installed app or a browser tab */
+    measureTag('first_week', isoWeek(first || now));
+    measureTag('tier', playerTier());
+    measureTag('installed', installedApp() ? 'yes' : 'no');
     var utm = linkStore.get('nl:utm');
     if (utm && window.clarity) window.clarity('set', 'utm_source', utm.slice(0, 40));
     var sent = 'nl:retDay:' + playerId();
@@ -148,6 +154,19 @@ function returnEvents() {
     for (var i = 0; i < 28; i++) { var d = new Date(now - i * DAY); if (dayCounts(dayRecOf(d))) act++; }
     if (window.clarity) window.clarity('set', 'active_days', act === 0 ? '0' : act === 1 ? '1' : act <= 3 ? '2-3' : act <= 7 ? '4-7' : act <= 14 ? '8-14' : '15+');
   } catch (e) {}
+}
+/* "2026-W41": the ISO week a time falls in (weeks start on Monday; week 1
+   holds the year's first Thursday) */
+function isoWeek(ms) {
+  var d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+  var w1 = new Date(d.getFullYear(), 0, 4), w = 1 + Math.round(((d.getTime() - w1.getTime()) / DAY - 3 + (w1.getDay() + 6) % 7) / 7);
+  return d.getFullYear() + '-W' + (w < 10 ? '0' : '') + w;
+}
+/* opened from the home screen (an installed app), not a browser tab */
+function installedApp() {
+  try { return !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true); } catch (e) { return false; }
 }
 function forgetLink() { linkVisit = false; }
 /* the saved formats are this player's (older saves carry no owner: theirs) */
@@ -190,7 +209,7 @@ var NARR_WISDOM = [
   'Stockfish checks every move you made, right here in your browser.',
   'Most players replay their wins. The rating lives in the losses.',
   'A mistake you retry from the exact position is worth ten you read about.',
-  'Each position comes back just before you would forget it.',
+  'Each position comes back, with longer gaps as you get it right.',
   'Ten minutes on your own mistakes beats ten more blitz games.',
   'The mistakes that cost you games come first.'
 ];
@@ -355,7 +374,7 @@ function exportProgress() {
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
       if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0)
+      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u)
         out.keys[k] = JSON.parse(localStorage.getItem(k));
     }
   } catch (e) {}
@@ -366,6 +385,7 @@ function exportProgress() {
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  track('export_done');
 }
 function importProgress() {
   var inp = document.createElement('input');
@@ -565,6 +585,7 @@ document.addEventListener('click', function (e) {
         keys.forEach(function (kk) { if (kk && (kk.indexOf('nl:day:' + u + ':') === 0 || kk === sessKey()) && del.indexOf(kk) === -1) del.push(kk); });
         del.forEach(function (x) { store.del(x); });
         store.del('nl:srs:' + u);
+        store.del(logKey());
       } catch (e2) {}
       srsMem = null; srsRevision++; ui.session = null; ui.resetArmed = false; modelDirty();
       notice('Practice history reset. Your games and analysis are kept.');
@@ -923,14 +944,21 @@ function xpHover(k, byFocus) {
   if (!ex || (!byFocus && !(window.matchMedia && window.matchMedia('(hover: hover)').matches))) return;
   var want = k == null ? 0 : k;
   ex.hover = k;
+  /* the row is lit in the list; the board keeps the top line's arrow */
   if (ex.hot !== want) {
     ex.hot = want;
-    renderCardBoard(a);
     var rows = document.querySelectorAll('#xp .xp-row[data-act="xpRow"]');
     for (var i = 0; i < rows.length; i++) rows[i].classList.toggle('on', parseInt(rows[i].getAttribute('data-k'), 10) === want);
   }
-  /* rows held while pointed at: the latest lines show once the pointer leaves */
-  if (k == null && xpThaw(ex)) renderCard();
+  /* rows held while pointed at: the latest lines show once the pointer
+     leaves. The focus leaves a row when something else is pressed (Back to
+     the lesson, a tap anywhere): that press's click must land on the panel
+     it pressed, so the rows catch up a moment later, never under the finger */
+  if (k == null && ex.frozen) {
+    if (!byFocus) { if (xpThaw(ex)) renderCard(); return; }
+    clearTimeout(ex.frozenT);
+    ex.frozenT = setTimeout(function () { var a3 = ui.session && ui.session.active; if (xpThaw(ex) && a3 && a3.explore === ex) renderCard(); }, 400);
+  }
 }
 /* the key line names what Enter presses: it follows the keyboard (2.0) */
 document.addEventListener('focusin', function () { if (ui.session && ui.session.active) paintKeys(ui.session.active); });
@@ -993,7 +1021,7 @@ window.__nlTest = {
              story: a.phase === 'done' && a.view && a.view.mode === 'story' ? (function (S) { return { i: a.view.i, n: S.steps.length, g: S.g, cap: S.steps[a.view.i].cap, pre: !!a.view.pre }; })(buildStory(a)) : null,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
              sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null,
-             verdict: a.verdict ? { kind: a.verdict.kind, row1: a.verdict.row1, row2: a.verdict.row2 } : null };
+             verdict: a.verdict ? { kind: a.verdict.kind, row1: a.verdict.row1, row2: a.verdict.row2 } : null, danger: dangerView(a) };
   },
   play: function (uci) {
     var a = ui.session && ui.session.active;
@@ -1027,3 +1055,114 @@ window.__nlTest = {
   }
 };
 if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__nlTest.ev = function (code) { return eval(code); };
+/* tester helpers, on localhost only: days simulated, synthetic later
+   games, the practice log */
+if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+  window.__nlTest.shiftDays = function (n) { return shiftDays(n); };
+  window.__nlTest.seedAfterGames = function (spec) { return seedAfterGames(spec); };
+  window.__nlTest.log = function () { return logLoad(); };
+}
+/* n days pass: every time this player has stored moves n days back (the
+   practice records' due, last and last-solved times, the day records,
+   renamed to their date n days earlier, first and last seen, the return
+   day, the paused set's day, the weekly goal's history, the practice log,
+   cue and backup times), so whatever was due in n days is due now. The
+   games keep their dates: they come back from the chess site as they are */
+function shiftDays(n) {
+  n = Math.round(+n || 0);
+  var ms = n * DAY, p = playerId(), keys = Object.keys(mem);
+  try { for (var i = 0; i < localStorage.length; i++) if (keys.indexOf(localStorage.key(i)) < 0) keys.push(localStorage.key(i)); } catch (e) {}
+  var back = function (t) { return typeof t === 'number' && t > 1e12 ? t - ms : t; };
+  var stampBack = function (s) {
+    var m = /^(\d+)-(\d+)-(\d+)$/.exec(String(s || ''));
+    if (!m) return s;
+    var d = new Date(+m[1], +m[2] - 1, +m[3], 12);
+    d.setDate(d.getDate() - n);
+    return dayStamp(d);
+  };
+  var srs = store.get(srsKey(), null);
+  if (srs) {
+    Object.keys(srs).forEach(function (k) { ['due', 'last', 'ls'].forEach(function (f) { if (srs[k][f] != null) srs[k][f] = back(srs[k][f]); }); });
+    store.set(srsKey(), srs);
+  }
+  var dp = 'nl:day:' + p + ':', moved = keys.filter(function (k) { return k.indexOf(dp) === 0; }).map(function (k) {
+    return { from: k, to: dp + stampBack(k.slice(dp.length)), v: store.get(k, null) };
+  });
+  moved.forEach(function (m) { store.del(m.from); });
+  moved.forEach(function (m) { if (m.v) store.set(m.to, m.v); });
+  ['nl:firstSeen:', 'nl:lastSeen:'].forEach(function (k0) { var v = store.get(k0 + p, null); if (typeof v === 'number') store.set(k0 + p, back(v)); });
+  var rd = store.get('nl:retDay:' + p, null);
+  if (rd) store.set('nl:retDay:' + p, stampBack(rd));
+  if (data.prevSeen) data.prevSeen = back(data.prevSeen);
+  var sv = store.get(sessKey(), null);
+  if (sv && sv.date) { sv.date = stampBack(sv.date); store.set(sessKey(), sv); }
+  var gh = store.get('nl:goalHist', null);
+  if (Array.isArray(gh)) store.set('nl:goalHist', gh.map(function (e) { return { from: back(e.from), goal: e.goal }; }));
+  var lg = store.get(logKey(), null);
+  if (Array.isArray(lg)) store.set(logKey(), lg.map(function (e) { e.t = back(e.t); return e; }));
+  var cue = store.get('nl:cue:' + p, null);
+  if (cue && typeof cue === 'object') { Object.keys(cue).forEach(function (k) { cue[k] = back(cue[k]); }); store.set('nl:cue:' + p, cue); }
+  srsMem = null;
+  srsRevision++;
+  modelDirty();
+  if (!ui.session) { renderViews(); renderTrain(); }
+  return { days: n, records: srs ? Object.keys(srs).length : 0, dayKeys: moved.length };
+}
+/* games played after the start, for testing what practice changed in real
+   games: spec.n clones of the tracked format's games
+   that carry a win-chance series, dated evenly from spec.from (the first
+   visit, else 30 days ago) to now; in each, every big mistake of the
+   player's is flattened under the threshold with chance spec.cut, and
+   spec.plus more big mistakes are added; spec.rating sets the player's
+   rating in them; spec.seed (7) fixes the draw. The clones carry no cards
+   and no moves, so they change only what is counted from the series */
+function seedAfterGames(spec) {
+  spec = spec || {};
+  var n = Math.max(0, Math.round(spec.n == null ? 10 : spec.n)), cut = +spec.cut || 0, plus = Math.max(0, Math.round(spec.plus || 0));
+  var seed = spec.seed == null ? 7 : +spec.seed, now = Date.now();
+  var from = spec.from || store.get('nl:firstSeen:' + playerId(), 0) || now - 30 * DAY, tp = trackedPerfs();
+  /* in a fixed order, so the seed alone decides the draw */
+  var pool = data.games.filter(function (g) { return g.wp && !g.syn && tp.indexOf(g.perf) >= 0; }).sort(function (x, y) { return x.ts - y.ts || (x.id < y.id ? -1 : 1); });
+  if (!pool.length || !n) return { added: 0 };
+  var t = seed >>> 0, rnd = function () {
+    t = (t + 0x6D2B79F5) | 0;
+    var r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+  var out = [];
+  for (var i = 0; i < n; i++) {
+    var g = JSON.parse(JSON.stringify(pool[Math.floor(rnd() * pool.length)]));
+    ['bl', 'mv', 'ck', 'mvTmp', 'ckTmp'].forEach(function (k) { delete g[k]; });
+    g.id = 'syn' + seed + '-' + i;
+    g.syn = 1;
+    g.scanned = true;
+    g.ts = Math.round(from + (now - from) * (i + 1) / (n + 1));
+    if (spec.rating) g.myR = +spec.rating;
+    g.wp = seededSeries(g, cut, plus, rnd);
+    out.push(g);
+  }
+  data.games = data.games.concat(out).sort(function (x, y) { return y.ts - x.ts; });
+  saveGames(data.games);
+  modelDirty();
+  renderAll();
+  return { added: out.length, from: from, to: now };
+}
+/* a clone's series with its big mistakes flattened (chance cut) and plus
+   more added, on the player's own plies, at the clone's threshold */
+function seededSeries(g, cut, plus, rnd) {
+  var min = mistakeMinFor(g), mine = g.color === 'white' ? 0 : 1, chars = g.wp.split(''), calm = [];
+  var put = function (i, w) { chars[i] = wpChar(g.color === 'white' ? w : 100 - w); };
+  for (var i = 1; i < chars.length; i++) {
+    if (i % 2 !== mine) continue;
+    var w0 = wpAt(g, i - 1), w1 = wpAt(g, i);
+    if (w0 == null || w1 == null) continue;
+    if (w0 - w1 >= min) { if (rnd() < cut) put(i, Math.max(0, w0 - min / 2)); }
+    else if (w0 >= min + 5) calm.push(i);
+  }
+  for (var k = 0; k < plus && calm.length; k++) {
+    var j = calm.splice(Math.floor(rnd() * calm.length), 1)[0];
+    put(j, wpAt(g, j - 1) - min - 5);
+  }
+  return chars.join('');
+}
