@@ -457,6 +457,10 @@ a.armed{color:var(--bad);background:var(--bad-tint);border-radius:4px;padding:2p
 .card-task.k-close{background:rgba(157,176,198,.14);border-left-color:#9db0c6}
 .card-task.k-info{background:#211f1b;border-left-color:#6b665d}
 .card-task.k-hint .bd-r1,.card-task.k-hint .bd-r2{color:#d6a852}
+/* the piece ledger (F1.2, F1.4): a trade in the board's own pieces, set in
+   the line of text; a black piece haloed so it reads on the dark band */
+.pc-ico{display:inline-block;width:1.15em;height:1.15em;vertical-align:-.2em;margin:0 .02em}
+.pc-ico.pc-b{filter:drop-shadow(0 0 1.2px rgba(255,255,255,.95)) drop-shadow(0 0 .6px rgba(255,255,255,.9))}
 .card-task.k-explore{border-left-color:var(--accent)}
 /* the story (S12): one caption of two lines beside the verdict disc, a red
    border on your game's steps, green on the better ones */

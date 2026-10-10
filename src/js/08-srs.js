@@ -1,6 +1,6 @@
 /* ── Practice memory: spaced repetition, days, streaks, focus ───────────────
    One record per mistake in nl:srs:<user>, keyed gameId:ply:
-   { box, streak, due, last, lapses, learned, tricky, skips, ls, lt }.
+   { box, streak, due, last, lapses, learned, tricky, skips, ls, lt, n, fc }.
    The ladder (days): 1, 3, 7, 16, 35, 90. A position is Learned after its
    third clean solve in a row, the last one 16 or more days after the one
    before; it then returns once, 90 days later, as a spot check, and a clean
@@ -112,6 +112,9 @@ function srsRecord(it, result, info) {
   if (info.gameMove) { rec.box = 0; rec.due = now + DAY; rec.learned = false; }
   if ((rec.lapses || 0) >= 4) rec.tricky = 1;
   if (info.ms != null) rec.lt = info.ms;
+  /* each wrong try's check step (F1.2: 1 their move, 2 your chances, 3
+     safety check, 0 anything else), the last 8 */
+  if (info.fc) rec.fc = ((rec.fc || '') + info.fc).slice(-8);
   /* how many times it was answered (a skip is not an answer): the
      practice log's review number */
   if (result !== 'skip') rec.n = (rec.n || 0) + 1;
@@ -132,6 +135,14 @@ function srsNoteMiss(it) {
   map[it.key] = rec;
   srsSave(map);
   return had;
+}
+/* the check steps of a showing that grades nothing (one more try): added
+   to the record it already has */
+function srsNoteTries(it, fc) {
+  var map = srsLoad(), rec = map[it.key];
+  if (!rec || !fc) return;
+  rec.fc = ((rec.fc || '') + fc).slice(-8);
+  srsSave(map);
 }
 /* one position's record put back as it was (null: it had none), as the
    Undo of a removal does: the rest saved as srsSave keeps them */

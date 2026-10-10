@@ -158,19 +158,26 @@ function dzThreatStands(a, th) {
   if (th[1] === 1) { var x = cloneState(post); applyMove(x, m1); return isMate(x); }
   return true;
 }
-/* with no search: the refutation's first move, legal before the game move,
-   already won material there (what it takes stood unguarded, or is worth
-   more than the piece taking it) or mated */
-function dzStoodBefore(a) {
-  var r1 = a.cls.gameLine && a.cls.gameLine.nodes[1];
-  if (!r1 || !r1.move) return false;
-  var nst = dzNullState(a.pre), m = uciToMove(nst, moveUci(r1.move));
+/* a move of theirs (uci) stood on position st, the player to move there:
+   with them to move it is legal and already won, mating, or taking the same
+   piece (took) on the same square where it stood unguarded or worth more
+   than the piece taking it (F0.1's wins-material test). A capture that was
+   merely legal there is no such danger */
+function dzStood(st, uci, took) {
+  var nst = dzNullState(st), m = uciToMove(nst, uci);
   if (!m) return false;
   var x = cloneState(nst);
   applyMove(x, m);
   if (isMate(x)) return true;
   var t = nst.b[m.to];
-  return !!t && t === r1.captured && (isHangingAt(nst.b, m.to) || MOTIF_VAL[pType(nst.b[m.from])] < MOTIF_VAL[pType(t)]);
+  return !!t && t === took && (isHangingAt(nst.b, m.to) || MOTIF_VAL[pType(nst.b[m.from])] < MOTIF_VAL[pType(t)]);
+}
+/* with no search: the refutation's first move, legal before the game move,
+   already won material there (what it takes stood unguarded, or is worth
+   more than the piece taking it) or mated */
+function dzStoodBefore(a) {
+  var r1 = a.cls.gameLine && a.cls.gameLine.nodes[1];
+  return !!(r1 && r1.move) && dzStood(a.pre, moveUci(r1.move), r1.captured);
 }
 /* th: the threat named, null (searched, none) or undefined (no search
    ran); more: the other threats the search kept. Any of them still
@@ -233,4 +240,60 @@ function dangerView(a) {
     threat: m ? { uci: th[0], from: m.from, to: m.to, p: b[m.from], took: b[m.to] || null, mate: th[1] || 0, n: th[2] || 0 } : null,
     searched: th !== undefined, saves: (d.sv || '').split('').filter(Boolean), step: d.st
   };
+}
+/* the attacks the game move creates (a step-3 card's hint): the player's
+   pieces in danger once it is played (dangerAttacked there) against the
+   card's own position. A piece newly in danger comes with all its
+   attackers (a guard taken away makes the old attack new), one already in
+   danger with the attackers that are new. [{sq (where it stands after the
+   game move), p, by}], most valuable first */
+function dangerCreated(a) {
+  var pov = myPov(a.it), post = cloneState(a.pre), before = {}, out = [];
+  applyMove(post, a.played);
+  dangerAttacked(a.pre, pov).forEach(function (x) { before[x[0]] = x.slice(1); });
+  dangerAttacked(post, pov).forEach(function (x) {
+    var sq = x[0], at0 = sq === a.played.to ? a.played.from : sq, old = a.pre.b[at0] === post.b[sq] ? before[at0] : null;
+    var by = old ? x.slice(1).filter(function (f) { return old.indexOf(f) < 0; }) : x.slice(1);
+    if (by.length) out.push({ sq: sq, p: post.b[sq], by: by });
+  });
+  return out;
+}
+/* the danger a card's face names (F1.1, F1.5), out of a list of attacked
+   pieces [{sq, p, by}]: the piece the better line saves (saves, piece
+   letters), else the most valuable; then the next one. The marks: both
+   pieces ringed, then up to three of their attackers' arrows, the named
+   piece's first (skip(from, to) drops a mark: the answer's own square).
+   {named, second, rings, arrows} or null */
+function dangerPick(list, saves, skip) {
+  if (!list || !list.length) return null;
+  var named = list.filter(function (x) { return (saves || []).indexOf(pType(x.p)) >= 0; })[0] || list[0];
+  var second = list.filter(function (x) { return x !== named; })[0] || null, rings = [], arrows = [];
+  skip = skip || function () { return false; };
+  [named, second].forEach(function (x) {
+    if (!x) return;
+    if (!skip(x.sq, x.sq)) rings.push({ sq: x.sq, kind: 'attacked' });
+    x.by.forEach(function (f) { if (arrows.length < 3 && !skip(f, x.sq)) arrows.push({ from: f, to: x.sq }); });
+  });
+  return { named: named, second: second, rings: rings, arrows: arrows };
+}
+/* the card's two-line search (F1.4's figures at tier 3: the gap to the
+   next best move, b.g2): a record kept before the deeper look stored it has
+   none, so a tier-3 card asks for it once, in the background, never holding
+   the card. The gap is read only against the card's own best move, one of
+   the search's two lines */
+var gapPending = {};
+function ensureGap(it) {
+  var b = it.b, key = it.key, myGen = gen;
+  if (b.g2 != null || b.j === 'l' || b.x || !b.bu || SF.state === 'failed' || gapPending[key]) return;
+  var pre = stateAtPly(it.g.mv, b.p), sign = it.g.color === 'white' ? 1 : -1;
+  if (!pre) return;
+  gapPending[key] = engineEval(stateFen(pre), { nodes: DEEP_NODES }, false, { multipv: 2, tag: key }).then(function (r) {
+    delete gapPending[key];
+    if (!r || r.stopped || stale(myGen) || b.g2 != null) return;
+    var ls = (r.lines || []).filter(function (l) { return l && l.pv && l.pv[0]; }), best = ls.filter(function (l) { return l.pv[0] === b.bu; })[0];
+    var other = ls.filter(function (l) { return l !== best; })[0];
+    if (!best || !other) return;
+    b.g2 = Math.round(winPct(sign * best.cp) - winPct(sign * other.cp));
+    scheduleSave();
+  }, function () { delete gapPending[key]; });
 }

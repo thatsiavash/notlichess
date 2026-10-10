@@ -32,8 +32,10 @@ function ok(c, what) { if (!c) throw new Error(what || 'condition failed'); }
    ticks after boot (SF.state 'failed', where a try is never checked):
    readyEngine() says it is up. A test can score the try (window.__tryCp)
    and the expected move (window.__bestCp) itself, in centipawns from the
-   solver's side, or hold the try's answer (window.__holdTry: it waits in
-   window.__evals like an explore search). The danger facts' null-move
+   solver's side, give the try's reply line (window.__tryPv) and its mate
+   (window.__tryMate, in moves, from the solver's side: -1 mated next), or
+   hold the try's answer (window.__holdTry: it waits in window.__evals like
+   an explore search). The danger facts' null-move
    search (11d-danger.js, opts.dz) is answered at once, with window.__dz when
    a test sets it, else with no threat, and kept in window.__dzJobs */
 const ENGINE = `(function () {
@@ -54,9 +56,9 @@ const ENGINE = `(function () {
     var after = cloneState(st);
     if (tried) applyMove(after, tried);
     var ru = unpackUci(b.ru), stored = !!(ru.length && tried && playUci(after, ru).uci.length === ru.length);
-    var reply = stored ? ru : (legalMoves(after)[0] ? [moveUci(legalMoves(after)[0])] : []);
+    var reply = window.__tryPv ? window.__tryPv : stored ? ru : (legalMoves(after)[0] ? [moveUci(legalMoves(after)[0])] : []);
     var gameCp = b.ea != null ? b.ea : (b.ma != null ? (b.ma > 0 ? 1500 : -1500) : cpFromWin(b.wa));
-    var mine = window.__tryCp != null ? { cp: window.__tryCp, mate: null } : { cp: gameCp, mate: stored && b.ma != null ? b.ma : null };
+    var mine = window.__tryCp != null ? { cp: window.__tryCp, mate: window.__tryMate != null ? window.__tryMate : null } : { cp: gameCp, mate: stored && b.ma != null ? b.ma : null };
     var best = window.__bestCp != null ? { cp: window.__bestCp, mate: null } : { cp: b.eb, mate: b.mb != null ? b.mb : null };
     var lines = [{ cp: mine.cp * sign, mate: mine.mate != null ? mine.mate * sign : null, pv: [u].concat(reply) }];
     if (expect) lines.push({ cp: best.cp * sign, mate: best.mate != null ? best.mate * sign : null, pv: [expect] });
@@ -76,13 +78,25 @@ const OPEN = `function openCard(it) {
   ui.session.active = a;
   return a;
 }`;
+/* a card opened at a tier, and a try on it answered by the engine stub with
+   its reply line, its score and its mate (slice 1's wrong tries); the
+   answer comes on the next tick */
+const TRY = `function openAt(key, tier) { playerTier = function () { return tier; }; return openCard(model().byKey[key]); }
+function tryMove(a, u, pv, cp, mate) {
+  window.__tryPv = pv; window.__tryCp = cp; window.__tryMate = mate == null ? null : mate; window.readyEngine();
+  a.tapped = true; gradeMove(uciToMove(a.st, u));
+  return 1;
+}`;
 /* the spoiler rule (no mark gives the answer away before it is found or
    shown), on the frame the user sees. Before an
    answer (guess, checking, tried, reply) a frame may not show a green arrow,
    a gold arrow, a gold hint ring other than hint 2's on the answer's
    from-square, a hint's prize ring on that square, a threat arrow end or
    threat ring on that square outside phase tried (only S4 marks may touch
-   it; a hint-1 or worked-example mark never does), any ring, arrow end,
+   it; a hint-1 or worked-example mark never does, but for the danger hint's
+   red ring on the player's own attacked piece and its attackers' arrows into
+   it, F1.1: what is attacked is the lesson, where it goes is the answer),
+   any ring, arrow end,
    token, guard line, tried cross, badge or tint on the answer's to-square,
    a slide of the solver's own piece while guessing, a bar that is not
    waiting, or a board name that says the answer. Exempt: the red arrow of
@@ -121,11 +135,16 @@ const SPOILER = `function spoilerFaults(a, f) {
     if ((m.kind === 'game' && sameMove([a.played.from, a.played.to], [m.from, m.to])) || (m.kind === 'reply' && rm && sameMove(rm, [m.from, m.to]))) return;
     var what = m.kind === 'better' ? 'green arrow' : m.kind === 'explore' ? 'gold arrow' : m.kind + ' arrow';
     if (m.kind === 'better' || m.kind === 'explore') out.push(what + ' on ' + sqName(m.from) + '-' + sqName(m.to));
-    if (m.kind === 'threat') onFrom(what, [m.from, m.to]);
+    /* F1.1: the danger hint's arrows may point at the player's own attacked
+       piece (ringed red) even when it is the answer's piece */
+    var atk = rings.some(function (r) { return r.kind === 'attacked' && r.sq === m.to && a.st.b[m.to] && isW(a.st.b[m.to]) === myPov(a.it); });
+    if (m.kind === 'threat') onFrom(what, atk ? [m.from] : [m.from, m.to]);
     onTo(what, [m.from, m.to]);
   });
   rings.forEach(function (m) {
     if (m.kind === 'nope' || (m.kind === 'reply' && rm && rm.indexOf(m.sq) >= 0)) return;
+    /* the danger's red ring: on a piece of yours or the square they mate on, never the answer's square */
+    if (m.kind === 'attacked' && m.sq === due.from && !(a.st.b[m.sq] && isW(a.st.b[m.sq]) === myPov(a.it))) out.push('a danger ring on the answer piece ' + sqName(m.sq) + ', not a piece of yours');
     if (m.kind === 'hint' && !(a.hints >= 2 && m.sq === due.from)) out.push('gold ring on ' + sqName(m.sq));
     if (m.kind === 'target' && m.sq === due.from) out.push('prize ring on the answer piece ' + sqName(m.sq));
     if (m.kind === 'threat') onFrom('threat ring', [m.sq]);
@@ -186,12 +205,12 @@ function offBook(a) {
    frame; the session bar, the band, the action bar, the strip and the live
    region take text writes. window.__els holds the nodes. A write keeps
    what it wrote (v): the band's and the bar's markup, and for the board and
-   the marks the marks they drew, as words (tried, xfade, ring, arrow,
-   token, slide) */
+   the marks the marks they drew, as words (tried, xfade, ring, aring (the
+   danger's red ring on a piece of yours), arrow, token, slide) */
 const DOM = `(function () {
   var log = window.__writes = [], els = window.__els = {};
   var kind = { bwrap: 'board', ebar: 'board', 'ebar-fill': 'board', marks: 'marks', trainbox: 'frame', ckeys: 'keys' };
-  var FLAG = { tried: /class="tried"/, xfade: /class="xfade"/, ring: /class="ring-threat"/, arrow: /class="threat-arrow"/, token: /token-lost/, slide: /anim-piece/,
+  var FLAG = { tried: /class="tried"/, xfade: /class="xfade"/, ring: /class="ring-threat"/, aring: /class="ring-attacked"/, arrow: /class="threat-arrow"/, token: /token-lost/, slide: /anim-piece/,
     target: /class="ring-target"/, hint: /class="hint-ring"/, ghost: /:s0"/, tick: /badge-good/, info: /badge-info/, green: /good-arrow/, won: /token-won/, red: /bad-arrow/, guard: /guard-line/, faded: /ghost-piece/,
     rring: /class="reply-ring"/, rdash: /class="reply-arrow"[^>]*stroke-dasharray/, rsolid: /class="reply-arrow"(?![^>]*stroke-dasharray)/, slow: /anim-slow/, glow: /url\\(#checkglow/ };
   var kept = function (id, x) {
@@ -787,7 +806,8 @@ const BAR = `(function () {
         const at = 'tier ' + tier + ' ' + key;
         /* S1: the card opens, board and band at once (nothing slides) */
         A.ev(`(window.__show(model().byKey['${key}']), 1)`);
-        ok(/Your turn Find a better move than (\S+|[a-z ]+ [a-h][1-8]|castling)\.$/.test(band()), at + ': the open band reads ' + band());
+        /* tier 1 names the game move in words, or no move where they do not fit (F1.6) */
+        ok(/Your turn Find a better move( than (\S+|[a-z ]+ [a-h][1-8]|castling))?\.$/.test(band()), at + ': the open band reads ' + band());
         run(1000);
         /* S2: a piece picked up and put down repaints the board alone */
         const t0 = textWrites();
@@ -2407,7 +2427,7 @@ const BAR = `(function () {
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
     /* the writes since t0: the marks drawn, the band's row 2 */
     const writes = (t0) => JSON.parse(A.ev(`JSON.stringify(window.__writes.filter(function (w) { return w.t >= ${t0} && w.v != null; }).map(function (w) {
-      return { id: w.id, kind: w.kind, dt: w.t - ${t0}, ring: /ring/.test(w.v), arrow: /arrow/.test(w.v), r2: w.id === 'cband' ? (/<p class="bd-r2">([^<]*)<\\/p>/.exec(w.v) || [])[1] || '' : null,
+      return { id: w.id, kind: w.kind, dt: w.t - ${t0}, ring: /ring/.test(w.v), arrow: /arrow/.test(w.v), r2: w.id === 'cband' ? (/<p class="bd-r2">([\\s\\S]*?)<\\/p>/.exec(w.v) || [])[1] || '' : null,
         r1: w.id === 'cband' ? (/<h2 class="bd-r1"[^>]*>([^<]*)<\\/h2>/.exec(w.v) || [])[1] || '' : null };
     }))`));
     const keys = JSON.parse(A.ev(`(function () { ${OPEN} playerTier = function () { return 2; };
@@ -2435,7 +2455,7 @@ const BAR = `(function () {
         ok(v && v.r2 === '' && !ws.some((w) => w.id === 'cband' && w.dt < v.dt), at + ': the verdict alone first, ' + JSON.stringify(v));
         const mk = ws.filter((w) => w.id === 'marks' && w.ring)[0], said = ws.filter((w) => w.id === 'cband' && w.r2)[0];
         ok(mk && mk.arrow && mk.dt === v.dt + MARK, at + ': the ring and arrow ' + MARK + ' ms after the verdict, ' + (mk && mk.dt) + ' vs ' + v.dt);
-        ok(said && said.dt === v.dt + WORDS && said.r2 === A.ev('esc(ui.session.active.verdict.row2)'), at + ': the words ' + WORDS + ' ms after the verdict, ' + JSON.stringify(said));
+        ok(said && said.dt === v.dt + WORDS && said.r2 === A.ev('ledgerHtml(ui.session.active.verdict.row2)'), at + ': the words ' + WORDS + ' ms after the verdict, ' + JSON.stringify(said));
         ok(!ws.some((w) => w.kind === 'board' && w.dt > v.dt), at + ': the board stays still while the reason comes');
         eq(A.ev('ui.session.active.reason'), 2, at + ': both beats counted');
         /* the beats run from when the verdict's words really paint: an input
@@ -2632,14 +2652,17 @@ const BAR = `(function () {
     const at0 = (t) => JSON.parse(A.ev(`JSON.stringify(window.__writes.filter(function (w) { return w.t >= ${t} && w.v != null && w.kind !== 'keys'; }).map(function (w) {
       return w.kind + ' ' + w.id + ' +' + (w.t - ${t}) + (w.kind === 'text' ? (/Hint 1 of 2/.test(w.v) ? ' H1' : /Hint 2 of 2/.test(w.v) ? ' H3' : '') : ' ' + w.v);
     }))`));
-    /* the marks the card draws now, against the budget (2.1): two arrows, one ring (the gold pair aside), one tried line */
+    /* the marks the card draws now, against the budget (2.1): the game arrow
+       and one dashed arrow, one ring (the gold pair aside), one tried line;
+       the danger hint (F1.1) up to two rings on your pieces and three dashed
+       arrows of theirs */
     const budget = (at) => {
-      const b = JSON.parse(A.ev(`JSON.stringify((function (a) { var o = boardOptsFor(a).opts;
-        return { arrows: (o.arrows || []).length + (o.bad ? 1 : 0), rings: (o.rings || []).filter(function (m) { return m.kind !== 'nope'; }).length + (o.hint != null ? 1 : 0), tried: (o.tried || []).length }; })(ui.session.active))`));
-      ok(b.arrows <= 2 && b.rings <= 1 && b.tried <= 1, at + ': over the budget ' + JSON.stringify(b));
+      const b = JSON.parse(A.ev(`JSON.stringify((function (a) { var o = boardOptsFor(a).opts, dz = (hintMarks(a).dz || hintMarks(a).rep) ? 1 : 0;
+        return { arrows: (o.arrows || []).length + (o.bad ? 1 : 0), rings: (o.rings || []).filter(function (m) { return m.kind !== 'nope'; }).length + (o.hint != null ? 1 : 0), tried: (o.tried || []).length, dz: dz }; })(ui.session.active))`));
+      ok(b.arrows <= (b.dz ? 4 : 2) && b.rings <= (b.dz ? 2 : 1) && b.tried <= 1, at + ': over the budget ' + JSON.stringify(b));
       return b;
     };
-    const hinted = (w) => / (ring arrow|target|ring|arrow)/.test(w) && /(ring|target)/.test(w);
+    const hinted = (w) => / (ring arrow|target|ring|aring|arrow)/.test(w) && /(ring|target)/.test(w);
     let n = 0, withTried = 0;
     for (const reduced of [false, true]) {
       A.ev(`(ui.reducedTest = ${reduced}, 1)`);
@@ -2732,10 +2755,13 @@ const BAR = `(function () {
         a.triedHold = false;
         var d = displayFor(a), hm = hintMarks(a), o = boardOptsFor(a).opts;
         var drawn = hm.rings.length + hm.arrows.length > 0, said = d.row1 === 'Hint 1 of 2' || d.row1 === 'Hint 2 of 2';
-        var onBoard = (o.rings || []).some(function (m) { return m.kind === 'target' || m.kind === 'hint' || (hm.danger && m.kind === 'threat'); });
+        var dz = hm.dz || hm.rep;
+        var onBoard = (o.rings || []).some(function (m) { return m.kind === 'target' || m.kind === 'hint' || (hm.danger && m.kind === 'threat') || (dz && m.kind === 'attacked'); })
+          || (!!dz && (o.arrows || []).some(function (m) { return m.kind === 'threat'; }));
         if (onBoard !== drawn) out.push(what + ': the board draws the hint ' + onBoard + ', hintMarks ' + drawn);
         if (said !== (fresh || drawn)) out.push(what + ': the band reads ' + d.row1 + ' / ' + d.row2 + (fresh ? ' on the hint\\'s own showing' : '') + (drawn ? ' with its marks drawn' : ' with nothing drawn'));
-        if (!said && (d.row1 !== CARD_COPY.T1(a) || [CARD_COPY.T2(a), CARD_COPY.T2(a, true)].indexOf(d.row2) < 0)) out.push(what + ': the task back reads ' + d.row1 + ' / ' + d.row2);
+        /* tier 1 names the game move in words, or no move where they do not fit (F1.6) */
+        if (!said && (d.row1 !== CARD_COPY.T1(a) || (a.tier === 1 ? [CARD_COPY.T2(a, true), 'Find a better move.'] : [CARD_COPY.T2(a)]).indexOf(d.row2) < 0)) out.push(what + ': the task back reads ' + d.row1 + ' / ' + d.row2);
         if (fresh) n.fresh++; else if (drawn) n.drawn++; else n.task++;
       };
       var miss = function (a) { if (a.phase === 'tried') tryAgain(); gradeMove(uciToMove(a.st, a.playedUci)); return a.phase === 'tried'; };
@@ -2977,7 +3003,7 @@ const BAR = `(function () {
       var v = w.v || '';
       return { id: w.id, kind: w.kind, dt: w.t - t0, v: w.id === 'bwrap' || w.id === 'marks' ? v : '',
         r1: w.id === 'cband' ? (/<h2 class="bd-r1"[^>]*>([^<]*)<\\/h2>/.exec(v) || [])[1] || '' : null,
-        r2: w.id === 'cband' ? (/<p class="bd-r2">([^<]*)<\\/p>/.exec(v) || [])[1] || '' : null,
+        r2: w.id === 'cband' ? (/<p class="bd-r2">([\\s\\S]*?)<\\/p>/.exec(v) || [])[1] || '' : null,
         bar: w.id === 'cbar' ? v.replace(/<a [^>]*>/g, '').split('</a>').filter(Boolean).join(' | ') : null };
     });
   }`;
@@ -3023,7 +3049,7 @@ const BAR = `(function () {
         at + ': the threat pair with it (none on a missed chance), ' + gh.v);
       ok(/tick/.test(gh.v), at + ': the tick stays');
       const r4 = ws.filter((w) => w.id === 'cband' && w.r2)[0], strip = ws.filter((w) => w.id === 'cstrip' && w.dt > 0).pop();
-      ok(r4 && r4.dt === v.dt + WORDS && r4.r1 === 'Found it' && r4.r2 === A.ev('esc(displayFor(ui.session.active).row2)'), at + ': R4 ' + WORDS + ' ms after, ' + JSON.stringify(r4));
+      ok(r4 && r4.dt === v.dt + WORDS && r4.r1 === 'Found it' && r4.r2 === A.ev('ledgerHtml(displayFor(ui.session.active).row2)'), at + ': R4 ' + WORDS + ' ms after, ' + JSON.stringify(r4));
       ok(strip && strip.dt === r4.dt && A.ev('/data-act="details"/.test(window.__els.cstrip.innerHTML)'), at + ': Details with it');
       /* and then nothing, however long */
       const n0 = A.ev('window.__writes.length');
@@ -3521,7 +3547,7 @@ const BAR = `(function () {
   /* the writes since t that keep what they wrote: the band and the bar (their markup), the board and the marks (their marks as words) */
   const WR = (A, t) => JSON.parse(A.ev(`JSON.stringify(window.__writes.filter(function (w) { return w.t >= ${t} && w.v != null && w.kind !== 'keys'; }).map(function (w) { return { id: w.id, t: w.t, v: w.v }; }))`));
   const R1 = (v) => (/<h2 class="bd-r1"[^>]*>([^<]*)<\/h2>/.exec(v) || [])[1] || '';
-  const R2 = (v) => (/<p class="bd-r2">([^<]*)<\/p>/.exec(v) || [])[1] || '';
+  const R2 = (v) => (/<p class="bd-r2">([\s\S]*?)<\/p>/.exec(v) || [])[1] || '';
   /* the reply to come, read before it plays: what it takes, whether it checks, F4 */
   const REPLY_INFO = `JSON.stringify((function (a) { var st = cloneState(a.st), m = uciToMove(st, a.sol[a.solIdx]), took = m.ep >= 0 ? st.b[m.ep] : st.b[m.to];
     var w = replyWords(a, a.st, m, took)[0]; applyMove(st, m); return { took: !!took, check: checkersOf(st).length > 0, want: w, opp: sidesOf(a).opp, from: m.from, to: m.to }; })(ui.session.active))`;
@@ -4181,19 +4207,22 @@ const BAR = `(function () {
             var a0 = openCard(it);
             if (!a0) return;
             var a = answered(a0, how), c = a.cls, S = buildStory(a), at = 'tier ' + tier + ' ' + it.key + ' ' + how;
+            /* the game's own steps, after the danger frame when there is one (F1.5) */
+            var d0 = S.danger ? 1 : 0, G = S.steps.slice(d0, S.g), ng = G.length;
             n.cards++;
+            if (S.danger && (S.steps[0].seg !== 'danger' || !S.steps[0].df)) out.push(at + ': the danger frame is not the first step');
             var e = gameEnd(a);
-            if (S.g >= 3) n.long++;
+            if (ng >= 3) n.long++;
             if (c.mateAgainst) n.mates++;
             if (e.cut) n.cut++; else n.whole++;
             if (e.could) n.could++;
-            if (S.g !== e.k + 1) out.push(at + ': ' + S.g + ' game steps, the game segment ends at ' + e.k + (e.cut ? ' (cut)' : ''));
+            if (ng !== e.k + 1) out.push(at + ': ' + ng + ' game steps, the game segment ends at ' + e.k + (e.cut ? ' (cut)' : ''));
             if (!!S.could !== e.could) out.push(at + ': S.could ' + S.could + ', expected ' + e.could);
             var ref = e.realSeg ? e.real : a.lines.refute.uci;
             if (e.realSeg) n.realSeg = (n.realSeg || 0) + 1;
             if (!!S.real !== !!e.realSeg) out.push(at + ': S.real ' + S.real + ', expected ' + !!e.realSeg);
-            for (var i = 0; i < S.g; i++) {
-              var s = S.steps[i], nd = s.line.nodes[s.k], u = moveUci(nd.move);
+            for (var i = 0; i < ng; i++) {
+              var s = G[i], nd = s.line.nodes[s.k], u = moveUci(nd.move);
               if (s.seg !== 'game' || s.k !== i || u !== ref[i]) out.push(at + ': game step ' + i + ' is ' + s.seg + ' node ' + s.k + ' ' + u + ', not ' + ref[i]);
               /* every game step but the one they could have played is the game's own move */
               if (!(e.could && i === 1) && u !== e.real[i]) out.push(at + ': game step ' + i + ' plays ' + u + ', the game ' + e.real[i]);
@@ -4201,19 +4230,20 @@ const BAR = `(function () {
             var last = S.steps[S.g - 1], ln = last.line.nodes[last.k];
             if (c.mateAgainst && !e.cut && !isMate(ln.after)) out.push(at + ': the mate segment does not end in mate');
             if (!c.mateAgainst && !e.cut && last.k !== c.lossAt) out.push(at + ': the game segment ends at ' + last.k + ', not lossAt ' + c.lossAt);
-            if (S.steps[0].line.nodes[0].move.from !== a.played.from || S.steps[0].line.nodes[0].move.to !== a.played.to) out.push(at + ': G1 is not the game move');
+            if (G[0].line.nodes[0].move.from !== a.played.from || G[0].line.nodes[0].move.to !== a.played.to) out.push(at + ': G1 is not the game move');
             /* the move they could have played says so, and nothing comes after it */
-            if (e.could && !/could take|could give|could play|would be checkmate/.test(S.steps[1].cap)) out.push(at + ': the step they could have played reads ' + S.steps[1].cap);
+            if (e.could && !/could take|could give|could play|would be checkmate/.test(G[1].cap)) out.push(at + ': the step they could have played reads ' + G[1].cap);
             /* "They missed it." only on the move they could have played (on the game's own moves they replied with the move shown) */
-            if (/They missed it/.test(S.steps.slice(0, S.g).map(function (x) { return x.cap; }).join(' ')) !== !!(e.could && /They missed it/.test(S.steps[1].cap))) out.push(at + ': They missed it on a step played');
+            if (/They missed it/.test(G.map(function (x) { return x.cap; }).join(' ')) !== !!(e.could && /They missed it/.test(G[1].cap))) out.push(at + ': They missed it on a step played');
             /* the last game step's loss claim is the real game's material there (final fixes 1) */
             if (!e.could) {
-              var lm = /You lose ([a-z ]+)[.]$/.exec(last.cap), rg = buildLine(a.pre, a.playedUci, e.real.slice(1, S.g), !myPov(a.it));
-              var pv = myPov(a.it), net = matDiff(rg.nodes[0].before.b, pv) - matDiff(rg.nodes[S.g - 1].after.b, pv), own = plainCapture(rg, S.g - 1, 0);
-              if (rg.nodes.length !== S.g) out.push(at + ': the game segment runs past the game');
+              /* (a trade, or two kinds of piece, in the board's pieces: the game's own ledger) */
+              var lm = /You lose ([a-z ]+|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)[.]$/.exec(last.cap), rg = buildLine(a.pre, a.playedUci, e.real.slice(1, ng), !myPov(a.it));
+              var pv = myPov(a.it), net = matDiff(rg.nodes[0].before.b, pv) - matDiff(rg.nodes[ng - 1].after.b, pv), own = plainCapture(rg, ng - 1, 0);
+              if (rg.nodes.length !== ng) out.push(at + ': the game segment runs past the game');
               else if (lm) {
                 n.claims = (n.claims || 0) + 1;
-                if (!(net >= 1 && (lm[1] === own || (lm[1] === 'material' && (!own || / for /.test(own))) || (lm[1] === 'a lot of material' && net >= 6)))) out.push(at + ': the last game step claims ' + lm[1] + ', the game lost ' + net + ' (' + own + ')');
+                if (!(net >= 1 && (lm[1] === own || lm[1] === ledgerIcons(rg, ng - 1, 0, own) || (lm[1] === 'material' && (!own || / for /.test(own))) || (lm[1] === 'a lot of material' && net >= 6)))) out.push(at + ': the last game step claims ' + lm[1] + ', the game lost ' + net + ' (' + own + ')');
               }
             }
             /* a mate is stepped to the mate on the stored refutation, whatever lossAt says (the classifier keeps 8 plies) */
@@ -4238,7 +4268,7 @@ const BAR = `(function () {
         try {
           var S = buildStory(a), e = gameEnd(a);
           n.noDrop = (n.noDrop || 0) + 1;
-          if (S.g !== e.k + 1 || !!S.real !== !!e.realSeg) out.push('no drop ' + it.key + ': ' + S.g + ' game steps' + (S.real ? ' (real)' : '') + ', expected ' + (e.k + 1) + (e.realSeg ? ' (real)' : ''));
+          if (S.g - (S.danger ? 1 : 0) !== e.k + 1 || !!S.real !== !!e.realSeg) out.push('no drop ' + it.key + ': ' + S.g + ' game steps' + (S.real ? ' (real)' : '') + ', expected ' + (e.k + 1) + (e.realSeg ? ' (real)' : ''));
         } finally { it.b.eb = keep; a.story = null; }
       });
       /* doctored: the game's own moves as the refutation's, the segment runs to the loss */
@@ -4254,7 +4284,7 @@ const BAR = `(function () {
           answered(a, 'solved');
           var S = buildStory(a);
           n.doctored = (n.doctored || 0) + 1;
-          if (S.could || S.g !== Math.min(a.cls.lossAt, sans.length) + 1) out.push('doctored ' + it.key + ': ' + S.g + ' game steps with the game as the refutation, lossAt ' + a.cls.lossAt);
+          if (S.could || S.g - (S.danger ? 1 : 0) !== Math.min(a.cls.lossAt, sans.length) + 1) out.push('doctored ' + it.key + ': ' + S.g + ' game steps with the game as the refutation, lossAt ' + a.cls.lossAt);
         } finally { it.g.mv = keep; }
       });
       return JSON.stringify({ out: out, n: n }); })()`));
@@ -4269,22 +4299,26 @@ const BAR = `(function () {
       playerTier = function () { return 2; };
       var story = function (key, how) {
         var a = answered(openCard(model().byKey[key]), how), S = buildStory(a);
-        return { a: a, S: S, caps: S.steps.slice(0, S.g).map(function (x) { return x.cap; }), moves: S.steps.slice(0, S.g).map(function (x) { return moveUci(x.line.nodes[x.k].move); }) };
+        /* the game's own steps, after the danger frame (F1.5) */
+        var G = S.steps.slice(S.danger ? 1 : 0, S.g);
+        return { a: a, S: S, caps: G.map(function (x) { return x.cap; }), moves: G.map(function (x) { return moveUci(x.line.nodes[x.k].move); }), danger: S.danger ? S.steps[0].cap : '' };
       };
       var q = story('184455333378:68', 'solved'), qs = story('184455333378:68', 'shown');
       /* the could step's board (184205946040:62 step 2) */
       var c = story('184205946040:62', 'solved');
-      c.a.view = { mode: 'story', i: 1 }; c.a.settle = 2;
+      c.a.view = { mode: 'story', i: (c.S.danger ? 1 : 0) + 1 }; c.a.settle = 2;
       var cl = boardOptsFor(c.a).opts.label;
       /* doctored: a best line that loses as much as the game ended having lost, so the game's end claims nothing of its own */
       var blf = bestLossFrom, dq;
       bestLossFrom = function () { return 11; };
       try { dq = story('184455333378:68', 'solved'); } finally { bestLossFrom = blf; }
-      return JSON.stringify({ caps: q.caps, moves: q.moves, real: q.S.real, could: q.S.could, shown: qs.caps, ccap: c.caps[1], cl: cl, cs: c.S.could, dq: dq.moves.length + ' ' + !!dq.S.real }); })()`));
+      return JSON.stringify({ caps: q.caps, moves: q.moves, real: q.S.real, could: q.S.could, shown: qs.caps, ccap: c.caps[1], cl: cl, cs: c.S.could, dq: dq.moves.length + ' ' + !!dq.S.real, danger: q.danger }); })()`));
     eq(r.dq, '3 false', 'with the best line losing as much, the game\'s moves to where it left the line');
     eq(JSON.stringify(r.moves), JSON.stringify(['d1g1', 'c4d3', 'c2d3', 'f8f5']), 'the game\'s own four moves');
     eq(JSON.stringify(r.caps), JSON.stringify(['Rg1. Their pawn can take your bishop.', 'cxd3 takes your bishop with check.', 'cxd3 takes their pawn.', 'Rxf5 takes your queen.']), 'its captions');
     eq(JSON.stringify(r.shown), JSON.stringify(r.caps), 'the same when shown');
+    /* See why opens on the danger frame (F1.5): their last move made the attacks */
+    eq(r.danger, 'After fxg6: queen attacked twice, bishop once.', 'the danger frame before the game\'s moves');
     ok(r.real && !r.could, 'the game\'s own moves, nothing they could have played');
     ok(r.cs && r.ccap === 'Kxa3 could take your pawn. They missed it.', 'the could step: ' + r.ccap);
     ok(r.cl.indexOf('They could have taken your pawn on a3.') >= 0 && r.cl.indexOf(' was taken on ') < 0, 'the could step\'s board: ' + r.cl);
@@ -4324,9 +4358,16 @@ const BAR = `(function () {
             if (!S.guard && (!m1.ghosts !== (a.played.to === bn.move.to))) out.push(at + ': B1 ghost ' + JSON.stringify(m1.ghosts));
             if (m1.ghosts && (m1.ghosts[0].sq !== a.played.to || m1.ghosts[0].p !== a.pre.b[a.played.from])) out.push(at + ': B1 ghost is not the game move');
             if (S.guard) n.guard++; else if (m1.ghosts) n.ghost++;
-            var m0 = storyMarks(a, S, 0), th = threatOf(c.gameLine, 1);
+            /* G1, after the danger frame (F1.5: at most three dashed red arrows and two rings, nothing else) */
+            var d0 = S.danger ? 1 : 0, m0 = storyMarks(a, S, d0), th = threatOf(c.gameLine, 1);
+            if (d0) {
+              var md = storyMarks(a, S, 0);
+              n.danger = (n.danger || 0) + 1;
+              if ((md.arrows || []).length > 3 || (md.rings || []).length > 2 || Object.keys(md).some(function (k) { return k !== 'arrows' && k !== 'rings'; }) || (md.arrows || []).some(function (x) { return x.kind !== 'threat'; })) out.push(at + ': the danger frame draws ' + JSON.stringify(md));
+            }
             if (!!m0.arrows !== !!S.threat || (th && !m0.arrows) || (m0.arrows && (m0.arrows[0].kind !== 'threat' || m0.rings[0].sq !== m0.arrows[0].from || m0.arrows[0].from !== c.gameLine.nodes[1].move.from))) out.push(at + ': G1 marks ' + JSON.stringify(m0));
             S.steps.forEach(function (x, i) {
+              if (x.df) return;
               /* the token stands where the piece was taken: the square it stood on before the ply and left by it (en passant: beside the arrival) */
               var nd = x.line.nodes[x.k], tk = storyMarks(a, S, i).tokens;
               if (tk && nd.move.ep >= 0) n.ep = (n.ep || 0) + 1;
@@ -4368,7 +4409,7 @@ const BAR = `(function () {
         });
       });
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.cards > 500 && r.n.multi > 100 && r.n.alts > 50 && r.n.inLine > 5 && r.n.guard >= 6 && r.n.ghost > 300 && r.n.ep >= 2 && r.n.trimmed >= 10, JSON.stringify(r.n));
+    ok(r.n.cards > 500 && r.n.multi > 100 && r.n.alts > 50 && r.n.inLine > 5 && r.n.guard >= 6 && r.n.ghost > 300 && r.n.ep >= 2 && r.n.trimmed >= 10 && r.n.danger > 50, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
   });
 
@@ -4386,8 +4427,8 @@ const BAR = `(function () {
         /* a mate the classifier names but the line never reaches: the material form, the loss counted at lossAt */
         if (!c.mateAgainst && !c.mateFor) {
           c.mateAgainst = 1; a.story = null;
-          var S = buildStory(a);
-          if (S.mateG || /checkmate/i.test(S.steps[0].cap) || S.g !== gameEnd(a).k + 1) out.push(it.key + ': a mate claimed against with none on screen: ' + S.steps[0].cap + ', ' + S.g + ' game steps');
+          var S = buildStory(a), d0 = S.danger ? 1 : 0;
+          if (S.mateG || /checkmate/i.test(S.steps[d0].cap) || S.g - d0 !== gameEnd(a).k + 1) out.push(it.key + ': a mate claimed against with none on screen: ' + S.steps[d0].cap + ', ' + S.g + ' game steps');
           c.mateAgainst = null; c.mateFor = 1; a.story = null;
           S = buildStory(a);
           if (S.mateB || /checkmate/i.test(S.steps[S.g].cap) || S.steps.length - S.g !== trimEnd(a, c.bestLine, 1, Math.min(Math.max(1, c.bSettle), c.bestLine.nodes.length - 1))) out.push(it.key + ': a mate claimed for with none on screen: ' + S.steps[S.g].cap);
@@ -4529,7 +4570,8 @@ const BAR = `(function () {
       run(160);
       A.tap(sqs0(key)); run(1700);
       let s = st(); eq(s.mode + ' ' + s.i, 'story 0', key + ': a left swipe in S0 opens G1');
-      eq(s.fen, A.ev('(function (a) { var x = buildStory(a).steps[0]; return stateFen(x.line.nodes[0].after); })(ui.session.active)'), key + ': a tap during the crossfade still lands G1');
+      /* (or the danger frame before it, F1.5: the card's own position) */
+      eq(s.fen, A.ev('(function (a) { var x = buildStory(a).steps[0]; return stateFen(x.df ? a.pre : x.line.nodes[0].after); })(ui.session.active)'), key + ': a tap during the crossfade still lands G1');
       ok(!A.ev('ui.session.active.view.pre'), key + ': G1 landed');
       A.click('storyFwd', null, 1); run(1200);
       s = st(); eq(s.i, 1, key + ': Next move');
@@ -4590,6 +4632,7 @@ const BAR = `(function () {
       A.ev('(function () { window.__snd = []; snd = function (k) { window.__snd.push({ k: k, t: Date.now() }); }; return 1; })()');
       const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
       const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && threatOf(a.cls.gameLine, 1) && a.cls.lossAt >= 1; }).slice(0, 4).map(function (x) { return x.key; }))`));
+      let n1 = 0;
       for (const key of keys) {
         const at = (reduced ? 'reduced, ' : '') + key;
         A.ev(`(function () { window.__show(model().byKey['${key}']); ui.session.keys.push('x'); return 1; })()`);
@@ -4597,9 +4640,27 @@ const BAR = `(function () {
         A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
         run(2500);
         A.ev('window.__writes.length = 0; window.__snd.length = 0; 1');
-        const t0 = A.getNow();
+        let t0 = A.getNow();
         A.click('seeWhy', null, 0);
         run(1500);
+        /* the danger frame first (F1.5): a still crossfade to the card's
+           position with its marks (no game arrow, nothing slides, no sound),
+           its caption once the faded bar takes taps again (450 ms); the next
+           tap plays the game move as G1 always did */
+        const d0 = A.ev('buildStory(ui.session.active).danger') ? 1 : 0;
+        if (d0) {
+          const wd = JSON.parse(A.ev('JSON.stringify(window.__writes)')).map((w) => Object.assign(w, { t: w.t - t0 }));
+          const bd = wd.filter((w) => w.id === 'bwrap' && w.what === 'innerHTML'), td = wd.filter((w) => w.id === 'cband');
+          ok(bd.length === 1 && !/slide|red/.test(bd[0].v) && /aring|arrow|target/.test(bd[0].v) && (reduced || (bd[0].t >= 100 && /xfade/.test(bd[0].v))), at + ': the danger frame, still, with its marks: ' + JSON.stringify(bd));
+          ok(td.length && td[0].t >= (reduced ? 0 : 450) && td[0].t >= bd[0].t + (reduced ? 0 : 150), at + ': its caption after its marks: ' + JSON.stringify(td[0]));
+          eq(JSON.parse(A.ev('JSON.stringify(window.__snd)')).filter((x) => x.k === 'move').length, 0, at + ': no move sound on the danger frame');
+          ok(/^Step 1 of \d+, before your game move\. /.test(A.ev('displayFor(ui.session.active).live')), at + ': the live region says the danger frame');
+          n1++;
+          A.ev('window.__writes.length = 0; window.__snd.length = 0; 1');
+          t0 = A.getNow();
+          A.click('storyFwd', null, 1);
+          run(1500);
+        }
         const ws = JSON.parse(A.ev('JSON.stringify(window.__writes)')).map((w) => Object.assign(w, { t: w.t - t0 }));
         const snds = JSON.parse(A.ev('JSON.stringify(window.__snd)')).filter((x) => x.k === 'move').map((x) => x.t - t0);
         const boards = ws.filter((w) => w.id === 'bwrap' && w.what === 'innerHTML'), texts = ws.filter((w) => w.id === 'cband');
@@ -4632,11 +4693,12 @@ const BAR = `(function () {
         if (!reduced) { eq(mu, 150, at + ': back crossfades 150 ms'); ok(xf, at + ': back draws the crossfade'); }
         run(1000);
         eq(JSON.parse(A.ev('JSON.stringify(window.__snd)')).filter((x) => x.k === 'move').length, 0, at + ': no sound going back');
-        eq(A.ev('ui.session.active.view.i'), 0, at + ': back on G1');
+        eq(A.ev('ui.session.active.view.i'), d0, at + ': back on G1');
         /* the live region says where the step is */
-        ok(/^Step 1 of \d+, your game\. /.test(A.ev('displayFor(ui.session.active).live')), at + ': the live region leads with the step');
+        ok(new RegExp('^Step ' + (d0 + 1) + ' of \\d+, your game\\. ').test(A.ev('displayFor(ui.session.active).live')), at + ': the live region leads with the step');
         A.click('next', null, 2); run(1000);
       }
+      ok(n1 >= 1, 'cards with a danger frame ' + n1);
       const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
       eq(bad.length, 0, bad.length + ' writes too early');
     }
@@ -4778,7 +4840,7 @@ const BAR = `(function () {
           if (cmp.w) { n.r4Claim++; if (k4 !== c.lossAt) n.r4Back++; if (cmp.w !== (plainCapture(c.gameLine, k4, 0) || cmp.w)) out.push(at + ' R4: "' + cmp.w + '" is not what the line took to node ' + k4); }
           else if (c.lossG >= 1 && !c.mateAgainst) { n.dropped++; r4.cands.concat([displayFor(a).row2]).forEach(function (x) { if (lose(x)) out.push(at + ' R4 dropped, yet reads ' + x); }); }
           /* the story's last game step */
-          var S = buildStory(a), lg = S.steps[S.g - 1], m = /You lose ([a-z ]+)\\./.exec(lg.cap);
+          var S = buildStory(a), lg = S.steps[S.g - 1], m = /You lose ([a-z ]+|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\./.exec(lg.cap);
           if (m) {
             n.story++;
             if (claimAt(a, lg.line, lg.k, cpGame(it.b), 0, true) !== lg.k) out.push(at + ' story: "' + lg.cap + '" where the count does not stand');
@@ -4817,20 +4879,27 @@ const BAR = `(function () {
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
   });
 
-  await test('a wrong move\'s loss is said as See it shows it: "You\'d lose X." only when their one reply takes it, else after that reply; the lost token and its label only on a capture (fresh-eyes T3)', () => {
+  await test('a wrong move\'s loss is said as See it shows it: "You\'d lose X." only when their one reply takes it, else after that reply; their reply named when it takes a piece not won back at once; the lost token and its label only on a capture (fresh-eyes T3, F1.2)', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MISSES}
-      var out = [], n = { plain: 0, after: 0, seen: 0, token: 0 };
+      var out = [], n = { plain: 0, kept: 0, after: 0, seen: 0, token: 0 };
       eachMiss([1, 2], function (a, what) {
         var t = a.tried;
         if (!t || t.kind !== 'miss') return;
         var b = a.it.b, m = uciToMove(a.st, t.uci), after = cloneState(a.st); applyMove(after, m);
         var ru = unpackUci(b.ru), reply = ru.length && playUci(after, ru).uci.length === ru.length ? ru : legalMoves(after).slice(0, 1).map(moveUci);
         var c = classifyMistake(a.st, t.uci, { pv: [] }, { pv: reply, mate: reply === ru ? b.ma : null }, winPct(b.eb), b.wa, b.p), r1 = c.gameLine.nodes[1];
-        var first = a.verdict.cands[0] || '';
-        if (/^You'd lose /.test(first)) {
+        var first = a.verdict.cands[0] || '', cap = /^(?:Their (\\w+)|(\\S+)) takes your (\\w+)\\.$/.exec(first);
+        /* F1.2: their one reply that takes it, named: "Their knight takes your queen." (tier 3 its SAN),
+           where the loss is counted there, or where that reply takes a piece (a knight or more) that is
+           not won back at once: 3 or more net of what the try took and what your next move takes */
+        var v = function (x) { return x && x.move && x.captured ? MOTIF_VAL[pType(x.captured)] : 0; }, g = c.gameLine.nodes;
+        var kept = !!r1 && !!r1.captured && MOTIF_VAL[pType(r1.captured)] >= 3 && v(r1) - v(g[0]) - v(g[2]) >= 3;
+        if (/^You'd lose /.test(first) || cap) {
           n.plain++;
-          if (!r1 || !r1.captured || c.lossAt !== 1) out.push(what + ': "' + first + '" where their one reply does not take it');
+          if (cap && kept && c.lossAt !== 1) n.kept++;
+          if (!r1 || !r1.captured || (c.lossAt !== 1 && !(cap && kept))) out.push(what + ': "' + first + '" where their one reply does not take it');
+          else if (cap && (PIECE_WORD[pType(r1.captured)] !== cap[3] || (cap[1] ? PIECE_WORD[r1.piece] !== cap[1] : cap[2] !== capSan(r1.before, r1.move)))) out.push(what + ': "' + first + '" is not their reply ' + sanOf(r1.before, r1.move));
         } else if (/^After \\S+, you'd lose /.test(first)) {
           n.after++;
           if (first.indexOf('After ' + sanOf(after, uciToMove(after, t.reply)) + ',') !== 0) out.push(what + ': "' + first + '" names another reply than ' + t.reply);
@@ -4847,7 +4916,7 @@ const BAR = `(function () {
         if (lb.length && !tk.length) out.push(what + ': "lost" with no token');
       });
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.plain >= 10 && r.n.after > 10 && r.n.seen > 150 && r.n.token > 50, JSON.stringify(r.n));
+    ok(r.n.plain >= 10 && r.n.kept >= 3 && r.n.after > 10 && r.n.seen > 150 && r.n.token > 50, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
   });
 
@@ -5614,6 +5683,275 @@ const BAR = `(function () {
     ok(r.b1 && r.b1.sq === 'c2' && r.b1.at && r.b1.clear && r.b1.drawn, 'B1: the token on c2 in a corner clear of the arrow head and the tick, drawn there: ' + JSON.stringify(r.b1));
     ok(r.n.tokens >= 20 && r.n.moved >= 1, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults: ' + r.out.slice(0, 4).join(' | '));
+  });
+
+  /* Expert Suite slice 1, the real danger on every card. Card 1 is
+     184455333378:68 (White's Rg1, the answer Qe6), card 2 184380745302:11
+     (Black's Nc5, the wrong try Qg5), card 4 184268949378:16 (tries that
+     allow Qxf2 mate) */
+  await test('F1.1, the danger first: card 1\'s Hint 1 at 700, 1600 and 2000 rings the queen on f5 and the bishop on d3 red, draws the attackers\' dashed arrows from g6 and f8 (c4 third) and says "Your queen is attacked twice.", inside the spoiler rule', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${SPOILER} ${TRY}
+      var out = {};
+      [1, 2, 3].forEach(function (tier) {
+        var a = openAt('184455333378:68', tier);
+        giveHint();
+        var hm = hintMarks(a), d = displayFor(a), o = boardOptsFor(a).opts;
+        out[tier] = { hints: a.hints, rings: hm.rings.map(function (x) { return sqName(x.sq) + ' ' + x.kind; }), arrows: hm.arrows.map(function (x) { return sqName(x.from) + sqName(x.to) + ' ' + x.kind + ' ' + x.key; }),
+          drawn: [(o.rings || []).filter(function (x) { return x.kind === 'attacked'; }).length, (o.arrows || []).filter(function (x) { return x.kind === 'threat'; }).length],
+          row1: d.row1, row2: d.row2, faults: spoilerFaults(a) };
+      });
+      return JSON.stringify(out); })()`));
+    [1, 2, 3].forEach((t) => {
+      const x = r[t], at = 'tier ' + t;
+      eq(x.hints, 1, at + ': hint 1');
+      eq(JSON.stringify(x.rings), '["f5 attacked","d3 attacked"]', at + ': the queen and the bishop ringed red');
+      eq(JSON.stringify(x.arrows), '["g6f5 threat danger","f8f5 threat danger","c4d3 threat danger"]', at + ': the queen\'s two attackers first, the c4 pawn third');
+      eq(JSON.stringify(x.drawn), '[2,3]', at + ': drawn on the board');
+      eq(x.row1 + ' / ' + x.row2, 'Hint 1 of 2 / Your queen is attacked twice.', at + ': the band');
+      eq(x.faults.length, 0, at + ': ' + x.faults.join(' | '));
+    });
+  });
+
+  await test('F1.1: card 2 at 700 opens with its First look hint drawn; after Qg5 misses and Try again, Hint 2 shows, not Hint 1 again; at 1600 a Hint pressed before the second miss is followed by Hint 2', async () => {
+    const A = boot();
+    A.ev(`(function () { ${OPEN} ${TRY} store.set('nl:tip:game', 1);
+      var a = openAt('184380745302:11', 1), we = workedExample(a), hm = hintMarks(a);
+      window.__h0 = [we, a.hints, !!a.predraw, hm.rings.length + hm.arrows.length, displayFor(a).row1];
+      return tryMove(a, 'd8g5', ['f3g5', 'f8e7', 'g5f3'], -900); })()`);
+    await tick(); await tick();
+    const AFTER_TRY = `(function (a) { var t = [a.phase, a.tried && a.tried.kind, a.misses].join(' ');
+      tryAgain(); a.triedHold = false;
+      var d = displayFor(a), hm = hintMarks(a);
+      return JSON.stringify({ t: t, hints: a.hints, row1: d.row1, rings: hm.rings.map(function (x) { return sqName(x.sq) + ' ' + x.kind; }), arrows: hm.arrows.length, due: sqName(a.best.from) }); })(ui.session.active)`;
+    const h0 = JSON.parse(A.ev('JSON.stringify(window.__h0)')), r = JSON.parse(A.ev(AFTER_TRY));
+    eq(JSON.stringify(h0.slice(0, 3)), '[true,1,true]', 'the First look hint: hint 1, drawn by the app');
+    ok(h0[3] > 0 && h0[4] === 'Hint 1 of 2', 'its marks and words: ' + JSON.stringify(h0));
+    eq(r.t, 'tried miss 1', 'Qg5 misses');
+    eq(r.hints + ' ' + r.row1, '2 Hint 2 of 2', 'the automatic hint after the miss is Hint 2');
+    eq(JSON.stringify(r.rings) + ' ' + r.arrows, JSON.stringify([r.due + ' hint']) + ' 0', 'its gold ring on the piece to move, nothing of Hint 1');
+    /* 1600: Hint pressed, then two misses: the automatic hint at miss 2 is the next one */
+    A.ev(`(function () { ${OPEN} ${TRY} var a = openAt('184380745302:11', 2); giveHint(); window.__h1 = a.hints; return tryMove(a, 'd8g5', ['f3g5', 'f8e7', 'g5f3'], -900); })()`);
+    await tick(); await tick();
+    A.ev(`(function (a) { ${TRY} tryAgain(); a.triedHold = false; window.__h1 = [window.__h1, a.hints, displayFor(a).row1]; return tryMove(a, 'd8h4', ['f3h4'], -900); })(ui.session.active)`);
+    await tick(); await tick();
+    const r2 = JSON.parse(A.ev(AFTER_TRY)), h1 = JSON.parse(A.ev('JSON.stringify(window.__h1)'));
+    eq(JSON.stringify(h1), '[1,1,"Hint 1 of 2"]', 'Hint pressed, and after miss 1 still Hint 1');
+    eq(r2.t + ' / ' + r2.hints + ' ' + r2.row1, 'tried miss 2 / 2 Hint 2 of 2', 'miss 2 brings Hint 2');
+  });
+
+  await test('F1.2, a wrong try names the capture: card 2\'s Qg5 says "Their knight takes your queen." at 700 and 1600 and "Nxg5 takes your queen." at 2000, the capture See it plays, on Stockfish\'s own line (Black takes back on g5, and the line never settles); the chip "Safety check" at 1600 and 2000; the record gains a 3; Qh4 lost for nothing too; a capture the score says is paid back is not named', async () => {
+    const A = boot();
+    /* Stockfish 17.1's lines in the browser: Qg5 Nxg5 Nxg5 Bxg5 d5 exd6+ Be6 cxd4 Bxd6, 5.84 down, and
+       Qh4 Nxh4 d5 exd6 Bxd6 Qxe4+ Kd8 Kd1 Re8, 6.00 down (a queen for nothing in the score's pawns);
+       a line where nothing is taken back; and Qg5's line scored only 2.5 down, as if paid back later */
+    const QG5 = ['f3g5', 'e4g5', 'c1g5', 'd7d5', 'e5d6', 'c8e6', 'c3d4', 'f8d6'], QH4 = ['f3h4', 'd7d5', 'e5d6', 'f8d6', 'e2e4', 'e8d8', 'e1d1', 'h8e8'];
+    const TK = 'Their knight takes your queen.';
+    const CASES = [[1, 'd8g5', QG5, -584, TK], [2, 'd8g5', QG5, -584, TK], [3, 'd8g5', QG5, -584, 'Nxg5 takes your queen.'],
+      [2, 'd8g5', ['f3g5', 'f8e7', 'g5f3'], -900, TK], [2, 'd8h4', QH4, -600, TK], [3, 'd8h4', QH4, -600, 'Nxh4 takes your queen.'],
+      [2, 'd8g5', QG5, -250, 'After Nxg5, White is on top.']];
+    for (const [tier, u, line, cp, want] of CASES) {
+      A.ev(`(function () { ${OPEN} ${TRY} var a = openAt('184380745302:11', ${tier}), rec = srsRec(a.it); window.__fc0 = (rec && rec.fc) || '';
+        return tryMove(a, '${u}', ${JSON.stringify(line)}, ${cp}); })()`);
+      await tick(); await tick();
+      const r = JSON.parse(A.ev(`(function (a) { var t = a.tried, w = a.reason, d0 = displayFor(a); a.reason = 2; var d = displayFor(a);
+        var res = { kind: t.kind, early: d0.row2 + '|' + d0.chip, row1: d.row1, row2: d.row2, chip: d.chip, reply: t.reply, lost: t.lost && (sqName(t.lost.sq) + t.lost.p), fc: a.fc };
+        seeIt(); a.animMove = null;
+        res.seen = boardOptsFor(a).st.b[sqIndex('${u.slice(2)}')];
+        tryAgain(); a.triedHold = false;
+        solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+        res.rec = srsRec(a.it).fc; res.fc0 = window.__fc0;
+        return JSON.stringify(res); })(ui.session.active)`));
+      const at = 'tier ' + tier + ', ' + u + ' ' + cp, named = !/^After /.test(want);
+      eq(r.kind + ' ' + r.row1, 'miss Not this one', at + ': a miss');
+      eq(r.early, '|', at + ': no reason and no chip before the reason\'s beat');
+      eq(r.row2, want, at + ': row 2');
+      eq(r.chip, tier >= 2 && named ? 'Safety check' : '', at + ': the chip');
+      eq(r.reply + ' ' + r.lost, line[0] + ' ' + u.slice(2) + 'q', at + ': See it plays the capture it names');
+      eq(r.seen, 'N', at + ': their knight stands there once See it played');
+      eq(r.fc, named ? '3' : '0', at + ': the try\'s check step on the card');
+      eq(r.rec, r.fc0 + r.fc, at + ': the record gains it when the showing ends');
+    }
+  });
+
+  await test('F1.2: card 4\'s h3 (their mate there before the try) says "Then Qxf2 is checkmate." with the chip "Their move" at 1600 and 2000, "Then queen takes on f2 is checkmate." at 700; the record gains a 1', async () => {
+    const A = boot();
+    for (const tier of [1, 2, 3]) {
+      A.ev(`(function () { ${OPEN} ${TRY} var a = openAt('184268949378:16', ${tier}), rec = srsRec(a.it); window.__fc0 = (rec && rec.fc) || '';
+        return tryMove(a, 'h2h3', ['f6f2'], -1500, -1); })()`);
+      await tick(); await tick();
+      const r = JSON.parse(A.ev(`(function (a) { a.reason = 2; var d = displayFor(a), res = { kind: a.tried.kind, row2: d.row2, chip: d.chip, reply: a.tried.reply, fc: a.fc };
+        tryAgain(); a.triedHold = false; skipCard();
+        res.rec = srsRec(a.it) && srsRec(a.it).fc; res.fc0 = window.__fc0;
+        return JSON.stringify(res); })(ui.session.active)`));
+      const at = 'tier ' + tier;
+      eq(r.kind + ' ' + r.reply, 'miss f6f2', at + ': a miss, their queen mates on f2');
+      eq(r.row2, tier === 1 ? 'Then queen takes on f2 is checkmate.' : 'Then Qxf2 is checkmate.', at + ': row 2');
+      eq(r.chip, tier >= 2 ? 'Their move' : '', at + ': the chip');
+      eq(r.fc + ' ' + r.rec, '1 ' + r.fc0 + '1', at + ': a 1 on the card, and on the record once the card is left');
+    }
+  });
+
+  await test('F1.3: card 4 at 1600, two tries that allow Qxf2 mate: Try again draws that mate (f2 ringed, the queen\'s dashed arrow) with "Both tries allowed Qxf2 mate."; at 700 "Both tries let them mate on f2."; at 2000 no automatic hint', async () => {
+    const A = boot();
+    const out = {};
+    for (const tier of [1, 2, 3]) {
+      A.ev(`(function () { ${OPEN} ${TRY} return tryMove(openAt('184268949378:16', ${tier}), 'h2h3', ['f6f2'], -1500, -1); })()`);
+      await tick(); await tick();
+      A.ev(`(function (a) { ${TRY} tryAgain(); a.triedHold = false; return tryMove(a, 'a2a3', ['f6f2'], -1500, -1); })(ui.session.active)`);
+      await tick(); await tick();
+      out[tier] = JSON.parse(A.ev(`(function (a) { ${SPOILER} tryAgain(); a.triedHold = false;
+        var hm = hintMarks(a), d = displayFor(a);
+        return JSON.stringify({ misses: a.misses, hints: a.hints, fc: a.fc, rep: !!hm.rep, rings: hm.rings.map(function (x) { return sqName(x.sq) + ' ' + x.kind; }),
+          arrows: hm.arrows.map(function (x) { return sqName(x.from) + sqName(x.to) + ' ' + x.key; }), row1: d.row1, row2: d.row2, faults: spoilerFaults(a),
+          bar: d.buttons.map(function (b) { return b.label || ''; }).join(' '), lab: (frameLabel(a, boardOptsFor(a), 384, false, function () { return true; }) || {}).text || '',
+          aria: /after both your tries, the queen on f6 could give checkmate on f2\./.test(boardOptsFor(a).opts.label) }); })(ui.session.active)`));
+    }
+    const t2 = out[2], t1 = out[1], t3 = out[3];
+    eq(t2.misses + ' ' + t2.hints + ' ' + t2.fc, '2 1 11', 'tier 2: two misses, the automatic hint, both tries step 1');
+    eq(JSON.stringify([t2.rep, t2.rings, t2.arrows]), JSON.stringify([true, ['f2 attacked'], ['f6f2 tries']]), 'tier 2: the mate drawn');
+    eq(t2.row1 + ' / ' + t2.row2, 'Hint 1 of 2 / Both tries allowed Qxf2 mate.', 'tier 2: the band');
+    eq(t2.lab + ' ' + t2.aria, 'mate true', 'tier 2: its label and its board name say the mate');
+    eq(t2.faults.length, 0, 'tier 2: ' + t2.faults.join(' | '));
+    /* tier 1's "Both tries let them mate on f2." is seven words, one more
+       than row 1 and the bar leave row 2 of the frame's 15: its shorter form */
+    const n = (x) => x.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length;
+    ok(n(t1.row1) + n(t1.bar) + 7 > 15, 'tier 1: the long form is over the frame\'s words: ' + t1.row1 + ' / ' + t1.bar);
+    eq(JSON.stringify([t1.rep, t1.rings, t1.arrows, t1.row2]), JSON.stringify([true, ['f2 attacked'], ['f6f2 tries'], 'Both tries allowed mate on f2.']), 'tier 1: the hint of miss 1 now draws the mate both tries allowed');
+    eq(t1.faults.length, 0, 'tier 1: ' + t1.faults.join(' | '));
+    eq(t3.hints + ' ' + t3.row1, '0 Your turn', 'tier 3: no automatic hint');
+  });
+
+  await test('F1.4, what the better move saves: card 1 found at 1600 settles on "Qe6 saves your queen. Rg1 lost it.", at 700 on "Queen to e6 saves your queen.", at 2000 on "Only move: Qe6 48%. Next best 33%." from its two-line search (as 1600 without one, or with the next best close); the story ends on the same claim', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY}
+      var it = model().byKey['184455333378:68'], b = it.b, out = {};
+      var settled = function (tier, g2) {
+        if (g2 === undefined) delete b.g2; else b.g2 = g2;
+        var a = openAt(it.key, tier);
+        solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.animMove = null; a.settle = 2;
+        var row = displayFor(a).row2, S = (seeWhy(), buildStory(a));
+        return [row, S.steps[S.steps.length - 1].cap];
+      };
+      out.t1 = settled(1); out.t2 = settled(2); out.t3 = settled(3, 15); out.t3none = settled(3); out.t3close = settled(3, 6);
+      out.wb = b.wb; out.sv = dangerNow(it).sv;
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.t2), JSON.stringify(['Qe6 saves your queen. Rg1 lost it.', 'Better: Qe6 saves your queen.']), 'tier 2');
+    eq(JSON.stringify(r.t1), JSON.stringify(['Queen to e6 saves your queen.', 'Better: queen to e6. Your queen is safe there.']), 'tier 1');
+    eq(JSON.stringify(r.t3), JSON.stringify(['Only move: Qe6 48%. Next best 33%.', 'Only move: Qe6 48%. Next best 33%.']), 'tier 3, its gap 15');
+    ok(Math.abs(Math.round(r.wb) - 49) <= 2 && Math.abs(Math.round(r.wb) - 15 - 34) <= 2, 'the figures within 2 points of 49 and 34');
+    eq(JSON.stringify(r.t3none), JSON.stringify(r.t2), 'tier 3 with no search: as tier 2');
+    eq(JSON.stringify(r.t3close), JSON.stringify(r.t2), 'tier 3 with the next best 6 points worse: no only-move line');
+    eq(r.sv, 'Q', 'it saves the queen, never the bishop its line loses too');
+  });
+
+  await test('F1.4: every "saves" claim on the 91 cards holds (the settled line and the story\'s end, tiers 1 to 3): the piece is one the better line saves, and the game move lost it', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], n = { cards: 0, saves: 0, lost: 0, safe: 0, only: 0 };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          var a = openCard(it);
+          if (!a) return;
+          n.cards++;
+          var d = dangerNow(it), sv = (d && d.sv) || '', pw = function (w) { return { queen: 'Q', rook: 'R', bishop: 'B', knight: 'N', pawn: 'P' }[w]; };
+          if (a.sol) { while (a.solIdx < a.sol.length) { var lm = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, lm); a.lastMove = [lm.from, lm.to]; a.solIdx++; } finishCard('first'); }
+          else solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+          a.animMove = null; a.settle = 2;
+          var row = displayFor(a).row2, S = (seeWhy(), buildStory(a)), cap = S.steps[S.steps.length - 1].cap, game = sanOf(a.pre, a.played);
+          [['settled', row], ['story end', cap]].forEach(function (x) {
+            var m = / saves your (\\w+)\\b|Your (\\w+) is safe/.exec(x[1]);
+            if (/Only move: /.test(x[1])) n.only++;
+            if (!m) return;
+            var t = pw(m[1] || m[2]);
+            if (m[2]) n.safe++; else n.saves++;
+            if (!t || sv.indexOf(t) < 0) out.push('tier ' + tier + ' ' + it.key + ' ' + x[0] + ': "' + x[1] + '" but it saves "' + sv + '"');
+            if (x[1].indexOf(game + ' lost it.') >= 0 || x[1].indexOf(moveWords(a.pre, a.played) + ' lost it.') >= 0) n.lost++;
+          });
+          if (/ lost it\\./.test(row) && !/ saves your /.test(row)) out.push('tier ' + tier + ' ' + it.key + ': "lost it" with nothing saved: ' + row);
+        });
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    ok(r.n.cards === 273 && r.n.saves >= 30 && r.n.safe >= 5 && r.n.lost >= 8, JSON.stringify(r.n));
+    eq(r.out.length, 0, r.out.length + ' faults: ' + r.out.slice(0, 4).join(' | '));
+  });
+
+  await test('F1.5, the danger frame opens See why: card 1 answered at 1600 shows a still frame 0 (the three dashed arrows, f5 and d3 ringed, fxg6 tinted) with "After fxg6: queen attacked twice, bishop once."; the next tap plays Rg1; at 700 "Their last move: your queen is attacked twice."', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY}
+      var out = {};
+      [1, 2].forEach(function (tier) {
+        var a = openAt('184455333378:68', tier);
+        solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.animMove = null; a.settle = 2;
+        seeWhy();
+        var f = boardOptsFor(a), o = f.opts, d = displayFor(a), S = buildStory(a);
+        var x = { i: a.view.i, seg: S.steps[0].seg, df: !!S.steps[0].df, anim: o.anim || null, mark: (o.mark || []).map(sqName).join(''), cap: d.cap,
+          arrows: (o.arrows || []).map(function (m) { return sqName(m.from) + sqName(m.to) + ' ' + m.kind; }), rings: (o.rings || []).map(function (m) { return sqName(m.sq) + ' ' + m.kind; }),
+          fen: stateFen(f.st) === stateFen(a.pre), bad: o.bad || null, g: S.g };
+        storyStep(1);
+        var s1 = S.steps[a.view.i], n1 = s1.line.nodes[s1.k];
+        x.next = [a.view.i, s1.seg, n1.move ? sanOf(n1.before, n1.move) : ''];
+        out[tier] = x;
+      });
+      return JSON.stringify(out); })()`));
+    const t2 = r[2];
+    eq(JSON.stringify([t2.i, t2.seg, t2.df, t2.anim, t2.bad, t2.fen]), JSON.stringify([0, 'danger', true, null, null, true]), 'frame 0: the card\'s own position, nothing moving, no game arrow yet');
+    eq(JSON.stringify(t2.arrows), JSON.stringify(['g6f5 threat', 'f8f5 threat', 'c4d3 threat']), 'the three dashed arrows');
+    eq(JSON.stringify(t2.rings), JSON.stringify(['f5 attacked', 'd3 attacked']), 'the two rings');
+    eq(t2.mark, 'f7g6', 'their last move fxg6 tinted');
+    eq(t2.cap, 'After fxg6: queen attacked twice, bishop once.', 'the caption');
+    eq(JSON.stringify(t2.next), JSON.stringify([1, 'game', 'Rg1']), 'the next tap plays Rg1');
+    eq(r[1].cap, 'Their last move: your queen is attacked twice.', 'tier 1');
+  });
+
+  await test('F1.4\'s figures: a tier-3 card with no gap on its record asks one background two-line search as it opens, and keeps the gap against its own best move only; none at tier 2', async () => {
+    const A = boot();
+    A.ev(`(function () { window.readyEngine(); var it = model().byKey['184455333378:68']; delete it.b.g2; ensureDanger(it, true); return 1; })()`);
+    await tick(); await tick();
+    const open = (tier) => JSON.parse(A.ev(`(function () { playerTier = function () { return ${tier}; }; window.__evals = []; window.readyEngine();
+      ui.session = { mode: 't', label: 't', keys: ['184455333378:68'], idx: 0, results: {}, relearn: [], relearnOf: {} };
+      loadCard();
+      var a = ui.session.active, jobs = window.__evals.filter(function (j) { return j.opts.multipv === 2; });
+      window.__job = jobs[0];
+      return JSON.stringify({ shown: !!a && a.phase, n: jobs.length, fen: jobs[0] && jobs[0].fen, prio: jobs[0] && jobs[0].prio }); })()`));
+    eq(JSON.stringify(open(2)), JSON.stringify({ shown: 'guess', n: 0 }), 'tier 2: no search');
+    const t3 = open(3);
+    eq(JSON.stringify([t3.shown, t3.n, t3.prio]), JSON.stringify(['guess', 1, false]), 'tier 3: the card shown at once, one search in the background');
+    eq(t3.fen, '5r2/1p4k1/6p1/p3pQ2/Pqp1Pb2/3B1P2/1PP1KP2/3R4 w - - 0 35', 'on the card\'s position');
+    eq(A.ev('(ensureGap(model().byKey["184455333378:68"]), window.__evals.filter(function (j) { return j.opts.multipv === 2; }).length)'), 1, 'asked once while it runs');
+    A.ev(`(window.__job.res({ cp: -26, mate: null, pv: ['f5e6'], lines: [{ cp: -26, mate: null, pv: ['f5e6'] }, { cp: -150, mate: null, pv: ['f5f6'] }], depth: 18, stopped: false }), 1)`);
+    await tick(); await tick();
+    eq(A.ev('model().byKey["184455333378:68"].b.g2'), A.ev('Math.round(winPct(-26) - winPct(-150))'), 'the gap kept');
+    /* lines without the card's best move keep nothing */
+    A.ev(`(function () { var it = model().byKey['184455333378:68']; delete it.b.g2; window.__evals = []; ensureGap(it);
+      window.__evals[0].res({ cp: 30, mate: null, pv: ['f5f6'], lines: [{ cp: 30, mate: null, pv: ['f5f6'] }, { cp: -150, mate: null, pv: ['f5g5'] }], depth: 18, stopped: false }); return 1; })()`);
+    await tick(); await tick();
+    eq(A.ev('String(model().byKey["184455333378:68"].b.g2)'), 'undefined', 'no gap from lines that miss the card\'s best move');
+  });
+
+  await test('the piece ledger (F1.2, F1.4): a trade in the board\'s own pieces, black ones haloed, two characters and no words each, said in words for a screen reader', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var s = 'Rg1 lost \\u2655\\u2657 for \\u265c.', h = ledgerHtml(s), found = null;
+      [2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          if (found) return;
+          var a = openCard(it);
+          if (!a || a.sol) return;
+          solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.animMove = null; a.settle = 2;
+          var d = displayFor(a);
+          if (/[\\u2654-\\u265f]/.test(d.row2)) found = { key: it.key, row2: d.row2, html: bandHtml(a, d), live: d.live };
+        });
+      });
+      return JSON.stringify({ say: ledgerSay(s), icons: (h.match(/class="pc-ico/g) || []).length, black: (h.match(/pc-ico pc-b/g) || []).length, sr: /<span class="sr-only">Rg1 lost a queen and a bishop for a rook\\.<\\/span>/.test(h),
+        len: rowLen(s), fits: fitsRow(s, 'row2'), found: found }); })()`));
+    eq(r.say, 'Rg1 lost a queen and a bishop for a rook.', 'the words');
+    eq(r.icons + ' ' + r.black + ' ' + r.sr, '3 1 true', 'three board pieces, the black rook haloed, the words for a screen reader');
+    eq(r.len, 21, 'each piece two characters');
+    ok(r.fits, 'it fits row 2');
+    ok(r.found && /class="pc-ico/.test(r.found.html) && !/[♔-♟]/.test(r.found.live), 'a fixture card says a trade in pieces, its live words in words: ' + JSON.stringify(r.found));
   });
 
   results.forEach((l) => console.log(l));

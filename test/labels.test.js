@@ -371,7 +371,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
                 if (s0) (f.opts.ghosts || []).forEach(function (g) { if (g.sq === ar.to && !pos.b[g.sq]) pos.b[g.sq] = g.p; });
                 var m = legalMoves(pos).filter(function (x) { return x.from === ar.from && x.to === ar.to; })[0];
                 if (!m) return bad('no such move on the board as drawn');
-                if (ar.key === 'hint') { hintN++; if (t !== 'takes') bad('hint 1\\'s danger says only "takes"'); if (!pos.b[m.to] || colorW(pos.b[m.to]) !== myPov(a.it)) bad('"takes" onto no piece of yours'); }
+                /* hint 1's danger after the game move, and both tries' danger (F1.3): "takes" onto a piece of yours, or "mate" where it mates as drawn */
+                if (ar.key === 'hint' || ar.key === 'tries') { hintN++; if (t !== 'takes' && t !== 'mate') bad('hint 1\\'s danger says only "takes" or "mate"'); if (t === 'takes' && (!pos.b[m.to] || colorW(pos.b[m.to]) !== myPov(a.it))) bad('"takes" onto no piece of yours'); }
                 var aft = cloneState(pos); applyMove(aft, m);
                 var tsq = m.ep >= 0 ? m.ep : m.to, took = pos.b[tsq], chk = checkersOf(aft).length > 0, mate = chk && !legalMoves(aft).length;
                 if (/can take$/.test(t) && (!took || t !== opp + ' can take')) bad('takes nothing, or not theirs');
@@ -379,7 +380,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
                 if (t === 'mate' && !mate) bad('no mate');
                 if (t === 'check' && (!chk || mate || took)) bad('not a plain check');
                 if (t === 'takes' && !took) bad('takes nothing');
-                if (t === 'takes' && ar.key !== 'hint' && !isDefended(pos.b, tsq)) bad('"takes" on a piece nothing guards (free)');
+                if (t === 'takes' && ar.key !== 'hint' && ar.key !== 'tries' && !isDefended(pos.b, tsq)) bad('"takes" on a piece nothing guards (free)');
                 if (/^free /.test(t)) {
                   if (!took || t !== 'free ' + PIECE_WORD[pType(took)] || isDefended(pos.b, tsq)) bad('not that piece, or guarded');
                   /* and that piece is on the board as drawn, or as the ghost there */
@@ -590,7 +591,9 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
         res.worked++;
         var f = boardOptsFor(a), hm = hintMarks(a), d = displayFor(a);
         var drawn = hm.rings.concat(hm.arrows).every(function (m) { return (f.opts.rings || []).concat(f.opts.arrows || []).some(function (x) { return x.kind === m.kind && (x.sq === m.sq || (x.from === m.from && x.to === m.to)); }); });
-        res.open.push([a.hints, a.predraw, drawn, d.row1, d.row2 === hintText(a).row2, hm.danger ? ['See what ' + sanOf(a.pre, a.played) + ' runs into.', 'See what ' + moveWords(a.pre, a.played) + ' runs into.'].indexOf(d.row2) >= 0 : true, d.buttons.map(function (b) { return b.label; }).join(' | ')].join(' / '));
+        /* the band says the hint: a rung of its own ladder, fitted to the words the bar leaves */
+        var hx = hintText(a);
+        res.open.push([a.hints, a.predraw, drawn, d.row1, !!d.row2 && hx.cands.concat([hx.fall]).indexOf(d.row2) >= 0, hm.danger ? ['See what ' + sanOf(a.pre, a.played) + ' runs into.', 'See what ' + moveWords(a.pre, a.played) + ' runs into.'].indexOf(d.row2) >= 0 : true, d.buttons.map(function (b) { return b.label; }).join(' | ')].join(' / '));
         /* the band and the button agree at every showing: a miss, See it, Try again */
         var chk = function (what) { var dd = displayFor(a), hb = dd.buttons.filter(function (b) { return b.act === 'hint'; })[0]; res.agree++; if (dd.row1 === 'Hint 1 of 2' && (!hb || hb.label !== 'Hint 2')) res.disagree.push(it.key + ' ' + what + ': ' + (hb && hb.label)); };
         a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
@@ -610,7 +613,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
       var it2 = allMistakes().filter(trainable).filter(function (x) { var b = openCard(x); return b && !b.sol && familyOf(patternOf(x.b)).key !== fam && workedExample(b); })[0], fam2 = familyOf(patternOf(it2.b)).key;
       a = openCard(it2); workedExample(a); reveal();
       res.shown = [ui.session.results[it2.key], ui.session.notes[it2.key], localStorage.getItem('nl:seen:' + fam2)].join(' / ');
-      /* a miss, then Try again: the hint's marks stay and the band names them */
+      /* a miss, then Try again: the automatic hint is the next one (F1.1: a
+         hint never repeats one shown, the worked example's own included) */
       store.del('nl:seen:' + fam2);
       a = openCard(it2); workedExample(a); a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain(); a.triedHold = false;
       res.afterMiss = [a.hints, displayFor(a).row1, displayFor(a).buttons[0].label].join(' / ');
@@ -647,7 +651,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     eq(r.count, '1', 'the family counted');
     eq(r.next, false, 'the family\'s next card');
     eq(r.shown, 'fail / shown / 1', 'a worked example revealed: Shown, and counted');
-    eq(r.afterMiss, '1 / Hint 1 of 2 / Hint 2', 'after a miss the band names the drawn hint, and the button the next');
+    eq(r.afterMiss, '2 / Hint 2 of 2 / No more hints', 'after a miss the automatic hint is hint 2, never the drawn hint 1 again');
     eq(r.afterMissResult, 'retry / no note', 'a solve after a miss is found after a miss, not a first look (T10)');
     eq(JSON.stringify(r.tiers), '[false,false]', 'tiers 2 and 3');
     eq(r.relearn, false, 'a relearn card');
@@ -724,7 +728,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
               [/token-lost/g, / was taken on |They could have taken your /g, 'lost token'], [/token-won/g, /You won a |@s0won@/g, 'won token'], [/class="guard-line"/g, /Green dots: /g, 'guard dots'],
               [/<g class="tried"/g, /Faint red line: |Red cross: a move /g, 'tried move'], [/url[(]#checkglow/g, / king is in check[.]/g, 'check'],
               [/badge-good/g, /Green tick: /g, 'tick'], [/badge-bad/g, /Red cross: your move/g, 'cross'], [/badge-close/g, /Ring with a tick: /g, 'close'], [/badge-info/g, /Grey i: /g, 'i'],
-              [/badge-checking/g, /Grey dots: /g, 'checking'], [/badge-unchecked/g, /Question mark: /g, 'unchecked']];
+              [/badge-checking/g, /Grey dots: /g, 'checking'], [/badge-unchecked/g, /Question mark: /g, 'unchecked'],
+              [/class="ring-attacked"/g, /Red ring: (your [a-z]+ on [a-h][1-8] is in danger|they could checkmate on [a-h][1-8]|[a-h][1-8], where your piece would be in danger)[.]/g, 'danger ring']];
             /* after a forcing line S0's won tokens are read in its one sentence (final fixes 3): each drawn one named there */
             var along = (/Along the line you took ([^.]*)[.]/.exec(lab) || [])[1] || '', lab0 = lab;
             (o.tokens || []).forEach(function (t) { if (t.s0 && along.indexOf('a ' + PIECE_WORD[pType(t.p)] + ' on ' + sqName(t.sq)) >= 0) lab0 += ' @s0won@'; });
@@ -732,7 +737,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
             if (!!along !== !!(o.tokens || []).filter(function (t) { return t.s0; }).length) bad.push('the line sentence ' + (along ? 'without its tokens' : 'missing'));
             pairs.forEach(function (p) { var d = cnt(svg, p[0]), w = cnt(lab0, p[1]); if (d !== w) bad.push(p[2] + ' drawn ' + d + ', said ' + w); if (w) by[p[2]] = (by[p[2]] || 0) + 1; });
             /* "could have taken" only on the move they could have played (final fixes 2), "was taken" never there */
-            var couldNow = !!(a.view && a.view.mode === 'story' && a.view.i === 1 && buildStory(a).could);
+            var couldNow = !!(a.view && a.view.mode === 'story' && a.view.i === (buildStory(a).danger ? 2 : 1) && buildStory(a).could);
             if (/They could have taken /.test(lab) && !couldNow) bad.push('could have taken on a step played');
             if (couldNow && / was taken on /.test(lab)) bad.push('was taken on the move they could have played');
             if (couldNow && /They could have taken /.test(lab)) by['could token'] = 1;
@@ -753,7 +758,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
               if (f.st.b[g.sq]) by['ghost on a piece'] = 1;
             });
             var rr = (o.rings || []).filter(function (x) { return x.kind === 'threat'; }).length, ra = (o.arrows || []).filter(function (x) { return x.kind === 'threat'; }).length;
-            if (rr > ra && cnt(lab, /Red ring: /g) !== rr - ra) bad.push('a threat ring alone');
+            if (rr > ra && cnt(lab, /Red ring: the /g) !== rr - ra) bad.push('a threat ring alone');
             /* the squares said are the squares drawn */
             (o.bad ? [{ from: o.bad[0], to: o.bad[1], kind: 'game' }] : []).concat(o.arrows || []).forEach(function (m) {
               if (m.kind === 'game' && lab.indexOf(sqName(m.from) + ' to ' + sqName(m.to) + '.') < 0) bad.push('game arrow squares');
@@ -866,6 +871,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     ok(r.frames > 2000 && r.strings > 10000, 'walked ' + r.frames + ' frames, ' + r.strings + ' strings');
     eq(r.fresh.length, 0, r.fresh.length + ' new violations (first: ' + r.fresh.slice(0, 4).join(' || ') + ')');
     eq(r.gone.length, 0, r.gone.length + ' baseline entries no longer seen, take them off data/copylint-baseline.json (first: ' + r.gone.slice(0, 4).join(' || ') + ')');
+    /* F1.6: the card's strings are clear at tier 1, and the baseline holds none of them */
+    eq(r.t1card.length, 0, r.t1card.length + ' tier 1 words banned on the card (first: ' + r.t1card.slice(0, 4).join(' || ') + ')');
   });
 
   results.forEach((l) => console.log(l));

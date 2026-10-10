@@ -166,13 +166,17 @@ function markCross(cx, cy, r) {
     + '" stroke="#fff" stroke-width="' + (r * 0.3) + '" stroke-linecap="round"/>';
 }
 /* a ring round a square (x, y its corner): the piece that punishes (red),
-   the piece about to reply (dashed blue-grey), a hint's prize (dashed
-   gold), hint 2's piece to move (gold), or "not a move here" (a grey
-   outline, the only square one) */
+   a piece of yours in danger (red, glowing), the piece about to reply
+   (dashed blue-grey), a hint's prize (dashed gold), hint 2's piece to move
+   (gold), or "not a move here" (a grey outline, the only square one) */
 function markRing(x, y, kind) {
   var cx = x + 22.5, cy = y + 22.5, c = ' cx="' + cx + '" cy="' + cy + '" r="20" fill="none"';
   if (kind === 'nope') return '<rect class="nope-box" x="' + (x + 2) + '" y="' + (y + 2) + '" width="41" height="41" fill="none" stroke="rgba(160,154,144,.9)" stroke-width="2"/>';
   if (kind === 'threat') return '<circle' + c + ' stroke="rgba(0,0,0,.35)" stroke-width="6.5"/><circle class="ring-threat"' + c + ' stroke="#e0503e" stroke-width="3.6"/>';
+  /* a piece of yours in danger (or the square they mate on): the red ring
+     filled with a red glow, so it reads apart from the ring of the piece
+     that punishes */
+  if (kind === 'attacked') return '<circle cx="' + cx + '" cy="' + cy + '" r="20" fill="rgba(224,80,62,.2)" stroke="rgba(0,0,0,.35)" stroke-width="6.5"/><circle class="ring-attacked"' + c + ' stroke="#e0503e" stroke-width="3.6"/>';
   if (kind === 'reply') return '<circle class="reply-ring"' + c + ' stroke="rgba(122,150,184,.95)" stroke-width="3" stroke-dasharray="6 4"/>';
   /* the prize: dashed in the label gold, on a dark halo like the red
      ring's, so it reads on dark squares as well as light ones */

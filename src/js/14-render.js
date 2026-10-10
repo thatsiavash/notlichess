@@ -498,7 +498,8 @@ function boardOptsFor(a) {
        the position the segment starts from */
     view = storyView(a);
     var S = buildStory(a), sp = S.steps[a.view.i], sn = sp.line.nodes[sp.k];
-    if (sp.k === (sp.seg === 'game' ? 0 : sp.from)) {
+    /* the danger frame (F1.5) draws no move, only its own marks (storyMarks) */
+    if (!sp.df && sp.k === (sp.seg === 'game' ? 0 : sp.from)) {
       if (sp.seg === 'game') opts.bad = [sn.move.from, sn.move.to];
       else opts.arrows = [{ from: sn.move.from, to: sn.move.to, kind: 'better', key: 'better' }];
     }
@@ -707,6 +708,13 @@ function boardAria(a, st, o) {
          the reply your game move allowed, so it is read on the card's
          position after that move (S0's pair holds on its own board) */
       var hint = m.key === 'hint';
+      /* both tries' danger (F1.3): what their reply did after each try */
+      if (m.key === 'tries') {
+        var tp = st.b[m.from], tq = cloneState(st), td = null;
+        if (tp) { tq.w = colorW(tp); tq.ep = -1; td = moveDoes(tq, m.from, m.to); }
+        out.push('Dashed red arrow: after both your tries, the ' + (tp ? PIECE_WORD[pType(tp)] : 'piece') + ' on ' + sqName(m.from) + ' could ' + (td && td.mate ? 'give checkmate on ' : st.b[m.to] ? 'take on ' : 'go to ') + sqName(m.to) + '.');
+        return;
+      }
       var pos = cloneState(hint ? a.pre : st), gm = hint ? uciToMove(pos, a.playedUci) : null;
       if (gm) applyMove(pos, gm);
       var ap = pos.b[m.from], d = null;
@@ -720,6 +728,7 @@ function boardAria(a, st, o) {
   });
   (o.hint != null ? [{ sq: o.hint, kind: 'hint' }] : []).concat(o.rings || []).forEach(function (r) {
     if (r.kind === 'threat' && !ringed[r.sq]) out.push('Red ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' punishes it.');
+    else if (r.kind === 'attacked') out.push(r.mate ? 'Red ring: they could checkmate on ' + sqName(r.sq) + '.' : b[r.sq] && isW(b[r.sq]) === myPov(a.it) ? 'Red ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is in danger.' : 'Red ring: ' + sqName(r.sq) + ', where your piece would be in danger.');
     else if (r.kind === 'hint') out.push('Gold ring: move the ' + pw(r.sq) + ' on ' + sqName(r.sq) + '.');
     else if (r.kind === 'target') out.push('Dashed gold ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is there to win.');
   });
@@ -1096,6 +1105,12 @@ function s0Line(a, st) {
    holds, else the game move's ghost with its cross, never both */
 function storyMarks(a, S, i) {
   var s = S.steps[i], n = s.line.nodes[s.k], out = {}, fx = a.key + ':st' + i;
+  /* the danger frame (F1.5): its dashed red arrows and its rings */
+  if (s.df) {
+    if (s.df.rings.length) out.rings = s.df.rings.slice();
+    if (s.df.arrows.length) out.arrows = s.df.arrows.slice();
+    return out;
+  }
   /* on the square the piece was taken from (en passant: beside the arrival) */
   if (n.captured) out.tokens = [{ sq: n.move.ep >= 0 ? n.move.ep : n.move.to, p: n.captured, kind: colorW(n.captured) === myPov(a.it) ? 'lost' : 'won', fx: fx }];
   /* the move they could have played took nothing in your game: read as such */
@@ -1498,12 +1513,13 @@ function paintLive(d) {
 function bandHtml(a, d) {
   /* a story step keeps the card's verdict disc beside its caption; the
      explorer's sentence stands alone (the live region says it) */
-  if (d.cap && d.disc) return '<div class="card-task k-' + d.kind + ' cap">' + discHtml(a, d.disc) + '<p class="bd-cap">' + esc(d.cap) + '</p></div>';
-  if (d.cap) return '<div class="card-task k-' + d.kind + ' cap" aria-hidden="true"><p class="bd-cap">' + esc(d.cap) + '</p></div>';
+  /* a trade in the board's own pieces (ledgerHtml), its words for a screen reader */
+  if (d.cap && d.disc) return '<div class="card-task k-' + d.kind + ' cap">' + discHtml(a, d.disc) + '<p class="bd-cap">' + ledgerHtml(d.cap) + '</p></div>';
+  if (d.cap) return '<div class="card-task k-' + d.kind + ' cap" aria-hidden="true"><p class="bd-cap">' + ledgerHtml(d.cap) + '</p></div>';
   return '<div class="card-task k-' + d.kind + (d.sweep ? ' sweep' : '') + '">' + discHtml(a, d.disc)
     + '<div class="bd-rows"><div class="bd-top"><h2 class="bd-r1" id="' + (a.phase === 'done' ? 'result-h' : 'task-h') + '" tabindex="-1">' + esc(d.row1) + '</h2>'
     + (d.pips ? pipsHtml(d.pips) : d.chip ? '<span class="bd-chip">' + esc(d.chip) + '</span>' : '') + '</div>'
-    + '<p class="bd-r2">' + esc(d.row2) + '</p></div></div>';
+    + '<p class="bd-r2">' + ledgerHtml(d.row2) + '</p></div></div>';
 }
 /* the forcing pips (2.0): a 7 px dot per move of yours, filled for each
    one found, ringed for the one due now; they repeat nothing the band does
@@ -1532,9 +1548,9 @@ function liveWords(a, b) {
   if (a.phase === 'done' && a.view && a.view.mode === 'story') {
     var S = buildStory(a), i = a.view.i;
     /* the move they could have played is not your game (S.could) */
-    return 'Step ' + (i + 1) + ' of ' + S.steps.length + ', ' + (i < S.g ? (S.could && i === S.g - 1 ? 'what they could have played.' : 'your game.') : S.alt ? 'your move.' : 'the better move.') + ' ' + b.cap;
+    return 'Step ' + (i + 1) + ' of ' + S.steps.length + ', ' + (S.steps[i].df ? 'before your game move.' : i < S.g ? (S.could && i === S.g - 1 ? 'what they could have played.' : 'your game.') : S.alt ? 'your move.' : 'the better move.') + ' ' + ledgerSay(b.cap);
   }
-  return [LIVE_PREFIX[b.disc] || '', b.row1 || '', b.row2 || ''].filter(Boolean).join(' ');
+  return [LIVE_PREFIX[b.disc] || '', b.row1 || '', ledgerSay(b.row2 || '')].filter(Boolean).join(' ');
 }
 /* the action bar as slots, left to right: {act, k, label, cls, off, aria}.
    Answered: See why and Continue (S0), Continue and Play it (the answer

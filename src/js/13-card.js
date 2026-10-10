@@ -89,7 +89,10 @@ function cardFor(it) {
     firstSight: !rec, tier: playerTier(), view: null
   };
   var kept = ui.session && ui.session.progress && ui.session.progress[it.key];
-  if (kept) { a.misses = kept.m || 0; a.hints = kept.h || 0; a.triedGameMove = !!kept.g; a.foundGood = kept.f || null; a.attempts = kept.a || 0; a.predraw = !!kept.p; }
+  if (kept) {
+    a.misses = kept.m || 0; a.hints = kept.h || 0; a.triedGameMove = !!kept.g; a.foundGood = kept.f || null; a.attempts = kept.a || 0; a.predraw = !!kept.p;
+    a.fc = kept.fc || ''; a.tries = (kept.tr || []).map(function (x) { return { d: x[0], u: x[1], took: x[2] || '', mate: !!x[3], lost: !!x[4], san: x[5] || '' }; });
+  }
   /* prior move, to show how the position arose */
   if (b.p > 0) {
     var before = stateAtPly(g.mv, b.p - 1);
@@ -156,6 +159,9 @@ function loadCard() {
     renderCard();
     setTimeout(scrollTrainerTop, 60);
     prefetchCards(ss);
+    /* tier 3's settled line has figures: the card's two-line search, when
+       its record has none (F1.4) */
+    if (a.tier >= 3) ensureGap(it);
     track('card_shown');
   };
   /* a card looked at before still waits for its danger facts' one search
@@ -489,6 +495,7 @@ function sameAsGame(m) {
   var why = gameMoveWhy(a), c = a.cls;
   why.threat = (c.mateAgainst || c.lossG >= 1) && familyOf(patternOf(it.b)).key !== 'chances' ? threatOf(c.gameLine, 1) : null;
   a.hintAfter = false;
+  noteTry(a, why);
   escalate();
   /* a tapped game move slides in on this, its first frame */
   a.animMove = a.tapAnim; a.tapAnim = null;
@@ -499,16 +506,30 @@ function keepProgress(a) {
   var ss = ui.session;
   if (!ss || !a) return;
   ss.progress = ss.progress || {};
-  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts, p: a.predraw ? 1 : 0 };
+  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts, p: a.predraw ? 1 : 0,
+                         fc: a.fc || '', tr: (a.tries || []).slice(-2).map(function (x) { return [x.d, x.u, x.took, x.mate ? 1 : 0, x.lost ? 1 : 0, x.san]; }) };
   saveSession();
 }
-/* a miss is kept at once, and brings the first hint for players who need
-   it: after one miss at tier 1, after two at tier 2, never at tier 3. The
-   hint shows on Try again; no number of misses shows the answer */
+/* a miss is kept at once, and brings an automatic hint for players who
+   need it: at the first miss at tier 1, at the second at tier 2, never at
+   tier 3. It is the next hint not yet shown (F1.1: a hint never repeats one
+   already shown, the worked example's own included, so after hint 1 it is
+   hint 2), once per showing. The hint shows on Try again; no number of
+   misses shows the answer */
 function escalate() {
   var a = ui.session.active, autoAt = a.tier === 1 ? 1 : (a.tier === 2 ? 2 : 0);
-  if (autoAt && a.misses >= autoAt && !a.hints) { a.hints = 1; a.hintAt = a.misses; }
+  if (autoAt && a.misses === autoAt && a.hints < 2) { a.hints++; a.hintAt = a.misses; }
   keepProgress(a);
+}
+/* a wrong try's check step (F1.2), as its reason found it (why.d: 3 the
+   try created the loss, 1 the danger was already there, 2 a harmless try
+   on a your-chances card, 0 anything else), with what its reply did, for
+   F1.3's repeated danger: kept on the card for this showing, and written
+   to the position's record (rec.fc, the last 8) when the showing ends */
+function noteTry(a, why) {
+  if (!why) return;
+  a.fc = ((a.fc || '') + (why.d || 0)).slice(-8);
+  (a.tries = a.tries || []).push({ d: why.d || 0, u: why.u || '', took: why.took || '', mate: !!why.mate, lost: !!why.lost, san: why.rs || '' });
 }
 /* a try stays where it landed until the player takes it back: a.st keeps
    the position before it, and the board draws the try over it (and their
@@ -525,9 +546,12 @@ function showTry(a, m, kind, reply, why, again) {
   var r = reply ? uciToMove(after, reply) : null, took = r ? (r.ep >= 0 ? after.b[r.ep] : after.b[r.to]) : null;
   a.phase = 'tried';
   a.ghostMove = null;
-  /* lost: the piece their reply takes, shown as a token once See it plays it */
+  /* lost: the piece their reply takes, shown as a token once See it plays it;
+     chip: the check step the miss failed (F1.2), for the tag row at tiers 2
+     and 3 */
   a.tried = { from: m.from, to: m.to, uci: moveUci(m), san: sanOf(a.st, m), kind: kind,
-              reply: r ? reply : null, seen: false, threat: (why && why.threat) || null, lost: took ? { sq: r.ep >= 0 ? r.ep : r.to, p: took } : null };
+              reply: r ? reply : null, seen: false, threat: (why && why.threat) || null, lost: took ? { sq: r.ep >= 0 ? r.ep : r.to, p: took } : null,
+              chip: kind === 'miss' && why && why.chip && a.tier >= 2 ? why.chip : '' };
   a.verdict = triedVerdict(a, a.tried, why, again);
   a.reason = 0;
   a.focusRight = true;
@@ -842,6 +866,7 @@ function miss(m, u, info, inLine) {
      the try loses something by it */
   why.threat = concrete ? threatOf(c.gameLine, 1) : null;
   a.hintAfter = false;
+  noteTry(a, why);
   escalate();
   showTry(a, m, 'miss', reply[0], why);
 }
@@ -1009,6 +1034,15 @@ function storyGo(a, j, play) {
   var rm = reducedMotion(), first = s.k === (s.seg === 'game' ? 0 : s.from);
   a.sel = -1;
   if (!play) { a.view = { mode: 'story', i: j }; a.jump = true; renderCard(); return; }
+  /* the danger frame (F1.5) is still: a jump to the card's position with
+     its marks, the caption after them, once the bar that faded out at the
+     tap takes taps again (SLOT_GUARD), so its first visible tap works; the
+     next step plays the game move */
+  if (s.df) {
+    a.view = { mode: 'story', i: j }; a.jump = true;
+    renderCard(['fade', rm ? 0 : TEXT_OUT, 'board', 'land'].concat(rm ? [] : [SLOT_GUARD - TEXT_OUT - XFADE], ['text']));
+    return;
+  }
   var slide = function (a2) { a2.animMove = [n.move.from, n.move.to]; a2.animShown = true; a2.moveCue = true; };
   if (!first) {
     a.view = { mode: 'story', i: j };
@@ -1051,20 +1085,32 @@ function giveHint() {
 /* the marks a hint draws (S8), from the card's hint state,
    on the position the card asks from: hint 2 is the gold ring on the piece
    to move (the answer due now, so inside a forcing line the step's own
-   piece); hint 1 on the card's first move is, on a missed-chance card, a
-   dashed gold ring on the prize (hintPrize), else the danger the game move
-   ran into (hintDanger): the piece that punishes it ringed, a dashed arrow
-   to what it takes or checks. Inside a forcing line hint 1 is words only.
-   A hint-1 mark never touches the answer's from- or to-square (2.3, both
-   arrow ends): such a mark is dropped and hint 1 is words only. The two
-   hints never share a frame, so "the circled piece" is always one piece.
-   {rings, arrows, prize, danger}; drawn only while the card asks (guess) */
+   piece); hint 1 on the card's first move is the danger (F1.1, dangerHint:
+   the danger both last tries ran into, F1.3, first), and where the danger
+   facts give none, today's: on a missed-chance card a dashed gold ring on
+   the prize (hintPrize), else the danger the game move ran into
+   (hintDanger): the piece that punishes it ringed, a dashed arrow to what
+   it takes or checks. Inside a forcing line hint 1 is words only. A hint-1
+   mark never touches the answer's to-square (2.3, both arrow ends), nor its
+   from-square, except for the player's own attacked piece (the danger's
+   red ring and its attackers' arrows): what is attacked is the lesson,
+   where it goes is the answer. The two hints never share a frame, so "the
+   circled piece" is always one piece. {rings, arrows, prize, danger, dz
+   (the danger hint), rep (both tries' danger)}; drawn only while the card
+   asks (guess) */
 function hintMarks(a) {
-  var out = { rings: [], arrows: [], prize: null, danger: null };
+  var out = { rings: [], arrows: [], prize: null, danger: null, dz: null, rep: null };
   if (!a || !(a.hints >= 1)) return out;
   var due = dueMove(a);
   if (a.hints >= 2) { out.rings.push({ sq: due.from, kind: 'hint' }); return out; }
   if (a.sol && a.solIdx > 0) return out;
+  var rep = repeatedDanger(a), dz = rep ? null : dangerHint(a);
+  if (rep || dz) {
+    out.rep = rep; out.dz = dz;
+    out.rings = (rep || dz).rings.slice(); out.arrows = (rep || dz).arrows.slice();
+    if (dz && dz.loose) out.prize = dz.loose;
+    return out;
+  }
   var off = function (sqs) { return sqs.every(function (q) { return q !== due.from && q !== due.to; }); };
   if (familyOf(patternOf(a.it.b)).key === 'chances') {
     var pz = hintPrize(a);
@@ -1078,6 +1124,70 @@ function hintMarks(a) {
     out.arrows.push({ from: th.from, to: th.to, kind: 'threat', key: 'hint' });
   }
   return out;
+}
+/* hint 1's danger on the card's first move (F1.1), from its danger facts
+   (dangerView) on the card's own position, by the check step:
+     1, their move: their mate threat (the null-move search's mate in one:
+       the mating square ringed, the mating piece's dashed arrow), else the
+       player's attacked pieces (dangerPick: up to two ringed, the piece the
+       better line saves first, and up to three attackers' arrows);
+     2, your chances: their loose piece (the prize the best line wins,
+       standing unguarded) ringed; a mate in one, in words only;
+     3, a safety check: the attacks the game move creates (dangerCreated,
+       drawn as the board stands after it), when that is the danger the game
+       line plays (the piece it takes, or what its first reply takes), or
+       the mate in one it allows.
+   Their threat is claimed only from a search that ran (searched): with the
+   engine down, the attacked pieces alone. No mark on the answer's
+   to-square. {kind: mate, attacked, mine, loose, made or madeMate, rings,
+   arrows, ...} or null: none, and today's hint stays */
+function dangerHint(a) {
+  var v = a.sol && a.solIdx > 0 ? null : dangerView(a);
+  if (!v) return null;
+  var due = dueMove(a), c = a.cls, b = a.it.b, threat = function (x, key) { return { from: x.from, to: x.to, kind: 'threat', key: key }; };
+  var skip = function (f, t) { return f === due.to || t === due.to; };
+  if (v.step === 1) {
+    var th = v.searched && v.threat && v.threat.mate === 1 ? v.threat : null;
+    if (th) {
+      var nst = dzNullState(a.pre);
+      return { kind: 'mate', mate: { from: th.from, to: th.to, san: capSan(nst, uciToMove(nst, th.uci)) },
+               rings: skip(th.to, th.to) ? [] : [{ sq: th.to, kind: 'attacked', mate: true }], arrows: skip(th.from, th.to) ? [] : [threat(th, 'danger')] };
+    }
+    var pk = dangerPick(v.attacked, v.saves, skip);
+    return pk ? { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return threat(x, 'danger'); }) } : null;
+  }
+  if (v.step === 2) {
+    if (c.mateFor && b.mb === 1) return { kind: 'mine', rings: [], arrows: [] };
+    var pz = hintPrize(a);
+    return pz && isHangingAt(a.pre.b, pz.sq) && pz.sq !== due.to ? { kind: 'loose', loose: pz, rings: [{ sq: pz.sq, kind: 'target' }], arrows: [] } : null;
+  }
+  if (v.step !== 3) return null;
+  var g1 = c.gameLine && c.gameLine.nodes[1];
+  if (c.mateAgainst && g1 && g1.move && isMate(g1.after)) {
+    var mg = { from: g1.move.from, to: g1.move.to };
+    return { kind: 'madeMate', mate: mg, rings: skip(mg.to, mg.to) ? [] : [{ sq: mg.to, kind: 'attacked', mate: true }], arrows: skip(mg.from, mg.to) ? [] : [threat(mg, 'hint')] };
+  }
+  var cr = dangerCreated(a), plays = function (x) { return v.saves.indexOf(pType(x.p)) >= 0 || !!(g1 && g1.captured && g1.move.to === x.sq); };
+  var rel = cr.filter(plays);
+  if (!rel.length) return null;
+  var pk3 = dangerPick(rel.concat(cr.filter(function (x) { return !plays(x); })), v.saves, skip);
+  return { kind: 'made', named: pk3.named, second: pk3.second, rings: pk3.rings, arrows: pk3.arrows.map(function (x) { return threat(x, 'hint'); }) };
+}
+/* F1.3: the last two wrong tries of this showing failed the same check
+   (their digit) to the same capture (the same reply taking the same piece)
+   or the same mate: hint 1 draws that danger instead, on the position the
+   card asks from, its reply's piece ringed where it lands with the dashed
+   arrow there, at tiers 1 and 2 (tier 3 has no automatic hint). No mark on
+   the answer's to-square. {kind: 'rep', mate, took, lost (both tries' loss
+   claims stood), from, to, san, rings, arrows} or null */
+function repeatedDanger(a) {
+  var t = a.tries || [], x = t[t.length - 1], y = t[t.length - 2];
+  if (a.tier >= 3 || !x || !y || !x.d || x.d !== y.d || !x.u || x.u !== y.u || x.took !== y.took || x.mate !== y.mate || !(x.mate || x.took)) return null;
+  var due = dueMove(a), from = sqIndex(x.u.slice(0, 2)), to = sqIndex(x.u.slice(2, 4)), p = a.st.b[from];
+  if (!p || isW(p) === myPov(a.it)) return null;
+  var skip = function (f, q) { return f === due.to || q === due.to; };
+  return { kind: 'rep', mate: x.mate, took: x.took, lost: x.lost && y.lost, from: from, to: to, san: x.san || '',
+           rings: skip(to, to) ? [] : [{ sq: to, kind: 'attacked', mate: x.mate }], arrows: skip(from, to) ? [] : [{ from: from, to: to, kind: 'threat', key: 'tries' }] };
 }
 /* hint 1's danger: the game line's first reply after the game move, when it
    captures or checks (threatOf) and the game line really loses (material,
@@ -1143,7 +1253,7 @@ function finishCard(result, beats) {
   var relearn = ss.relearnOf && ss.relearnOf[a.key], prev = logPrev(a), first = !relearn && !Object.keys(srsLoad()).length;
   if (ss.progress) delete ss.progress[a.key];
   if (!relearn) {
-    var rec = srsRecord(a.it, result, { ms: a.ms, gameMove: a.triedGameMove, attempted: a.attempts > 0, alt: !!a.alt });
+    var rec = srsRecord(a.it, result, { ms: a.ms, gameMove: a.triedGameMove, attempted: a.attempts > 0, alt: !!a.alt, fc: a.fc });
     if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
     a.rec = rec;
     ss.results[a.key] = result;
@@ -1155,6 +1265,7 @@ function finishCard(result, beats) {
       if (!store.get('nl:tip:retry', 0)) { a.retryTip = true; store.set('nl:tip:retry', 1); }
     }
   } else {
+    srsNoteTries(a.it, a.fc);
     a.rec = srsRec(a.it);
     ss.results[a.key + '#r'] = result;
   }
@@ -1220,7 +1331,8 @@ function settleLeft(a) {
   var ss = ui.session;
   if (!ss || !a || a.phase === 'done') return;
   var again = ss_relearn(a), result = a.misses ? 'fail' : (a.hints ? 'hint' : 'skip'), prev = logPrev(a), first = !again && !Object.keys(srsLoad()).length;
-  if (!again) srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove });
+  if (!again) srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove, fc: a.fc });
+  else srsNoteTries(a.it, a.fc);
   logCard(a, result, prev, again);
   if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
   if (a.attempts > 0) ss.attempted = (ss.attempted || 0) + 1;
@@ -1253,6 +1365,8 @@ function logCard(a, result, prev, again) {
   e.f = a.firstAt ? a.firstAt - (a.shownAt || a.t0) : null;
   e.s = a.ms != null ? a.ms : now - a.t0;
   if (a.triedGameMove) e.g = 1;
+  /* each wrong try's check step (F1.2), in order */
+  if (a.fc) e.fc = a.fc;
   if (prev && prev.lf) e.lf = 1;
   if (a.predraw) e.pd = 1;
   if (again) e.ag = 1;
@@ -1339,6 +1453,8 @@ function undoDispute() {
    its last move and the bar's value */
 function storyView(a) {
   var v = a.view, s = buildStory(a).steps[v.i], n = s.line.nodes[s.k];
+  /* the danger frame (F1.5): the card's own position, their last move tinted */
+  if (s.df) return { st: a.pre, last: a.preLast, ev: a.it.b.eb };
   if (!v.pre) return { st: n.after, last: [n.move.from, n.move.to], ev: a.it.b.eb };
   var pn = s.line.nodes[s.k - 1];
   return { st: n.before, last: pn && pn.move ? [pn.move.from, pn.move.to] : a.preLast, ev: a.it.b.eb };

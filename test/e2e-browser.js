@@ -257,12 +257,23 @@
     press('#cbar [data-act=seeWhy]');
     await storyLanded(0);
     const sg = T.card().story, g1threat = T.ev('!!buildStory(ui.session.active).threat');
-    ok('See why enters the story at G1, its red arrow kept as the trail, the threat when there is one', !!sg && sg.i === 0 && $$('#bwrap .bad-arrow').length === 1 && $$('#bwrap .threat-arrow').length === (g1threat ? 1 : 0) && !$('#bwrap .good-arrow')
-      && $('#cband .card-task').classList.contains('k-sgame') && text('#cband .bd-cap') === sg.cap, JSON.stringify(sg) + ' ' + text('#cband'));
+    /* a card with a danger opens on its still danger frame (F1.5): no game arrow yet, the dashed arrows into
+       what is attacked and its red rings, its caption; G1 is the next step */
+    const dfr = JSON.parse(T.ev('JSON.stringify((function (s) { return s.df ? { arrows: s.df.arrows.length, rings: s.df.rings.filter(function (r) { return r.kind === "attacked"; }).length } : null; })(buildStory(ui.session.active).steps[0]))'));
+    if (dfr) {
+      ok('See why opens on the danger frame: no game arrow, its dashed arrows and red rings, its caption', sg.i === 0 && !$('#bwrap .bad-arrow') && $$('#bwrap .threat-arrow').length === dfr.arrows
+        && $$('#bwrap .ring-attacked').length === dfr.rings && $('#cband .card-task').classList.contains('k-sgame') && text('#cband .bd-cap') === sg.cap, JSON.stringify(sg) + ' ' + JSON.stringify(dfr) + ' ' + text('#cband'));
+      storyFrame('the danger frame');
+      press('#cbar [data-act=storyFwd]');
+      await storyLanded(1);
+    }
+    const g1 = dfr ? 1 : 0, s1 = T.card().story;
+    ok('See why enters the story at G1 (after the danger frame, when there is one), its red arrow kept as the trail, the threat when there is one', !!s1 && s1.i === g1 && $$('#bwrap .bad-arrow').length === 1 && $$('#bwrap .threat-arrow').length === (g1threat ? 1 : 0) && !$('#bwrap .good-arrow')
+      && $('#cband .card-task').classList.contains('k-sgame') && text('#cband .bd-cap') === s1.cap, JSON.stringify(s1) + ' ' + text('#cband'));
     ok('the story\'s bar is ‹, Next move ›, Continue, with the keyboard on Next move', /^‹\s*Next move ›\s*(Continue|Finish)$/.test(text('#cbar').replace(/\n/g, ' ').trim()) && document.activeElement === $('#cbar [data-act=storyFwd]'), text('#cbar') + ' / ' + focusName());
     storyFrame('G1');
     /* every step: one ply a tap, a caption that fits, at most 15 words; then Continue in gold, with the keyboard */
-    for (let i = 1; i < sg.n; i++) {
+    for (let i = g1 + 1; i < sg.n; i++) {
       press('#cbar [data-act=storyFwd]');
       await storyLanded(i);
       storyFrame('step ' + (i + 1));
@@ -458,15 +469,22 @@
         await sleep(400);
         ok('the move just tried stays on the card, faint', !!$('#bwrap .marks .tried'));
         const tier = T.ev('ui.session.active.tier'), c2b = T.card();
-        ok('tier 2: hint 1 is on after the second Try again', tier === 3 ? c2b.hints === 0 : c2b.hints >= 1 && /^Hint 1 of 2/.test(text('#cband .bd-r1')), 'tier ' + tier + ', hints ' + c2b.hints + ', ' + text('#cband'));
+        /* the automatic hint is the next one not yet shown (F1.1): Hint 2 after a First look's Hint 1 */
+        ok('the automatic hint is on after the Try again it comes with (tier 1 or 2), the band saying which', tier === 3 ? c2b.hints === 0 : c2b.hints >= 1 && new RegExp('^Hint ' + c2b.hints + ' of 2').test(text('#cband .bd-r1')), 'tier ' + tier + ', hints ' + c2b.hints + ', ' + text('#cband'));
         bandFits('a hint');
-        /* the hint draws what hintMarks says (a ring and dashed arrow for a danger, a dashed gold ring for a
-           prize, or nothing), never on the answer's squares */
+        /* the hint draws what hintMarks says (the danger, F1.1 and F1.3: red rings on what is attacked or the
+           mating square and dashed arrows into them; else a ring and dashed arrow for the danger the game move
+           runs into, a dashed gold ring for a prize, or nothing), never on the answer's to-square, nor on its
+           from-square but for the danger's red ring on a piece of yours and the arrows into it */
         const hm = JSON.parse(T.ev('JSON.stringify(hintMarks(ui.session.active))'));
         const n = (s) => document.querySelectorAll('#bwrap .marks ' + s).length;
         const bsq = [sqOf(c.best.slice(0, 2)), sqOf(c.best.slice(2, 4))];
-        ok('the hint draws its marks on the board, off the answer\'s squares', n('.ring-threat') === (hm.danger ? 1 : 0) && n('.threat-arrow') === (hm.danger ? 1 : 0) && n('.ring-target') === (hm.prize ? 1 : 0)
-          && !hm.rings.filter((m) => m.kind !== 'hint').concat(hm.arrows).some((m) => [m.sq, m.from, m.to].some((q) => bsq.indexOf(q) !== -1)), JSON.stringify(hm) + ' drawn ' + [n('.ring-threat'), n('.threat-arrow'), n('.ring-target')].join(','));
+        const mine = (q) => T.ev('(function (a) { var p = a.st.b[' + q + ']; return !!p && isW(p) === myPov(a.it); })(ui.session.active)');
+        const att = hm.rings.filter((m) => m.kind === 'attacked');
+        const onAnswer = hm.rings.filter((m) => m.kind !== 'hint').some((m) => m.sq === bsq[1] || (m.sq === bsq[0] && !(m.kind === 'attacked' && mine(m.sq))))
+          || hm.arrows.some((m) => m.from === bsq[0] || m.from === bsq[1] || m.to === bsq[1] || (m.to === bsq[0] && !att.some((r) => r.sq === m.to && mine(m.to))));
+        ok('the hint draws its marks on the board, off the answer\'s squares', n('.ring-threat') === (hm.danger ? 1 : 0) && n('.threat-arrow') === hm.arrows.length && n('.ring-target') === (hm.prize ? 1 : 0)
+          && n('.ring-attacked') === att.length && !onAnswer, JSON.stringify(hm) + ' drawn ' + [n('.ring-threat'), n('.threat-arrow'), n('.ring-target'), n('.ring-attacked')].join(','));
         const more = legalOther(c).filter((u) => tried.indexOf(u) === -1);
         let c3 = null;
         for (let mi = 0; mi < Math.min(4, more.length) && !c3; mi++) {
@@ -687,7 +705,10 @@
         await sleep(300);
         click('#cbar [data-act=seeWhy]');
         await storyLanded(0);
-        ok('See why enters the story; G1 shows one .bad-arrow and one .threat-arrow', T.card().story && T.card().story.i === 0 && $$('#bwrap .bad-arrow').length === 1 && $$('#bwrap .threat-arrow').length === 1 && $$('#bwrap .ring-threat').length === 1,
+        /* its danger frame first, when it has one (F1.5), then G1 */
+        const tg1 = T.ev('buildStory(ui.session.active).steps[0].df ? 1 : 0');
+        if (tg1) { storyFrame('threat card danger frame'); press('#cbar [data-act=storyFwd]'); await storyLanded(1); }
+        ok('See why enters the story; G1 shows one .bad-arrow and one .threat-arrow', T.card().story && T.card().story.i === tg1 && $$('#bwrap .bad-arrow').length === 1 && $$('#bwrap .threat-arrow').length === 1 && $$('#bwrap .ring-threat').length === 1,
           $$('#bwrap .bad-arrow').length + ' red, ' + $$('#bwrap .threat-arrow').length + ' threat: ' + text('#cband'));
         storyFrame('threat card G1');
         ok('the threat card\'s story frame fits', W.story.length === 0, W.story.slice(-1).join(''));
