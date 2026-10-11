@@ -214,7 +214,8 @@ function badgeXY(c, at) {
    badges [{sq, kind, at}], shapes; fx, the effect id of this paint, scoped to
    its card by the caller (a.key + ':' + a.fx), so two cards never share
    one. bad, good, ghost and hint are the older names of the game, better
-   and explore arrows and the hint ring. A small board (decor) keeps its
+   and explore arrows and the hint ring; badDim draws the game arrow at 30%
+   (an arrow with dim, the same). A small board (decor) keeps its
    marks inside its one svg. Only the squares and the pieces (data-sq) take
    a tap: every other shape lets it through */
 function boardSvg(st, opts) {
@@ -342,14 +343,16 @@ function boardSvg(st, opts) {
   var arrows = [];
   if (opts.ghost) arrows.push({ from: opts.ghost[0], to: opts.ghost[1], kind: 'explore', key: 'gold' });
   if (opts.good) arrows.push({ from: opts.good[0], to: opts.good[1], kind: 'better', key: 'good' });
-  if (opts.bad) arrows.push({ from: opts.bad[0], to: opts.bad[1], kind: 'game', key: 'bad' });
+  if (opts.bad) arrows.push({ from: opts.bad[0], to: opts.bad[1], kind: 'game', key: 'bad', dim: !!opts.badDim });
   arrows = arrows.concat(opts.arrows || []);
   var ends = {};
   arrows.forEach(function (ar, i) {
     var a = ctr(ar.from), b = ctr(ar.to), m = markArrow(a[0], a[1], b[0], b[1], ar.kind, 'ah' + uid + '-' + i, ar.key, ar.solid, !!ends[ar.to]);
     ends[ar.to] = 1;
     defs += m.def;
-    marks += m.body;
+    /* dim: an arrow at 30%, halo and head with it, so one drawn over it
+       reads in full (the game arrow under a hint's threat, V5.2) */
+    marks += ar.dim ? '<g class="mk-dim" opacity=".3">' + m.body + '</g>' : m.body;
   });
   /* z 9: a move already tried, faint: a thin line and a cross where it
      landed, or the cross alone ({sq}); it fades in once */

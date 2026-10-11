@@ -6698,7 +6698,7 @@ const BAR = `(function () {
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME}
       window.readyEngine(); playerTier = function () { return 2; };
       var calls = [], notes = [];
-      window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
+      store.set('nl:consent', 'yes'), window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
       notice = function (m) { notes.push(m); };
       var c1 = model().byKey['184455333378:68'], c2 = model().byKey['184380745302:11'], fk = 'foil:184455333378:66', out = {};
       asReview(c1);
@@ -6890,7 +6890,7 @@ const BAR = `(function () {
     const A = boot();
     A.ev(DOM);
     A.ev(BAR);
-    A.ev('(window.readyEngine(), window.__clar = [], window.clarity = function (k, n) { window.__clar.push(n); }, 1)');
+    A.ev('(window.readyEngine(), window.__clar = [], store.set("nl:consent", "yes"), window.clarity = function (k, n) { window.__clar.push(n); }, 1)');
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
     const keys = JSON.parse(A.ev(T3F)), lead = A.ev('SLIDE_LEAD');
     const CASES = ['saw', 'good', 'not', 'open'], measures = [];
@@ -7295,6 +7295,92 @@ const BAR = `(function () {
     eq(r.searched, 0, 'no reply list searched');
     eq(JSON.stringify(r.handed), '[false,false]', 'a practice position or a lesson handed a line: no question');
     eq(r.own, true, 'an own forcing card after its first move: the question');
+  });
+
+  /* ── v2 slice 5, look and release ── */
+  await test('V5.1: Hint 3 draws its red squares at once: card 1 at More help, Hint twice, a wrong queen move (the miss brings Hint 3), Try again: the nine red squares are on the board the moment the crossfade ends (150 ms), with the circled queen not picked up, and stay while the card asks; under reduced motion with the board at once; the safety lesson\'s step 2 draws its red squares', async () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev(BAR);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const lose = () => A.ev('(window.__els.bwrap.innerHTML.match(/class="tint tint-lose"/g) || []).length');
+    const boards = (t0) => JSON.parse(A.ev(`JSON.stringify(window.__writes.filter(function (w) { return w.id === 'bwrap' && w.what === 'innerHTML' && w.t >= ${t0}; }).map(function (w) { return w.t - ${t0}; }))`));
+    for (const reduced of [false, true]) {
+      const at = reduced ? 'reduced motion' : 'motion';
+      A.ev(`(ui.reducedTest = ${reduced}, playerTier = function () { return 1; }, 1)`);
+      A.ev(`(function () { var a = window.__show(model().byKey['184455333378:68']); ui.session.keys.push(allMistakes().filter(trainable)[1].key); window.readyEngine(); return 1; })()`);
+      run(600);
+      A.key('?'); run(600); A.key('?'); run(600);
+      eq(A.ev('ui.session.active.hints'), 2, at + ': two hints given');
+      eq(lose(), 0, at + ': no red square before Hint 3');
+      A.ev(`(function () { var a = ui.session.active, m = legalMoves(a.st).filter(function (x) { return x.from === a.best.from && moveUci(x) !== a.bestUci; })[0]; a.tapped = true; gradeMove(m); return 1; })()`);
+      await tick(); await tick();
+      run(1500);
+      eq(A.ev('ui.session.active.phase + " " + ui.session.active.tried.kind'), 'tried miss', at + ': the queen move is a miss');
+      eq(A.ev('ui.session.active.hints + " " + hintMax(ui.session.active)'), '3 3', at + ': the miss brings Hint 3');
+      const red = A.ev('hint3Of(ui.session.active).red.length');
+      eq(red, 9, at + ': nine red squares for the queen');
+      const t0 = A.getNow();
+      A.click('tryAgain', null, 1);
+      run(reduced ? 20 : 140);
+      if (!reduced) eq(lose(), 0, 'during the crossfade the board is the one before Hint 3\'s marks');
+      run(reduced ? 20 : 20);
+      const bs = boards(t0);
+      eq(lose(), red, at + ': the red squares drawn with the board (writes at ' + bs.join(', ') + ' ms)');
+      ok(reduced ? bs[0] === 0 : bs.indexOf(150) >= 0, at + ': ' + (reduced ? 'at once' : 'when the crossfade ends, 150 ms') + ': ' + bs.join(', '));
+      eq(A.ev('ui.session.active.sel'), -1, at + ': the queen is not picked up');
+      ok(A.ev('window.__els.bwrap.innerHTML.indexOf(\'fill="\' + HL_SEL + \'"\') < 0'), at + ': no selection drawn');
+      /* the words' beat and a tap that is not a move redraw the marks: the red squares stay */
+      run(800);
+      A.ev('(sessionClick(ui.session.active.best.to === 36 ? 27 : 36), 1)'); run(800);
+      eq(lose(), red, at + ': still there while the card asks');
+    }
+    A.ev('(ui.reducedTest = false, 1)');
+    /* the safety lesson: its second frame, "Red squares are attacked too." */
+    A.ev(`(window.__show(itemOf('ls:safety')), 1)`); run(800);
+    A.ev('(lessonStep(1), 1)'); run(800);
+    const want = A.ev('lessonFrame(ui.session.active, 1).reds.length');
+    ok(want >= 3, 'the lesson frame names its red squares: ' + want);
+    eq(A.ev('ui.session.active.lesson.i'), 1, 'on the lesson\'s second frame');
+    eq(lose(), want, 'the lesson\'s red squares on its board');
+    const bad = early(JSON.parse(A.ev('JSON.stringify(window.__writes)')));
+    eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
+  });
+
+  await test('V5.3: Esc closing a card\'s Details (opened from the strip or from the ••• menu) hands the keyboard to the honey button, so Enter presses Continue and never opens Details again', async () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev(BAR);
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const focus = () => A.ev(`(function () { var e = document.activeElement; return e && e.getAttribute ? e.getAttribute('data-act') + '@' + e.getAttribute('data-slot') : 'none'; })()`);
+    for (const from of ['strip', 'menu']) {
+      A.ev(`(function () { playerTier = function () { return 2; }; var a = window.__show(model().byKey['184455333378:68']); ui.session.keys.push(allMistakes().filter(trainable)[1].key); window.readyEngine(); return 1; })()`);
+      run(600);
+      A.ev('(gradeMove(uciToMove(ui.session.active.st, ui.session.active.bestUci)), 1)');
+      await tick(); await tick();
+      run(4000);
+      eq(A.ev('ui.session.active.phase'), 'done', from + ': found');
+      const honey = A.ev('honeySlot()');
+      ok(honey >= 0 && A.ev(`barSlots(ui.session.active, ui.session)[${honey}].label`) === 'Continue', from + ': Continue is the honey button');
+      if (from === 'menu') { A.click('menu', null, null, { detail: 1 }); run(300); }
+      /* a pointer's click focuses what it clicks: the opener (the strip's link, or the ••• button) has the
+         keyboard when the sheet opens, and closing it by hand gives the keyboard back there */
+      A.ev(`(function () { var act = '${from === 'menu' ? 'menu' : 'details'}';
+        document.activeElement = { isConnected: true, tagName: 'A', getAttribute: function (n) { return n === 'data-act' ? act : null; }, closest: function () { return null; }, focus: function () { document.activeElement = this; } };
+        return 1; })()`);
+      A.click('details', null, null, { detail: 1 });
+      eq(A.ev('ui.sheet'), 'details', from + ': Details open');
+      run(500);
+      A.key('Escape');
+      eq(A.ev('ui.sheet'), null, from + ': Esc closes it');
+      eq(focus(), 'next@' + honey, from + ': the keyboard on the honey button, not back on ' + (from === 'menu' ? 'the ••• button' : 'the Details link'));
+      eq(A.ev('displayFor(ui.session.active).keys.split(" · ")[0]'), 'Enter: Continue', from + ': as the key line says');
+      const [act, slot] = focus().split('@');
+      A.key('Enter', false, { act, slot: +slot });
+      run(600);
+      eq(A.ev('ui.sheet'), null, from + ': Enter does not open Details again');
+      eq(A.ev('ui.session.idx'), 1, from + ': Enter pressed Continue');
+    }
   });
 
   results.forEach((l) => console.log(l));

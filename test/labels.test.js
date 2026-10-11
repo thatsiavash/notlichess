@@ -205,10 +205,10 @@ const PAGE = `(function () {
 const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k !== 'nl:tip:retry').sort().join(',');
 
 (async () => {
-  await test('placeLabel never overlaps a piece, badge, token, ring, cross or arrow shaft, nor leaves the board: every fixture frame, tiers 1 and 3, boards of 316, 384 and 720 px, as drawn and flipped, first sight and short labels', () => {
+  await test('placeLabel never overlaps a piece (a ghost too; a first-sight label neither, V5.2), badge, token, ring, cross or arrow shaft, nor leaves the board: every fixture frame, tiers 1 and 3, boards of 316, 384 and 720 px, as drawn and flipped, first sight and short labels', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${FRAMES}
-      var out = [], tried = 0, shown = 0, tips = 0, onPiece = 0, flipped = 0, softClear = 0, texts = {};
+      var out = [], tried = 0, shown = 0, tips = 0, onPiece = 0, flipped = 0, texts = {};
       var num = '(-?[\\\\d.]+)';
       var all = function (re, s) { var m, o = []; re.lastIndex = 0; while ((m = re.exec(s))) o.push(m); return o; };
       var hit = function (r, x, y, w, h) { return r.x < x + w - 0.5 && x < r.x + r.w - 0.5 && r.y < y + h - 0.5 && y < r.y + r.h - 0.5; };
@@ -239,8 +239,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
           if (ends[sq(+m[1] + 1, +m[2] + 1)]) bad('on the piece at an arrow end');
           else n++;
         });
-        if (n > (lb.tip ? 1 : 0)) bad('on ' + n + ' pieces');
-        if (n) onPiece++;
+        if (n) { bad('on ' + n + (n === 1 ? ' piece' : ' pieces')); onPiece++; }
         all(new RegExp('<circle class="(ring-threat|reply-ring|ring-target|hint-ring)" cx="' + num + '" cy="' + num + '" r="20"', 'g'), svg).forEach(function (m) { if (circ(R, +m[2], +m[3], 21.8)) bad('on the ' + m[1]); });
         all(/<rect class="nope-box" x="(-?[\\d.]+)" y="(-?[\\d.]+)"/g, svg).forEach(function (m) { if (hit(R, +m[1], +m[2], 41, 41)) bad('on the nope outline'); });
         all(/class="token[^"]*"><g[^>]*><circle cx="(-?[\\d.]+)" cy="(-?[\\d.]+)" r="12.5"/g, svg).forEach(function (m) { if (circ(R, +m[1], +m[2], 13.7)) bad('on a token'); });
@@ -262,22 +261,15 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
                   shown++; if (lb.tip) tips++;
                   texts[lb.text.replace(/^(White|Black) /, '{Opp} ').replace(/^\\S+ in your game$/, '{gameSan} in your game').replace(/^free \\w+$/, 'free {piece}')] = 1;
                   check('tier ' + tier + ' ' + it.key + ' ' + what, a, f, px, lb);
-                  /* a first-sight label covers a piece only where no place is clear of every piece */
-                  if (lb.tip) {
-                    var mk = lb.mark, pre = ['guess', 'checking', 'tried', 'reply'].indexOf(a.phase) >= 0;
-                    var g0 = labelGeom(f, px, { head: mk.to != null ? mk.to : mk.sq, tail: mk.to != null ? mk.from : null, tip: null }, pre ? [dueMove(a).to] : []);
-                    var clear0 = placeLabel(g0, lb.w, lb.h);
-                    if (clear0) { softClear++; if (Math.abs(clear0.x - lb.x) > 0.01 || Math.abs(clear0.y - lb.y) > 0.01) out.push('tier ' + tier + ' ' + it.key + ' ' + what + ' at ' + px + ', "' + lb.text + '": on a piece with a clear place at ' + Math.round(clear0.x) + ',' + Math.round(clear0.y)); }
-                  }
                 });
               });
             });
           });
         });
       });
-      return JSON.stringify({ out: out, tried: tried, shown: shown, tips: tips, onPiece: onPiece, softClear: softClear, texts: Object.keys(texts).sort() }); })()`));
+      return JSON.stringify({ out: out, tried: tried, shown: shown, tips: tips, onPiece: onPiece, texts: Object.keys(texts).sort() }); })()`));
     eq(r.out.length, 0, r.out.length + ' overlaps, first: ' + r.out.slice(0, 4).join(' | '));
-    ok(r.tried > 40000 && r.shown > 8000 && r.tips > 2000 && r.onPiece > 50 && r.softClear > 1000, JSON.stringify({ tried: r.tried, shown: r.shown, tips: r.tips, onPiece: r.onPiece, softClear: r.softClear }));
+    ok(r.tried > 40000 && r.shown > 8000 && r.tips > 2000 && r.onPiece === 0, JSON.stringify({ tried: r.tried, shown: r.shown, tips: r.tips, onPiece: r.onPiece }));
     ['Your game move', '{Opp} can take', '{Opp} can check', 'Lost piece', '{gameSan} in your game', 'takes', 'free {piece}', 'check', 'mate', 'lost', 'their reply', 'better', 'the answer']
       .forEach((t) => ok(r.texts.indexOf(t) >= 0, 'no "' + t + '" label in any frame (' + r.texts.join(', ') + ')'));
   });
@@ -310,10 +302,10 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     eq(r.out.length, 0, r.out.slice(0, 6).join(' | '));
   });
 
-  await test('placeLabel, by itself: the head\'s neighbours nearest first, then the tail\'s; centred, then flush left, then flush right; no room, no label; a first-sight label may cover one piece no arrow starts or ends on, only where no place is clear', () => {
+  await test('placeLabel, by itself: the head\'s neighbours nearest first, then the tail\'s; centred, then flush left, then flush right; no room, no label; never on a piece, a ghost or a badge, whatever the label (V5.2)', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
-      var g = function (o) { return Object.assign({ size: 360, sq: 45, boxes: [], segs: [], pieces: [], head: [3, 3], tail: null, soft: 0 }, o); };
+      var g = function (o) { return Object.assign({ size: 360, sq: 45, boxes: [], segs: [], pieces: [], head: [3, 3], tail: null }, o); };
       var res = {};
       res.free = placeLabel(g({}), 40, 18);
       res.above = placeLabel(g({ boxes: [] }), 60, 18);
@@ -329,19 +321,18 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
       res.shaft = placeLabel(g({ segs: [{ x1: 0, y1: 112, x2: 360, y2: 112, r: 4 }] }), 40, 18);
       /* a piece above: flush left or right when the centred pill would touch it */
       res.flush = placeLabel(g({ pieces: [{ x: 90, y: 90, w: 45, h: 45, end: false }, { x: 225, y: 90, w: 45, h: 45, end: false }] }), 70, 18);
-      /* pieces all round: a short label finds no room; a first-sight one covers one */
-      var pcs = []; for (var x2 = 2; x2 <= 4; x2++) for (var y2 = 2; y2 <= 4; y2++) if (x2 !== 3 || y2 !== 3) pcs.push({ x: x2 * 45, y: y2 * 45, w: 45, h: 45, end: false });
+      /* pieces all round: no room, whatever the label (a first-sight one, the old soft: 1, too) */
+      var pcs = []; for (var x2 = 2; x2 <= 4; x2++) for (var y2 = 2; y2 <= 4; y2++) if (x2 !== 3 || y2 !== 3) pcs.push({ x: x2 * 45, y: y2 * 45, w: 45, h: 45 });
       res.hard = placeLabel(g({ pieces: pcs }), 40, 18);
       res.soft = placeLabel(g({ pieces: pcs, soft: 1 }), 40, 18);
-      /* a first-sight label with a piece above the head and nothing below:
-         below, clear, before the piece above */
-      res.softClear = placeLabel(g({ pieces: [{ x: 135, y: 90, w: 45, h: 45, end: false }], soft: 1 }), 40, 18);
-      res.softEnd = placeLabel(g({ pieces: pcs.map(function (p) { return Object.assign({}, p, { end: true }); }), soft: 1 }), 40, 18);
-      var two = placeLabel(g({ pieces: pcs, soft: 1 }), 80, 18);
-      res.softTwo = two ? pcs.filter(function (p) { return two.x < p.x + p.w - 0.5 && p.x < two.x + 80 - 0.5 && two.y < p.y + p.h - 0.5 && p.y < two.y + 18 - 0.5; }).length : 0;
+      /* a piece above the head and nothing below: below */
+      res.oneAbove = placeLabel(g({ pieces: [{ x: 135, y: 90, w: 45, h: 45 }] }), 40, 18);
+      /* seven of the eight neighbours taken (pieces or ghosts, both pieces to the label): the free one */
+      res.ghosts = placeLabel(g({ pieces: pcs.slice(0, 7) }), 40, 18);
+      res.wide = placeLabel(g({ pieces: pcs }), 80, 18);
       /* a row of pieces wider than the pill can find a gap in: none */
-      var wall = []; for (var c = 0; c < 8; c++) for (var rr = 1; rr <= 5; rr++) wall.push({ x: c * 45, y: rr * 45, w: 45, h: 45, end: c === 3 && rr === 3 });
-      res.softWall = placeLabel(g({ pieces: wall, soft: 1 }), 80, 18);
+      var wall = []; for (var c = 0; c < 8; c++) for (var rr = 1; rr <= 5; rr++) wall.push({ x: c * 45, y: rr * 45, w: 45, h: 45 });
+      res.wall = placeLabel(g({ pieces: wall }), 80, 18);
       return JSON.stringify(res); })()`));
     eq(JSON.stringify(r.free), JSON.stringify({ x: 137.5, y: 103.5 }), 'centred on the square above the head');
     eq(JSON.stringify(r.below), JSON.stringify({ x: 137.5, y: 193.5 }), 'below when above is taken');
@@ -350,12 +341,12 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     ok(r.corner && r.corner.x >= 0 && r.corner.y >= 0 && r.corner.x + 80 <= 360, 'inside the board at the corner: ' + JSON.stringify(r.corner));
     ok(r.shaft && r.shaft.y > 130, 'off the shaft: ' + JSON.stringify(r.shaft));
     eq(JSON.stringify(r.flush), JSON.stringify({ x: 135, y: 103.5 }), 'flush with the square\'s left edge, clear of the piece on its left');
-    eq(r.hard, null, 'pieces all round: a short label has no room');
-    ok(r.soft, 'a first-sight label covers one piece');
-    eq(JSON.stringify(r.softClear), JSON.stringify({ x: 137.5, y: 193.5 }), 'a first-sight label takes a clear place before covering a piece');
-    eq(r.softEnd, null, 'never a piece at an arrow end');
-    ok(r.softTwo <= 1, 'never two pieces: ' + r.softTwo);
-    eq(r.softWall, null, 'a pill that would cover two pieces wherever it goes: none');
+    eq(r.hard, null, 'pieces all round: no room, no label');
+    eq(r.soft, null, 'a first-sight label covers no piece either (V5.2): no room, no label');
+    eq(JSON.stringify(r.oneAbove), JSON.stringify({ x: 137.5, y: 193.5 }), 'a piece above: the place below');
+    eq(JSON.stringify(r.ghosts), JSON.stringify({ x: 182.5, y: 193.5 }), 'seven neighbours taken: the eighth, below right, on no piece');
+    eq(r.wide, null, 'a wide pill with pieces all round: none');
+    eq(r.wall, null, 'a pill that would cover a piece wherever it goes: none');
   });
 
   await test('labelGeom keeps clear of every mark, on an empty square too: a ring, a nope outline, a badge, a token, a tried line\'s cross, guard dots, a legal dot, a ghost; and the answer\'s square before an answer', () => {
@@ -624,8 +615,13 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     eq(A.ev('!!ui.session.active.predraw'), false, 'the first card ever is not a worked example');
     eq(A.ev('window.__label()'), 'Your game move', 'the first card ever');
     eq(tips(A), 'nl:tip:game', 'only the game arrow is seen');
-    /* a selection repaints the board in the same state: the same label */
-    A.ev('(ui.session.active.sel = legalMoves(ui.session.active.st)[0].from, renderCardBoard(), 1)'); A.advance(500);
+    /* a selection repaints the board in the same state: the same label (a piece whose legal dots leave the
+       label its room: a label never covers a piece or a dot, V5.2) */
+    A.ev(`(function () { var a = ui.session.active, never = function () { return false; };
+      var froms = legalMoves(a.st).map(function (m) { return m.from; }).filter(function (q, i, all) { return all.indexOf(q) === i; });
+      a.sel = froms.filter(function (q) { a.sel = q; var lb = frameLabel(a, boardOptsFor(a), 360, false, never); return !!lb && lb.text === 'Your game move'; })[0];
+      renderCardBoard(); return 1; })()`); A.advance(500);
+    ok(A.ev('ui.session.active.sel >= 0'), 'a piece whose moves leave the label room');
     eq(A.ev('window.__label()'), 'Your game move', 'kept in its state');
     /* the next state: the game arrow taught, so no label of its own */
     A.ev('(ui.session.active.sel = -1, ui.session.active.hints = 2, renderCard(), 1)'); A.advance(1000);
@@ -967,6 +963,68 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     eq(JSON.stringify([m.ph, m.dk]), JSON.stringify([{ w: Math.ceil(5 * 5.25 + 18), h: 18 }, { w: Math.ceil(5 * 5.25 + 18), h: 20 }]), 'measured pills');
     eq(m.calls.join(' ; '), '800 12px "Nunito",ui-rounded,sans-serif|takes ; 700 14px "Nunito",ui-rounded,sans-serif|takes', 'measured in the label\'s font and weight, once per text and size');
     eq(m.after, 3, 'measured again once a font has arrived');
+  });
+
+  /* V5.2, board marks never hide each other: the testers' two frames */
+  await test('V5.2: card 1 (every See why step, found and shown) and the Kb2 card (Hint 1), tiers 1 to 3, boards of 316, 384 and 720 px: no label touches an occupied square (a ghost\'s included); on Hint 1 the threat arrow is drawn whole, over the game arrow, which drops to 30% (and is whole again once no threat is drawn)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      var out = [], frames = 0, labels = 0, res = {};
+      /* the label's box against every occupied square of the frame (pieces and ghosts), in board units */
+      var look = function (what, a) {
+        frames++;
+        [316, 384, 720].forEach(function (px) {
+          var f = boardOptsFor(a), lb = frameLabel(a, f, px, px > 600, function () { return false; });
+          if (!lb) return;
+          labels++;
+          var s = px / 360, R = { x: lb.x / s, y: lb.y / s, w: lb.w / s, h: lb.h / s }, flip = !!f.opts.flip;
+          var sqs = []; for (var q = 0; q < 64; q++) if (f.st.b[q]) sqs.push(q);
+          (f.opts.ghosts || []).forEach(function (g) { sqs.push(g.sq); });
+          sqs.forEach(function (q) {
+            var x = (flip ? 7 - q % 8 : q % 8) * 45, y = (flip ? q >> 3 : 7 - (q >> 3)) * 45;
+            if (R.x < x + 45 - 0.5 && x < R.x + R.w - 0.5 && R.y < y + 45 - 0.5 && y < R.y + R.h - 0.5) out.push(what + ' at ' + px + ': "' + lb.text + '" on ' + sqName(q));
+          });
+        });
+      };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        ['found', 'shown'].forEach(function (how) {
+          var a = openCard(model().byKey['184455333378:68']);
+          if (how === 'found') solved(uciToMove(a.st, a.bestUci), a.bestUci, null); else reveal();
+          a.animMove = null; a.settle = 2;
+          seeWhy();
+          var S = buildStory(a);
+          for (var i = 0; i < S.steps.length; i++) { a.view = { mode: 'story', i: i }; a.animMove = null; look('tier ' + tier + ' card 1 ' + how + ' step ' + i, a); }
+          res.steps = S.steps.length;
+        });
+        /* the Kb2 card: its first hint, where it is a cued card (the game arrow drawn) */
+        var k = openCard(model().byKey['184205946040:62']);
+        k.hints = 1;
+        look('tier ' + tier + ' Kb2 hint 1', k);
+        var f = boardOptsFor(k), svg = boardSvg(f.st, f.opts);
+        var th = (f.opts.arrows || []).filter(function (x) { return x.kind === 'threat'; });
+        res['t' + tier] = { bad: !!f.opts.bad, threats: th.length, dim: !!f.opts.badDim,
+          /* the game arrow inside the 30% group; every threat line outside any, and after it (on top) */
+          gameDim: /<g class="mk-dim" opacity=".3"><line[^>]*\\/><line class="bad-arrow"/.test(svg),
+          threatWhole: (svg.match(/<line class="threat-arrow"/g) || []).length === th.length && !/<g class="mk-dim"[^>]*>(?:(?!<\\/g>).)*threat-arrow/.test(svg),
+          order: svg.indexOf('class="bad-arrow"') < svg.indexOf('class="threat-arrow"') };
+        /* no hint: the game arrow whole */
+        k.hints = 0;
+        var f0 = boardOptsFor(k), svg0 = boardSvg(f0.st, f0.opts);
+        res['t' + tier].plain = !!f0.opts.bad && !f0.opts.badDim && svg0.indexOf('mk-dim') < 0;
+      });
+      return JSON.stringify({ out: out, frames: frames, labels: labels, res: res }); })()`));
+    eq(r.out.length, 0, r.out.length + ' labels on an occupied square: ' + r.out.slice(0, 4).join(' | '));
+    ok(r.res.steps >= 6 && r.frames >= 3 * (2 * r.res.steps + 1) && r.labels > 10, 'frames walked ' + r.frames + ', labels ' + r.labels + ', story steps ' + r.res.steps);
+    [1, 2, 3].forEach((t) => {
+      const x = r.res['t' + t];
+      if (t === 1 || x.bad) {
+        ok(x.bad && x.threats >= 1, 'tier ' + t + ': Hint 1 draws the game arrow and a threat arrow ' + JSON.stringify(x));
+        ok(x.dim && x.gameDim, 'tier ' + t + ': the game arrow at 30% under Hint 1\'s threat ' + JSON.stringify(x));
+        ok(x.threatWhole && x.order, 'tier ' + t + ': the threat arrow whole, drawn over it ' + JSON.stringify(x));
+        ok(x.plain, 'tier ' + t + ': with no threat drawn the game arrow is whole');
+      }
+    });
   });
 
   /* design system v2 (test/design.js, F3.1): Nunito, the seven type tokens and nothing else, the

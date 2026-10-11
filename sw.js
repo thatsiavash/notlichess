@@ -1,35 +1,39 @@
 /* notlichess.org service worker (F11.1): the app on the home screen, and a
    visit with no network. Registered by the page (src/js/15i-install.js).
 
-   One cache per version holds the page, the manifest, the icons and
-   Stockfish, and nothing else, ever:
+   One cache per version holds the page, the manifest, the icons, the font
+   and Stockfish, and nothing else, ever:
    - The page and the manifest come from the network first, revalidated (never
      a stale copy out of the browser's own cache), so a new deploy shows on
      the next visit online. The copy kept is the last one that came whole: it
      opens the app when the network is down, answers with an error, or takes
      longer than NET_WAIT to answer (the network's answer is still kept for
      the next visit).
-   - Stockfish and the icons come from the cache first. VERSION carries a hash
-     of these files (test/sw.js checks it), so a deploy that changes one is a
-     new version: the new worker fetches every file again into a cache of its
-     own, takes over only once that cache is whole, then deletes the old one.
+   - Stockfish, the icons and the font (Nunito, fonts/) come from the cache
+     first, so the installed app keeps its type offline. VERSION carries a
+     hash of these files (test/sw.js checks it), so a deploy that changes one
+     is a new version: the new worker fetches every file again into a cache
+     of its own, takes over only once that cache is whole, then deletes the
+     old one.
      A page open meanwhile keeps working: it was loaded whole, and Stockfish's
      two files always come from one cache (see hold).
    - Everything else goes to the network untouched: chess.com and lichess (the
-     app keeps its games in localStorage itself), Clarity, Google Fonts. */
+     app keeps its games in localStorage itself), Clarity (only after the
+     player's yes), any other site. The off switch, for an emergency, is in
+     README.md (Deploy) and test/sw-off.js. */
 'use strict';
 
 /* "<layout>-<hash>": the layout is raised by hand when what the cache holds
    changes shape; the hash is the first 10 hex digits of the sha-256 of FILES
    (each path, a newline, its bytes), which test/sw.js recomputes */
-var VERSION = '1-c396a2b001';
+var VERSION = '1-c6b014d2f5';
 var PREFIX = 'notlichess-';
 var CACHE = PREFIX + VERSION;
 /* paths from the worker's scope, the site's root: '' is the page itself */
 var PAGE = '';
 var META = 'manifest.json';
 var FILES = ['sf/stockfish.js', 'sf/stockfish.wasm', 'icons/favicon-32.png', 'icons/apple-touch-icon.png',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'fonts/nunito-latin-wght-normal.woff2'];
 /* Stockfish: the .js, run as a worker, loads the .wasm beside it */
 var PAIR = ['sf/stockfish.js', 'sf/stockfish.wasm'];
 /* how long a page waits for the network before the kept copy opens it */
@@ -47,7 +51,8 @@ function pathOf(href) {
   return u.pathname.slice(s.pathname.length);
 }
 /* what a request is to this worker: 'page' (the app opened: index.html at
-   the root), 'meta' (the manifest), 'file' (Stockfish or an icon), or ''
+   the root), 'meta' (the manifest), 'file' (Stockfish, an icon or the
+   font), or ''
    (not ours: it goes to the network as if there were no worker) */
 function routeOf(req) {
   if (req.method !== 'GET') return '';
@@ -116,7 +121,8 @@ function plain(res) {
   return res.redirected ? new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers }) : res;
 }
 
-/* Stockfish or an icon: the kept copy, else the network (kept for next time) */
+/* Stockfish, an icon or the font: the kept copy, else the network (kept for
+   next time) */
 function cacheFirst(p) {
   return caches.open(CACHE).then(function (cache) {
     return cache.match(at(p)).then(function (hit) { return hit || refill(cache, p); });

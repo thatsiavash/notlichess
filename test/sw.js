@@ -2,15 +2,19 @@
 // CacheStorage, a fake network and fake timers, and its install, activate and fetch handlers are driven
 // with fake events. Run from session.test.js: await require('./sw')() returns the failures (none when
 // all hold).
-//   The version: VERSION carries the sha-256 of the files kept cache-first, so changing Stockfish or an
-//   icon without a new VERSION fails here (with the value to set); the files exist and cover what the
-//   manifest and the page name; sw.js lints clean.
+//   The version: VERSION carries the sha-256 of the files kept cache-first, so changing Stockfish, an
+//   icon or the font without a new VERSION fails here (with the value to set); the files exist and cover
+//   what the manifest, the page and app.css name (the icons, Nunito's woff2); sw.js lints clean.
 //   The cache: one per version ("notlichess-" + VERSION), filled all or nothing at install, each file
 //   revalidated; a new version deletes the older ones and leaves other caches alone.
 //   The rules: the page and the manifest network first (a fresh deploy shown and kept, the kept copy
 //   when offline, on an error or after NET_WAIT, nothing kept from a bad answer); Stockfish and the
-//   icons cache first, refilled as a pair; the .js's event held open until its .wasm is asked for (or
-//   HOLD); chess.com, lichess, Clarity, Google Fonts and the rest of the site never answered or kept.
+//   icons and the font cache first, Stockfish refilled as a pair; the .js's event held open until its
+//   .wasm is asked for (or HOLD); chess.com, lichess, Clarity, other sites and the rest of the site never
+//   answered or kept.
+//   The off switch (test/sw-off.js, V5.6): deployed as sw.js in an emergency, it takes over at once,
+//   deletes the notlichess- caches and no other, then unregisters, and answers no request; README.md
+//   gives it word for word, beside the Render headers and the two checks after a deploy.
 const fs = require('fs'), path = require('path'), vm = require('vm'), crypto = require('crypto');
 const ROOT = path.join(__dirname, '..');
 /* NL_SW: another copy of sw.js to check (to prove a check can fail) */
@@ -105,10 +109,10 @@ function world() {
 }
 /* sw.js (or src, a changed copy of it) loaded as a worker in world W: its handlers and its globals */
 function worker(W, src) {
-  const handlers = {}, state = { skipped: 0, claimed: 0 };
+  const handlers = {}, state = { skipped: 0, claimed: 0, unregistered: 0, cachesAtUnregister: null };
   const ctx = {
     self: {
-      registration: { scope: SCOPE },
+      registration: { scope: SCOPE, unregister: () => { state.unregistered++; state.cachesAtUnregister = [...W.stores.keys()].sort(); return Promise.resolve(true); } },
       addEventListener: (t, f) => { handlers[t] = f; },
       skipWaiting: () => { state.skipped++; return Promise.resolve(); },
       clients: { claim: () => { state.claimed++; return Promise.resolve(); } },
@@ -159,6 +163,12 @@ module.exports = async function swChecks() {
   man.icons.forEach((ic) => { if (FILES.indexOf(ic.src.replace(/^\//, '')) < 0) no('files: the manifest\'s icon ' + ic.src + ' is not kept'); });
   const page = fs.readFileSync(path.join(ROOT, 'src', 'page.html'), 'utf8');
   (page.match(/href="\/icons\/[^"]+"/g) || []).forEach((h) => { const f = h.slice(7, -1); if (FILES.indexOf(f) < 0) no('files: the page\'s ' + f + ' is not kept'); });
+  /* the font (V5.4): every woff2 app.css declares or the page preloads is kept, and FILES keeps no other */
+  const css = fs.readFileSync(path.join(ROOT, 'src', 'app.css'), 'utf8');
+  const fonts = (css + page).match(/fonts\/[\w.-]+\.woff2/g) || [], kept = FILES.filter((f) => /^fonts\//.test(f));
+  if (!fonts.length) no('files: the page names no font of its own');
+  fonts.forEach((f) => { if (FILES.indexOf(f) < 0) no('files: the font ' + f + ' is not kept'); });
+  kept.forEach((f) => { if (fonts.indexOf(f) < 0) no('files: ' + f + ' is kept but the page never names it'); });
   if (C.META !== 'manifest.json' || C.PAGE !== '') no('files: the page is the scope itself and the manifest is manifest.json');
   if (/\u2014/.test(src)) no('house style: an em dash in sw.js');
   /* lint: no undefined names, nothing unused */
@@ -322,6 +332,11 @@ module.exports = async function swChecks() {
     const got = [await bodyOf(S.fetch('sf/stockfish.js')), await bodyOf(S.fetch('sf/stockfish.wasm')), await bodyOf(S.fetch('icons/icon-192.png')), await bodyOf(S.fetch('sf/stockfish.wasm?x=1'))];
     if (got.join('|') !== 'sf/stockfish.js A|sf/stockfish.wasm A|icons/icon-192.png A|sf/stockfish.wasm A') no('files: served from this version\'s cache, never mixed with a newer deploy: ' + got.join(' | '));
     if (W.log.length) no('files: the cache answers without the network: ' + W.log.map((x) => x.url).join(', '));
+    /* the font, as the page asks for it (a CORS request): from the cache, so the installed app has Nunito offline */
+    const font = FILES.filter((f) => /^fonts\//.test(f))[0];
+    W.online = false;
+    if (!font || await bodyOf(S.fetch(font, { mode: 'cors' })) !== font + ' A') no('files: the font comes from the cache, offline too');
+    W.online = true;
     /* the cache cleared under a live worker: both engine files fetched once, kept together, each ask its own copy */
     W.stores.delete(C.CACHE);
     W.log = [];
@@ -389,6 +404,36 @@ module.exports = async function swChecks() {
     if (S.fetch('', { mode: 'navigate', method: 'POST' }).responded || S.fetch('sf/stockfish.wasm', { method: 'HEAD' }).responded) no('never ours: a request that is not a GET');
     await settle();
     if (JSON.stringify(W.held(C.CACHE)) !== before || (await W.caches.keys()).length !== 1) no('never ours: nothing else is ever kept');
+  }
+
+  /* ── the off switch (test/sw-off.js): what README.md says to deploy as sw.js in an emergency ── */
+  {
+    const off = fs.readFileSync(path.join(ROOT, 'test', 'sw-off.js'), 'utf8');
+    const W = world(); W.deploy(deployA());
+    /* a normal worker in charge, its cache full; an older one's cache left over; another app's caches */
+    const A = worker(W);
+    await A.install(); await A.activate();
+    await W.caches.open('notlichess-0-aaaaaaaaaa'); await W.caches.open('another-app'); await W.caches.open('my-notlichess-copy');
+    const S = worker(W, off);
+    if (S.handlers.fetch) no('off switch: it answers no request (no fetch handler), so every one goes to the network');
+    await S.install();
+    if (S.state.skipped !== 1) no('off switch: it takes over at once (skipWaiting), called ' + S.state.skipped);
+    if ((await S.activate()) === 'HUNG') no('off switch: activate never settles');
+    const names = (await W.caches.keys()).sort();
+    if (names.join('|') !== 'another-app|my-notlichess-copy') no('off switch: deletes every notlichess- cache and no other, leaves ' + names.join(', '));
+    if (S.state.unregistered !== 1) no('off switch: unregisters itself, called ' + S.state.unregistered);
+    else if (S.state.cachesAtUnregister.some((n) => n.indexOf('notlichess-') === 0)) no('off switch: unregisters once the caches are gone, not before: ' + S.state.cachesAtUnregister.join(', '));
+    if (/\u2014/.test(off)) no('house style: an em dash in test/sw-off.js');
+    const { Linter } = require('eslint'), globals = require('globals');
+    new Linter({ configType: 'flat' }).verify(off, [{
+      languageOptions: { ecmaVersion: 2020, sourceType: 'script', globals: Object.assign({}, globals.serviceworker) },
+      rules: { 'no-undef': 'error', 'no-unused-vars': ['error', { vars: 'all', args: 'none', caughtErrors: 'none' }], 'no-unreachable': 'error' },
+    }]).forEach((x) => no('lint: test/sw-off.js ' + x.line + ' ' + x.ruleId + ' ' + x.message));
+    /* README.md's Deploy section: the off switch word for word, the Render headers and the two checks */
+    const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+    if (readme.indexOf('```js\n' + off.trim() + '\n```') < 0) no('README: the off switch is not test/sw-off.js word for word, in a js block');
+    ['/sw.js', 'Cache-Control', 'no-cache', '/index.html', 'Vary: *', 'application/wasm', 'curl -sI https://notlichess.org/sw.js', 'curl -sI https://notlichess.org/', 'ETag', 'Chromium']
+      .forEach((w) => { if (readme.indexOf(w) < 0) no('README: the Deploy section says nothing of ' + w); });
   }
   return fails;
 };

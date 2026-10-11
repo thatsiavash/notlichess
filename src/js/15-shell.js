@@ -20,7 +20,7 @@ function renderFirstVisit(prefill) {
       + '<button class="btn-big" data-icon="search" data-act="findUser" id="findBtn">Find my mistakes</button>'
     + '</div>'
     + '<div id="whichSite" aria-live="polite"></div>'
-    + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
+    + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</p>'
     + '<figure class="proof"><figcaption>What a 1350 rapid player saw</figcaption>'
       + '<blockquote>In 169 of their 237 losses, one move turned the game for good. Piece safety decided 107.</blockquote></figure>'
     + '</div>'
@@ -34,7 +34,10 @@ function renderFirstVisit(prefill) {
       + valueItem('Free, no account', 'Nothing to buy. Open source.')
     + '</div>'
     + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device.</p>'
+    /* the usage-recording question, at the landing's foot (V5.5) */
+    + (consentAsked() ? '' : consentCardHtml())
     + '</div>';
+  consentWatch();
   var input = el('firstUser');
   if (input) {
     input.focus();
@@ -48,7 +51,8 @@ function renderFirstVisit(prefill) {
 var findSeq = 0;
 function findUser(name) {
   name = String(name || '').trim();
-  if (!name) return;
+  /* Find my mistakes with the box empty: say what it needs (V5.8) */
+  if (!name) { notice('Type your username first.'); var box0 = el('firstUser'); if (box0 && box0.focus) box0.focus(); return; }
   if (!/^[a-zA-Z0-9_-]{2,30}$/.test(name)) { notice('That is not a chess.com or lichess username: letters, numbers, underscore and hyphen only.'); return; }
   /* only the latest lookup acts: an earlier one answering late is ignored */
   var seq = ++findSeq;
@@ -144,7 +148,7 @@ function returnEvents() {
     /* the reminder chosen (F5.4): its time, notnow, or none */
     measureTag('cue', cueTag());
     var utm = linkStore.get('nl:utm');
-    if (utm && window.clarity) window.clarity('set', 'utm_source', utm.slice(0, 40));
+    if (utm) measureTag('utm_source', utm.slice(0, 40));
     var sent = 'nl:retDay:' + playerId();
     if (!first) { store.set(k, now); store.set(sent, dayStamp()); track('first_visit'); return; }
     if (store.get(sent, '') === dayStamp()) return;
@@ -154,8 +158,99 @@ function returnEvents() {
     /* how many of the last 28 days counted, as a bucket */
     var act = 0;
     for (var i = 0; i < 28; i++) { var d = new Date(now - i * DAY); if (dayCounts(dayRecOf(d))) act++; }
-    if (window.clarity) window.clarity('set', 'active_days', act === 0 ? '0' : act === 1 ? '1' : act <= 3 ? '2-3' : act <= 7 ? '4-7' : act <= 14 ? '8-14' : '15+');
+    measureTag('active_days', act === 0 ? '0' : act === 1 ? '1' : act <= 3 ? '2-3' : act <= 7 ? '4-7' : act <= 14 ? '8-14' : '15+');
   } catch (e) {}
+}
+
+/* ── usage recording, only with a yes (V5.5) ─────────────────────────────
+   Microsoft Clarity records clicks and the screen (all text hidden) only
+   for a player who said yes in this browser (nl:consent "yes"): before it
+   the page loads no tag, so no cookie and no recording, and track() and
+   measureTag() drop what they are given. The question is a slim card at
+   the foot of the landing, or of Today for a player who arrives another
+   way, never over the board and never during a set (#consent-slot is
+   hidden there). It is asked once: once the card has been on screen, no
+   answer counts as no ("no" is kept), and the choice lives on in
+   Settings, Your data */
+var CLARITY_TAG = 'https://www.clarity.ms/tag/y95daq5rao';
+var clarityState = { on: false, stopped: false }, consentIO = null;
+function consentYes() { return store.get('nl:consent', '') === 'yes'; }
+function consentAsked() { return !!store.get('nl:consent', ''); }
+/* the measures go to Clarity: a yes, and its tag on this page (clarityLoad
+   alone defines window.clarity), not stopped since */
+function clarityLive() { return consentYes() && !clarityState.stopped && typeof window.clarity === 'function'; }
+/* the tag, once a page, and only with a yes (boot, and the yes itself).
+   Calls made before it arrives wait in Clarity's queue, the player's
+   consent first, through Clarity's consent API (ads never) */
+function clarityLoad() {
+  if (clarityState.on || !consentYes()) return;
+  clarityState.on = true;
+  try {
+    var c = window.clarity = window.clarity || function () { (c.q = c.q || []).push(arguments); };
+    var t = document.createElement('script');
+    t.async = true;
+    t.src = CLARITY_TAG;
+    (document.head || document.body).appendChild(t);
+    clarityConsent(true);
+    /* the campaign of a link (the head script kept it, the address lost it) */
+    var utm = linkStore.get('nl:utm');
+    if (utm) c('set', 'utm_source', String(utm).slice(0, 40));
+  } catch (e) {}
+}
+function clarityConsent(on) {
+  try { window.clarity('consentv2', { ad_Storage: 'denied', analytics_Storage: on ? 'granted' : 'denied' }); } catch (e) {}
+}
+/* Settings turns it off: Clarity is told, its cookies go, this page's
+   recording stops, and the next page loads no tag */
+function clarityOff() {
+  if (!clarityState.on || clarityState.stopped) return;
+  clarityState.stopped = true;
+  clarityConsent(false);
+  try { window.clarity('consent', false); } catch (e) {}
+  /* the recorder stops (queued after its start when it is still loading) */
+  try { window.clarity('stop'); } catch (e) {}
+}
+/* the question, its two answers alike: neither is the easy one */
+function consentCardHtml() {
+  return '<div class="consent" id="consent" role="group" aria-labelledby="consent-q">'
+    + '<p class="consent-q" id="consent-q"><b>Help improve notlichess?</b> Microsoft Clarity would record clicks and screens, with all text hidden.</p>'
+    + '<div class="consent-acts"><a class="btn-line" data-act="consentYes">Yes</a><a class="btn-line" data-act="consentNo">No thanks</a></div></div>';
+}
+/* Today's foot (the slot after #trainbox): the card until it is answered
+   or has been seen */
+function consentPaint() {
+  var slot = el('consent-slot');
+  if (!slot) return;
+  slot.innerHTML = consentAsked() ? '' : consentCardHtml();
+  consentWatch();
+}
+/* on screen (half of it, at least): asked, and no answer is a no */
+function consentWatch() {
+  if (consentIO) { consentIO.disconnect(); consentIO = null; }
+  var card = el('consent');
+  if (!card || consentAsked()) return;
+  var seen = function () { if (!consentAsked()) store.set('nl:consent', 'no'); };
+  if (typeof IntersectionObserver === 'undefined') { seen(); return; }
+  consentIO = new IntersectionObserver(function (es) {
+    if (!es.some(function (x) { return x.isIntersecting; })) return;
+    consentIO.disconnect(); consentIO = null;
+    seen();
+  }, { threshold: 0.5 });
+  consentIO.observe(card);
+}
+/* an answer on the card; Settings' switch (consentSet) after that */
+function consentAnswer(yes) {
+  consentSet(yes);
+  if (yes) notice('Thank you. Settings can turn it off.');
+}
+function consentSet(yes) {
+  store.set('nl:consent', yes ? 'yes' : 'no');
+  if (consentIO) { consentIO.disconnect(); consentIO = null; }
+  var card = el('consent');
+  if (card && card.remove) card.remove();
+  if (!yes) clarityOff();
+  else if (clarityState.on && !clarityState.stopped) clarityConsent(true);
+  else clarityLoad();
 }
 /* "2026-W41": the ISO week a time falls in (weeks start on Monday; week 1
    holds the year's first Thursday) */
@@ -304,6 +399,8 @@ function computeGreeting() {
 function boot() {
   gen++;
   var myGen = gen;
+  /* usage recording, for a player who said yes (V5.5) */
+  clarityLoad();
   /* the saved formats belong to one player: another player starts from
      their own profile */
   if (!linkVisit && cfg.user && !perfsMine()) { cfg.perfs = null; cfg.tcs = DEFAULT_TC.slice(); }
@@ -544,7 +641,7 @@ document.addEventListener('click', function (e) {
     case 'pack': startPack(k); break;
     case 'lesson': startLesson(k); break;
     /* closing it gives focus back to what opened it: the strip's link, or
-       the ••• button whose menu offered it */
+       the ••• button whose menu offered it (Esc: the honey button, escSheet) */
     case 'details': if (a && a.phase === 'done') {
       var fromMenu = !!a.menuOpen;
       if (fromMenu) setMenu(a, false);
@@ -607,6 +704,9 @@ document.addEventListener('click', function (e) {
     case 'importProgress': importProgress(); break;
     case 'installApp': installApp(); break;
     case 'installLater': installLater(); break;
+    /* the usage-recording question (V5.5) */
+    case 'consentYes': consentAnswer(true); break;
+    case 'consentNo': consentAnswer(false); break;
     case 'engineRetry': SF.state = 'idle'; SF.crashes = []; engineLoad().then(function () { autoScan(); }, function () {}); renderAll(); break;
     case 'resetProgress': {
       if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); clearTimeout(ui.resetTimer); ui.resetTimer = setTimeout(function () { ui.resetArmed = false; renderSettings(); }, 4000); break; }
@@ -665,6 +765,8 @@ document.addEventListener('change', function (e) {
   if (!t || !t.getAttribute) return;
   var act = t.getAttribute('data-act');
   if (act === 'sound') { cfg.sound = !!t.checked; saveCfg('sound'); }
+  /* Settings' usage recording, on or off (V5.5) */
+  if (act === 'consent') consentSet(!!t.checked);
 });
 document.addEventListener('keydown', function (e) {
   /* a held Enter sends the typed move once (its auto-repeat would send it
@@ -691,7 +793,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
   if (e.key === 'Escape') {
-    if (ui.sheet) { closeSheet(); return; }
+    if (ui.sheet) { escSheet(); return; }
     var ae = ui.session && ui.session.active;
     /* the menu closes first; during the forcing reply it is no input to it */
     if (!(ae && ae.menuOpen && ae.reply) && flushStage()) return;

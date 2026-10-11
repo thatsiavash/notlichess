@@ -1,6 +1,7 @@
 // Design system v2, Night (F3.1): the checks behind "a new look everywhere". Run from labels.test.js:
 // require('./design')(A) returns the failures (an empty list when all hold), A being a booted app realm.
-//   Type: Nunito from Google Fonts (500 to 900, one preloaded woff2, display=optional), the seven size tokens
+//   Type: Nunito from this site (V5.4: fonts/, one variable woff2 beside the OFL, 500 to 900, display optional,
+//   preloaded; Google's font hosts named nowhere), the seven size tokens
 //   with the design lead's values on phones and from 861 px, and every font-size in app.css one of them; the
 //   body at 500, the small size never 800, and 12 px only for kickers, tags, pills, the key line, the menu's
 //   keys, the eval bar and board labels (the design lead's review of slice 3).
@@ -44,10 +45,21 @@ module.exports = function designChecks(A) {
   const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/:root\s*\{[^}]*\}/g, '');
 
   /* ── type ── */
-  const sheets = page.match(/<link rel="stylesheet" href="([^"]+)"/g) || [];
-  if (sheets.length !== 1 || !/fonts\.googleapis\.com\/css2\?family=Nunito:wght@500\.\.900&display=optional"/.test(sheets[0])) no('fonts: one Google Fonts stylesheet, Nunito 500 to 900, display=optional: ' + sheets.join(' '));
+  /* Nunito from this site (V5.4): nothing from Google's font hosts, no stylesheet link; one @font-face, the
+     weights in use (500 to 900), display optional, its woff2 in fonts/ with the OFL beside it, and the page
+     preloads that very file */
+  if (/fonts\.(googleapis|gstatic)\.com/.test(page + css)) no('fonts: Google\'s font hosts are still named');
+  const sheets = page.match(/<link rel="stylesheet"[^>]*>/g) || [];
+  if (sheets.length) no('fonts: a stylesheet link: ' + sheets.join(' '));
+  const faces = css.replace(/\/\*[\s\S]*?\*\//g, '').match(/@font-face\{[^}]*\}/g) || [], face = faces[0] || '';
+  const woff = /src:url\((fonts\/[\w.-]+\.woff2)\) format\("woff2"\)/.exec(face);
+  if (faces.length !== 1 || !/font-family:"Nunito"/.test(face) || !/font-weight:500 900/.test(face) || !/font-display:optional/.test(face) || !woff) no('fonts: one @font-face, Nunito 500 to 900 from fonts/, display optional: ' + faces.join(' '));
+  const ROOT = path.join(SRC, '..'), bytes = woff && fs.existsSync(path.join(ROOT, woff[1])) ? fs.readFileSync(path.join(ROOT, woff[1])) : null;
+  if (woff && (!bytes || bytes.slice(0, 4).toString('latin1') !== 'wOF2')) no('fonts: ' + woff[1] + ' is not a woff2 file in the repo');
+  const ofl = path.join(ROOT, 'fonts', 'OFL.txt');
+  if (!fs.existsSync(ofl) || !/^Copyright .*Nunito Project Authors[\s\S]*SIL OPEN FONT LICENSE Version 1\.1/.test(fs.readFileSync(ofl, 'utf8'))) no('fonts: the licence beside the font (fonts/OFL.txt: the copyright notice and the OFL 1.1)');
   const pre = page.match(/<link rel="preload"[^>]*>/g) || [];
-  if (pre.length !== 1 || !/href="https:\/\/fonts\.gstatic\.com\/s\/nunito\/[^"]+\.woff2" as="font" type="font\/woff2" crossorigin/.test(pre[0])) no('fonts: one preloaded Nunito woff2: ' + pre.join(' '));
+  if (pre.length !== 1 || !woff || pre[0] !== '<link rel="preload" href="' + woff[1] + '" as="font" type="font/woff2" crossorigin>') no('fonts: one preload, of the file app.css declares: ' + pre.join(' '));
   if (/Cormorant|Lora|Georgia/.test(page + css)) no('fonts: an old family is still named');
   if (!/^"Nunito",/.test(P['--font'] || '') || !/sans-serif$/.test(P['--font'] || '')) no('fonts: the stack starts with Nunito and ends on sans-serif: ' + P['--font']);
   Object.keys(TYPE).forEach((k) => {
@@ -107,6 +119,16 @@ module.exports = function designChecks(A) {
   has(/border-radius:var\(--r-btn\)/, 'buttons are rounded 14 px');
   if (P['--r-btn'] !== '14px') no('buttons: radius 14, found ' + P['--r-btn']);
   if (!/@media \(prefers-reduced-motion:reduce\)\{[\s\S]*\.btn-big:active,\.btn-line:active,\.nav-btn:active\{transform:none\}\s*\.btn-big:active\{background:var\(--honey-lip\)\}/.test(rules)) no('buttons: under reduced motion a press changes colour instead');
+  /* V5.3: a honey button's label stays dark in every state. The link hover lives inside @media (hover:hover)
+     and only for a plain link (a:not([class])), so no tap leaves it on a button; and no rule gives a .btn-big
+     a text colour other than --on-honey */
+  const hov = /@media \(hover:hover\)\{\n([\s\S]*?)\n\}/.exec(rules);
+  if (!hov || !/(^|\s)a:not\(\[class\]\):hover\{color:var\(--honey-hover\)\}/.test(hov[1])) no('buttons: the link hover is a:not([class]):hover, inside @media (hover:hover)');
+  const outside = rules.replace(/@media \(hover:hover\)\{[^{}]*\{[^}]*\}\}/g, '').replace(/@media \(hover:hover\)\{\n[\s\S]*?\n\}/g, '');
+  if (/(^|[{};,])\s*a(:not\([^)]*\))?:hover\s*[{,]/.test(outside)) no('buttons: a link hover outside @media (hover:hover) sticks after a tap, over the honey label');
+  const btnInk = [];
+  rules.replace(/([^{}]+)\{([^{}]*)\}/g, (m, sel, body) => { if (/\.btn-big\b/.test(sel) && /(^|;)color:/.test(body) && !/(^|;)color:var\(--on-honey\)/.test(body)) btnInk.push(sel.trim()); return m; });
+  if (btnInk.length) no('buttons: a honey button\'s label in another colour: ' + btnInk.join(' | '));
 
   /* ── icons and glyphs ── */
   const icons = JSON.parse(A.ev('JSON.stringify(BAR_ICON)'));

@@ -6,13 +6,15 @@
 function el(id) { return document.getElementById(id); }
 /* "1 game", "3 games" */
 function plur(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+/* a measure (Clarity's event): dropped unless the player said yes to
+   usage recording and the tag was asked for (clarityLive, V5.5) */
 function track(name) {
-  try { if (window.clarity) window.clarity('event', name); } catch (e) {}
+  try { if (clarityLive()) window.clarity('event', name); } catch (e) {}
 }
 /* a tag on this visit's recording (Clarity's set): coarse words only,
-   never a name, a rating or a position */
+   never a name, a rating or a position; dropped as track's are */
 function measureTag(key, value) {
-  try { if (window.clarity) window.clarity('set', key, String(value)); } catch (e) {}
+  try { if (clarityLive()) window.clarity('set', key, String(value)); } catch (e) {}
 }
 var saveTimer = null, saveCount = 0;
 function scheduleSave() {
@@ -74,11 +76,14 @@ function renderShell() {
   if (location.search) {
     try { history.replaceState(null, '', location.pathname + (location.hash || '#train')); } catch (e) {}
   }
+  /* Today's foot holds the usage-recording question until it is asked
+     (V5.5); it hides during a set */
   el('main').innerHTML = '<div class="page">'
     + '<nav id="views" class="views" role="tablist"></nav>'
-    + '<div id="view-train" class="view"><section id="trainbox"></section></div>'
+    + '<div id="view-train" class="view"><section id="trainbox"></section><div id="consent-slot" class="consent-slot"></div></div>'
     + '<div id="view-insights" class="view" hidden><section id="insightsbox"></section></div>'
     + '</div>';
+  consentPaint();
 }
 function renderAll() {
   [renderHeader, renderViews, renderTrain, renderInsights, renderSettings, renderFoot].forEach(function (fn) {
@@ -1195,6 +1200,9 @@ function boardOptsFor(a) {
       if (hm.arrows.length) opts.arrows = (opts.arrows || []).concat(hm.arrows);
       /* Hint 3's red squares (F9.2), each tinted with an inset edge */
       if (hm.reds.length) opts.tints = (opts.tints || []).concat(hm.reds.map(function (q) { return { sq: q, kind: 'lose' }; }));
+      /* a hint's threat arrow shows in full: the game arrow, which it may
+         lie on (the reply that takes back along it), drops to 30% (V5.2) */
+      if (opts.bad && hm.arrows.some(function (x) { return x.kind === 'threat'; })) opts.badDim = true;
     }
   }
   /* "not a move here": the grey outline on a square just tapped. Before an
@@ -1445,28 +1453,26 @@ function labelBox(text, desk) {
   return { w: Math.ceil(w), h: desk ? 20 : 18 };
 }
 /* what a label must keep clear of, in px on a board px wide, as drawn
-   (flipped or not): the squares holding pieces (and ghosts), each flagged
-   when an arrow starts or ends there; badges, tokens, rings, crosses and
-   legal dots as boxes; arrow shafts and heads, guard dots, tried lines and
-   drawn shapes as thick segments (their stroke and halo, plus 4 px each
-   side); avoid, squares no label may touch (the answer's square before an
-   answer, 2.3). head, tail: the cells (column, row on screen) the label
-   sits beside; soft: pieces it may cover (a first-sight label, one) */
+   (flipped or not): the squares holding pieces (and ghosts); badges,
+   tokens, rings, crosses and legal dots as boxes; arrow shafts and heads,
+   guard dots, tried lines and drawn shapes as thick segments (their stroke
+   and halo, plus 4 px each side); avoid, squares no label may touch (the
+   answer's square before an answer, 2.3). head, tail: the cells (column,
+   row on screen) the label sits beside */
 function labelGeom(f, px, c, avoid) {
   var o = f.opts, flip = !!o.flip, s = px / 360, Q = 45 * s;
   var cell = function (sq) { return [flip ? 7 - sq % 8 : sq % 8, flip ? sq >> 3 : 7 - (sq >> 3)]; };
   var ctr = function (sq) { var k = cell(sq); return [(k[0] + 0.5) * Q, (k[1] + 0.5) * Q]; };
   var sqBox = function (sq) { var k = cell(sq); return { x: k[0] * Q, y: k[1] * Q, w: Q, h: Q }; };
   var disc = function (cx, cy, r) { return { x: cx - r, y: cy - r, w: 2 * r, h: 2 * r }; };
-  var g = { size: px, sq: Q, boxes: [], segs: [], pieces: [], head: cell(c.head), tail: c.tail != null ? cell(c.tail) : null, soft: c.tip ? 1 : 0 };
+  var g = { size: px, sq: Q, boxes: [], segs: [], pieces: [], head: cell(c.head), tail: c.tail != null ? cell(c.tail) : null };
   var arrows = [];
   if (o.ghost) arrows.push({ from: o.ghost[0], to: o.ghost[1], kind: 'explore' });
   if (o.good) arrows.push({ from: o.good[0], to: o.good[1], kind: 'better' });
   if (o.bad) arrows.push({ from: o.bad[0], to: o.bad[1], kind: 'game' });
   arrows = arrows.concat(o.arrows || []);
-  var ends = {}, heads = {};
-  arrows.forEach(function (ar) { ends[ar.from] = ends[ar.to] = 1; });
-  for (var sq = 0; sq < 64; sq++) if (f.st.b[sq]) { var pb = sqBox(sq); pb.end = !!ends[sq]; g.pieces.push(pb); }
+  var heads = {};
+  for (var sq = 0; sq < 64; sq++) if (f.st.b[sq]) g.pieces.push(sqBox(sq));
   /* arrows as markArrow draws them: the shaft to its inset end, the head
      4.2 strokes long and wide around that end (a shy one stops short) */
   arrows.forEach(function (ar) {
@@ -1499,37 +1505,36 @@ function labelGeom(f, px, c, avoid) {
    head (or the marked square), its 8 neighbours nearest first, then the 8
    of the tail; in each neighbour centred on it, then flush with its left
    edge, then its right (a pill is often wider than a square). The first
-   place that stays on the board and clear of every piece, badge, token,
-   ring and shaft wins. A first-sight label may cover one piece that no
-   arrow starts or ends on, but only where no place is clear of them all;
-   {x, y} in px, or null: no room, no label */
+   place that stays on the board and clear of every piece (a ghost
+   included), badge, token, ring and shaft wins. A label never covers a
+   piece, a first-sight one neither (V5.2): {x, y} in px, or null: no room,
+   no label, and the band and the board's name say it anyway */
 var LABEL_NEAR = [[0, -1], [0, 1], [1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1]];
 function placeLabel(geom, w, h) {
   /* a touch of half a board unit is no overlap, at any board size */
   var S = geom.size, Q = geom.sq, E = 0.5 * Math.min(1, S / 360);
   var hit = function (r, b) { return r.x < b.x + b.w - E && b.x < r.x + r.w - E && r.y < b.y + b.h - E && b.y < r.y + r.h - E; };
-  var clear = function (r, soft) {
+  var clear = function (r) {
     if (r.x < 0 || r.y < 0 || r.x + r.w > S || r.y + r.h > S) return false;
-    var i, n = 0;
+    var i;
     for (i = 0; i < geom.boxes.length; i++) if (hit(r, geom.boxes[i])) return false;
     for (i = 0; i < geom.segs.length; i++) if (segRectDist(geom.segs[i], r) < geom.segs[i].r) return false;
-    for (i = 0; i < geom.pieces.length; i++) if (hit(r, geom.pieces[i]) && (geom.pieces[i].end || ++n > soft)) return false;
+    for (i = 0; i < geom.pieces.length; i++) if (hit(r, geom.pieces[i])) return false;
     return true;
   };
-  var at = [geom.head, geom.tail], passes = geom.soft ? [0, geom.soft] : [0];
-  for (var p = 0; p < passes.length; p++)
-    for (var j = 0; j < at.length; j++) {
-      if (!at[j]) continue;
-      for (var k = 0; k < LABEL_NEAR.length; k++) {
-        var cx = at[j][0] + LABEL_NEAR[k][0], cy = at[j][1] + LABEL_NEAR[k][1];
-        if (cx < 0 || cx > 7 || cy < 0 || cy > 7) continue;
-        var xs = [(cx + 0.5) * Q - w / 2, cx * Q, (cx + 1) * Q - w];
-        for (var x = 0; x < xs.length; x++) {
-          var r = { x: xs[x], y: (cy + 0.5) * Q - h / 2, w: w, h: h };
-          if (clear(r, passes[p])) return { x: r.x, y: r.y };
-        }
+  var at = [geom.head, geom.tail];
+  for (var j = 0; j < at.length; j++) {
+    if (!at[j]) continue;
+    for (var k = 0; k < LABEL_NEAR.length; k++) {
+      var cx = at[j][0] + LABEL_NEAR[k][0], cy = at[j][1] + LABEL_NEAR[k][1];
+      if (cx < 0 || cx > 7 || cy < 0 || cy > 7) continue;
+      var xs = [(cx + 0.5) * Q - w / 2, cx * Q, (cx + 1) * Q - w];
+      for (var x = 0; x < xs.length; x++) {
+        var r = { x: xs[x], y: (cy + 0.5) * Q - h / 2, w: w, h: h };
+        if (clear(r)) return { x: r.x, y: r.y };
       }
     }
+  }
   return null;
 }
 /* the distance from a segment to a rectangle (0 when they meet) */
@@ -1754,6 +1759,7 @@ function paintBoard(a, instant) {
   /* the label (2.1) after the marks svg, placed on the board as drawn */
   var lb = frameLabel(a, f, boardPx(bw), deskLabels(bw)), lh = labelHtml(lb, labelFresh(a, lb));
   bw.innerHTML = boardSvg(f.st, f.opts) + '<div class="blabels" aria-hidden="true">' + lh + '</div>' + (a.pendingPromo ? promoHtml(f.st) : '') + fade;
+  bw.nlReds = redsOf(f.opts);
   var lbox = bw.querySelector && bw.querySelector('.blabels');
   if (lbox) lbox.nlHtml = lh;
   labelShown(a, lb);
@@ -1831,11 +1837,16 @@ function fadeOut(a) {
   });
 }
 function stripWordsOf(h) { return String(h || '').replace(/<i class="st-dot[^"]*"><\/i>|<span class="st-count">[^<]*<\/span>/g, '').replace(/ on"/g, '"'); }
-/* the marks beat: only the marks svg is rewritten, so no piece is touched */
+/* the marks beat: only the marks svg is rewritten, so no piece is touched.
+   Red squares (Hint 3, F9.2) are tints, under the pieces in the board svg:
+   a frame whose red squares are not the board's (Hint 3 landing once Try
+   again's crossfade ends) draws the whole board instead, so they show at
+   once, never only after a tap repaints it (V5.1) */
 function paintMarks(a) {
   var bw = el('bwrap'), old = bw && bw.querySelector('.marks');
   if (!old) return;
   var f = boardOptsFor(a);
+  if (redsOf(f.opts) !== (bw.nlReds || '')) { paintBoard(a, true); return; }
   f.opts.anim = null;
   var html = boardSvg(f.st, f.opts);
   old.outerHTML = html.slice(html.indexOf('</svg>') + 6);
@@ -1844,6 +1855,8 @@ function paintMarks(a) {
   if (bsv && bsv.getAttribute('aria-label') !== f.opts.label) bsv.setAttribute('aria-label', f.opts.label);
   paintLabels(a, f);
 }
+/* a frame's red squares (its 'lose' tints), as the board svg draws them */
+function redsOf(o) { return (o.tints || []).filter(function (t) { return t.kind === 'lose'; }).map(function (t) { return t.sq; }).join(','); }
 /* the board alone, staged: a selection, a drawn shape, a row pointed at
    while exploring. The words stay as they are */
 function renderCardBoard() { stage(['board']); }
@@ -3075,6 +3088,16 @@ function closeSheet(fromPop) {
   if (opener) back = opener;
   if (back && back.isConnected && back.focus) back.focus({ preventScroll: true });
 }
+/* Esc on a sheet: it closes, and from a card's Details the keyboard goes
+   to the honey button, so Enter presses Continue as the key line says
+   (back on the strip's Details link, Enter would open it again: V5.3) */
+function escSheet() {
+  var details = ui.sheet === 'details' && !!(ui.session && ui.session.active);
+  closeSheet();
+  if (!details) return;
+  var i = honeySlot(), bar = el('cbar'), b = i >= 0 && bar && bar.querySelector('[data-slot="' + i + '"][data-act]');
+  if (b && b.focus) b.focus({ preventScroll: true });
+}
 function sheetHtml(kind) {
   var parts = String(kind).split(':'), k = parts[1];
   if (parts[0] === 'settings') return settingsHtml();
@@ -3188,7 +3211,9 @@ function settingsHtml() {
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
       + '<p>' + gamesLine() + '</p>'
-      + '<p>None of it is kept on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p></div>'
+      /* usage recording, the player's own choice (V5.5) */
+      + '<p>None of it is kept on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</p>'
+      + sw('consent', 'Usage recording (Microsoft Clarity)', consentYes()) + '</div>'
     + '<div class="set-block"><span class="kicker">Reset</span>'
       + '<a data-act="resetProgress" class="danger-row' + (ui.resetArmed ? ' armed' : '') + '">' + (ui.resetArmed ? 'Tap again to reset your practice history' : 'Reset practice history') + '</a>'
       + '<a data-act="wipe" class="danger-row' + (ui.wipeArmed ? ' armed' : '') + '">' + (ui.wipeArmed ? 'Tap again to erase everything' : 'Erase everything') + '</a></div>';
@@ -3206,7 +3231,7 @@ function gamesLine() {
 function renderFoot() {
   var f = el('foot');
   if (!f) return;
-  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</span>'
+  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</span>'
     + '<span class="foot-links"><a data-act="coffee">Support the developer</a>'
     /* for lichess players only: a first visit plays nowhere yet */
     + (cfg.user && !isCC() ? '<a href="https://lichess.org/patron">Donate to lichess</a>' : '')

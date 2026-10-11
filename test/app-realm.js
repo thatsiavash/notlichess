@@ -6,6 +6,7 @@
 //        A.tap(sq), A.drag(from, to, mouse): the board by hand, through the page's pointer and click handlers
 //        A.advance(ms): the clock moves on, and each timer runs when it falls due (A.flush runs them all, whatever their delay)
 //        A.fire(type): a document event (visibilitychange) through the page's listeners
+//        A.change(act, checked): a Settings switch (a checkbox with that data-act) through the page's change listeners
 // Nothing reaches the network (fetch never resolves) and no engine runs (Worker throws), so everything
 // tested here is the app's own bookkeeping.
 const fs = require('fs'), path = require('path');
@@ -149,6 +150,11 @@ module.exports = function makeApp(opts) {
     },
     /* an event on the document (visibilitychange), given to the page's own listeners */
     fire: (type) => { (listeners[type] || []).forEach((fn) => fn({ type, target: document, preventDefault() {} })); },
+    /* a checkbox with this data-act switched on or off (a Settings switch), through the page's change listeners */
+    change: (act, checked) => {
+      const t = { tagName: 'INPUT', type: 'checkbox', checked: !!checked, getAttribute: (n) => (n === 'data-act' ? act : null) };
+      (listeners.change || []).forEach((fn) => fn({ type: 'change', target: t, preventDefault() {} }));
+    },
     /* run queued timers once (not recursively forever) */
     flush: (rounds) => { for (let r = 0; r < (rounds || 1); r++) { const t = timers.splice(0); t.forEach((f) => { try { f(); } catch (e) {} }); } },
   };

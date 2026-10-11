@@ -339,8 +339,12 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(200);
     ok('Escape closes Details', !$('#overlay .sheet'));
-    if (viaStrip) ok('closing Details gives the keyboard back to its link', document.activeElement === $('#cstrip [data-act=details]'), document.activeElement && document.activeElement.outerHTML.slice(0, 80));
-    else ok('in a panel under 120 px Details is in the ••• menu, and closing it gives the keyboard back to the ••• button', document.activeElement === $('#ctop [data-act=menu]'), document.activeElement && document.activeElement.outerHTML.slice(0, 80));
+    /* Esc hands the keyboard to the honey button, so Enter presses Continue as the key line says (back on the
+       strip's link or the ••• button, Enter would open Details again: V5.3); a click outside still gives it back
+       to its opener (below) */
+    const honeyBtn = $('#cbar .btn-big[data-act]');
+    ok('Escape on Details gives the keyboard to the honey button (' + (viaStrip ? 'opened from the strip' : 'opened from the ••• menu, in a panel under 120 px') + ')', !!honeyBtn && document.activeElement === honeyBtn && /^Enter: (Continue|Finish)/.test(text('#ckeys') || 'Enter: ' + honeyBtn.textContent.trim()),
+      (document.activeElement && document.activeElement.outerHTML.slice(0, 80)) + ' | ' + text('#ckeys'));
     /* from the ••• menu: the pattern named once (its chip), and the scrim gives focus back to the ••• button */
     click('#ctop [data-act=menu]');
     await until(() => $('#ctop [data-act=details]'), 3000);

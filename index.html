@@ -6,7 +6,9 @@
 <title>notlichess.org</title>
 <script>
 /* a link like /?u=name&src=lichess: the name moves into this tab's
-   sessionStorage and leaves the address before the analytics script loads */
+   sessionStorage and leaves the address at once, so no analytics ever sees
+   it (Microsoft Clarity loads only after the player's yes, 15-shell.js,
+   and gets the campaign as a tag) */
 (function () { try {
   var p = new URLSearchParams(location.search), u = p.get('u') || p.get('user'), s = p.get('src');
   if (p.get('utm_source')) sessionStorage.setItem('nl:utm', p.get('utm_source'));
@@ -14,15 +16,6 @@
   if (s) sessionStorage.setItem('nl:linkSrc', s);
   if (location.search) history.replaceState(null, '', location.pathname + location.hash);
 } catch (e) {} })();
-</script>
-<script type="text/javascript">
-    (function(c,l,a,r,i,t,y){
-        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
-        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
-        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-    })(window, document, "clarity", "script", "y95daq5rao");
-    /* the address loses its query before this runs: the campaign is passed as a tag */
-    try { var nlUtm = sessionStorage.getItem('nl:utm'); if (nlUtm) window.clarity('set', 'utm_source', nlUtm.slice(0, 40)); } catch (e) {}
 </script>
 <meta name="description" content="Stop making the same chess mistakes. notlichess finds the moves that cost you games in your lichess or chess.com games, shows you why, and trains you on them until they stop. Free, no account.">
 <meta name="color-scheme" content="dark">
@@ -45,14 +38,12 @@
 <!-- the name under the icon on an iPhone's home screen (the tab's title may
      carry a count) -->
 <meta name="apple-mobile-web-app-title" content="notlichess">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- Nunito, one variable woff2 for every weight (500 to 900), preloaded so it
-     is in by the first paint; display=optional: a font that misses that
-     window waits for the next visit, so the words never reflow mid-beat.
-     The preload is the latin file the stylesheet below names. -->
-<link rel="preload" href="https://fonts.gstatic.com/s/nunito/v32/XRXV3I6Li01BKofINeaB.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@500..900&display=optional">
+<!-- Nunito from this site (fonts/, never Google's): one variable woff2 for
+     every weight, preloaded so it is in by the first paint. app.css
+     declares it (display optional: a font that misses that window waits for
+     the next visit, so the words never reflow mid-beat) and sw.js keeps it
+     for the app offline. The preload is the file app.css names. -->
+<link rel="preload" href="fonts/nunito-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <style>
 /* ══════════════════════════════════════════════════════════════════════════
    notlichess.org: the mistakes trainer.
@@ -147,6 +138,15 @@
   }
 }
 
+/* the font: Nunito (SIL Open Font Licence, fonts/OFL.txt) from this site,
+   never from Google, whose servers would see every visitor. One variable
+   woff2, its latin subset (every character the page writes), the weights
+   in use (500 to 900); page.html preloads it and sw.js keeps it, so the
+   installed app has it offline ─────────────────────────────────────────── */
+@font-face{font-family:"Nunito";font-style:normal;font-weight:500 900;font-display:optional;
+  src:url(fonts/nunito-latin-wght-normal.woff2) format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
 /* base ─────────────────────────────────────────────────────────────────── */
 html{scrollbar-gutter:stable}
 *{box-sizing:border-box}
@@ -158,7 +158,6 @@ body{
 h1,h2,h3{margin:0}
 b,strong{font-weight:800}
 a{color:var(--honey);text-decoration:none;cursor:pointer}
-a:hover{color:var(--honey-hover)}
 button{font-family:inherit}
 /* the focus ring: honey, 2 px, 2 px out; on a honey button the light text
    colour. After a tap or a click (by-pointer) the card's controls, the •••
@@ -235,8 +234,11 @@ button{font-family:inherit}
 .btn-quiet{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 4px;background:none;border:0;
   color:var(--honey);font-size:var(--fs-body);line-height:20px;font-weight:800;cursor:pointer}
 .btn-off{opacity:.4;pointer-events:none}
-/* hover only where a pointer hovers: on a touch screen it would stick after the tap */
+/* hover only where a pointer hovers: on a touch screen it would stick after the tap.
+   A plain link (no class) lightens; a link styled as a button keeps its own
+   colours, so a honey button's label stays dark in every state */
 @media (hover:hover){
+  a:not([class]):hover{color:var(--honey-hover)}
   .btn-big:hover{background:var(--honey-hover);color:var(--on-honey)}
   .btn-line:hover,.nav-btn:hover{color:var(--text-1);border-color:var(--text-3)}
   .btn-quiet:hover,#cbar [data-icon=eye].btn-line:hover{color:var(--honey-hover)}
@@ -324,6 +326,16 @@ button{font-family:inherit}
 .ex-sub{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0}
 .landing .value{grid-column:1/-1}
 .landing .first-foot.small{grid-column:1/-1;margin-top:24px}
+/* the usage-recording question (V5.5): a slim card at the foot of the
+   landing or of Today, its two answers alike; never during a set */
+.consent{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin:32px 0 0;padding:16px 20px;background:var(--surface-1);border-radius:var(--r-card)}
+.consent-q{flex:1 1 280px;margin:0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+.consent-q b{font-weight:700;color:var(--text-1)}
+.consent-acts{display:flex;flex-wrap:wrap;gap:12px}
+.consent-acts .btn-line{min-width:112px}
+.landing .consent{grid-column:1/-1}
+.consent-slot .consent{max-width:720px;margin:8px 0 24px}
+body.in-session .consent-slot{display:none}
 @media (max-width:1000px){
   .landing{grid-template-columns:1fr;padding-top:32px}
   .landing .src-pick{width:100%}
@@ -1243,8 +1255,9 @@ body.in-session{padding-bottom:0}
      Icons: Lucide (lucide.dev), ISC licence, copyright Lucide Icons and
      Contributors; arrow-right, calendar, check, chevron-left, chevron-right,
      compass, flag, info, minus, search, share, shield, target and x derive
-     from Feather, MIT licence, copyright Cole Bemis. Font: Nunito, SIL Open
-     Font Licence, served by Google Fonts. -->
+     from Feather, MIT licence, copyright Cole Bemis. Font: Nunito,
+     copyright The Nunito Project Authors, SIL Open Font Licence 1.1, in
+     fonts/ beside its licence (fonts/OFL.txt). -->
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true"><symbol id="pc-wK" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linejoin="miter" d="M22.5 11.63V6M20 8h5"/><path fill="#fff" stroke-linecap="butt" stroke-linejoin="miter" d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5"/><path fill="#fff" d="M11.5 37c5.5 3.5 15.5 3.5 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-3.5-7.5-13-10.5-16-4-3 6 5 10 5 10z"/><path d="M11.5 30c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0"/></g></symbol><symbol id="pc-wQ" viewBox="0 0 45 45"><g fill="#fff" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M8 12a2 2 0 1 1-4 0 2 2 0 1 1 4 0m16.5-4.5a2 2 0 1 1-4 0 2 2 0 1 1 4 0M41 12a2 2 0 1 1-4 0 2 2 0 1 1 4 0M16 8.5a2 2 0 1 1-4 0 2 2 0 1 1 4 0M33 9a2 2 0 1 1-4 0 2 2 0 1 1 4 0"/><path stroke-linecap="butt" d="M9 26c8.5-1.5 21-1.5 27 0l2-12-7 11V11l-5.5 13.5-3-15-3 15-5.5-14V25L7 14z"/><path stroke-linecap="butt" d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1.5 2.5-1.5 2.5-1.5 1.5.5 2.5.5 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4-8.5-1.5-18.5-1.5-27 0z"/><path fill="none" d="M11.5 30c3.5-1 18.5-1 22 0M12 33.5c6-1 15-1 21 0"/></g></symbol><symbol id="pc-wR" viewBox="0 0 45 45"><g fill="#fff" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linecap="butt" d="M9 39h27v-3H9zm3-3v-4h21v4zm-1-22V9h4v2h5V9h5v2h5V9h4v5"/><path d="m34 14-3 3H14l-3-3"/><path stroke-linecap="butt" stroke-linejoin="miter" d="M31 17v12.5H14V17"/><path d="m31 29.5 1.5 2.5h-20l1.5-2.5"/><path fill="none" stroke-linejoin="miter" d="M11 14h23"/></g></symbol><symbol id="pc-wB" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><g fill="#fff" stroke-linecap="butt"><path d="M9 36c3.39-.97 10.11.43 13.5-2 3.39 2.43 10.11 1.03 13.5 2 0 0 1.65.54 3 2-.68.97-1.65.99-3 .5-3.39-.97-10.11.46-13.5-1-3.39 1.46-10.11.03-13.5 1-1.35.49-2.32.47-3-.5 1.35-1.94 3-2 3-2z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z"/></g><path stroke-linejoin="miter" d="M17.5 26h10M15 30h15m-7.5-14.5v5M20 18h5"/></g></symbol><symbol id="pc-wN" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path fill="#fff" d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21"/><path fill="#fff" d="M24 18c.38 2.91-5.55 7.37-8 9-3 2-2.82 4.34-5 4-1.042-.94 1.41-3.04 0-3-1 0 .19 1.23-1 2-1 0-4.003 1-4-4 0-2 6-12 6-12s1.89-1.9 2-3.5c-.73-.994-.5-2-.5-3 1-1 3 2.5 3 2.5h2s.78-1.992 2.5-3c1 0 1 3 1 3"/><path fill="#000" d="M9.5 25.5a.5.5 0 1 1-1 0 .5.5 0 1 1 1 0m5.433-9.75a.5 1.5 30 1 1-.866-.5.5 1.5 30 1 1 .866.5"/></g></symbol><symbol id="pc-wP" viewBox="0 0 45 45"><path fill="#fff" stroke="#000" stroke-linecap="round" stroke-width="1.5" d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z"/></symbol><symbol id="pc-bK" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linejoin="miter" d="M22.5 11.6V6"/><path fill="#000" stroke-linecap="butt" stroke-linejoin="miter" d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5"/><path fill="#000" d="M11.5 37a22.3 22.3 0 0 0 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-3.5-7.5-13-10.5-16-4-3 6 5 10 5 10z"/><path stroke-linejoin="miter" d="M20 8h5"/><path stroke="#ececec" d="M32 29.5s8.5-4 6-9.7C34.1 14 25 18 22.5 24.6v2.1-2.1C20 18 9.9 14 7 19.9c-2.5 5.6 4.8 9 4.8 9"/><path stroke="#ececec" d="M11.5 30c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0"/></g></symbol><symbol id="pc-bQ" viewBox="0 0 45 45"><g fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><g stroke="none"><circle cx="6" cy="12" r="2.75"/><circle cx="14" cy="9" r="2.75"/><circle cx="22.5" cy="8" r="2.75"/><circle cx="31" cy="9" r="2.75"/><circle cx="39" cy="12" r="2.75"/></g><path stroke-linecap="butt" d="M9 26c8.5-1.5 21-1.5 27 0l2.5-12.5L31 25l-.3-14.1-5.2 13.6-3-14.5-3 14.5-5.2-13.6L14 25 6.5 13.5z"/><path stroke-linecap="butt" d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1.5 2.5-1.5 2.5-1.5 1.5.5 2.5.5 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4-8.5-1.5-18.5-1.5-27 0z"/><path fill="none" stroke-linecap="butt" d="M11 38.5a35 35 1 0 0 23 0"/><path fill="none" stroke="#ececec" d="M11 29a35 35 1 0 1 23 0m-21.5 2.5h20m-21 3a35 35 1 0 0 22 0m-23 3a35 35 1 0 0 24 0"/></g></symbol><symbol id="pc-bR" viewBox="0 0 45 45"><g fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linecap="butt" d="M9 39h27v-3H9zm3.5-7 1.5-2.5h17l1.5 2.5zm-.5 4v-4h21v4z"/><path stroke-linecap="butt" stroke-linejoin="miter" d="M14 29.5v-13h17v13z"/><path stroke-linecap="butt" d="M14 16.5 11 14h23l-3 2.5zM11 14V9h4v2h5V9h5v2h5V9h4v5z"/><path fill="none" stroke="#ececec" stroke-linejoin="miter" stroke-width="1" d="M12 35.5h21m-20-4h19m-18-2h17m-17-13h17M11 14h23"/></g></symbol><symbol id="pc-bB" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><g fill="#000" stroke-linecap="butt"><path d="M9 36c3.4-1 10.1.4 13.5-2 3.4 2.4 10.1 1 13.5 2 0 0 1.6.5 3 2-.7 1-1.6 1-3 .5-3.4-1-10.1.5-13.5-1-3.4 1.5-10.1 0-13.5 1-1.4.5-2.3.5-3-.5 1.4-2 3-2 3-2z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z"/></g><path stroke="#ececec" stroke-linejoin="miter" d="M17.5 26h10M15 30h15m-7.5-14.5v5M20 18h5"/></g></symbol><symbol id="pc-bN" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path fill="#000" d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21"/><path fill="#000" d="M24 18c.38 2.91-5.55 7.37-8 9-3 2-2.82 4.34-5 4-1.04-.94 1.41-3.04 0-3-1 0 .19 1.23-1 2-1 0-4 1-4-4 0-2 6-12 6-12s1.89-1.9 2-3.5c-.73-1-.5-2-.5-3 1-1 3 2.5 3 2.5h2s.78-2 2.5-3c1 0 1 3 1 3"/><path fill="#ececec" stroke="#ececec" d="M9.5 25.5a.5.5 0 1 1-1 0 .5.5 0 1 1 1 0m5.43-9.75a.5 1.5 30 1 1-.86-.5.5 1.5 30 1 1 .86.5"/><path fill="#ececec" stroke="none" d="m24.55 10.4-.45 1.45.5.15c3.15 1 5.65 2.49 7.9 6.75S35.75 29.06 35.25 39l-.05.5h2.25l.05-.5c.5-10.06-.88-16.85-3.25-21.34s-5.79-6.64-9.19-7.16z"/></g></symbol><symbol id="pc-bP" viewBox="0 0 45 45"><path stroke="#000" stroke-linecap="round" stroke-width="1.5" d="M22.5 9a4 4 0 0 0-3.22 6.38 6.48 6.48 0 0 0-.87 10.65c-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47a6.46 6.46 0 0 0-.87-10.65A4.01 4.01 0 0 0 22.5 9z"/></symbol></svg>
 
 <header class="bar" id="bar" data-clarity-mask="true"></header>
@@ -2553,7 +2566,8 @@ function badgeXY(c, at) {
    badges [{sq, kind, at}], shapes; fx, the effect id of this paint, scoped to
    its card by the caller (a.key + ':' + a.fx), so two cards never share
    one. bad, good, ghost and hint are the older names of the game, better
-   and explore arrows and the hint ring. A small board (decor) keeps its
+   and explore arrows and the hint ring; badDim draws the game arrow at 30%
+   (an arrow with dim, the same). A small board (decor) keeps its
    marks inside its one svg. Only the squares and the pieces (data-sq) take
    a tap: every other shape lets it through */
 function boardSvg(st, opts) {
@@ -2681,14 +2695,16 @@ function boardSvg(st, opts) {
   var arrows = [];
   if (opts.ghost) arrows.push({ from: opts.ghost[0], to: opts.ghost[1], kind: 'explore', key: 'gold' });
   if (opts.good) arrows.push({ from: opts.good[0], to: opts.good[1], kind: 'better', key: 'good' });
-  if (opts.bad) arrows.push({ from: opts.bad[0], to: opts.bad[1], kind: 'game', key: 'bad' });
+  if (opts.bad) arrows.push({ from: opts.bad[0], to: opts.bad[1], kind: 'game', key: 'bad', dim: !!opts.badDim });
   arrows = arrows.concat(opts.arrows || []);
   var ends = {};
   arrows.forEach(function (ar, i) {
     var a = ctr(ar.from), b = ctr(ar.to), m = markArrow(a[0], a[1], b[0], b[1], ar.kind, 'ah' + uid + '-' + i, ar.key, ar.solid, !!ends[ar.to]);
     ends[ar.to] = 1;
     defs += m.def;
-    marks += m.body;
+    /* dim: an arrow at 30%, halo and head with it, so one drawn over it
+       reads in full (the game arrow under a hint's threat, V5.2) */
+    marks += ar.dim ? '<g class="mk-dim" opacity=".3">' + m.body + '</g>' : m.body;
   });
   /* z 9: a move already tried, faint: a thin line and a cross where it
      landed, or the cross alone ({sq}); it fades in once */
@@ -12982,13 +12998,15 @@ function labelRoom(a) {
 function el(id) { return document.getElementById(id); }
 /* "1 game", "3 games" */
 function plur(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+/* a measure (Clarity's event): dropped unless the player said yes to
+   usage recording and the tag was asked for (clarityLive, V5.5) */
 function track(name) {
-  try { if (window.clarity) window.clarity('event', name); } catch (e) {}
+  try { if (clarityLive()) window.clarity('event', name); } catch (e) {}
 }
 /* a tag on this visit's recording (Clarity's set): coarse words only,
-   never a name, a rating or a position */
+   never a name, a rating or a position; dropped as track's are */
 function measureTag(key, value) {
-  try { if (window.clarity) window.clarity('set', key, String(value)); } catch (e) {}
+  try { if (clarityLive()) window.clarity('set', key, String(value)); } catch (e) {}
 }
 var saveTimer = null, saveCount = 0;
 function scheduleSave() {
@@ -13050,11 +13068,14 @@ function renderShell() {
   if (location.search) {
     try { history.replaceState(null, '', location.pathname + (location.hash || '#train')); } catch (e) {}
   }
+  /* Today's foot holds the usage-recording question until it is asked
+     (V5.5); it hides during a set */
   el('main').innerHTML = '<div class="page">'
     + '<nav id="views" class="views" role="tablist"></nav>'
-    + '<div id="view-train" class="view"><section id="trainbox"></section></div>'
+    + '<div id="view-train" class="view"><section id="trainbox"></section><div id="consent-slot" class="consent-slot"></div></div>'
     + '<div id="view-insights" class="view" hidden><section id="insightsbox"></section></div>'
     + '</div>';
+  consentPaint();
 }
 function renderAll() {
   [renderHeader, renderViews, renderTrain, renderInsights, renderSettings, renderFoot].forEach(function (fn) {
@@ -14171,6 +14192,9 @@ function boardOptsFor(a) {
       if (hm.arrows.length) opts.arrows = (opts.arrows || []).concat(hm.arrows);
       /* Hint 3's red squares (F9.2), each tinted with an inset edge */
       if (hm.reds.length) opts.tints = (opts.tints || []).concat(hm.reds.map(function (q) { return { sq: q, kind: 'lose' }; }));
+      /* a hint's threat arrow shows in full: the game arrow, which it may
+         lie on (the reply that takes back along it), drops to 30% (V5.2) */
+      if (opts.bad && hm.arrows.some(function (x) { return x.kind === 'threat'; })) opts.badDim = true;
     }
   }
   /* "not a move here": the grey outline on a square just tapped. Before an
@@ -14421,28 +14445,26 @@ function labelBox(text, desk) {
   return { w: Math.ceil(w), h: desk ? 20 : 18 };
 }
 /* what a label must keep clear of, in px on a board px wide, as drawn
-   (flipped or not): the squares holding pieces (and ghosts), each flagged
-   when an arrow starts or ends there; badges, tokens, rings, crosses and
-   legal dots as boxes; arrow shafts and heads, guard dots, tried lines and
-   drawn shapes as thick segments (their stroke and halo, plus 4 px each
-   side); avoid, squares no label may touch (the answer's square before an
-   answer, 2.3). head, tail: the cells (column, row on screen) the label
-   sits beside; soft: pieces it may cover (a first-sight label, one) */
+   (flipped or not): the squares holding pieces (and ghosts); badges,
+   tokens, rings, crosses and legal dots as boxes; arrow shafts and heads,
+   guard dots, tried lines and drawn shapes as thick segments (their stroke
+   and halo, plus 4 px each side); avoid, squares no label may touch (the
+   answer's square before an answer, 2.3). head, tail: the cells (column,
+   row on screen) the label sits beside */
 function labelGeom(f, px, c, avoid) {
   var o = f.opts, flip = !!o.flip, s = px / 360, Q = 45 * s;
   var cell = function (sq) { return [flip ? 7 - sq % 8 : sq % 8, flip ? sq >> 3 : 7 - (sq >> 3)]; };
   var ctr = function (sq) { var k = cell(sq); return [(k[0] + 0.5) * Q, (k[1] + 0.5) * Q]; };
   var sqBox = function (sq) { var k = cell(sq); return { x: k[0] * Q, y: k[1] * Q, w: Q, h: Q }; };
   var disc = function (cx, cy, r) { return { x: cx - r, y: cy - r, w: 2 * r, h: 2 * r }; };
-  var g = { size: px, sq: Q, boxes: [], segs: [], pieces: [], head: cell(c.head), tail: c.tail != null ? cell(c.tail) : null, soft: c.tip ? 1 : 0 };
+  var g = { size: px, sq: Q, boxes: [], segs: [], pieces: [], head: cell(c.head), tail: c.tail != null ? cell(c.tail) : null };
   var arrows = [];
   if (o.ghost) arrows.push({ from: o.ghost[0], to: o.ghost[1], kind: 'explore' });
   if (o.good) arrows.push({ from: o.good[0], to: o.good[1], kind: 'better' });
   if (o.bad) arrows.push({ from: o.bad[0], to: o.bad[1], kind: 'game' });
   arrows = arrows.concat(o.arrows || []);
-  var ends = {}, heads = {};
-  arrows.forEach(function (ar) { ends[ar.from] = ends[ar.to] = 1; });
-  for (var sq = 0; sq < 64; sq++) if (f.st.b[sq]) { var pb = sqBox(sq); pb.end = !!ends[sq]; g.pieces.push(pb); }
+  var heads = {};
+  for (var sq = 0; sq < 64; sq++) if (f.st.b[sq]) g.pieces.push(sqBox(sq));
   /* arrows as markArrow draws them: the shaft to its inset end, the head
      4.2 strokes long and wide around that end (a shy one stops short) */
   arrows.forEach(function (ar) {
@@ -14475,37 +14497,36 @@ function labelGeom(f, px, c, avoid) {
    head (or the marked square), its 8 neighbours nearest first, then the 8
    of the tail; in each neighbour centred on it, then flush with its left
    edge, then its right (a pill is often wider than a square). The first
-   place that stays on the board and clear of every piece, badge, token,
-   ring and shaft wins. A first-sight label may cover one piece that no
-   arrow starts or ends on, but only where no place is clear of them all;
-   {x, y} in px, or null: no room, no label */
+   place that stays on the board and clear of every piece (a ghost
+   included), badge, token, ring and shaft wins. A label never covers a
+   piece, a first-sight one neither (V5.2): {x, y} in px, or null: no room,
+   no label, and the band and the board's name say it anyway */
 var LABEL_NEAR = [[0, -1], [0, 1], [1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1]];
 function placeLabel(geom, w, h) {
   /* a touch of half a board unit is no overlap, at any board size */
   var S = geom.size, Q = geom.sq, E = 0.5 * Math.min(1, S / 360);
   var hit = function (r, b) { return r.x < b.x + b.w - E && b.x < r.x + r.w - E && r.y < b.y + b.h - E && b.y < r.y + r.h - E; };
-  var clear = function (r, soft) {
+  var clear = function (r) {
     if (r.x < 0 || r.y < 0 || r.x + r.w > S || r.y + r.h > S) return false;
-    var i, n = 0;
+    var i;
     for (i = 0; i < geom.boxes.length; i++) if (hit(r, geom.boxes[i])) return false;
     for (i = 0; i < geom.segs.length; i++) if (segRectDist(geom.segs[i], r) < geom.segs[i].r) return false;
-    for (i = 0; i < geom.pieces.length; i++) if (hit(r, geom.pieces[i]) && (geom.pieces[i].end || ++n > soft)) return false;
+    for (i = 0; i < geom.pieces.length; i++) if (hit(r, geom.pieces[i])) return false;
     return true;
   };
-  var at = [geom.head, geom.tail], passes = geom.soft ? [0, geom.soft] : [0];
-  for (var p = 0; p < passes.length; p++)
-    for (var j = 0; j < at.length; j++) {
-      if (!at[j]) continue;
-      for (var k = 0; k < LABEL_NEAR.length; k++) {
-        var cx = at[j][0] + LABEL_NEAR[k][0], cy = at[j][1] + LABEL_NEAR[k][1];
-        if (cx < 0 || cx > 7 || cy < 0 || cy > 7) continue;
-        var xs = [(cx + 0.5) * Q - w / 2, cx * Q, (cx + 1) * Q - w];
-        for (var x = 0; x < xs.length; x++) {
-          var r = { x: xs[x], y: (cy + 0.5) * Q - h / 2, w: w, h: h };
-          if (clear(r, passes[p])) return { x: r.x, y: r.y };
-        }
+  var at = [geom.head, geom.tail];
+  for (var j = 0; j < at.length; j++) {
+    if (!at[j]) continue;
+    for (var k = 0; k < LABEL_NEAR.length; k++) {
+      var cx = at[j][0] + LABEL_NEAR[k][0], cy = at[j][1] + LABEL_NEAR[k][1];
+      if (cx < 0 || cx > 7 || cy < 0 || cy > 7) continue;
+      var xs = [(cx + 0.5) * Q - w / 2, cx * Q, (cx + 1) * Q - w];
+      for (var x = 0; x < xs.length; x++) {
+        var r = { x: xs[x], y: (cy + 0.5) * Q - h / 2, w: w, h: h };
+        if (clear(r)) return { x: r.x, y: r.y };
       }
     }
+  }
   return null;
 }
 /* the distance from a segment to a rectangle (0 when they meet) */
@@ -14730,6 +14751,7 @@ function paintBoard(a, instant) {
   /* the label (2.1) after the marks svg, placed on the board as drawn */
   var lb = frameLabel(a, f, boardPx(bw), deskLabels(bw)), lh = labelHtml(lb, labelFresh(a, lb));
   bw.innerHTML = boardSvg(f.st, f.opts) + '<div class="blabels" aria-hidden="true">' + lh + '</div>' + (a.pendingPromo ? promoHtml(f.st) : '') + fade;
+  bw.nlReds = redsOf(f.opts);
   var lbox = bw.querySelector && bw.querySelector('.blabels');
   if (lbox) lbox.nlHtml = lh;
   labelShown(a, lb);
@@ -14807,11 +14829,16 @@ function fadeOut(a) {
   });
 }
 function stripWordsOf(h) { return String(h || '').replace(/<i class="st-dot[^"]*"><\/i>|<span class="st-count">[^<]*<\/span>/g, '').replace(/ on"/g, '"'); }
-/* the marks beat: only the marks svg is rewritten, so no piece is touched */
+/* the marks beat: only the marks svg is rewritten, so no piece is touched.
+   Red squares (Hint 3, F9.2) are tints, under the pieces in the board svg:
+   a frame whose red squares are not the board's (Hint 3 landing once Try
+   again's crossfade ends) draws the whole board instead, so they show at
+   once, never only after a tap repaints it (V5.1) */
 function paintMarks(a) {
   var bw = el('bwrap'), old = bw && bw.querySelector('.marks');
   if (!old) return;
   var f = boardOptsFor(a);
+  if (redsOf(f.opts) !== (bw.nlReds || '')) { paintBoard(a, true); return; }
   f.opts.anim = null;
   var html = boardSvg(f.st, f.opts);
   old.outerHTML = html.slice(html.indexOf('</svg>') + 6);
@@ -14820,6 +14847,8 @@ function paintMarks(a) {
   if (bsv && bsv.getAttribute('aria-label') !== f.opts.label) bsv.setAttribute('aria-label', f.opts.label);
   paintLabels(a, f);
 }
+/* a frame's red squares (its 'lose' tints), as the board svg draws them */
+function redsOf(o) { return (o.tints || []).filter(function (t) { return t.kind === 'lose'; }).map(function (t) { return t.sq; }).join(','); }
 /* the board alone, staged: a selection, a drawn shape, a row pointed at
    while exploring. The words stay as they are */
 function renderCardBoard() { stage(['board']); }
@@ -16051,6 +16080,16 @@ function closeSheet(fromPop) {
   if (opener) back = opener;
   if (back && back.isConnected && back.focus) back.focus({ preventScroll: true });
 }
+/* Esc on a sheet: it closes, and from a card's Details the keyboard goes
+   to the honey button, so Enter presses Continue as the key line says
+   (back on the strip's Details link, Enter would open it again: V5.3) */
+function escSheet() {
+  var details = ui.sheet === 'details' && !!(ui.session && ui.session.active);
+  closeSheet();
+  if (!details) return;
+  var i = honeySlot(), bar = el('cbar'), b = i >= 0 && bar && bar.querySelector('[data-slot="' + i + '"][data-act]');
+  if (b && b.focus) b.focus({ preventScroll: true });
+}
 function sheetHtml(kind) {
   var parts = String(kind).split(':'), k = parts[1];
   if (parts[0] === 'settings') return settingsHtml();
@@ -16164,7 +16203,9 @@ function settingsHtml() {
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
       + '<p>' + gamesLine() + '</p>'
-      + '<p>None of it is kept on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p></div>'
+      /* usage recording, the player's own choice (V5.5) */
+      + '<p>None of it is kept on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</p>'
+      + sw('consent', 'Usage recording (Microsoft Clarity)', consentYes()) + '</div>'
     + '<div class="set-block"><span class="kicker">Reset</span>'
       + '<a data-act="resetProgress" class="danger-row' + (ui.resetArmed ? ' armed' : '') + '">' + (ui.resetArmed ? 'Tap again to reset your practice history' : 'Reset practice history') + '</a>'
       + '<a data-act="wipe" class="danger-row' + (ui.wipeArmed ? ' armed' : '') + '">' + (ui.wipeArmed ? 'Tap again to erase everything' : 'Erase everything') + '</a></div>';
@@ -16182,7 +16223,7 @@ function gamesLine() {
 function renderFoot() {
   var f = el('foot');
   if (!f) return;
-  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</span>'
+  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</span>'
     + '<span class="foot-links"><a data-act="coffee">Support the developer</a>'
     /* for lichess players only: a first visit plays nowhere yet */
     + (cfg.user && !isCC() ? '<a href="https://lichess.org/patron">Donate to lichess</a>' : '')
@@ -16426,7 +16467,7 @@ function renderFirstVisit(prefill) {
       + '<button class="btn-big" data-icon="search" data-act="findUser" id="findBtn">Find my mistakes</button>'
     + '</div>'
     + '<div id="whichSite" aria-live="polite"></div>'
-    + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
+    + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</p>'
     + '<figure class="proof"><figcaption>What a 1350 rapid player saw</figcaption>'
       + '<blockquote>In 169 of their 237 losses, one move turned the game for good. Piece safety decided 107.</blockquote></figure>'
     + '</div>'
@@ -16440,7 +16481,10 @@ function renderFirstVisit(prefill) {
       + valueItem('Free, no account', 'Nothing to buy. Open source.')
     + '</div>'
     + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device.</p>'
+    /* the usage-recording question, at the landing's foot (V5.5) */
+    + (consentAsked() ? '' : consentCardHtml())
     + '</div>';
+  consentWatch();
   var input = el('firstUser');
   if (input) {
     input.focus();
@@ -16454,7 +16498,8 @@ function renderFirstVisit(prefill) {
 var findSeq = 0;
 function findUser(name) {
   name = String(name || '').trim();
-  if (!name) return;
+  /* Find my mistakes with the box empty: say what it needs (V5.8) */
+  if (!name) { notice('Type your username first.'); var box0 = el('firstUser'); if (box0 && box0.focus) box0.focus(); return; }
   if (!/^[a-zA-Z0-9_-]{2,30}$/.test(name)) { notice('That is not a chess.com or lichess username: letters, numbers, underscore and hyphen only.'); return; }
   /* only the latest lookup acts: an earlier one answering late is ignored */
   var seq = ++findSeq;
@@ -16550,7 +16595,7 @@ function returnEvents() {
     /* the reminder chosen (F5.4): its time, notnow, or none */
     measureTag('cue', cueTag());
     var utm = linkStore.get('nl:utm');
-    if (utm && window.clarity) window.clarity('set', 'utm_source', utm.slice(0, 40));
+    if (utm) measureTag('utm_source', utm.slice(0, 40));
     var sent = 'nl:retDay:' + playerId();
     if (!first) { store.set(k, now); store.set(sent, dayStamp()); track('first_visit'); return; }
     if (store.get(sent, '') === dayStamp()) return;
@@ -16560,8 +16605,99 @@ function returnEvents() {
     /* how many of the last 28 days counted, as a bucket */
     var act = 0;
     for (var i = 0; i < 28; i++) { var d = new Date(now - i * DAY); if (dayCounts(dayRecOf(d))) act++; }
-    if (window.clarity) window.clarity('set', 'active_days', act === 0 ? '0' : act === 1 ? '1' : act <= 3 ? '2-3' : act <= 7 ? '4-7' : act <= 14 ? '8-14' : '15+');
+    measureTag('active_days', act === 0 ? '0' : act === 1 ? '1' : act <= 3 ? '2-3' : act <= 7 ? '4-7' : act <= 14 ? '8-14' : '15+');
   } catch (e) {}
+}
+
+/* ── usage recording, only with a yes (V5.5) ─────────────────────────────
+   Microsoft Clarity records clicks and the screen (all text hidden) only
+   for a player who said yes in this browser (nl:consent "yes"): before it
+   the page loads no tag, so no cookie and no recording, and track() and
+   measureTag() drop what they are given. The question is a slim card at
+   the foot of the landing, or of Today for a player who arrives another
+   way, never over the board and never during a set (#consent-slot is
+   hidden there). It is asked once: once the card has been on screen, no
+   answer counts as no ("no" is kept), and the choice lives on in
+   Settings, Your data */
+var CLARITY_TAG = 'https://www.clarity.ms/tag/y95daq5rao';
+var clarityState = { on: false, stopped: false }, consentIO = null;
+function consentYes() { return store.get('nl:consent', '') === 'yes'; }
+function consentAsked() { return !!store.get('nl:consent', ''); }
+/* the measures go to Clarity: a yes, and its tag on this page (clarityLoad
+   alone defines window.clarity), not stopped since */
+function clarityLive() { return consentYes() && !clarityState.stopped && typeof window.clarity === 'function'; }
+/* the tag, once a page, and only with a yes (boot, and the yes itself).
+   Calls made before it arrives wait in Clarity's queue, the player's
+   consent first, through Clarity's consent API (ads never) */
+function clarityLoad() {
+  if (clarityState.on || !consentYes()) return;
+  clarityState.on = true;
+  try {
+    var c = window.clarity = window.clarity || function () { (c.q = c.q || []).push(arguments); };
+    var t = document.createElement('script');
+    t.async = true;
+    t.src = CLARITY_TAG;
+    (document.head || document.body).appendChild(t);
+    clarityConsent(true);
+    /* the campaign of a link (the head script kept it, the address lost it) */
+    var utm = linkStore.get('nl:utm');
+    if (utm) c('set', 'utm_source', String(utm).slice(0, 40));
+  } catch (e) {}
+}
+function clarityConsent(on) {
+  try { window.clarity('consentv2', { ad_Storage: 'denied', analytics_Storage: on ? 'granted' : 'denied' }); } catch (e) {}
+}
+/* Settings turns it off: Clarity is told, its cookies go, this page's
+   recording stops, and the next page loads no tag */
+function clarityOff() {
+  if (!clarityState.on || clarityState.stopped) return;
+  clarityState.stopped = true;
+  clarityConsent(false);
+  try { window.clarity('consent', false); } catch (e) {}
+  /* the recorder stops (queued after its start when it is still loading) */
+  try { window.clarity('stop'); } catch (e) {}
+}
+/* the question, its two answers alike: neither is the easy one */
+function consentCardHtml() {
+  return '<div class="consent" id="consent" role="group" aria-labelledby="consent-q">'
+    + '<p class="consent-q" id="consent-q"><b>Help improve notlichess?</b> Microsoft Clarity would record clicks and screens, with all text hidden.</p>'
+    + '<div class="consent-acts"><a class="btn-line" data-act="consentYes">Yes</a><a class="btn-line" data-act="consentNo">No thanks</a></div></div>';
+}
+/* Today's foot (the slot after #trainbox): the card until it is answered
+   or has been seen */
+function consentPaint() {
+  var slot = el('consent-slot');
+  if (!slot) return;
+  slot.innerHTML = consentAsked() ? '' : consentCardHtml();
+  consentWatch();
+}
+/* on screen (half of it, at least): asked, and no answer is a no */
+function consentWatch() {
+  if (consentIO) { consentIO.disconnect(); consentIO = null; }
+  var card = el('consent');
+  if (!card || consentAsked()) return;
+  var seen = function () { if (!consentAsked()) store.set('nl:consent', 'no'); };
+  if (typeof IntersectionObserver === 'undefined') { seen(); return; }
+  consentIO = new IntersectionObserver(function (es) {
+    if (!es.some(function (x) { return x.isIntersecting; })) return;
+    consentIO.disconnect(); consentIO = null;
+    seen();
+  }, { threshold: 0.5 });
+  consentIO.observe(card);
+}
+/* an answer on the card; Settings' switch (consentSet) after that */
+function consentAnswer(yes) {
+  consentSet(yes);
+  if (yes) notice('Thank you. Settings can turn it off.');
+}
+function consentSet(yes) {
+  store.set('nl:consent', yes ? 'yes' : 'no');
+  if (consentIO) { consentIO.disconnect(); consentIO = null; }
+  var card = el('consent');
+  if (card && card.remove) card.remove();
+  if (!yes) clarityOff();
+  else if (clarityState.on && !clarityState.stopped) clarityConsent(true);
+  else clarityLoad();
 }
 /* "2026-W41": the ISO week a time falls in (weeks start on Monday; week 1
    holds the year's first Thursday) */
@@ -16710,6 +16846,8 @@ function computeGreeting() {
 function boot() {
   gen++;
   var myGen = gen;
+  /* usage recording, for a player who said yes (V5.5) */
+  clarityLoad();
   /* the saved formats belong to one player: another player starts from
      their own profile */
   if (!linkVisit && cfg.user && !perfsMine()) { cfg.perfs = null; cfg.tcs = DEFAULT_TC.slice(); }
@@ -16950,7 +17088,7 @@ document.addEventListener('click', function (e) {
     case 'pack': startPack(k); break;
     case 'lesson': startLesson(k); break;
     /* closing it gives focus back to what opened it: the strip's link, or
-       the ••• button whose menu offered it */
+       the ••• button whose menu offered it (Esc: the honey button, escSheet) */
     case 'details': if (a && a.phase === 'done') {
       var fromMenu = !!a.menuOpen;
       if (fromMenu) setMenu(a, false);
@@ -17013,6 +17151,9 @@ document.addEventListener('click', function (e) {
     case 'importProgress': importProgress(); break;
     case 'installApp': installApp(); break;
     case 'installLater': installLater(); break;
+    /* the usage-recording question (V5.5) */
+    case 'consentYes': consentAnswer(true); break;
+    case 'consentNo': consentAnswer(false); break;
     case 'engineRetry': SF.state = 'idle'; SF.crashes = []; engineLoad().then(function () { autoScan(); }, function () {}); renderAll(); break;
     case 'resetProgress': {
       if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); clearTimeout(ui.resetTimer); ui.resetTimer = setTimeout(function () { ui.resetArmed = false; renderSettings(); }, 4000); break; }
@@ -17071,6 +17212,8 @@ document.addEventListener('change', function (e) {
   if (!t || !t.getAttribute) return;
   var act = t.getAttribute('data-act');
   if (act === 'sound') { cfg.sound = !!t.checked; saveCfg('sound'); }
+  /* Settings' usage recording, on or off (V5.5) */
+  if (act === 'consent') consentSet(!!t.checked);
 });
 document.addEventListener('keydown', function (e) {
   /* a held Enter sends the typed move once (its auto-repeat would send it
@@ -17097,7 +17240,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
   if (e.key === 'Escape') {
-    if (ui.sheet) { closeSheet(); return; }
+    if (ui.sheet) { escSheet(); return; }
     var ae = ui.session && ui.session.active;
     /* the menu closes first; during the forcing reply it is no input to it */
     if (!(ae && ae.menuOpen && ae.reply) && flushStage()) return;

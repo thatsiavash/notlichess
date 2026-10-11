@@ -297,7 +297,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
 
   await test('a first visit and a same-day reload send first_visit only', () => {
     const A = boot();
-    A.ev(`(function () { window.clarity = function () { window.__calls = (window.__calls || []).concat([Array.prototype.slice.call(arguments)]); }; return 1; })()`);
+    A.ev(`(function () { store.set('nl:consent', 'yes'), window.clarity = function () { window.__calls = (window.__calls || []).concat([Array.prototype.slice.call(arguments)]); }; return 1; })()`);
     A.ev(`(function () { store.del('nl:firstSeen:' + playerId()); returnEvents(); returnEvents(); return 1; })()`);
     const got = JSON.parse(A.ev('JSON.stringify(window.__calls || [])'));
     ok(got.some((c) => c[1] === 'first_visit'), 'first_visit');
@@ -681,7 +681,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${POOL}
       SF.state = 'failed'; store.set('nl:sessionSize', 10);
       var calls = [], notes = [], n0 = notice, res = {};
-      window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
+      store.set('nl:consent', 'yes'), window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
       notice = function (m) { notes.push(m); };
       var fam = currentFocus().fam, P = Date.now(), its = allMistakes().filter(trainable);
       var inF = function (x) { return familyOf(patternOf(x.b)).key === fam; };
@@ -2258,7 +2258,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
   await test('the coarse events carry no names or ratings', () => {
     const calls = [];
     const A = boot();
-    A.ev(`(function () { window.clarity = function () { window.__calls = (window.__calls || []).concat([Array.prototype.slice.call(arguments)]); }; return 1; })()`);
+    A.ev(`(function () { store.set('nl:consent', 'yes'), window.clarity = function () { window.__calls = (window.__calls || []).concat([Array.prototype.slice.call(arguments)]); }; return 1; })()`);
     A.ev(`(function () { store.set('nl:firstSeen:' + playerId(), Date.now() - 3 * 864e5); returnEvents(); track('solve_first'); track('close_shown'); return 1; })()`);
     const got = JSON.parse(A.ev('JSON.stringify(window.__calls || [])'));
     ok(got.some((c) => c[1] === 'return_d2_7'), JSON.stringify(got));
@@ -2694,7 +2694,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     const q = JSON.parse(B.ev(`(function () { ${INS}
       SF.state = 'failed';
       var res = {}, calls = [], now = Date.now();
-      window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
+      store.set('nl:consent', 'yes'), window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
       var srs = srsLoad();
       allMistakes().filter(function (it) { return trainable(it) && familyOf(patternOf(it.b)).key === 'safety'; }).slice(0, 5)
         .forEach(function (it) { srs[it.key] = { box: 2, streak: 1, due: now + 7 * DAY, last: now, lapses: 0 }; });
@@ -2992,7 +2992,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       SF.state = 'failed';
       var calls = [];
-      window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
+      store.set('nl:consent', 'yes'), window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
       document.createElement = function () { return { click: function () {}, remove: function () {}, setAttribute: function () {}, style: {} }; };
       var blob = ''; Blob = function (parts) { blob = parts[0]; };
       returnEvents();
@@ -3158,7 +3158,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     const at = (d, code) => { A.setNow(T0 + d * 864e5); return JSON.parse(A.ev(code)); };
     const SAY = `(function () { var h = weekHtml(); return { say: (/class="wk-say">([^<]*)</.exec(h) || [])[1], life: (/class="wk-life">([^<]*)</.exec(h) || [])[1] || '',
       on: (h.match(/class="wk-b on/g) || []).length, now: (/<span class="wk-b( on)? now">/.exec(h) || [])[0] || '', medal: /<span class="medal"/.test(h), goal: goalThisWeek() }; })()`;
-    A.ev(`(function () { window.clarity = function () { window.__calls = (window.__calls || []).concat([Array.prototype.slice.call(arguments).map(String)]); }; store.set('nl:weekGoal', 4); return 1; })()`);
+    A.ev(`(function () { store.set('nl:consent', 'yes'), window.clarity = function () { window.__calls = (window.__calls || []).concat([Array.prototype.slice.call(arguments).map(String)]); }; store.set('nl:weekGoal', 4); return 1; })()`);
     const sat0 = at(5, 'JSON.stringify(' + SAY + ')');
     const sat = at(5, `(function () { var d = dayLoad(); d.counted = 1; daySave(d); var ss = {}; goalCheck(ss); return JSON.stringify({ w: ${SAY}, met: !!ss.goalMet }); })()`);
     const sun = at(6, `(function () { var d = dayLoad(); d.counted = 1; daySave(d); var ss = {}, ss2 = {}; goalCheck(ss); goalCheck(ss2);
@@ -3211,7 +3211,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       playerTier = function () { return 2; };
-      window.__calls = []; window.clarity = function () { window.__calls.push([].slice.call(arguments).map(String)); };
+      window.__calls = []; store.set('nl:consent', 'yes'), window.clarity = function () { window.__calls.push([].slice.call(arguments).map(String)); };
       var cov0 = coverage, ro0 = readOver, out = {};
       var its = allMistakes().filter(trainable), safe = its.filter(function (x) { return familyOf(patternOf(x.b)).key === 'safety'; })[0];
       var set = function () { var ss = { mode: 'today', label: 'Today', keys: [safe.key], idx: 1, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true, sum: {} };
@@ -3301,7 +3301,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
   await test('F5.4: the reminder asks once, on the first summary after the habit card (that day\'s others until answered): Not now hides it (cue_notnow, the cue tag); Evening then Add to calendar makes the file (cue_calendar, the tag "evening") and Settings keeps it; the tab title "(3) notlichess.org" with 3 due, "notlichess.org" with none', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
-      window.__calls = []; window.clarity = function () { window.__calls.push([].slice.call(arguments).map(String)); };
+      window.__calls = []; store.set('nl:consent', 'yes'), window.clarity = function () { window.__calls.push([].slice.call(arguments).map(String)); };
       var blob = null; Blob = function (parts, o) { blob = { text: parts[0], type: o && o.type }; };
       var made = null; document.createElement = function () { var a = { click: function () { made = a.download; }, remove: function () {}, setAttribute: function () {}, style: {} }; return a; };
       var k = allMistakes().filter(trainable)[0].key, mk = function () { var ss = { mode: 'today', label: 'Today', keys: [k], idx: 1, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true }; ss.results[k] = 'first'; return ss; };
@@ -3400,14 +3400,14 @@ const SIM = `function simRun(seed, days, plan, noRule) {
   });
 
   /* ── the installable app (F11.1): sw.js in test/sw.js; the page's side here ── */
-  await test('F11.1: the service worker (test/sw.js): VERSION carries the hash of the files kept cache-first; one cache per version, filled all or nothing, the older ones deleted; the page and the manifest network first, the kept copy offline, on an error or after NET_WAIT; Stockfish and the icons cache first, refilled as a pair, the .js held open until its .wasm; chess.com, lichess, Clarity and the fonts never answered or kept', async () => {
+  await test('F11.1: the service worker (test/sw.js): VERSION carries the hash of the files kept cache-first; one cache per version, filled all or nothing, the older ones deleted; the page and the manifest network first, the kept copy offline, on an error or after NET_WAIT; Stockfish, the icons and the font (V5.4) cache first, Stockfish refilled as a pair, the .js held open until its .wasm; chess.com, lichess, Clarity and other sites never answered or kept; the off switch (test/sw-off.js, V5.6) deletes only the notlichess- caches and unregisters, and README.md gives it word for word with the Render headers and the two checks', async () => {
     const f = await require('./sw')();
     eq(f.length, 0, f.length + ' service worker failures: ' + f.slice(0, 6).join(' || '));
   });
 
   /* a browser with a service worker, and Clarity's calls, as the realm's own */
   const SW = `(function () { window.__sw = []; window.__calls = [];
-    window.clarity = function () { window.__calls.push(Array.prototype.slice.call(arguments)); };
+    store.set('nl:consent', 'yes'), window.clarity = function () { window.__calls.push(Array.prototype.slice.call(arguments)); };
     navigator.serviceWorker = { register: function (u, o) { window.__sw.push([u, o && o.updateViaCache]); return Promise.resolve({ update: function () { window.__sw.push(['update']); return Promise.resolve(); } }); } };
     return 1; })()`;
   const EVENTS = `JSON.stringify(window.__calls.filter(function (c) { return c[0] === 'event'; }).map(function (c) { return c[1]; }))`;
@@ -3673,6 +3673,132 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(r.norating), JSON.stringify(['Converting wins: won 21 of 30 games after reaching +2. Practise these ›', 'Saving bad positions: saved 11 of 38 after falling to \u22122. Practise these ›', 'Slow slides: 8 of 27 losses had no single losing move.']), 'no rating known: no peer figure');
     eq(r.few.conv, null, 'under 10 games that reached +2: no row');
     ok(!/better|worse|good|bad|well|weak|strong/i.test(r.t3.join(' ').replace(/Saving bad positions/, '')), 'no verdict word');
+  });
+
+  /* ── v2 slice 5, look and release ── */
+  /* Clarity's side, as the realm's own: the script the page adds (its src) and every call it queues */
+  const CLAR = `(function () { window.__made = []; window.__added = [];
+    document.createElement = function (tag) { var e = { tagName: String(tag).toUpperCase(), setAttribute: function () {}, style: {} }; window.__made.push(e); return e; };
+    document.body.appendChild = function (e) { window.__added.push(e.src || e.tagName); };
+    return 1; })()`;
+  const QUEUED = `JSON.stringify(typeof window.clarity === 'function' ? (window.clarity.q || []).map(function (c) { return [].slice.call(c).map(function (x) { return typeof x === 'object' && x ? JSON.stringify(x) : String(x); }).join(' '); }) : null)`;
+  await test('V5.5: Clarity only after a yes: a fresh profile loads no tag and its measures go nowhere; the landing asks once at its foot ("Help improve notlichess?" with Yes and No thanks, alike); Yes loads the tag with the consent signal, the measures follow, and a reload loads it again; No (or the card seen and left) loads nothing, now and after a reload, and the card never comes back; Settings turns it on and off', async () => {
+    const page = fs.readFileSync(path.join(__dirname, '..', 'src', 'page.html'), 'utf8');
+    ok(!/clarity\.ms|<script[^>]*clarity/i.test(page), 'page.html loads no Clarity tag of its own');
+    const T = 'https://www.clarity.ms/tag/y95daq5rao';
+    /* a first visit: the landing, no player yet */
+    const L = makeApp({ now: T0, storage: {} });
+    L.ev(CLAR);
+    eq(L.ev('typeof window.clarity'), 'undefined', 'a fresh profile: no tag');
+    L.ev('(track("first_visit"), measureTag("tier", 1), 1)');
+    eq(L.ev('typeof window.clarity'), 'undefined', 'a measure before a yes goes nowhere');
+    L.ev('(renderFirstVisit(), 1)');
+    const land = L.ev('el("main").innerHTML');
+    const card = /<div class="consent" id="consent"[\s\S]*?<\/div><\/div>/.exec(land);
+    ok(card && land.lastIndexOf('class="consent"') > land.indexOf('class="value"') && land.lastIndexOf('class="consent"') > land.indexOf('first-foot small'), 'the card at the landing\'s foot');
+    ok(card && /Help improve notlichess\?<\/b> Microsoft Clarity would record clicks and screens, with all text hidden\./.test(card[0]), 'its words: ' + (card && card[0]));
+    ok(card && /<a class="btn-line" data-act="consentYes">Yes<\/a><a class="btn-line" data-act="consentNo">No thanks<\/a>/.test(card[0]), 'two answers, alike');
+    ok(/With your yes, Microsoft Clarity records clicks and the screen, with all text hidden\./.test(land), 'the landing\'s line under the form');
+    /* the realm's page has no card element to watch: never on screen, so not asked yet (the next test drives it) */
+    eq(L.storage['nl:consent'], undefined, 'rendered, never on screen: not asked yet');
+    eq(L.ev('typeof window.clarity'), 'undefined', 'still no tag');
+    /* Yes on the card: the tag, with the player's consent (analytics, never ads), and the measures with it */
+    L.click('consentYes');
+    eq(L.storage['nl:consent'], JSON.stringify('yes'), 'yes kept, per browser');
+    eq(L.ev('JSON.stringify(window.__added)'), JSON.stringify([T]), 'the tag added once');
+    const q1 = JSON.parse(L.ev(QUEUED));
+    ok(q1 && q1[0] === 'consentv2 {"ad_Storage":"denied","analytics_Storage":"granted"}', 'the consent signal first: ' + JSON.stringify(q1));
+    L.ev('(track("insights_open"), measureTag("tier", 2), clarityLoad(), 1)');
+    const q2 = JSON.parse(L.ev(QUEUED));
+    ok(q2.indexOf('event insights_open') >= 0 && q2.indexOf('set tier 2') >= 0, 'the measures follow a yes: ' + JSON.stringify(q2));
+    eq(L.ev('window.__added.length'), 1, 'never a second tag');
+    L.ev('(renderFirstVisit(), 1)');
+    ok(L.ev('el("main").innerHTML').indexOf('class="consent"') < 0, 'answered: the card never comes back');
+    /* a reload with the yes: the tag at boot, before any measure */
+    const Y = makeApp({ now: T0, storage: Object.assign(base(), { 'nl:consent': JSON.stringify('yes') }) });
+    eq(Y.ev('typeof window.clarity'), 'function', 'a reload after a yes: the tag');
+    ok(JSON.parse(Y.ev(QUEUED))[0] === 'consentv2 {"ad_Storage":"denied","analytics_Storage":"granted"}', 'with its consent signal');
+    /* Settings: the switch says on; off stops it (Clarity told, its cookies gone, the recorder stopped) and the measures stop */
+    Y.ev(`(function () { store.set('nl:sessionSize', 10); return 1; })()`);
+    ok(/<input type="checkbox" data-act="consent" checked>/.test(Y.ev('settingsHtml()')), 'Settings: usage recording on');
+    ok(/Usage recording \(Microsoft Clarity\)/.test(Y.ev('settingsHtml()')) && /With your yes, Microsoft Clarity records clicks and the screen, with all text hidden\./.test(Y.ev('settingsHtml()')), 'Settings names it, in Your data');
+    Y.change('consent', false);
+    eq(Y.storage['nl:consent'], JSON.stringify('no'), 'switched off: no');
+    const q3 = JSON.parse(Y.ev(QUEUED));
+    ok(q3.slice(-3).join(' | ') === 'consentv2 {"ad_Storage":"denied","analytics_Storage":"denied"} | consent false | stop', 'off: Clarity told, cookies erased, the recorder stopped: ' + JSON.stringify(q3.slice(-3)));
+    Y.ev('(track("after_off"), 1)');
+    ok(JSON.parse(Y.ev(QUEUED)).indexOf('event after_off') < 0, 'off: the measures stop at once');
+    ok(/<input type="checkbox" data-act="consent">/.test(Y.ev('settingsHtml()')), 'Settings: usage recording off');
+    /* a reload after no: nothing */
+    const N = makeApp({ now: T0, storage: Object.assign(base(), { 'nl:consent': JSON.stringify('no') }) });
+    eq(N.ev('typeof window.clarity'), 'undefined', 'a reload after no: no tag');
+    /* and on again from Settings: the tag now */
+    N.ev(CLAR);
+    N.change('consent', true);
+    eq(N.storage['nl:consent'], JSON.stringify('yes'), 'switched on: yes');
+    eq(N.ev('JSON.stringify(window.__added)'), JSON.stringify([T]), 'switched on: the tag');
+    /* No thanks on the card: nothing, now and after a reload */
+    const M = makeApp({ now: T0, storage: {} });
+    M.ev(CLAR);
+    M.ev('(renderFirstVisit(), 1)');
+    M.click('consentNo');
+    eq(M.storage['nl:consent'], JSON.stringify('no'), 'No thanks: no');
+    eq(M.ev('typeof window.clarity + " " + window.__added.length'), 'undefined 0', 'No thanks: no tag');
+  });
+
+  await test('V5.5: the question shows once: the card counts as asked only once half of it has been on screen (no answer is then a no), so a card below the fold waits; Today\'s foot holds it for a player who arrives another way, hidden during a set; the footer\'s line', async () => {
+    const A = boot();
+    /* an observer the test drives: each card watched, and on screen when it says so */
+    const IO = global.IntersectionObserver;
+    const seen = [];
+    global.IntersectionObserver = function (cb, o) { const me = { cb, o, els: [], observe(e) { me.els.push(e); }, disconnect() { me.off = true; } }; seen.push(me); return me; };
+    try {
+      A.ev(`(function () { var slot = { id: 'consent-slot', innerHTML: '' }, card = { id: 'consent', remove: function () { slot.innerHTML = ''; } };
+        var get0 = document.getElementById;
+        document.getElementById = function (id) { return id === 'consent-slot' ? slot : id === 'consent' ? (slot.innerHTML.indexOf('id="consent"') >= 0 ? card : null) : get0(id); };
+        window.__slot = slot; return 1; })()`);
+      A.ev('(consentPaint(), 1)');
+      ok(/class="consent" id="consent"/.test(A.ev('window.__slot.innerHTML')), 'Today\'s foot: the card, for a player who never met the landing');
+      eq(seen.length, 1, 'watched');
+      eq(seen[0].o.threshold, 0.5, 'half of it on screen');
+      eq(A.storage['nl:consent'], undefined, 'not yet on screen: not asked');
+      /* a repaint before it was seen: still there */
+      A.ev('(consentPaint(), 1)');
+      ok(/id="consent"/.test(A.ev('window.__slot.innerHTML')), 'still there before it is seen');
+      const io = seen[seen.length - 1];
+      io.cb([{ isIntersecting: false }]);
+      eq(A.storage['nl:consent'], undefined, 'not on screen: not asked');
+      io.cb([{ isIntersecting: true }]);
+      eq(A.storage['nl:consent'], JSON.stringify('no'), 'on screen and not answered: no');
+      ok(io.off, 'watched no longer');
+      ok(/id="consent"/.test(A.ev('window.__slot.innerHTML')), 'it stays on screen to be answered');
+      A.click('consentYes');
+      eq(A.storage['nl:consent'], JSON.stringify('yes'), 'answered there: yes');
+      eq(A.ev('window.__slot.innerHTML'), '', 'the card goes');
+      A.ev('(consentPaint(), 1)');
+      eq(A.ev('window.__slot.innerHTML'), '', 'asked: never again');
+    } finally { global.IntersectionObserver = IO; }
+    const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.css'), 'utf8');
+    ok(/body\.in-session \.consent-slot\{display:none\}/.test(css), 'never during a set (nor on its summary)');
+    ok(/<div id="view-train" class="view"><section id="trainbox"><\/section><div id="consent-slot" class="consent-slot"><\/div><\/div>/.test(A.ev('(renderShell(), el("main").innerHTML)')), 'the slot at Today\'s foot, after the set\'s box, not on Insights');
+    const src = ['14-render.js', '15-shell.js'].map((f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'js', f), 'utf8')).join('\n');
+    ok(/foot-line">Free and open source\. Your games and progress are saved in this browser, not on our servers\. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden\.</.test(src), 'the footer\'s line');
+    const says = src.match(/'[^'\n]*Microsoft Clarity records[^'\n]*'/g) || [];
+    ok(says.length >= 3 && says.every((x) => /With your yes, Microsoft Clarity records clicks and the screen, with all text hidden\./.test(x)), 'every line on screen that names Clarity says "With your yes": ' + says.join(' | '));
+  });
+
+  await test('V5.8: "Find my mistakes" with the box empty says "Type your username first." and looks nothing up', () => {
+    const L = makeApp({ now: T0, storage: {} });
+    const r = JSON.parse(L.ev(`(function () { var notes = [], looked = 0;
+      notice = function (m) { notes.push(m); };
+      getJSON = function () { looked++; return new Promise(function () {}); }; ccJSON = getJSON;
+      renderFirstVisit();
+      findUser(''); findUser('   ');
+      /* the button, with the box empty (no box in the realm: its value is empty) */
+      window.__realmClick('findUser');
+      return JSON.stringify({ notes: notes, looked: looked }); })()`));
+    eq(JSON.stringify(r.notes), JSON.stringify(['Type your username first.', 'Type your username first.', 'Type your username first.']), 'the words, each time');
+    eq(r.looked, 0, 'nothing looked up');
   });
 
   results.forEach((l) => console.log(l));

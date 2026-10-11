@@ -92,6 +92,15 @@
   }
 }
 
+/* the font: Nunito (SIL Open Font Licence, fonts/OFL.txt) from this site,
+   never from Google, whose servers would see every visitor. One variable
+   woff2, its latin subset (every character the page writes), the weights
+   in use (500 to 900); page.html preloads it and sw.js keeps it, so the
+   installed app has it offline ─────────────────────────────────────────── */
+@font-face{font-family:"Nunito";font-style:normal;font-weight:500 900;font-display:optional;
+  src:url(fonts/nunito-latin-wght-normal.woff2) format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
 /* base ─────────────────────────────────────────────────────────────────── */
 html{scrollbar-gutter:stable}
 *{box-sizing:border-box}
@@ -103,7 +112,6 @@ body{
 h1,h2,h3{margin:0}
 b,strong{font-weight:800}
 a{color:var(--honey);text-decoration:none;cursor:pointer}
-a:hover{color:var(--honey-hover)}
 button{font-family:inherit}
 /* the focus ring: honey, 2 px, 2 px out; on a honey button the light text
    colour. After a tap or a click (by-pointer) the card's controls, the •••
@@ -180,8 +188,11 @@ button{font-family:inherit}
 .btn-quiet{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 4px;background:none;border:0;
   color:var(--honey);font-size:var(--fs-body);line-height:20px;font-weight:800;cursor:pointer}
 .btn-off{opacity:.4;pointer-events:none}
-/* hover only where a pointer hovers: on a touch screen it would stick after the tap */
+/* hover only where a pointer hovers: on a touch screen it would stick after the tap.
+   A plain link (no class) lightens; a link styled as a button keeps its own
+   colours, so a honey button's label stays dark in every state */
 @media (hover:hover){
+  a:not([class]):hover{color:var(--honey-hover)}
   .btn-big:hover{background:var(--honey-hover);color:var(--on-honey)}
   .btn-line:hover,.nav-btn:hover{color:var(--text-1);border-color:var(--text-3)}
   .btn-quiet:hover,#cbar [data-icon=eye].btn-line:hover{color:var(--honey-hover)}
@@ -269,6 +280,16 @@ button{font-family:inherit}
 .ex-sub{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0}
 .landing .value{grid-column:1/-1}
 .landing .first-foot.small{grid-column:1/-1;margin-top:24px}
+/* the usage-recording question (V5.5): a slim card at the foot of the
+   landing or of Today, its two answers alike; never during a set */
+.consent{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin:32px 0 0;padding:16px 20px;background:var(--surface-1);border-radius:var(--r-card)}
+.consent-q{flex:1 1 280px;margin:0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+.consent-q b{font-weight:700;color:var(--text-1)}
+.consent-acts{display:flex;flex-wrap:wrap;gap:12px}
+.consent-acts .btn-line{min-width:112px}
+.landing .consent{grid-column:1/-1}
+.consent-slot .consent{max-width:720px;margin:8px 0 24px}
+body.in-session .consent-slot{display:none}
 @media (max-width:1000px){
   .landing{grid-template-columns:1fr;padding-top:32px}
   .landing .src-pick{width:100%}
