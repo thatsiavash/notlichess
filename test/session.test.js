@@ -2247,10 +2247,15 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(!JSON.stringify(got).includes('tester') && !/opponent\d/.test(JSON.stringify(got)), 'names in events');
   });
 
-  await test('the manifest and its icons are what they claim', () => {
+  await test('the manifest and its icons are what they claim: the name, the app opening on Today in its own window, the Night colour of the page (F11.1), a 192 and a 512 icon and a maskable one', () => {
     const root = path.join(__dirname, '..');
     const m = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-    eq(m.name, 'notlichess', 'name'); eq(m.start_url, '/#train', 'start_url'); eq(m.display, 'standalone', 'display');
+    eq(m.name, 'notlichess', 'name'); eq(m.short_name, 'notlichess', 'short_name'); eq(m.start_url, '/#train', 'start_url'); eq(m.display, 'standalone', 'display');
+    eq(m.id, '/', 'id'); eq(m.scope, '/', 'scope');
+    const bg = (/--bg:(#[0-9A-Fa-f]{6})/.exec(fs.readFileSync(path.join(root, 'src', 'app.css'), 'utf8')) || [])[1];
+    const meta = (/<meta name="theme-color" content="(#[0-9A-Fa-f]{6})">/.exec(fs.readFileSync(path.join(root, 'src', 'page.html'), 'utf8')) || [])[1];
+    eq(bg, '#141310', 'the Night ground'); eq(m.background_color, bg, 'background_color'); eq(m.theme_color, bg, 'theme_color'); eq(meta, bg, 'the page\'s theme-color');
+    ok(m.icons.some((ic) => ic.sizes === '192x192' && !ic.purpose) && m.icons.some((ic) => ic.sizes === '512x512' && !ic.purpose) && m.icons.some((ic) => ic.purpose === 'maskable'), 'a 192, a 512 and a maskable icon');
     m.icons.forEach((ic) => {
       const b = fs.readFileSync(path.join(root, ic.src.replace(/^\//, '')));
       const w = b.readUInt32BE(16), h = b.readUInt32BE(20);
@@ -3372,6 +3377,223 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(/^<p class="recap-small"><span class="recap-moved">1 moved up, 1 back to the start\.<\/span> <span class="recap-ladder">The position you found comes back in \d+ days\.<\/span><\/p>$/.test(r.stack), 'one quiet paragraph, then the week: ' + r.stack);
     ok(/^<div class="kicker">Keep in mind<\/div><div class="plan"><ul class="plans"><li class="keep-line">[^<]+<\/li><li class="keep-line">[^<]+<\/li><\/ul><\/div><p class="routine-line">Every move: their move, your chances, safety check\.<\/p>$/.test(r.habit),
       'the kicker, two lines under one bulb (one .plan), the routine after them: ' + r.habit);
+  });
+
+  /* ── the installable app (F11.1): sw.js in test/sw.js; the page's side here ── */
+  await test('F11.1: the service worker (test/sw.js): VERSION carries the hash of the files kept cache-first; one cache per version, filled all or nothing, the older ones deleted; the page and the manifest network first, the kept copy offline, on an error or after NET_WAIT; Stockfish and the icons cache first, refilled as a pair, the .js held open until its .wasm; chess.com, lichess, Clarity and the fonts never answered or kept', async () => {
+    const f = await require('./sw')();
+    eq(f.length, 0, f.length + ' service worker failures: ' + f.slice(0, 6).join(' || '));
+  });
+
+  /* a browser with a service worker, and Clarity's calls, as the realm's own */
+  const SW = `(function () { window.__sw = []; window.__calls = [];
+    window.clarity = function () { window.__calls.push(Array.prototype.slice.call(arguments)); };
+    navigator.serviceWorker = { register: function (u, o) { window.__sw.push([u, o && o.updateViaCache]); return Promise.resolve({ update: function () { window.__sw.push(['update']); return Promise.resolve(); } }); } };
+    return 1; })()`;
+  const EVENTS = `JSON.stringify(window.__calls.filter(function (c) { return c[0] === 'event'; }).map(function (c) { return c[1]; }))`;
+  await test('F11.1: the page registers sw.js once, with a player and once Stockfish has settled, never on a first visit\'s landing or without service workers; an app left open checks for a new version when it comes back, at most hourly', async () => {
+    const A = boot();
+    eq(A.ev('swState.asked'), false, 'no service workers in this browser: nothing asked');
+    A.ev(SW);
+    A.ev('swRegister(); swRegister(); 1');
+    await tick(); await tick();
+    eq(A.ev('JSON.stringify(window.__sw)'), JSON.stringify([['sw.js', 'none']]), 'registered once, sw.js beside the page, never from the browser\'s cache');
+    eq(A.ev('!!swState.reg'), true, 'the registration kept');
+    /* an hour on, the page shown again: one check for a new version; again at once: none */
+    A.advance(3600 * 1000 + 1);
+    A.fire('visibilitychange'); A.fire('visibilitychange');
+    await tick();
+    eq(A.ev('JSON.stringify(window.__sw)'), JSON.stringify([['sw.js', 'none'], ['update']]), 'one check an hour on');
+    /* Stockfish still loading: the worker waits for it */
+    const B = boot();
+    B.ev(SW);
+    B.ev('(function () { var go; SF.loading = new Promise(function (r) { go = r; }); window.__go = go; swRegister(); return 1; })()');
+    await tick(); await tick();
+    eq(B.ev('window.__sw.length'), 0, 'not while Stockfish downloads');
+    B.ev('window.__go(); 1');
+    await tick(); await tick();
+    eq(B.ev('window.__sw.length'), 1, 'once it is in');
+    /* the landing: no player, nothing registered */
+    const L = makeApp({ now: T0, storage: {} });
+    L.ev(SW);
+    L.ev('swRegister(); 1');
+    await tick(); await tick();
+    eq(L.ev('window.__sw.length'), 0, 'a first visit\'s landing registers nothing');
+  });
+
+  /* a finished set on the summary, the week's goal met or not, the player first seen days days ago; the
+     reminder's question (F5.4) answered Not now that day, so its place holds nothing (cue: an nl:cue of its own) */
+  const SUMMARY = (days, goal, cue) => `(function () {
+    store.set('nl:firstSeen:' + playerId(), Date.now() - ${days} * DAY);
+    store.set('nl:cue:' + playerId(), ${cue || `Object.assign(cueLoad(), { q: Date.now() - ${days} * DAY, no: Date.now() - ${days} * DAY })`});
+    var k = allMistakes().filter(trainable)[3].key, ss = { mode: 'today', label: 'Today', keys: [k], idx: 1, results: {}, notes: {}, sum: {}, relearn: [], relearnOf: {}, finished: true, goalMet: ${goal ? '{ days: 4, goal: 4 }' : 'null'} };
+    ss.results[k] = 'first'; ss.sum[k] = { c: 'first', s: 3, m: 'up', p: 1 }; ss.fxShown = true;
+    ui.session = ss; return 1; })()`;
+  const PROMPT = `(function () { window.__prompted = 0; installPromptSeen({ preventDefault: function () { window.__prevented = 1; }, prompt: function () { window.__prompted++; return Promise.resolve(); }, userChoice: Promise.resolve({ outcome: 'accepted' }) }); return 1; })()`;
+  const PHONE = `(function () { window.matchMedia = function (q) { return { matches: /coarse/.test(q) }; }; return 1; })()`;
+  const CARD = `(function () { var h = doneHtml(ui.session), m = /<div class="focus recap-install">([\\s\\S]*?)<\\/div><\\/div>/.exec(h);
+    return JSON.stringify({ card: m ? m[1].replace(/<[^>]+>/g, '|').replace(/\\|+/g, '|') : null, acts: m ? (m[1].match(/data-act="\\w+"/g) || []).join(' ') : '',
+      at: [h.indexOf('recap-habit'), h.indexOf('recap-install'), h.indexOf('recap-acts')], kept: store.get('nl:install', null) }); })()`;
+  await test('F11.1: the install offer comes on the first summary with the week\'s goal met, never on the first visit\'s day, once: "Add notlichess to your home screen?" [Add] [Not now] on a phone, "Install notlichess as an app?" [Install] on a desktop, "and works offline" only when the page is kept; after the habit card, before the bar; held back from the browser until then', () => {
+    const A = boot();
+    A.ev(SW); A.ev(PHONE); A.ev(PROMPT);
+    eq(A.ev('window.__prevented'), 1, 'the browser\'s own offer held back');
+    /* the goal met on the player's first day: no offer */
+    A.ev(SUMMARY(0, true));
+    let r = JSON.parse(A.ev(CARD));
+    eq(r.card, null, 'not on the first visit\'s day'); eq(r.kept, null, 'nothing noted');
+    /* a later day, a set that did not meet the goal: no offer */
+    A.ev(SUMMARY(3, false));
+    eq(JSON.parse(A.ev(CARD)).card, null, 'not without the goal met');
+    /* a later day, the goal met: the offer, after the habit card, before the bar */
+    A.ev(SUMMARY(3, true));
+    r = JSON.parse(A.ev(CARD));
+    eq(r.card, '|Add notlichess to your home screen?|Add|Not now|', 'the phone\'s offer');
+    eq(r.acts, 'data-act="installApp" data-act="installLater"', 'Add, Not now');
+    ok(r.at[0] > 0 && r.at[1] > r.at[0] && r.at[2] > r.at[1], 'after the habit card, before the bar: ' + r.at);
+    ok(r.kept && r.kept.kind === 'prompt', 'noted once, this browser\'s');
+    eq(A.ev(EVENTS), JSON.stringify(['install_offer']), 'measured');
+    /* drawn again: it stays; the next summary with the goal met: never again */
+    eq(JSON.parse(A.ev(CARD)).card, '|Add notlichess to your home screen?|Add|Not now|', 'it stays while the summary does');
+    A.ev(SUMMARY(10, true));
+    eq(JSON.parse(A.ev(CARD)).card, null, 'offered once');
+    /* the page kept by the worker: why, in one line; a desktop installs */
+    const D = boot();
+    D.ev(SW); D.ev(PROMPT); D.ev('navigator.serviceWorker.controller = {}; 1');
+    D.ev(SUMMARY(3, true));
+    eq(JSON.parse(D.ev(CARD)).card, '|Install notlichess as an app?|It opens in its own window, and works offline.|Install|Not now|', 'the desktop\'s offer, offline when kept');
+    const P = boot();
+    P.ev(SW); P.ev(PHONE); P.ev(PROMPT); P.ev('navigator.serviceWorker.controller = {}; 1');
+    P.ev(SUMMARY(3, true));
+    eq(JSON.parse(P.ev(CARD)).card, '|Add notlichess to your home screen?|It opens in one tap, and works offline.|Add|Not now|', 'the phone\'s, offline when kept');
+    /* a browser with no offer (and not an iPhone): nothing, and nothing noted for later */
+    const F = boot();
+    F.ev(SW); F.ev(SUMMARY(3, true));
+    r = JSON.parse(F.ev(CARD));
+    eq(r.card, null, 'no offer to make'); eq(r.kept, null, 'nothing noted');
+    /* the installed app: nothing */
+    const I = boot();
+    I.ev(SW); I.ev(PROMPT); I.ev('navigator.standalone = true; 1'); I.ev(SUMMARY(3, true));
+    eq(JSON.parse(I.ev(CARD)).card, null, 'not in the installed app');
+  });
+
+  await test('F11.1: Add opens the browser\'s own dialog once and the card goes, its answer measured; Not now takes the card away; once installed the offer is gone from Settings too', async () => {
+    const A = boot();
+    A.ev(SW); A.ev(PHONE); A.ev(PROMPT); A.ev(SUMMARY(3, true));
+    ok(JSON.parse(A.ev(CARD)).card, 'the offer');
+    A.click('installApp', null, null, { detail: 1 });
+    await tick(); await tick();
+    eq(A.ev('window.__prompted'), 1, 'the browser\'s dialog, once');
+    eq(JSON.parse(A.ev(CARD)).card, null, 'the card goes');
+    eq(A.ev(EVENTS), JSON.stringify(['install_offer', 'install_add', 'install_accepted']), 'the answer measured');
+    eq(A.ev('installSettingsHtml()'), '', 'the offer used: Settings has none left');
+    A.click('installApp', null, null, { detail: 1 });
+    await tick();
+    eq(A.ev('window.__prompted'), 1, 'never twice from one offer');
+    /* Not now */
+    const B = boot();
+    B.ev(SW); B.ev(PHONE); B.ev(PROMPT); B.ev(SUMMARY(3, true));
+    ok(JSON.parse(B.ev(CARD)).card, 'the offer');
+    B.click('installLater', null, null, { detail: 1 });
+    eq(JSON.parse(B.ev(CARD)).card, null, 'Not now: the card goes');
+    eq(B.ev('window.__prompted'), 0, 'no dialog');
+    eq(B.ev(EVENTS), JSON.stringify(['install_offer', 'install_later']), 'measured');
+    ok(/data-act="installApp"/.test(B.ev('installSettingsHtml()')), 'Settings still offers it');
+    /* installed from the browser's menu: never offered again */
+    const C = boot();
+    C.ev(SW); C.ev(PHONE); C.ev(PROMPT); C.ev('appInstalled(); 1');
+    eq(C.ev(EVENTS), JSON.stringify(['app_installed']), 'measured');
+    eq(C.ev('installSettingsHtml()'), '', 'Settings offers nothing');
+    C.ev(SUMMARY(3, true));
+    eq(JSON.parse(C.ev(CARD)).card, null, 'nor the summary');
+  });
+
+  await test('F11.1: on an iPhone or iPad the summary and Settings say how: "Tap Share, then Add to Home Screen. The app starts empty: save a progress file here, then load it there." with Save a progress file; the home-screen app\'s landing loads the file saved in Safari', () => {
+    const A = boot();
+    A.ev(SW);
+    A.ev(`navigator.userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'; 1`);
+    eq(A.ev('installKind()'), 'ios', 'an iPhone');
+    A.ev(SUMMARY(3, true));
+    const r = JSON.parse(A.ev(CARD));
+    eq(r.card, '|Add notlichess to your home screen?|Tap Share|, then Add to Home Screen. The app starts empty: save a progress file here, then load it there.|Save a progress file|Not now|', 'the how-to');
+    eq(r.acts, 'data-act="exportProgress" data-act="installLater"', 'Save a progress file, Not now');
+    ok(/<span class="ios-share" aria-hidden="true"><\/span>/.test(A.ev('doneHtml(ui.session)')), 'Share drawn as iOS draws it, hidden from a screen reader');
+    eq(A.ev(EVENTS), JSON.stringify(['install_howto']), 'measured');
+    /* Settings: the how-to, right above the progress file's buttons */
+    const s = A.ev('settingsHtml()');
+    ok(/<span class="kicker">App<\/span><p>Tap Share<span class="ios-share" aria-hidden="true"><\/span>, then Add to Home Screen\. The app starts empty: save a progress file here, then load it there\.<\/p><\/div><div class="set-block"><span class="kicker">Your data<\/span><div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file<\/a><a class="chip" data-act="importProgress">Load progress from a file<\/a>/.test(s), 'Settings: the how-to above the file\'s buttons: ' + s.slice(s.indexOf('App<'), s.indexOf('App<') + 200));
+    /* an iPad calls itself a Mac with a touch screen */
+    const P = boot();
+    P.ev(`navigator.userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'; navigator.platform = 'MacIntel'; navigator.maxTouchPoints = 5; 1`);
+    eq(P.ev('installKind()'), 'ios', 'an iPad');
+    P.ev('navigator.maxTouchPoints = 0; 1');
+    eq(P.ev('installKind()'), '', 'a Mac');
+    /* the home-screen app: what it does in Settings; its first landing loads the file saved in Safari */
+    const H = makeApp({ now: T0, storage: {} });
+    H.ev(SW);
+    H.ev(`navigator.userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'; navigator.standalone = true; navigator.serviceWorker.controller = {}; renderFirstVisit(); 1`);
+    const land = H.ev(`el('main').innerHTML`);
+    ok(/<p class="handoff">Used notlichess in Safari\? Load the progress file you saved there\. <a class="btn-line" data-act="importProgress">Load progress from a file<\/a><\/p>/.test(land), 'the landing: ' + (/<p class="handoff">[\s\S]*?<\/p>/.exec(land) || [''])[0]);
+    eq(H.ev('installSettingsHtml()'), '<div class="set-block set-app"><span class="kicker">App</span><p>This is the installed app. It works offline, from your saved games.</p><p>Used notlichess in Safari? Load the progress file you saved there.</p></div>', 'Settings in the app');
+  });
+
+  /* merged with slice 5 (F5.4): the place after the habit card holds one ask a summary */
+  await test('F11.1 with F5.4: the offer never shares a summary with the reminder\'s question or the backup prompt: it waits, nothing noted or measured, nor once the question is answered there, and comes on the next summary with the goal met; Settings has Reminders, then App right above Your data', () => {
+    const LEARNED = `(function () { var k = allMistakes().filter(trainable)[0].key, srs = srsLoad(); srs[k] = { box: 4, streak: 3, due: Date.now() + 90 * DAY, last: Date.now(), lapses: 0, learned: true }; srsSave(srs); return 1; })()`;
+    const A = boot();
+    A.ev(SW); A.ev(PHONE); A.ev(PROMPT);
+    /* a player here for days, on the first summary since the reminder came (never asked): the question, no offer */
+    A.ev(SUMMARY(3, true, '{}'));
+    let h = A.ev('doneHtml(ui.session)');
+    ok(/When will you practise\?/.test(h) && h.indexOf('recap-habit') < h.indexOf('id="cue"') && h.indexOf('id="cue"') < h.indexOf('recap-acts'), 'the question, after the habit card, before the bar');
+    let r = JSON.parse(A.ev(CARD));
+    eq(r.card, null, 'no offer beside it'); eq(r.kept, null, 'nothing noted'); eq(A.ev(EVENTS), '[]', 'nothing measured');
+    /* Not now: the question goes, and no offer takes its place on this summary */
+    A.click('cueNo', null, null, { detail: 1 });
+    r = JSON.parse(A.ev(CARD));
+    eq(r.card, null, 'none in its place'); eq(r.kept, null, 'still nothing noted'); eq(A.ev(EVENTS), JSON.stringify(['cue_notnow']), 'only the answer measured');
+    /* the next summary with the goal met: the offer, alone after the habit card */
+    A.ev(SUMMARY(4, true));
+    h = A.ev('doneHtml(ui.session)');
+    r = JSON.parse(A.ev(CARD));
+    eq(r.card, '|Add notlichess to your home screen?|Add|Not now|', 'the offer, a summary later');
+    ok(!/id="cue"/.test(h) && r.at[0] > 0 && r.at[1] > r.at[0] && r.at[2] > r.at[1], 'alone after the habit card, before the bar: ' + r.at);
+    eq(A.ev(EVENTS), JSON.stringify(['cue_notnow', 'install_offer']), 'measured then');
+    /* the backup prompt due (a first learned position) takes the place; after Later, the next summary offers */
+    const B = boot();
+    B.ev(SW); B.ev(PHONE); B.ev(PROMPT); B.ev(LEARNED);
+    B.ev(SUMMARY(3, true));
+    ok(/Your progress lives only in this browser\. Save a copy\?/.test(B.ev('doneHtml(ui.session)')), 'the backup prompt');
+    r = JSON.parse(B.ev(CARD));
+    eq(r.card, null, 'no offer beside it'); eq(r.kept, null, 'nothing noted');
+    B.click('backupLater', null, null, { detail: 1 });
+    B.ev(SUMMARY(4, true));
+    eq(JSON.parse(B.ev(CARD)).card, '|Add notlichess to your home screen?|Add|Not now|', 'then the offer');
+    /* an iPhone: no how-to beside the backup prompt either */
+    const I = boot();
+    I.ev(SW); I.ev(`navigator.userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'; 1`); I.ev(LEARNED);
+    I.ev(SUMMARY(3, true));
+    r = JSON.parse(I.ev(CARD));
+    eq(r.card, null, 'no how-to beside it'); eq(r.kept, null, 'nothing noted'); eq(I.ev(EVENTS), '[]', 'nothing measured');
+    /* Settings keeps both: Reminders, then the App block right above Your data */
+    const s = I.ev('settingsHtml()'), rem = s.indexOf('<span class="kicker">Reminders</span>'), app = s.indexOf('<span class="kicker">App</span>');
+    ok(rem > 0 && app > rem && /<span class="kicker">App<\/span>((?!set-block)[\s\S])*<\/div><div class="set-block"><span class="kicker">Your data</.test(s), 'Reminders, then App right above Your data');
+  });
+
+  await test('F11.1: Settings offers the app where the browser can install it, "and works offline" only when the page is kept, and says nothing where it cannot', () => {
+    const A = boot();
+    A.ev(SW);
+    eq(A.ev('installSettingsHtml()'), '', 'no offer, no iPhone, not installed: nothing');
+    ok(!/kicker">App</.test(A.ev('settingsHtml()')), 'no App block');
+    A.ev(PHONE); A.ev(PROMPT);
+    eq(A.ev('installSettingsHtml()'), '<div class="set-block set-app"><span class="kicker">App</span><p>It opens in one tap.</p><a class="btn-line" data-act="installApp">Add to home screen</a></div>', 'a phone, the page not kept yet');
+    A.ev('navigator.serviceWorker.controller = {}; 1');
+    eq(A.ev('installSettingsHtml()'), '<div class="set-block set-app"><span class="kicker">App</span><p>It opens in one tap, and works offline.</p><a class="btn-line" data-act="installApp">Add to home screen</a></div>', 'a phone, the page kept');
+    A.ev('window.matchMedia = function () { return { matches: false }; }; 1');
+    eq(A.ev('installSettingsHtml()'), '<div class="set-block set-app"><span class="kicker">App</span><p>It opens in its own window, and works offline.</p><a class="btn-line" data-act="installApp">Install</a></div>', 'a desktop');
+    /* Settings opens the offer at any time, the first day too, and it is not the summary's once */
+    A.ev(`store.set('nl:firstSeen:' + playerId(), Date.now()); 1`);
+    ok(/installApp/.test(A.ev('installSettingsHtml()')), 'the first day too');
   });
 
   results.forEach((l) => console.log(l));

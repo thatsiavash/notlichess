@@ -11,8 +11,8 @@ function renderFirstVisit(prefill) {
     + '<h1>Stop making the same mistakes.</h1>'
     + '<p class="lede">Type your username. In a few seconds you see which mistakes decided your losses. Then you practise those exact positions, a few minutes a day, until you stop making them.</p>'
     /* an iPhone home-screen app keeps its storage apart from Safari */
-    + (navigator.standalone === true ? '<p class="handoff">Used notlichess in Safari? Export your progress there in Settings, then import it here. '
-      + '<a class="btn-line" data-act="importProgress">Import progress</a></p>' : '')
+    + (navigator.standalone === true ? '<p class="handoff">Used notlichess in Safari? Load the progress file you saved there. '
+      + '<a class="btn-line" data-act="importProgress">Load progress from a file</a></p>' : '')
     /* one box: the name is looked up on both sites */
     + '<div class="first-form">'
       + '<input class="input" id="firstUser" placeholder="Your chess.com or lichess username" autocomplete="off" '
@@ -316,6 +316,7 @@ function boot() {
      title never names anyone */
   document.title = 'notlichess.org';
   engineLoad().catch(function () {});           /* in parallel with everything else */
+  swRegister();                                 /* the app offline (F11.1), once Stockfish is in */
   ui.session = null;
   var cached = loadCachedGames();
   data.games = cached.games;
@@ -597,6 +598,8 @@ document.addEventListener('click', function (e) {
     case 'backupLater': backupAnswer(false); break;
     case 'exportProgress': exportProgress(); break;
     case 'importProgress': importProgress(); break;
+    case 'installApp': installApp(); break;
+    case 'installLater': installLater(); break;
     case 'engineRetry': SF.state = 'idle'; SF.crashes = []; engineLoad().then(function () { autoScan(); }, function () {}); renderAll(); break;
     case 'resetProgress': {
       if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); clearTimeout(ui.resetTimer); ui.resetTimer = setTimeout(function () { ui.resetArmed = false; renderSettings(); }, 4000); break; }

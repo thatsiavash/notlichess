@@ -701,6 +701,9 @@ function doneHtml(ss) {
     + (learned || recap ? '<div class="recap">' + learned + recap + '</div>' : '')
     + habitHtml(ss, keep, tier)
     + cueCardHtml(ss)
+    /* the first summary with the week's goal met: the app's install offer
+       (F11.1), never beside the reminder or the backup card (it waits) */
+    + installCardHtml(ss)
     /* the next set is the main way on: a bar that stays at the foot of the
        screen, the next set twice as wide as the way back */
     + '<div class="acts-row recap-acts">'
@@ -808,8 +811,14 @@ function cueAsk() {
   var c = cueLoad();
   return !c.cal && !c.no && (!c.q || dayStamp(new Date(c.q)) === dayStamp());
 }
-function cueCardHtml(ss) {
+/* what the card's place holds on this summary: 'ask', 'backup' or ''; the
+   install offer (F11.1) waits for a summary where it holds nothing */
+function cueOf(ss) {
   if (ss.cue == null) ss.cue = cueAsk() ? 'ask' : backupDue() ? 'backup' : '';
+  return ss.cue;
+}
+function cueCardHtml(ss) {
+  cueOf(ss);
   if (ss.cue === 'ask') return '<section class="cue" id="cue" aria-label="Reminders">' + cueBody('summary') + '</section>';
   if (ss.cue === 'backup') {
     return '<section class="cue" id="cue" aria-label="Your progress"><p class="cue-q">Your progress lives only in this browser. Save a copy?</p>'
@@ -2990,6 +2999,7 @@ function settingsHtml() {
       + '</div><p>Thorough reads new games more deeply and finds a few more mistakes. It takes about twice as long, so leave this tab open while it reads.</p>'
       + (scanDepth() === 'thorough' ? (function () { var rc = recheckCount(); return rc.n ? '<p class="dim" id="recheck-line">' + recheckText(rc) + '</p>' : ''; })() : '')
       + '<p class="dim">' + engineLine() + '</p></div>'
+    + installSettingsHtml()
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
       + '<p>' + gamesLine() + '</p>'
