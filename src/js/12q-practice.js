@@ -114,16 +114,25 @@ var PSKILL_OF = {};
 PSKILL.forEach(function (s, i) { s.n = i + 1; PSKILL_OF[s.k] = s; });
 
 /* ── the practice positions (12p-pdata.js), read once ──
-   'id|skill|source|band|fen|accepted|close': source L a lesson position,
-   R another player's real one (band: their rating band); accepted, the
-   moves within 4 points of Stockfish's best at 1,000,000 nodes (on a mate
-   in one, the mates); close, within 10 */
+   'id|skill|source|band|fen|accepted|close|captures|mates|hint2': source L
+   a lesson position, R another player's real one (band: their rating
+   band); accepted, the moves within 4 points of Stockfish's best at
+   8,000,000 nodes (on a mate in one, the mates); close, within 10; and the
+   facts its claims read (V3.1, test/truth/pfacts.js), so that no practice
+   claim reads a live search: captures, the misses whose capture reason
+   holds where the line settles ('e1e2' names the capture pracCapture
+   finds, 'e1e2>d8d1' Stockfish's own), mates, the misses that let them
+   mate in two ('g1f1>d1d2:2', its first move and length), hint2, Hint 2's
+   case (S exactly one safe square, O one move of the piece holds) */
 var pracMemo = null;
 function pracData() {
   if (pracMemo) return pracMemo;
   var by = {}, sk = {};
   (typeof PRAC_DATA !== 'undefined' ? PRAC_DATA : []).forEach(function (row) {
-    var f = row.split('|'), p = { id: f[0], skill: f[1], src: f[2], band: +f[3] || 0, fen: f[4], ok: f[5] ? f[5].split(',') : [], cl: f[6] ? f[6].split(',') : [] };
+    var f = row.split('|'), p = { id: f[0], skill: f[1], src: f[2], band: +f[3] || 0, fen: f[4], ok: f[5] ? f[5].split(',') : [], cl: f[6] ? f[6].split(',') : [],
+                                  caps: {}, mates: {}, h2: f[9] || '' };
+    (f[7] ? f[7].split(',') : []).forEach(function (x) { var y = x.split('>'); p.caps[y[0]] = y[1] || ''; });
+    (f[8] ? f[8].split(',') : []).forEach(function (x) { var y = /^(\w+)>(\w+):(\d+)$/.exec(x); if (y) p.mates[y[1]] = { r: y[2], n: +y[3] }; });
     by[p.id] = p;
     (sk[p.skill] = sk[p.skill] || []).push(p);
   });
@@ -163,7 +172,7 @@ function pracItem(key) {
   var p = pracData().byId[String(key).slice(3)], st = p ? stateFromFen(p.fen) : null;
   if (!p || !st) return null;
   pracItems[key] = { key: key, prac: true, id: p.id, skill: p.skill, src: p.src, band: p.band, fen: p.fen, ok: p.ok, cl: p.cl,
-                     g: { id: 'prac', color: st.w ? 'white' : 'black', mv: '' }, b: {} };
+                     caps: p.caps, mates: p.mates, h2: p.h2, g: { id: 'prac', color: st.w ? 'white' : 'black', mv: '' }, b: {} };
   return pracItems[key];
 }
 function lessonItem(key) {
@@ -271,48 +280,94 @@ function pracTry(m) {
    game, rated about 800.") */
 function pracSrc(a) { return a.it.src === 'R' ? CARD_COPY.P4() : CARD_COPY.P3(); }
 function pracSrcOn(a) { return !!a && !!a.prac && a.phase === 'guess' && !a.attempts && !a.hints && !a.revealed; }
-/* why a practice try fails, true on the board after it: their mate in one
-   ("Then queen takes on f2 is checkmate." at tier 1, "Then Qxf2 is
-   checkmate.", where neither fits "Black could checkmate you."), else the capture that wins most for them ("Their knight
-   takes your queen.", tier 3 "Nxg5 takes your queen."), each played by See
-   it; else the skill's own words (a mate missed, the free piece left, the
-   pawn let through, the attacked piece left), else, as the card says with
-   no score, "That helps Black." (the try is 10 points or more below the
-   best: every move not accepted or close is) */
-function pracWhy(a, m) {
-  var after = cloneState(a.pre), opp = sidesOf(a).opp, me = myPov(a.it), t1 = inWords(a), sk = a.it.skill;
-  applyMove(after, m);
-  var replies = legalMoves(after), why = { cands: [], fall: 'That helps ' + opp + '.', d: 0, u: '', took: '', mate: false };
-  var mate = replies.filter(function (r) { var x = cloneState(after); applyMove(x, r); return isMate(x); })[0];
-  var tw = function (r, check, mt) { return { from: r.from, to: r.to, piece: pType(after.b[r.from]), captured: after.b[r.to] ? pType(after.b[r.to]) : null, check: check, mate: mt, san: sanOf(after, r) }; };
-  if (mate) {
-    var ms = capSan(after, mate), mw = moveWords(after, mate);
-    /* tier 1 says no move in SAN: where the words do not fit, that they could */
-    why.cands = [t1 ? 'Then ' + mw + ' is checkmate.' : 'Then ' + ms + ' is checkmate.', opp + ' could checkmate you.'];
-    why.reply = moveUci(mate); why.threat = tw(mate, true, true); why.u = why.reply; why.mate = true;
-    return why;
-  }
+/* the capture a practice try lets them make, as the static exchange sees it
+   (the reply that nets them most, the bigger piece on a tie; never a king,
+   never en passant): the capture a practice reason names, unless the
+   position's facts hold Stockfish's own (pracWhy, test/truth/pfacts.js);
+   null when no capture pays */
+function pracCapture(after, me) {
   var best = null, gain = 0;
-  replies.forEach(function (r) {
+  legalMoves(after).forEach(function (r) {
     var t = after.b[r.to];
     if (!t || r.ep >= 0 || colorW(t) !== me || pType(t) === 'K') return;
     var g = dzSeeMove(after.b, r.from, r.to);
     if (g > gain || (g === gain && best && MOTIF_VAL[pType(t)] > MOTIF_VAL[pType(after.b[best.to])])) { gain = g; best = r; }
   });
-  if (best && gain > 0) {
-    var P = PIECE_WORD[pType(after.b[best.to])];
-    why.cands = a.tier >= 3 ? [capSan(after, best) + ' takes your ' + P + '.'] : ['Their ' + PIECE_WORD[pType(after.b[best.from])] + ' takes your ' + P + '.'];
-    why.reply = moveUci(best); why.threat = tw(best, checkersOf((function () { var x = cloneState(after); applyMove(x, best); return x; })()).length > 0, false);
-    why.u = why.reply; why.took = pType(after.b[best.to]);
+  return best && gain > 0 ? best : null;
+}
+/* a try that takes a piece of theirs worth a knight or more for free */
+function pracFreeTake(st, m) {
+  var t = st.b[m.to];
+  return !!t && m.ep < 0 && pType(t) !== 'P' && pType(t) !== 'K' && dzSeeMove(st.b, m.from, m.to) >= MOTIF_VAL[pType(t)];
+}
+/* why a practice try fails (V3.2): true on the board after it, or by the
+   position's facts (12p-pdata.js, from test/truth/pfacts.js; never a live
+   search), the skill's own reason first:
+   - a mate task: "That is not mate.";
+   - a free-piece or count task, a guarded piece taken for a loss by the
+     exchange: "That piece is guarded." (See it: the guard takes back);
+   - their mate in one: "Then queen takes on f2 is checkmate." (tier 1),
+     "Then Qxf2 is checkmate.", where neither fits "Black could checkmate
+     you.";
+   - a runaway pawn let through: "Then their pawn can become a queen." (a
+     promotion nothing takes at once);
+   - their mate in two the facts hold: "Then they mate in two." (tier 1
+     "Then they can force checkmate."), See it playing its first move;
+   - a capture the facts hold, its loss standing where the line settles:
+     "Their knight takes your queen.", tier 3 "Nxg5 takes your queen.";
+   - the skill's own words: the free piece left (never when the try took
+     one), the safe one left, the attacked piece left;
+   - else, as the card says with no score, "That helps Black." (every move
+     not accepted or close is 10 points or more below the best).
+   Each one that names a move has See it play it; why.kind says which:
+   task, guarded, mate, promo, forced, capture, skill, or '' */
+function pracWhy(a, m) {
+  var after = cloneState(a.pre), opp = sidesOf(a).opp, me = myPov(a.it), t1 = inWords(a), sk = a.it.skill, u = moveUci(m);
+  applyMove(after, m);
+  var replies = legalMoves(after), why = { kind: '', cands: [], fall: 'That helps ' + opp + '.', d: 0, u: '', took: '', mate: false };
+  var tw = function (r, mt) {
+    var x = cloneState(after); applyMove(x, r);
+    return { from: r.from, to: r.to, piece: pType(after.b[r.from]), captured: after.b[r.to] ? pType(after.b[r.to]) : null, check: checkersOf(x).length > 0, mate: mt, san: sanOf(after, r) };
+  };
+  var says = function (kind, cands, r, mt) {
+    why.kind = kind; why.cands = cands;
+    if (r) { why.reply = moveUci(r); why.threat = tw(r, !!mt); why.u = why.reply; }
     return why;
+  };
+  if (sk === 'mate1' || sk === 'backrank') return says('task', ['That is not mate.']);
+  if ((sk === 'free' || sk === 'count') && a.pre.b[m.to] && m.ep < 0 && attackersOf(a.pre.b, m.to, colorW(a.pre.b[m.to])).length && dzSeeMove(a.pre.b, m.from, m.to) < 0) {
+    /* a guard on the board (an x-ray alone is none here), and the cheapest
+       takes back */
+    var back = replies.filter(function (r) { return r.to === m.to; }).sort(function (x, y) { return MOTIF_VAL[pType(after.b[x.from])] - MOTIF_VAL[pType(after.b[y.from])] || x.from - y.from; })[0];
+    if (back) { why.took = pType(after.b[m.to]); return says('guarded', ['That piece is guarded.'], back); }
   }
-  if ((sk === 'mate1' || sk === 'backrank') && !isMate(after)) why.cands = ['That is not mate.'];
-  else if (sk === 'free' && pracClaim(a.pre, a.best, 'free')) why.cands = ['A piece of theirs was free.'];
-  else if (sk === 'count' && pracClaim(a.pre, a.best, 'count')) why.cands = ['One of them was safe to take.'];
-  else if (sk === 'pawns' && replies.some(function (r) { return !!r.promo; })) why.cands = ['Then their pawn can become a queen.'];
-  else if (sk === 'safety') {
+  var mate = replies.filter(function (r) { var x = cloneState(after); applyMove(x, r); return isMate(x); })[0];
+  if (mate) {
+    why.mate = true;
+    /* tier 1 says no move in SAN: where the words do not fit, that they could */
+    return says('mate', [t1 ? 'Then ' + moveWords(after, mate) + ' is checkmate.' : 'Then ' + capSan(after, mate) + ' is checkmate.', opp + ' could checkmate you.'], mate, true);
+  }
+  if (sk === 'pawns') {
+    var run = replies.filter(function (r) { if (!r.promo) return false; var x = cloneState(after); applyMove(x, r); return !legalMoves(x).some(function (y) { return y.to === r.to; }); })[0];
+    if (run) return says('promo', ['Then their pawn can become a queen.'], run);
+  }
+  var fm = a.it.mates && a.it.mates[u], fr = fm && fm.n === 2 ? uciToMove(after, fm.r) : null;
+  if (fr) {
+    why.fmate = 2;
+    return says('forced', [t1 ? 'Then they can force checkmate.' : 'Then they mate in two.', 'Then they can force checkmate.'], fr);
+  }
+  var cu = a.it.caps ? a.it.caps[u] : undefined, cr = cu === undefined ? null : cu ? uciToMove(after, cu) : pracCapture(after, me);
+  var vic = cr ? (cr.ep >= 0 ? after.b[cr.ep] : after.b[cr.to]) : null;
+  if (vic && colorW(vic) === me && pType(vic) !== 'K') {
+    var P = PIECE_WORD[pType(vic)];
+    why.took = pType(vic);
+    return says('capture', a.tier >= 3 ? [capSan(after, cr) + ' takes your ' + P + '.'] : ['Their ' + PIECE_WORD[pType(after.b[cr.from])] + ' takes your ' + P + '.'], cr);
+  }
+  if (sk === 'free' && pracClaim(a.pre, a.best, 'free') && !pracFreeTake(a.pre, m)) return says('skill', ['A piece of theirs was free.']);
+  if (sk === 'count' && pracClaim(a.pre, a.best, 'count')) return says('skill', ['One of them was safe to take.']);
+  if (sk === 'safety') {
     var still = dangerAttacked(after, me).map(function (x) { return x[0]; }), was = a.pre.b[a.best.from];
-    if (still.indexOf(a.best.from) >= 0 && after.b[a.best.from] === was) why.cands = ['Your ' + PIECE_WORD[pType(was)] + ' is still attacked.'];
+    if (still.indexOf(a.best.from) >= 0 && after.b[a.best.from] === was) return says('skill', ['Your ' + PIECE_WORD[pType(was)] + ' is still attacked.']);
   }
   return why;
 }
@@ -392,14 +447,27 @@ function pracDanger(a) {
   var pk = dangerPick(dangerAttacked(st, myPov(a.it)).map(function (x) { return { sq: x[0], p: st.b[x[0]], by: x.slice(1) }; }), [], skip);
   return pk ? { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return { from: x.from, to: x.to, kind: 'threat', key: 'danger' }; }) } : null;
 }
-/* Hint 2's words on a practice card: "Find a safe square." when the piece
-   it circles is attacked and the answer takes it out of danger */
-function pracSafeSq(a) {
-  var due = a.best, at = dangerAttacked(a.pre, myPov(a.it)).map(function (x) { return x[0]; });
-  if (at.indexOf(due.from) < 0) return false;
-  var after = cloneState(a.pre);
-  applyMove(after, due);
-  return !(dzSee(after.b, due.to, !myPov(a.it)) > 0);
+/* Hint 1's question on a practice card with no danger to draw: the skill's
+   own (its ask), but "Find a piece with no guard." only where a piece of
+   theirs that could be taken has none; otherwise the task line alone */
+function pracAsk(a) {
+  var sk = PSKILL_OF[a.it.skill], st = a.pre, me = myPov(a.it);
+  if (sk.k !== 'free') return sk.ask;
+  var loose = legalMoves(st).some(function (m) { var t = st.b[m.to]; return !!t && m.ep < 0 && colorW(t) !== me && pType(t) !== 'P' && pType(t) !== 'K' && !isDefended(st.b, m.to); });
+  return loose ? sk.ask : sk.task;
+}
+/* Hint 2's words on a practice card (from the position's facts): the
+   circled piece attacked and every safe square of it an accepted move (one,
+   or several and all accepted: the orchestrator's call after V2.3, so the
+   hint invites nothing rejected), "Find a safe square."; else V2.3's
+   ladder: one move of it that holds, "Only one queen move holds." (tier 1
+   "Only one queen move is best.": another may be a good move); else "Move
+   the circled piece." */
+function pracHint2(a) {
+  var h = a.it.h2, p = PIECE_WORD[pType(a.pre.b[a.best.from])];
+  if (h === 'S') return [CARD_COPY.H3c(), CARD_COPY.H3b()];
+  if (h === 'O' && p) return ['Only one ' + p + ' move ' + (a.tier === 1 ? 'is best.' : 'holds.'), CARD_COPY.H3b()];
+  return [CARD_COPY.H3b()];
 }
 /* the practice result, into nl:skill (never nl:srs): first try or not, real
    or a lesson's; the run and the step (3 first tries in a row up, 2 misses
@@ -774,14 +842,16 @@ function packOfferHtml() {
 }
 /* a practice position's Details: not from the player's games, where it is
    from, the move found (or the answer) and what it does, the other moves
-   accepted ("Knight to b3 works too."), the skill's idea */
+   accepted, the skill's idea. A move reads in words at tier 1, else in SAN
+   with its case kept: "Your move: g6. That stops the mate.", "Also good:
+   h6." (V3.2; a capital would make a pawn's file a piece, "B6") */
 function pracDetailsHtml(a) {
   var it = a.it, sk = PSKILL_OF[it.skill], mv = a.found || a.best;
   var say = function (m) { return inWords(a) ? moveWords(a.pre, m) : sanOf(a.pre, m); }, claim = pracClaim(a.pre, mv, it.skill);
   var other = it.ok.filter(function (u) { return u !== moveUci(mv); }).map(function (u) { return say(uciToMove(a.pre, u)); });
   return '<div class="kicker">Details</div><p class="ctx">' + (it.src === 'R' ? 'From another player\'s game, rated about ' + it.band + '.' : 'A lesson position.') + '</p>'
-    + '<div class="dt-lines"><p class="dt-line tl-good"><span class="tl-dot" aria-hidden="true"></span><span>' + (a.found ? 'Your move: ' : 'The answer: ') + esc(upFirst(say(mv))) + '.' + (claim ? ' ' + esc(claim) : '') + '</span></p>'
-    + (other.length ? '<p class="dt-line tl-alt"><span class="tl-dot" aria-hidden="true"></span><span>' + esc(other.length === 1 ? upFirst(other[0]) + ' works too.' : 'These work too: ' + other.join(', ') + '.') + '</span></p>' : '') + '</div>'
+    + '<div class="dt-lines"><p class="dt-line tl-good"><span class="tl-dot" aria-hidden="true"></span><span>' + (a.found ? 'Your move: ' : 'The answer: ') + esc(say(mv)) + '.' + (claim ? ' ' + esc(claim) : '') + '</span></p>'
+    + (other.length ? '<p class="dt-line tl-alt"><span class="tl-dot" aria-hidden="true"></span><span>' + esc('Also good: ' + other.join(', ') + '.') + '</span></p>' : '') + '</div>'
     + '<p class="dt-more">Practice position, not from your games.</p>'
     + (sk ? '<p class="habit">' + esc(sk.name) + ': ' + esc(sk.idea) + '</p>' : '');
 }

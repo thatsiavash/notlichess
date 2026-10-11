@@ -608,11 +608,12 @@ function hintText(a) {
   var gm = a.game && !(a.sol && a.solIdx > 0), sk = a.prac ? PSKILL_OF[a.it.skill] : null;
   /* Hint 3 (F9.2): what the red squares do, "Red squares lose your knight." */
   if (a.hints >= 3 && marks.reds.length) { cands = hint3Words(hint3Of(a)); fall = ''; }
-  /* a practice position (F9.4): hint 1 its board's danger where that is
-     its skill (pracDanger), else the skill's question; hint 2 the circled
-     piece, "Find a safe square." where the answer takes it out of danger */
-  else if (sk && a.hints >= 2) { cands = (pracSafeSq(a) ? [CARD_COPY.H3c()] : []).concat([CARD_COPY.H3b()]); fall = ''; }
-  else if (sk) { cands = marks.dz ? dangerWords(a, marks.dz) : [sk.ask]; fall = sk.ask; }
+  /* a practice position (F9.4, V3.2): hint 1 its board's danger where that
+     is its skill (pracDanger), else the skill's question where it holds
+     (pracAsk); hint 2 the circled piece from its facts (pracHint2: "Find a
+     safe square." when every safe square is accepted, else V2.3's words) */
+  else if (sk && a.hints >= 2) { cands = pracHint2(a); fall = ''; }
+  else if (sk) { cands = marks.dz ? dangerWords(a, marks.dz) : [pracAsk(a)]; fall = pracAsk(a); }
   else if (gm && a.hints >= 2) { cands = marks.dz ? dangerWords(a, marks.dz) : (safeSquare(a, due) ? [CARD_COPY.H3c()] : []).concat([CARD_COPY.H3b()]); fall = ''; }
   else if (gm) { row = checkRow(a); cands = marks.rep ? repeatedWords(a, marks.rep) : row.slice(0, 1); fall = row[0]; }
   /* hint 2 on a piece hint 1 rang as in danger: where to take it (content's

@@ -5,15 +5,25 @@
 //   its accepted and close moves legal and apart, every accepted move holding its skill's claim
 //   (pracClaim), a mate in one's accepted moves every mate there and nothing else, the real ones the
 //   stored positions of test/data/mistakes.ndjson with their stored answer (the better move, or the
-//   punishment) accepted; every miss's reason true on the board after it; every lesson's board legal,
-//   its frames' moves legal and each caption true on its board. NL_SF=1 asks Stockfish 17.1 again (about
-//   5 minutes): its best move accepted, every accepted move within the card's tolerance.
+//   punishment) accepted; the facts its claims read (V3.1, test/truth/pfacts.js) each a miss's; every
+//   miss's reason true on the board after it or by those facts, the skill's own first (V3.2), with no
+//   live search; Details in SAN as written; Hints 1 and 2 by their rules; every lesson's board legal,
+//   its frames' moves legal and each caption true on its board. NL_SF=1 asks Stockfish 17.1 again at
+//   1,000,000 nodes (about 5 minutes; the data is from 8,000,000): its best move accepted, every accepted
+//   move within the card's tolerance.
 //   F9.1 the help level, F9.2 Hint 3's red squares, F9.3 lessons in Today's sets, F9.4 packs and
 //   mastery, F9.5 the skill tiles, and the skill store's bookkeeping.
 const fs = require('fs'), path = require('path');
 const MIST = fs.readFileSync(path.join(__dirname, 'data', 'mistakes.ndjson'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
   .map((m) => ({ fen: m.fen, played: m.played, best: m.best && m.best.pv ? m.best.pv[0] : null, ref: m.refutation && m.refutation.pv ? m.refutation.pv[0] : null, band: m.band }));
 
+/* the practice facts (V3.1, test/truth/pfacts.js), nearly as many as shipped (1,097 captures kept, 53
+   mates in two after a miss, 15 Hint 2 cases; 1,081 misses reach the capture rung) */
+const FACTS = { caps: 1040, forced: 50, two: 50, h2: 14, capRung: 1000 };
+/* positions whose Hint 2 is "Only one knight move holds." (O), "Find a safe square." (S: every safe
+   square of the circled piece accepted, the orchestrator's call after slice 3) and "Move the circled
+   piece." (N: a safe square not accepted, and more than one move of it holds) */
+const H2 = { O: 'pk:m106a', piece: 'knight', S: 'pk:m41a', N: 'pk:safety-8' };
 /* a player at a rating (chess.com rapid: 700 is tier 1, 1600 tier 2, 2000 tier 3), the engine off (no
    foils, no deeper look) */
 const AT = (r) => `data.user = { perfs: { rapid: { rating: ${r} } } }; SF.state = 'failed';`;
@@ -39,10 +49,10 @@ module.exports = function practiceTests(h) {
   const T = [];
   const test = (name, fn) => T.push([name, fn]);
 
-  test('F9.3, F9.4: every practice position is legal by the app\'s move generator, its accepted and close moves legal and apart, every accepted move holding its skill\'s claim, a mate in one\'s accepted moves every mate there and only those, the real ones the stored positions of mistakes.ndjson with their stored answer accepted; every skill five or more apart at step 1, its lesson\'s own position among them', () => {
+  test('F9.3, F9.4, V3.1: every practice position is legal by the app\'s move generator, its accepted and close moves legal and apart, every accepted move holding its skill\'s claim, a mate in one\'s accepted moves every mate there and only those, the real ones the stored positions of mistakes.ndjson with their stored answer accepted; every skill five or more apart at step 1, its lesson\'s own position among them; its facts each a miss\'s (a capture legal and of the player\'s piece, a mate in two, checked move by move), Hint 2\'s case on the piece Hint 1 rings', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { var M = ${JSON.stringify(MIST)};
-      var out = [], n = { L: 0, R: 0, ok: 0, cl: 0, mates: 0 }, base = {};
+      var out = [], n = { L: 0, R: 0, ok: 0, cl: 0, mates: 0, caps: 0, forced: 0, two: 0, h2: 0 }, base = {};
       var legalFen = function (fen) {
         var st = stateFromFen(fen);
         if (!st) return 'unreadable';
@@ -82,6 +92,39 @@ module.exports = function practiceTests(h) {
           if (p.band !== m0.band || [800, 1100, 1400].indexOf(p.band) < 0) out.push(at + ': band ' + p.band + ', stored ' + m0.band);
         } else if (p.id.indexOf(p.skill + '-') !== 0) out.push(at + ': a lesson position named for another skill');
         if (pracStep(p) === 1) (base[p.skill] = base[p.skill] || {})[pracBase(p.id)] = 1;
+        /* the facts (V3.1): a capture kept is a miss's, its capture legal and of a piece of the player's; a
+           mate a miss's, in two, its first move legal, and every reply letting them mate in one; Hint 2's case only on
+           a circled piece Hint 1 rings as attacked (V2.3's piece), S with an accepted move of it to a plain
+           square, O its one move accepted and none of its close */
+        var miss = function (u) { return legal.indexOf(u) >= 0 && p.ok.indexOf(u) < 0 && p.cl.indexOf(u) < 0 && p.skill !== 'mate1' && p.skill !== 'backrank'; };
+        var after = function (u) { var x = cloneState(st); applyMove(x, uciToMove(x, u)); return x; };
+        Object.keys(p.caps).forEach(function (u) {
+          n.caps++;
+          if (!miss(u)) { out.push(at + ': a capture kept for ' + u + ', no miss'); return; }
+          var x = after(u), r = p.caps[u] ? uciToMove(x, p.caps[u]) : pracCapture(x, !!st.w), t = r ? (r.ep >= 0 ? x.b[r.ep] : x.b[r.to]) : null;
+          if (!t || colorW(t) !== !!st.w || pType(t) === 'K') out.push(at + ': the capture kept after ' + u + ' takes no piece of the player\\'s');
+        });
+        Object.keys(p.mates).forEach(function (u) {
+          n.forced++;
+          var f = p.mates[u];
+          if (!miss(u) || f.n !== 2) { out.push(at + ': a mate kept for ' + u + ', no miss or not in two'); return; }
+          var x = after(u), d = uciToMove(x, f.r);
+          if (!d) { out.push(at + ': the mate after ' + u + ' starts with no legal move'); return; }
+          applyMove(x, d);
+          if (f.n === 2) {
+            n.two++;
+            var rs = legalMoves(x);
+            if (!rs.length || !rs.every(function (r) { var y = cloneState(x); applyMove(y, r); return legalMoves(y).some(function (m) { var z = cloneState(y); applyMove(z, m); return isMate(z); }); })) out.push(at + ': no mate in two after ' + u + ' ' + f.r);
+          }
+        });
+        if (['', 'S', 'O'].indexOf(p.h2) < 0) out.push(at + ': Hint 2 case ' + p.h2);
+        if (p.h2) {
+          n.h2++;
+          var bm = uciToMove(st, p.ok[0]), pd = pracDanger(pracCardFor(pracItem('pk:' + p.id))), mine = legalMoves(st).filter(function (m) { return m.from === bm.from; }).map(moveUci);
+          if (!pd || pd.kind !== 'attacked' || !pd.rings.some(function (g) { return g.sq === bm.from && g.kind === 'attacked'; })) out.push(at + ': Hint 2 case ' + p.h2 + ' on a piece Hint 1 does not ring as attacked');
+          if (p.h2 === 'S' && !mine.some(function (u) { return p.ok.indexOf(u) >= 0 && loseSquares(st, bm.from).red.indexOf(uciToMove(st, u).to) < 0; })) out.push(at + ': "Find a safe square." with no accepted move of the piece to a plain square');
+          if (p.h2 === 'O' && (mine.filter(function (u) { return p.ok.indexOf(u) >= 0; }).length !== 1 || mine.some(function (u) { return p.cl.indexOf(u) >= 0; }))) out.push(at + ': "only one move holds", but ' + mine.filter(function (u) { return p.ok.indexOf(u) >= 0 || p.cl.indexOf(u) >= 0; }).join() + ' pass');
+        }
       });
       PSKILL.forEach(function (sk) {
         var tp = pracData().byId[sk.tryId];
@@ -90,42 +133,118 @@ module.exports = function practiceTests(h) {
       });
       return JSON.stringify({ out: out, n: n, rows: PRAC_DATA.length, real: PSKILL.map(function (sk) { return (pracData().bySkill[sk.k] || []).filter(function (p) { return p.src === 'R'; }).length; }) }); })()`));
     ok(r.rows >= 150 && r.n.L >= 100 && r.n.R >= 50 && r.n.mates >= 20, 'positions ' + JSON.stringify(r));
+    ok(r.n.caps >= FACTS.caps && r.n.forced >= FACTS.forced && r.n.two >= FACTS.two && r.n.h2 >= FACTS.h2, 'the facts ' + JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
   });
 
-  test('F9.4: a practice try that is neither accepted nor close says why, true on the board after it: their mate in one mates, the capture named is legal and takes the piece named for a gain; every legal move of every position', () => {
+  test('F9.4, V3.2: a practice try that is neither accepted nor close says why, the skill\'s own reason first, each true on the board after it or by the position\'s facts, never a live search: a mate task "That is not mate."; a guarded piece taken for a loss "That piece is guarded.", the guard taking back; their mate in one mates; a pawn let through queens untaken; a forced mate the facts hold; a capture only where the facts keep it (its loss standing where the line settles); the free piece left only when the try took none; every legal move of every position, at tiers 1 and 3', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${AT(700)}
-      var out = [], n = { tries: 0, mate: 0, took: 0, skill: 0, fall: 0 }, PW = { pawn: 'P', knight: 'N', bishop: 'B', rook: 'R', queen: 'Q', king: 'K' };
+      var out = [], n = { tries: 0 }, PW = { pawn: 'P', knight: 'N', bishop: 'B', rook: 'R', queen: 'Q', king: 'K' };
+      /* no practice claim reads a live search */
+      engineEval = function () { throw new Error('a live search'); };
+      var mateIn1 = function (x) { return legalMoves(x).some(function (m) { var y = cloneState(x); applyMove(y, m); return isMate(y); }); };
       PRAC_DATA.forEach(function (row) {
         var it = pracItem('pk:' + row.split('|')[0]);
         ui.session = { mode: 't', label: 't', keys: [it.key], idx: 0, results: {}, relearn: [], relearnOf: {} };
-        var a = pracCardFor(it);
+        var a = pracCardFor(it), me = myPov(it), sk = it.skill;
         ui.session.active = a;
         legalMoves(a.pre).forEach(function (m) {
           var u = moveUci(m);
           if (it.ok.indexOf(u) >= 0 || it.cl.indexOf(u) >= 0) return;
           n.tries++;
-          var w = pracWhy(a, m), at = it.id + ' ' + u, after = cloneState(a.pre);
-          applyMove(after, m);
-          var r = w.reply ? uciToMove(after, w.reply) : null;
-          if (w.mate) {
-            n.mate++;
-            var x = r && cloneState(after); if (x) applyMove(x, r);
-            if (!x || !isMate(x)) out.push(at + ': "' + w.cands[0] + '" but ' + w.reply + ' is no mate');
-          } else if (w.took) {
-            n.took++;
-            var t = r && after.b[r.to], mw = /takes your (\\w+)\\.$/.exec(w.cands[0] || '');
-            if (!r || !t || pType(t) !== w.took || colorW(t) !== myPov(it) || !(dzSeeMove(after.b, r.from, r.to) > 0) || !mw || PW[mw[1]] !== w.took) out.push(at + ': "' + w.cands[0] + '" is not true after it');
-          } else if (w.cands.length) n.skill++; else n.fall++;
-          /* the ladder always lands on a rung that fits row 2, never in SAN at tier 1 */
-          var said = fitRow(w.cands, 'row2', w.fall);
-          if (!said || !fitsRow(said, 'row2') || /\\b[KQRBN]x?[a-h][1-8]|\\b[a-h]x[a-h][1-8]|=[QRBN]/.test(said)) out.push(at + ': its reason reads ' + said + ' (' + w.cands.concat([w.fall]).join(' | ') + ')');
+          [1, 3].forEach(function (tier) {
+            a.tier = tier;
+            var w = pracWhy(a, m), at = it.id + ' ' + u + ' (tier ' + tier + ')', after = cloneState(a.pre);
+            applyMove(after, m);
+            var r = w.reply ? uciToMove(after, w.reply) : null, x = r && cloneState(after);
+            if (x) applyMove(x, r);
+            if (w.reply && !r) out.push(at + ': its reply ' + w.reply + ' is no legal move');
+            if (tier === 1) n[w.kind || 'fall'] = (n[w.kind || 'fall'] || 0) + 1;
+            var bad = function (why) { out.push(at + ': "' + w.cands[0] + '" ' + why); };
+            if ((sk === 'mate1' || sk === 'backrank') !== (w.kind === 'task')) bad('on a ' + sk + ' task');
+            if (w.kind === 'task' && isMate(after)) bad('but it mates');
+            if (w.kind === 'guarded' && (['free', 'count'].indexOf(sk) < 0 || !a.pre.b[m.to] || !attackersOf(a.pre.b, m.to, colorW(a.pre.b[m.to])).length || !(dzSeeMove(a.pre.b, m.from, m.to) < 0) || !r || r.to !== m.to)) bad('though the piece is not guarded and lost');
+            if (w.kind === 'mate' && !(x && isMate(x))) bad('but ' + w.reply + ' is no mate');
+            if (w.kind === 'promo' && !(r && r.promo && !legalMoves(x).some(function (y) { return y.to === r.to; }))) bad('but nothing queens untaken');
+            if (w.kind === 'forced') {
+              var f = it.mates[u];
+              if (!f || f.r !== w.reply || mateIn1(after)) bad('with no forced mate kept');
+              else if (f.n === 2 && !legalMoves(x).every(function (y) { var z = cloneState(x); applyMove(z, y); return mateIn1(z); })) bad('but there is no mate in two');
+              if (tier === 1 ? w.cands[0] !== 'Then they can force checkmate.' : f && f.n === 2 && w.cands[0] !== 'Then they mate in two.') bad('in the wrong words');
+            }
+            if (w.kind === 'capture') {
+              var t = r && (r.ep >= 0 ? after.b[r.ep] : after.b[r.to]), mw = /takes your (\\w+)\\.$/.exec(w.cands[0] || '');
+              if (!(u in it.caps) || !t || colorW(t) !== me || pType(t) !== w.took || !mw || PW[mw[1]] !== w.took || w.reply !== (it.caps[u] || moveUci(pracCapture(after, me)))) bad('is not a capture the facts keep');
+            }
+            if (w.kind !== 'capture' && w.kind !== 'guarded' && w.took) bad('names a piece taken');
+            if (w.kind === 'skill' && sk === 'free' && (pracFreeTake(a.pre, m) || !legalMoves(a.pre).some(function (y) { return pracFreeTake(a.pre, y); }))) bad('though the try took a free piece, or none was');
+            if (w.kind === 'skill' && sk === 'count' && !legalMoves(a.pre).some(function (y) { return a.pre.b[y.to] && y.ep < 0 && dzSeeMove(a.pre.b, y.from, y.to) >= 0; })) bad('though nothing was safe to take');
+            if (w.kind === 'skill' && sk === 'safety' && dangerAttacked(after, me).map(function (y) { return y[0]; }).indexOf(a.best.from) < 0) bad('though that piece is safe');
+            if (!w.kind && (w.cands.length || w.fall !== 'That helps ' + sidesOf(a).opp + '.')) bad('with no rung');
+            /* the ladder always lands on a rung that fits row 2, never in SAN at tier 1 */
+            var said = fitRow(w.cands, 'row2', w.fall);
+            if (!said || !fitsRow(said, 'row2') || (tier === 1 && /\\b[KQRBN]x?[a-h][1-8]|\\b[a-h]x[a-h][1-8]|=[QRBN]/.test(said))) out.push(at + ': its reason reads ' + said + ' (' + w.cands.concat([w.fall]).join(' | ') + ')');
+          });
         });
       });
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.tries > 3000 && r.n.mate > 50 && r.n.took > 1000 && r.n.skill > 20, 'tries ' + JSON.stringify(r.n));
+    ok(r.n.tries > 3000 && r.n.task > 800 && r.n.capture >= FACTS.capRung && r.n.mate > 50 && r.n.forced >= FACTS.forced && r.n.guarded >= 5 && r.n.skill > 20, 'tries ' + JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
+  });
+
+  test('V3.2: practice words that hold: Details keep SAN\'s case ("Your move: g6. That stops the mate.", "Also good: h6."; in words at tier 1), every move they name a legal move as written, and no capital file ("G6", "B6") on any practice frame at any tier; Hint 1 "Find a piece with no guard." only where a piece of theirs has none (m16b, m124b: the task line); Hint 2 from the facts ("Find a safe square." when every safe square of the circled piece is accepted, safety-1 too; else V2.3\'s "Only one knight move holds.", tier 1 "is best", or "Move the circled piece.")', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${AT(1600)} ${PLAY}
+      var out = {}, open = function (key, tier) { var it = pracItem(key); ui.session = { mode: 't', label: 't', keys: [key], idx: 0, results: {}, relearn: [], relearnOf: {} }; var a = pracCardFor(it); a.tier = tier; ui.session.active = a; return a; };
+      var details = function (key, u, tier) { var a = open(key, tier); gradeMove(uciToMove(a.st, u)); a.settle = 2; return words(detailsHtml()).filter(function (x) { return /^(Your move|The answer|Also good): /.test(x); }); };
+      var hint = function (key, tier, h) { var a = open(key, tier); a.hints = h; return displayFor(a).row2; };
+      out.g6 = details('pk:stopmate-1', 'g7g6', 2).concat(details('pk:stopmate-1', 'g7g6', 1)).filter(function (x) { return /^Your move: /.test(x); });
+      out.h6 = details('pk:stopmate-3', 'g7g6', 3);
+      out.exd5 = details('pk:free-3', 'e4d5', 2);
+      var bad = [], caps = [], n = 0;
+      [1, 2, 3].forEach(function (tier) {
+        PRAC_DATA.forEach(function (row) {
+          var f = row.split('|'), key = 'pk:' + f[0], st = stateFromFen(f[4]), ms = legalMoves(st), it = pracItem(key);
+          var as = ms.map(function (m) { return tier === 1 ? moveWords(st, m) : sanOf(st, m); });
+          var seen = [hint(key, tier, 1), hint(key, tier, 2)];
+          f[5].split(',').forEach(function (u) {
+            details(key, u, tier).forEach(function (l) {
+              n++; seen.push(l);
+              l.replace(/^(Your move|The answer|Also good): /, '').replace(/\\. .*$/, '').replace(/\\.$/, '').split(', ').forEach(function (x) { if (as.indexOf(x) < 0) bad.push(key + ' tier ' + tier + ': "' + x + '" in ' + l); });
+            });
+          });
+          ms.forEach(function (m) { if (it.ok.indexOf(moveUci(m)) < 0 && it.cl.indexOf(moveUci(m)) < 0) { var a = open(key, tier), w = pracWhy(a, m); seen.push(fitRow(w.cands, 'row2', w.fall)); } });
+          seen.forEach(function (s) { if (/\\b[A-H][1-8]\\b/.test(s)) caps.push(key + ' tier ' + tier + ': ' + s); });
+        });
+      });
+      out.bad = bad; out.caps = caps; out.n = n;
+      /* Hint 1 at Normal help, the free piece: the question only where a piece of theirs can be taken
+         with no guard (the app's own guard rule, x-rays too); else the task line */
+      out.ask = ['pk:m16b', 'pk:m124b', 'pk:free-1'].map(function (k) { return hint(k, 2, 1); });
+      out.askBad = PRAC_DATA.map(function (row) { return row.split('|'); }).filter(function (f) { return f[1] === 'free'; }).filter(function (f) {
+        var st = stateFromFen(f[4]), loose = legalMoves(st).some(function (m) { var t = st.b[m.to]; return t && m.ep < 0 && colorW(t) !== !!st.w && 'PK'.indexOf(pType(t)) < 0 && !isDefended(st.b, m.to); });
+        /* (in check, Hint 1 is the check) */
+        return !checkersOf(st).length && (hint('pk:' + f[0], 2, 1) === 'Find a piece with no guard.') !== loose;
+      }).map(function (f) { return f[0]; });
+      /* Hint 2 from the facts */
+      out.h2 = [hint(H2_O, 2, 2), hint(H2_O, 1, 2), hint(H2_O, 3, 2), hint('pk:safety-1', 2, 2), hint('pk:safety-1', 1, 2), hint(H2_N, 2, 2)].concat(H2_S ? [hint(H2_S, 2, 2)] : []);
+      out.h2Bad = PRAC_DATA.map(function (row) { return row.split('|'); }).filter(function (f) {
+        var h = f[9] || '', said = hint('pk:' + f[0], 2, 2);
+        return h === 'S' ? said !== 'Find a safe square.' : h === 'O' ? !/^Only one (knight|bishop|rook|queen|king|pawn) move holds\\.$/.test(said) : said !== 'Move the circled piece.';
+      }).map(function (f) { return f[0]; });
+      return JSON.stringify(out); })()`.replace(/H2_O/g, JSON.stringify(H2.O)).replace(/H2_S/g, JSON.stringify(H2.S)).replace(/H2_N/g, JSON.stringify(H2.N))));
+    eq(JSON.stringify(r.g6), JSON.stringify(['Your move: g6. That stops the mate.', 'Your move: pawn to g6. That stops the mate.']), 'SAN with its case at tier 2, words at tier 1');
+    eq(r.h6.filter((x) => /^Also good: /.test(x)).join(), 'Also good: h6.', 'the other accepted move, "Also good: h6."');
+    ok(/^Your move: exd5\. That wins their knight\.$/.test(r.exd5[0] || ''), 'a pawn capture as written: ' + JSON.stringify(r.exd5));
+    ok(r.n > 900, 'Details lines read: ' + r.n);
+    eq(r.bad.length, 0, 'every move named is a legal move as written: ' + r.bad.slice(0, 4).join(' | '));
+    eq(r.caps.length, 0, 'no capital file on any practice frame: ' + r.caps.slice(0, 4).join(' | '));
+    eq(JSON.stringify(r.ask), JSON.stringify(['Find the free piece.', 'Find the free piece.', 'Find a piece with no guard.']), 'Hint 1: the guarded free pieces get the task line');
+    eq(r.askBad.join(), '', '"Find a piece with no guard." exactly where a piece has none');
+    eq(JSON.stringify(r.h2), JSON.stringify(['Only one ' + H2.piece + ' move holds.', 'Only one ' + H2.piece + ' move is best.', 'Only one ' + H2.piece + ' move holds.', 'Find a safe square.', 'Find a safe square.', 'Move the circled piece.'].concat(H2.S ? ['Find a safe square.'] : [])),
+      'Hint 2: one knight move holds; safety-1\'s two safe squares both accepted, at tiers 2 and 1; a safe square not accepted');
+    eq(r.h2Bad.join(), '', 'every position\'s Hint 2 from its facts');
   });
 
   test('F9.3: the ten lessons: each board legal, three frames of 8 words or fewer (60 characters) with the "Lesson" tag, a frame\'s move legal, the third frame its own practice position; every caption true on its board, every mark on a square that says it', () => {
@@ -282,7 +401,7 @@ module.exports = function practiceTests(h) {
     eq(r.spec, 'b3,c2 / b5,c6,e2,e6,f3,f5 / true / Red squares lose your knight.', 'the spec position: exactly c2 and b3 plain');
     eq(r.one, 'c2 / true', 'one plain square: no Hint 3');
     eq(JSON.stringify(r.rows), JSON.stringify(['Your turn / Find a safe square. | Hint | Show the answer', 'Hint 1 of 3 / Their pawn attacks your knight. | Hint 2 | Show the answer',
-      'Hint 2 of 3 / Find a safe square. | Hint 3 | Show the answer', 'Hint 3 of 3 / Red squares lose your knight. | No more hints (off) | Show the answer']), 'the rows, and the bar\'s Hint naming the next');
+      'Hint 2 of 3 / Find a safe square. | Hint 3 | Show the answer', 'Hint 3 of 3 / Red squares lose your knight. | No more hints (off) | Show the answer']), 'the rows, and the bar\'s Hint naming the next (Hint 2: its two safe squares both accepted, "Find a safe square.")');
     eq(r.board, '[{"sq":27,"kind":"hint"}] / b5,c6,e2,e6,f3,f5', 'the knight ringed, its six red squares, c2 and b3 plain');
     eq(r.hints, 3, 'no fourth hint');
     eq(r.graded, 'hint / hint / With a hint', 'graded "With a hint"');

@@ -7895,53 +7895,56 @@ function foilDanger(a) {
   if (pk) return { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return { from: x.from, to: x.to, kind: 'threat', key: 'danger' }; }) };
   return { kind: 'none', rings: [], arrows: [] };
 }
-/* ── Practice positions (F9.3, F9.4) ──────────────────────────────────────
+/* ── Practice positions (F9.3, F9.4) and their facts (V3.1) ───────────────
    Generated once from hand-written lesson positions (source L, with a copy
    mirrored a-h of each one that has no castling rights: a-suffixed m) and
    both sides of the real mistakes in test/data/mistakes.ndjson (source R:
    m<number>a the better move before the mistake, m<number>b the punishment
    after it; bands 800 to 1400). Each position is legal by the app's move
    generator; its accepted moves are those within 4 points of Stockfish
-   17.1's best at 1,000,000 nodes (a mate in one: the mates), its close ones
-   within 10; every accepted move holds its skill's claim (pracClaim).
+   17.1's best at 8,000,000 nodes (a mate in one: the mates), its close ones
+   within 10; every accepted move holds its skill's claim (pracClaim). The
+   facts its claims read, so that none reads a live search, come from
+   test/truth/pfacts.js: the misses whose capture reason holds where the
+   line settles, the misses that let them force mate, Hint 2's case.
    test/practice.js checks all of it, and with NL_SF=1 asks Stockfish again.
-   'id|skill|source|band|fen|accepted|close' */
+   'id|skill|source|band|fen|accepted|close|captures|mates|hint2' */
 var PRAC_DATA = [
- 'free-1|free|L|0|6k1/5ppp/8/4n3/8/8/1B3PPP/6K1 w - - 0 1|b2e5|',
- 'free-1m|free|L|0|1k6/ppp5/8/3n4/8/8/PPP3B1/1K6 w - - 0 1|g2d5|',
- 'free-2|free|L|0|6k1/5ppp/3r4/8/4N3/8/5PPP/6K1 w - - 0 1|e4d6|',
- 'free-2m|free|L|0|1k6/ppp5/4r3/8/3N4/8/PPP5/1K6 w - - 0 1|d4e6|',
- 'free-3|free|L|0|6k1/5ppp/8/3n4/4P3/8/5PPP/6K1 w - - 0 1|e4d5|',
- 'free-3m|free|L|0|1k6/ppp5/8/4n3/3P4/8/PPP5/1K6 w - - 0 1|d4e5|',
- 'free-4|free|L|0|3r2k1/5pp1/7p/8/3N4/8/5PPP/R5K1 b - - 0 1|d8d4|',
- 'free-4m|free|L|0|1k2r3/1pp5/p7/8/4N3/8/PPP5/1K5R b - - 0 1|e8e4|',
- 'free-5|free|L|0|6k1/5ppp/8/8/3q4/2P5/5PPP/6K1 w - - 0 1|c3d4|',
- 'free-5m|free|L|0|1k6/ppp5/8/8/4q3/5P2/PPP5/1K6 w - - 0 1|f3e4|',
- 'free-6|free|L|0|6k1/5ppp/8/8/5n2/8/4BPPP/6K1 b - - 0 1|f4e2|',
- 'free-6m|free|L|0|1k6/ppp5/8/8/2n5/8/PPPB4/1K6 b - - 0 1|c4d2|',
- 'free-7|free|L|0|2k4r/ppp5/8/8/2n5/8/5PPP/2R3K1 w - - 0 1|c1c4|',
- 'free-7m|free|L|0|r4k2/5ppp/8/8/5n2/8/PPP5/1K3R2 w - - 0 1|f1f4|',
- 'free-8|free|L|0|6k1/5ppp/8/2b5/8/1N6/5PPP/6K1 w - - 0 1|b3c5|',
- 'free-8m|free|L|0|1k6/ppp5/8/5b2/8/6N1/PPP5/1K6 w - - 0 1|g3f5|',
- 'safety-1|safety|L|0|5rk1/3p2pp/b7/4p3/3N4/6P1/PP5P/R5K1 w - - 0 1|d4b3,d4c2|',
- 'safety-1m|safety|L|0|1kr5/pp2p3/7b/3p4/4N3/1P6/P5PP/1K5R w - - 0 1|e4g3,e4f2|',
- 'safety-2|safety|L|0|6k1/5p1p/4p3/6p1/7N/8/5P1P/6K1 w - - 0 1|h4f3,h4g2|',
- 'safety-2m|safety|L|0|1k6/p1p5/3p4/1p6/N7/8/P1P5/1K6 w - - 0 1|a4c3,a4b2|',
- 'safety-3|safety|L|0|6k1/1p3ppp/p1p5/1B6/8/8/5PPP/6K1 w - - 0 1|b5c4,b5a4,b5d3,b5e2,b5f1|',
- 'safety-3m|safety|L|0|1k6/ppp3p1/5p1p/6B1/8/8/PPP5/1K6 w - - 0 1|g5f4,g5h4,g5d2,g5e3,g5c1|',
- 'safety-4|safety|L|0|6k1/5pp1/7p/8/8/1b6/5PPP/3R2K1 w - - 0 1|d1d2,d1d7,d1f1,d1b1,d1c1,d1d8,d1d6,d1d3,d1d4,d1a1,d1e1|',
- 'safety-4m|safety|L|0|1k6/1pp5/p7/8/8/6b1/PPP5/1K2R3 w - - 0 1|e1e3,e1e8,e1h1,e1e6,e1g1,e1e2,e1e4,e1e7,e1c1|e1f1,e1d1',
- 'safety-5|safety|L|0|6k1/5ppp/8/4n3/3P4/8/5PPP/6K1 b - - 0 1|e5c6,e5d7,e5g6,e5g4,e5d3,e5c4|',
- 'safety-5m|safety|L|0|1k6/ppp5/8/3n4/4P3/8/PPP5/1K6 b - - 0 1|d5e7,d5b4,d5f4,d5f6,d5e3,d5b6|',
- 'safety-6|safety|L|0|3r2k1/7p/6p1/5p2/4B3/8/5PPP/6K1 w - - 0 1|e4f3,e4c2|',
- 'safety-6m|safety|L|0|1k2r3/p7/1p6/2p5/3B4/8/PPP5/1K6 w - - 0 1|d4c3,d4f2|',
- 'count-1|count|L|0|3q2k1/5ppp/4p3/3p4/n7/8/PP3PPP/3Q2K1 w - - 0 1|d1a4|',
- 'count-1m|count|L|0|1k2q3/ppp5/3p4/4p3/7n/8/PPP3PP/1K2Q3 w - - 0 1|e1h4|',
- 'count-2|count|L|0|6k1/5ppp/4p3/1b1p4/8/2N5/5PPP/6K1 w - - 0 1|c3b5|',
- 'count-2m|count|L|0|1k6/ppp5/3p4/4p1b1/8/5N2/PPP5/1K6 w - - 0 1|f3g5|',
- 'count-3|count|L|0|6k1/5ppp/1p6/2p3n1/8/4B3/5PPP/6K1 w - - 0 1|e3g5|',
- 'count-3m|count|L|0|1k6/ppp5/6p1/1n3p2/8/3B4/PPP5/1K6 w - - 0 1|d3b5|',
- 'count-5|count|L|0|6k1/5pp1/3p3p/4n3/8/8/5PPP/1n2R1K1 w - - 0 1|e1b1|f2f4',
+ 'free-1|free|L|0|6k1/5ppp/8/4n3/8/8/1B3PPP/6K1 w - - 0 1|b2e5||g2g4',
+ 'free-1m|free|L|0|1k6/ppp5/8/3n4/8/8/PPP3B1/1K6 w - - 0 1|g2d5||b2b4',
+ 'free-2|free|L|0|6k1/5ppp/3r4/8/4N3/8/5PPP/6K1 w - - 0 1|e4d6||e4d2,e4f6',
+ 'free-2m|free|L|0|1k6/ppp5/4r3/8/3N4/8/PPP5/1K6 w - - 0 1|d4e6||d4e2,d4c6',
+ 'free-3|free|L|0|6k1/5ppp/8/3n4/4P3/8/5PPP/6K1 w - - 0 1|e4d5||f2f4',
+ 'free-3m|free|L|0|1k6/ppp5/8/4n3/3P4/8/PPP5/1K6 w - - 0 1|d4e5||c2c4',
+ 'free-4|free|L|0|3r2k1/5pp1/7p/8/3N4/8/5PPP/R5K1 b - - 0 1|d8d4||f7f5,d8a8',
+ 'free-4m|free|L|0|1k2r3/1pp5/p7/8/4N3/8/PPP5/1K5R b - - 0 1|e8e4||c7c5,e8h8',
+ 'free-5|free|L|0|6k1/5ppp/8/8/3q4/2P5/5PPP/6K1 w - - 0 1|c3d4||g2g3,g2g4>d4g4,h2h3,h2h4',
+ 'free-5m|free|L|0|1k6/ppp5/8/8/4q3/5P2/PPP5/1K6 w - - 0 1|f3e4||a2a3,a2a4,b2b3,b2b4>e4b4',
+ 'free-6|free|L|0|6k1/5ppp/8/8/5n2/8/4BPPP/6K1 b - - 0 1|f4e2||f4d3,f4h3,f4h5',
+ 'free-6m|free|L|0|1k6/ppp5/8/8/2n5/8/PPPB4/1K6 b - - 0 1|c4d2||c4a3,c4e3,c4a5',
+ 'free-7|free|L|0|2k4r/ppp5/8/8/2n5/8/5PPP/2R3K1 w - - 0 1|c1c4||h2h4',
+ 'free-7m|free|L|0|r4k2/5ppp/8/8/5n2/8/PPP5/1K3R2 w - - 0 1|f1f4||a2a4',
+ 'free-8|free|L|0|6k1/5ppp/8/2b5/8/1N6/5PPP/6K1 w - - 0 1|b3c5||g1h1,b3d4',
+ 'free-8m|free|L|0|1k6/ppp5/8/5b2/8/6N1/PPP5/1K6 w - - 0 1|g3f5||g3e4',
+ 'safety-1|safety|L|0|5rk1/3p2pp/b7/4p3/3N4/6P1/PP5P/R5K1 w - - 0 1|d4b3,d4c2||a1b1,a1c1,a1d1,a1e1,a1f1>f8f1,g1h1,g1g2,a2a3,a2a4,b2b3,b2b4,h2h3,h2h4,g3g4,d4e2,d4f3,d4b5,d4f5,d4c6,d4e6||S',
+ 'safety-1m|safety|L|0|1kr5/pp2p3/7b/3p4/4N3/1P6/P5PP/1K5R w - - 0 1|e4g3,e4f2||b1a1,b1b2,h1c1>c8c1,h1d1,h1e1,h1f1,h1g1,a2a3,a2a4,g2g3,g2g4,h2h3,h2h4,b3b4,e4d2,e4c3,e4c5,e4g5,e4d6,e4f6||S',
+ 'safety-2|safety|L|0|6k1/5p1p/4p3/6p1/7N/8/5P1P/6K1 w - - 0 1|h4f3,h4g2||g1f1,g1h1,g1g2,f2f3,f2f4,h2h3,h4f5,h4g6>h7g6||S',
+ 'safety-2m|safety|L|0|1k6/p1p5/3p4/1p6/N7/8/P1P5/1K6 w - - 0 1|a4c3,a4b2||b1a1,b1c1,b1b2,a2a3,c2c3,c2c4,a4c5,a4b6||S',
+ 'safety-3|safety|L|0|6k1/1p3ppp/p1p5/1B6/8/8/5PPP/6K1 w - - 0 1|b5c4,b5a4,b5e2,b5d3,b5f1||g1f1,g1h1>c6b5,f2f3,f2f4,g2g3>c6b5,g2g4>c6b5,h2h3>c6b5,h2h4,b5a6,b5c6||S',
+ 'safety-3m|safety|L|0|1k6/ppp3p1/5p1p/6B1/8/8/PPP5/1K6 w - - 0 1|g5f4,g5e3,g5h4,g5d2,g5c1||b1a1>h6g5,b1c1,a2a3,a2a4>h6g5,b2b3>h6g5,b2b4,c2c3,c2c4>h6g5,g5f6,g5h6||S',
+ 'safety-4|safety|L|0|6k1/5pp1/7p/8/8/1b6/5PPP/3R2K1 w - - 0 1|d1d2,d1d6,d1d3,d1c1,d1d4,d1a1,d1d8,d1d7,d1b1,d1f1,d1e1||d1d5,g1f1,g1h1,f2f3,f2f4,g2g3,g2g4,h2h3,h2h4||S',
+ 'safety-4m|safety|L|0|1k6/1pp5/p7/8/8/6b1/PPP5/1K2R3 w - - 0 1|e1e3,e1e6,e1g1,e1e8,e1h1,e1e4,e1f1,e1c1,e1e2,e1e7,e1d1||b1a1,b1c1,e1e5,a2a3,a2a4,b2b3,b2b4,c2c3,c2c4||S',
+ 'safety-5|safety|L|0|6k1/5ppp/8/4n3/3P4/8/5PPP/6K1 b - - 0 1|e5c6,e5c4,e5g4,e5d7,e5g6,e5d3||e5f3,f7f6,f7f5,g7g6,g7g5,h7h6,h7h5,g8f8,g8h8||S',
+ 'safety-5m|safety|L|0|1k6/ppp5/8/3n4/4P3/8/PPP5/1K6 b - - 0 1|d5e7,d5f4,d5f6,d5b4,d5b6,d5e3||d5c3,a7a6,a7a5,b7b6,b7b5,c7c6,c7c5,b8a8,b8c8||S',
+ 'safety-6|safety|L|0|3r2k1/7p/6p1/5p2/4B3/8/5PPP/6K1 w - - 0 1|e4f3,e4c2||g1f1,f2f3,f2f4,g2g3,g2g4,h2h3,h2h4,e4d3,e4d5',
+ 'safety-6m|safety|L|0|1k2r3/p7/1p6/2p5/3B4/8/PPP5/1K6 w - - 0 1|d4c3,d4f2||b1c1,a2a3,a2a4,b2b3,b2b4,c2c3,c2c4,d4e3,d4e5',
+ 'count-1|count|L|0|3q2k1/5ppp/4p3/3p4/n7/8/PP3PPP/3Q2K1 w - - 0 1|d1a4||d1e1,d1f1,d1f3,d1g4,d1h5,g1f1,g1h1,a2a3,f2f3,f2f4,g2g3,g2g4,h2h3,h2h4',
+ 'count-1m|count|L|0|1k2q3/ppp5/3p4/4p3/7n/8/PPP3PP/1K2Q3 w - - 0 1|e1h4||b1a1,b1c1,e1c1,e1d1,e1c3,e1e3,e1b4,e1a5,a2a3,a2a4,b2b3,b2b4,c2c3,c2c4,h2h3',
+ 'count-2|count|L|0|6k1/5ppp/4p3/1b1p4/8/2N5/5PPP/6K1 w - - 0 1|c3b5||c3e2,c3a4,c3e4',
+ 'count-2m|count|L|0|1k6/ppp5/3p4/4p1b1/8/5N2/PPP5/1K6 w - - 0 1|f3g5||f3d2,f3d4,f3h4',
+ 'count-3|count|L|0|6k1/5ppp/1p6/2p3n1/8/4B3/5PPP/6K1 w - - 0 1|e3g5||e3d4',
+ 'count-3m|count|L|0|1k6/ppp5/6p1/1n3p2/8/3B4/PPP5/1K6 w - - 0 1|d3b5||d3e4',
+ 'count-5|count|L|0|6k1/5pp1/3p3p/4n3/8/8/5PPP/1n2R1K1 w - - 0 1|e1b1|',
  'count-5m|count|L|0|1k6/1pp5/p3p3/3n4/8/8/PPP5/1K1R2n1 w - - 0 1|d1g1|c2c4',
  'mate1-1|mate1|L|0|r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4|h5f7|',
  'mate1-2|mate1|L|0|5rk1/5pp1/8/6N1/8/3Q4/5PPP/6K1 w - - 0 1|d3h7|',
@@ -7952,33 +7955,33 @@ var PRAC_DATA = [
  'mate1-4m|mate1|L|0|kr6/pp6/N7/8/8/8/PPP5/1K6 w - - 0 1|a6c7|',
  'mate1-5|mate1|L|0|6k1/1b3ppp/8/8/4q3/8/5P1P/6K1 b - - 0 1|e4b1,e4e1,e4h1,e4g2|',
  'mate1-5m|mate1|L|0|1k6/ppp3b1/8/8/3q4/8/P1P5/1K6 b - - 0 1|d4a1,d4d1,d4g1,d4b2|',
- 'stopmate-1|stopmate|L|0|r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3|g7g6,d8e7,d8f6|g8h6',
- 'stopmate-2|stopmate|L|0|3r2k1/R4ppp/8/8/8/8/5PPP/6K1 w - - 0 1|h2h3,a7a1,g1f1,g2g3,g2g4,f2f4,h2h4,f2f3|',
- 'stopmate-2m|stopmate|L|0|1k2r3/ppp4R/8/8/8/8/PPP5/1K6 w - - 0 1|b2b4,a2a3,b1c1,b2b3,c2c3,a2a4,c2c4,h7h1|',
- 'stopmate-3|stopmate|L|0|r2q1rk1/ppp2ppp/8/7Q/8/3B4/PPP2PPP/R5K1 b - - 0 1|g7g6,h7h6|',
- 'stopmate-3m|stopmate|L|0|1kr1q2r/ppp2ppp/8/Q7/8/4B3/PPP2PPP/1K5R b - - 0 1|b7b6,a7a6|',
- 'stopmate-4|stopmate|L|0|6k1/r4ppp/8/8/8/8/5PPP/3R2K1 b - - 0 1|g8f8,f7f6,g7g6,h7h6,h7h5,f7f5,g7g5,a7a8|',
- 'stopmate-4m|stopmate|L|0|1k6/ppp4r/8/8/8/8/PPP5/1K2R3 b - - 0 1|h7h8,c7c6,b7b5,a7a5,a7a6,b7b6,b8c8,c7c5|',
- 'fork-1|fork|L|0|r3k3/5ppp/8/1N6/8/8/5PPP/6K1 w - - 0 1|b5c7|',
- 'fork-1m|fork|L|0|3k3r/ppp5/8/6N1/8/8/PPP5/1K6 w - - 0 1|g5f7|',
- 'fork-2|fork|L|0|6k1/5pp1/7p/2n1b3/8/2PP4/5PPP/3R2K1 w - - 0 1|d3d4|',
- 'fork-2m|fork|L|0|1k6/1pp5/p7/3b1n2/8/4PP2/PPP5/1K2R3 w - - 0 1|e3e4|',
- 'fork-3|fork|L|0|4k3/1q6/8/8/4N3/8/5PPP/6K1 w - - 0 1|e4d6|',
- 'fork-3m|fork|L|0|3k4/6q1/8/8/3N4/8/PPP5/1K6 w - - 0 1|d4e6|',
- 'fork-4|fork|L|0|6k1/5ppp/8/8/5n2/2Q5/5PPP/6K1 b - - 0 1|f4e2|',
- 'fork-4m|fork|L|0|1k6/ppp5/8/8/2n5/5Q2/PPP5/1K6 b - - 0 1|c4d2|',
- 'pin-1|pin|L|0|4k3/8/8/4q3/8/8/5K2/3R4 w - - 0 1|d1e1|',
- 'pin-1m|pin|L|0|3k4/8/8/3q4/8/8/2K5/4R3 w - - 0 1|e1d1|',
- 'pin-2|pin|L|0|7k/8/1B3q2/8/8/2P5/8/6K1 w - - 0 1|b6d4|',
- 'pin-2m|pin|L|0|k7/8/2q3B1/8/8/5P2/8/1K6 w - - 0 1|g6e4|',
- 'pin-3|pin|L|0|r7/5k2/8/8/8/4Q3/8/4K3 b - - 0 1|a8e8|',
- 'pin-3m|pin|L|0|7r/2k5/8/8/8/3Q4/8/3K4 b - - 0 1|h8d8|',
- 'pin-4|pin|L|0|1k6/8/3q4/8/8/6P1/8/2B3K1 w - - 0 1|c1f4|',
- 'pin-4m|pin|L|0|6k1/8/4q3/8/8/1P6/8/1K3B2 w - - 0 1|f1c4|',
- 'hidden-1|hidden|L|0|8/4k1q1/8/8/3N4/8/1B6/7K w - - 0 1|d4f5|',
- 'hidden-1m|hidden|L|0|8/1q1k4/8/8/4N3/8/6B1/K7 w - - 0 1|e4c5|',
- 'hidden-2|hidden|L|0|4k3/8/q7/8/4B3/8/5PPP/4R1K1 w - - 0 1|e4b7,e4d3|',
- 'hidden-2m|hidden|L|0|3k4/8/7q/8/3B4/8/PPP5/1K1R4 w - - 0 1|d4e3,d4g7|',
+ 'stopmate-1|stopmate|L|0|r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3|g7g6,d8e7,d8f6|g8h6|d7d5,d8h4>h5f7,d8g5>h5f7|d8h4>h5f7:2,d8g5>h5f7:2',
+ 'stopmate-2|stopmate|L|0|3r2k1/R4ppp/8/8/8/8/5PPP/6K1 w - - 0 1|h2h3,h2h4,g2g4,g2g3,f2f4,g1f1,a7a1,f2f3||a7d7,a7a8|a7e7>d8d1:2',
+ 'stopmate-2m|stopmate|L|0|1k2r3/ppp4R/8/8/8/8/PPP5/1K6 w - - 0 1|b2b4,h7h1,a2a3,b2b3,c2c4,c2c3,a2a4,b1c1||h7e7,h7h8|h7d7>e8e1:2',
+ 'stopmate-3|stopmate|L|0|r2q1rk1/ppp2ppp/8/7Q/8/3B4/PPP2PPP/R5K1 b - - 0 1|g7g6,h7h6||f7f6,f7f5,d8d3,d8h4>d3h7,f8e8>h5h7',
+ 'stopmate-3m|stopmate|L|0|1kr1q2r/ppp2ppp/8/Q7/8/4B3/PPP2PPP/1K5R b - - 0 1|b7b6,a7a6||c7c6,c7c5,c8d8>a5a7,e8e3,e8a4>e3a7',
+ 'stopmate-4|stopmate|L|0|6k1/r4ppp/8/8/8/8/5PPP/3R2K1 b - - 0 1|g8f8,g7g5,h7h6,f7f6,g7g6,f7f5,h7h5,a7a8||a7a1,a7d7|a7e7>d1d8:2',
+ 'stopmate-4m|stopmate|L|0|1k6/ppp4r/8/8/8/8/PPP5/1K2R3 b - - 0 1|h7h8,a7a5,b8c8,b7b6,c7c6,c7c5,b7b5,a7a6||h7h1,h7e7|h7d7>e1e8:2',
+ 'fork-1|fork|L|0|r3k3/5ppp/8/1N6/8/8/5PPP/6K1 w - - 0 1|b5c7||b5a3,b5a7|b5c3>a8a1:2',
+ 'fork-1m|fork|L|0|3k3r/ppp5/8/6N1/8/8/PPP5/1K6 w - - 0 1|g5f7||g5h3,g5h7|g5f3>h8h1:2',
+ 'fork-2|fork|L|0|6k1/5pp1/7p/2n1b3/8/2PP4/5PPP/3R2K1 w - - 0 1|d3d4||d1a1>e5c3,d1b1>e5c3,d1c1,d1e1>e5c3,d1f1>e5c3,d1d2,g1f1>e5c3,g1h1,f2f3,f2f4,g2g3,g2g4,h2h3,h2h4',
+ 'fork-2m|fork|L|0|1k6/1pp5/p7/3b1n2/8/4PP2/PPP5/1K2R3 w - - 0 1|e3e4||b1a1,b1c1>d5f3,e1c1,e1d1,e1f1,e1g1,e1h1,e1e2,a2a3,a2a4,b2b3,b2b4,c2c3,c2c4',
+ 'fork-3|fork|L|0|4k3/1q6/8/8/4N3/8/5PPP/6K1 w - - 0 1|e4d6||g1f1,f2f4,g2g3,g2g4,h2h3,h2h4',
+ 'fork-3m|fork|L|0|3k4/6q1/8/8/3N4/8/PPP5/1K6 w - - 0 1|d4e6||b1c1,a2a3,a2a4,b2b3,b2b4,c2c4',
+ 'fork-4|fork|L|0|6k1/5ppp/8/8/5n2/2Q5/5PPP/6K1 b - - 0 1|f4e2||f4h3',
+ 'fork-4m|fork|L|0|1k6/ppp5/8/8/2n5/5Q2/PPP5/1K6 b - - 0 1|c4d2||c4a3>f3a3',
+ 'pin-1|pin|L|0|4k3/8/8/4q3/8/8/5K2/3R4 w - - 0 1|d1e1||d1a1,d1d4,d1d5,d1d6,d1d7,d1d8',
+ 'pin-1m|pin|L|0|3k4/8/8/3q4/8/8/2K5/4R3 w - - 0 1|e1d1||e1h1,e1e4,e1e5,e1e6,e1e7,e1e8',
+ 'pin-2|pin|L|0|7k/8/1B3q2/8/8/2P5/8/6K1 w - - 0 1|b6d4||g1h1,g1g2,g1h2,c3c4,b6f2,b6e3,b6c5,b6a7,b6c7,b6d8',
+ 'pin-2m|pin|L|0|k7/8/2q3B1/8/8/5P2/8/1K6 w - - 0 1|g6e4||b1a1,b1a2,b1b2,f3f4,g6c2,g6d3,g6f5,g6f7,g6h7,g6e8',
+ 'pin-3|pin|L|0|r7/5k2/8/8/8/4Q3/8/4K3 b - - 0 1|a8e8||a8a3,a8a7',
+ 'pin-3m|pin|L|0|7r/2k5/8/8/8/3Q4/8/3K4 b - - 0 1|h8d8||h8h3,h8h7',
+ 'pin-4|pin|L|0|1k6/8/3q4/8/8/6P1/8/2B3K1 w - - 0 1|c1f4||c1b2,c1d2,c1a3>d6g3,c1e3,c1g5,c1h6>d6g3,g1f1,g1h1',
+ 'pin-4m|pin|L|0|6k1/8/4q3/8/8/1P6/8/1K3B2 w - - 0 1|f1c4||b1a1,b1c1,f1e2,f1g2,f1d3,f1h3>e6b3,f1b5,f1a6>e6b3',
+ 'hidden-1|hidden|L|0|8/4k1q1/8/8/3N4/8/1B6/7K w - - 0 1|d4f5||b2c1,d4c2,d4e2,d4b3,d4f3,d4b5,d4e6>g7b2',
+ 'hidden-1m|hidden|L|0|8/1q1k4/8/8/4N3/8/6B1/K7 w - - 0 1|e4c5||g2f1,e4d2,e4f2,e4c3,e4g3,e4g5,e4d6',
+ 'hidden-2|hidden|L|0|4k3/8/q7/8/4B3/8/5PPP/4R1K1 w - - 0 1|e4b7,e4d3||e1a1,e1e2|e1a1>a6a1:2',
+ 'hidden-2m|hidden|L|0|3k4/8/7q/8/3B4/8/PPP5/1K1R4 w - - 0 1|d4e3,d4g7||d1h1,d1d2|d1h1>h6h1:2',
  'backrank-1|backrank|L|0|6k1/5ppp/5r2/8/8/8/5PPP/R5K1 w - - 0 1|a1a8|',
  'backrank-1m|backrank|L|0|1k6/ppp5/2r5/8/8/8/PPP5/1K5R w - - 0 1|h1h8|',
  'backrank-2|backrank|L|0|5k2/4pppp/8/8/8/8/5PPP/3R2K1 w - - 0 1|d1d8|',
@@ -7989,91 +7992,90 @@ var PRAC_DATA = [
  'backrank-4m|backrank|L|0|k7/pp5r/8/8/8/8/PPP5/1K1R4 w - - 0 1|d1d8|',
  'backrank-5|backrank|L|0|4r1k1/5ppp/8/8/8/8/R4PPP/6K1 b - - 0 1|e8e1|',
  'backrank-5m|backrank|L|0|1k1r4/ppp5/8/8/8/8/PPP4R/1K6 b - - 0 1|d8d1|',
- 'pawns-1|pawns|L|0|6k1/8/8/8/8/7R/1p6/6K1 w - - 0 1|h3b3,h3g3|',
- 'pawns-1m|pawns|L|0|1k6/8/8/8/8/R7/6p1/1K6 w - - 0 1|a3g3,a3b3|',
- 'pawns-2|pawns|L|0|6k1/8/8/8/p7/8/8/3K4 w - - 0 1|d1c2,d1d2,d1c1|',
- 'pawns-2m|pawns|L|0|1k6/8/8/8/7p/8/8/4K3 w - - 0 1|e1f2,e1e2,e1f1|',
- 'pawns-3|pawns|L|0|6k1/7r/3P4/8/8/8/8/R5K1 b - - 0 1|h7d7,h7b7,h7g7,h7f7|',
- 'pawns-3m|pawns|L|0|1k6/r7/4P3/8/8/8/8/1K5R b - - 0 1|a7c7,a7b7,a7e7,a7g7|',
- 'pawns-4|pawns|L|0|6k1/R7/8/8/8/5p2/K7/8 w - - 0 1|a7c7,a7d7,a7b7,a7a3,a7a4,a7a5,a2b2,a2b3,a7a6,a7a8|',
- 'pawns-4m|pawns|L|0|1k6/7R/8/8/8/2p5/7K/8 w - - 0 1|h7h5,h2g2,h7h8,h7h3,h7e7,h7h6,h7h4,h2g3,h7f7,h7g7|',
- 'safety-7|safety|L|0|6k1/p4ppp/3p4/1p6/N7/8/5PPP/6K1 w - - 0 1|a4c3|a4b2',
- 'safety-7m|safety|L|0|1k6/ppp4p/4p3/6p1/7N/8/PPP5/1K6 w - - 0 1|h4f3|h4g2',
- 'safety-8|safety|L|0|6k1/5ppp/8/3P4/4P1b1/7P/5PP1/6K1 b - - 0 1|g4d7,g4c8,g4d1,g4e2|g4h5',
- 'safety-8m|safety|L|0|1k6/ppp5/8/4P3/1b1P4/P7/1PP5/1K6 b - - 0 1|b4f8,b4e7,b4d2,b4e1|b4a5',
- 'count-6|count|L|0|6k1/5ppp/4p3/3p3n/8/5B2/5PPP/6K1 w - - 0 1|f3h5|',
- 'count-6m|count|L|0|1k6/ppp5/3p4/n3p3/8/2B5/PPP5/1K6 w - - 0 1|c3a5|',
+ 'pawns-1|pawns|L|0|6k1/8/8/8/8/7R/1p6/6K1 w - - 0 1|h3b3,h3g3||h3h8',
+ 'pawns-1m|pawns|L|0|1k6/8/8/8/8/R7/6p1/1K6 w - - 0 1|a3g3,a3b3||a3a8',
+ 'pawns-2|pawns|L|0|6k1/8/8/8/p7/8/8/3K4 w - - 0 1|d1c2,d1c1,d1d2|',
+ 'pawns-2m|pawns|L|0|1k6/8/8/8/7p/8/8/4K3 w - - 0 1|e1f2,e1f1,e1e2|',
+ 'pawns-3|pawns|L|0|6k1/7r/3P4/8/8/8/8/R5K1 b - - 0 1|h7d7,h7g7,h7b7,h7f7||h7h1,h7h2,h7a7,h7c7,h7e7',
+ 'pawns-3m|pawns|L|0|1k6/r7/4P3/8/8/8/8/1K5R b - - 0 1|a7c7,a7e7,a7b7,a7g7||a7a1,a7a2,a7d7,a7f7,a7h7',
+ 'pawns-4|pawns|L|0|6k1/R7/8/8/8/5p2/K7/8 w - - 0 1|a7c7,a2b3,a7a5,a7a8,a2b2,a7a3,a7a4,a7a6,a7b7,a7d7||a7f7,a7g7,a7h7',
+ 'pawns-4m|pawns|L|0|1k6/7R/8/8/8/2p5/7K/8 w - - 0 1|h7h5,h7h3,h7h4,h2g3,h7h6,h7e7,h2g2,h7h8,h7f7,h7g7||h7a7,h7b7,h7c7',
+ 'safety-7|safety|L|0|6k1/p4ppp/3p4/1p6/N7/8/5PPP/6K1 w - - 0 1|a4c3||g1f1,g1h1,f2f3,f2f4,g2g3,g2g4,h2h3,h2h4,a4c5,a4b6',
+ 'safety-7m|safety|L|0|1k6/ppp4p/4p3/6p1/7N/8/PPP5/1K6 w - - 0 1|h4f3||b1a1,b1c1,a2a3,a2a4,b2b3,b2b4,c2c3,c2c4,h4f5,h4g6||O',
+ 'safety-8|safety|L|0|6k1/5ppp/8/3P4/4P1b1/7P/5PP1/6K1 b - - 0 1|g4d7,g4c8,g4d1,g4e2||g4f3,g4h3,g4f5,g4e6,f7f6,f7f5,g7g6,g7g5,h7h6,h7h5,g8f8,g8h8',
+ 'safety-8m|safety|L|0|1k6/ppp5/8/4P3/1b1P4/P7/1PP5/1K6 b - - 0 1|b4f8,b4e7,b4e1,b4d2|b4a5|b4a3,b4c3,b4c5,b4d6,a7a6,a7a5,b7b6,b7b5,c7c6,c7c5,b8a8,b8c8',
+ 'count-6|count|L|0|6k1/5ppp/4p3/3p3n/8/5B2/5PPP/6K1 w - - 0 1|f3h5||f3e4',
+ 'count-6m|count|L|0|1k6/ppp5/3p4/n3p3/8/2B5/PPP5/1K6 w - - 0 1|c3a5||c3d4',
  'mate1-6|mate1|L|0|6k1/5ppp/8/8/6nq/8/Q4PPP/7K b - - 0 1|h4h2|',
  'mate1-6m|mate1|L|0|1k6/ppp5/8/8/qn6/8/PPP4Q/K7 b - - 0 1|a4a2|',
  'stopmate-6|stopmate|L|0|5rk1/5p1p/1q6/6Q1/8/8/1B3PPP/6K1 b - - 0 1|b6g6|',
  'stopmate-6m|stopmate|L|0|1kr5/p1p5/6q1/1Q6/8/8/PPP3B1/1K6 b - - 0 1|g6b6|',
- 'pin-5|pin|L|0|8/8/8/8/k1q5/7P/8/K5R1 w - - 0 1|g1g4|',
- 'pin-5m|pin|L|0|8/8/8/8/5q1k/P7/8/1R5K w - - 0 1|b1b4|',
- 'hidden-3|hidden|L|0|2q3k1/5ppp/8/8/8/8/2B2PPP/2R3K1 w - - 0 1|c2h7|',
- 'hidden-3m|hidden|L|0|1k3q2/ppp5/8/8/8/8/PPP2B2/1K3R2 w - - 0 1|f2a7|',
- 'hidden-4|hidden|L|0|6k1/3q1ppp/8/3N4/8/7P/5PP1/3R2K1 w - - 0 1|d5f6|',
- 'hidden-4m|hidden|L|0|1k6/ppp1q3/8/4N3/8/P7/1PP5/1K2R3 w - - 0 1|e5c6|',
- 'hidden-5|hidden|L|0|4r1k1/Q4ppp/8/4b3/8/8/5PPP/4K3 b - - 0 1|e5d4,e5b8|',
- 'hidden-5m|hidden|L|0|1k1r4/ppp4Q/8/3b4/8/8/PPP5/3K4 b - - 0 1|d5e4,d5g8|',
+ 'pin-5|pin|L|0|8/8/8/8/k1q5/7P/8/K5R1 w - - 0 1|g1g4||g1c1,g1f1,g1g8,h3h4',
+ 'pin-5m|pin|L|0|8/8/8/8/5q1k/P7/8/1R5K w - - 0 1|b1b4||b1c1,b1f1,b1b8,a3a4',
+ 'hidden-3|hidden|L|0|2q3k1/5ppp/8/8/8/8/2B2PPP/2R3K1 w - - 0 1|c2h7||c1f1,c2d1,c2b3,c2d3,c2a4,g2g4|c2b3>c8c1:2,c2a4>c8c1:2',
+ 'hidden-3m|hidden|L|0|1k3q2/ppp5/8/8/8/8/PPP2B2/1K3R2 w - - 0 1|f2a7||f1c1,b2b4,f2e1,f2e3,f2g3,f2h4|f2g3>f8f1:2,f2h4>f8f1:2',
+ 'hidden-4|hidden|L|0|6k1/3q1ppp/8/3N4/8/7P/5PP1/3R2K1 w - - 0 1|d5f6||d1a1,d1f1,g2g3,d5b4,d5f4,d5b6,d5c7,d5e7',
+ 'hidden-4m|hidden|L|0|1k6/ppp1q3/8/4N3/8/P7/1PP5/1K2R3 w - - 0 1|e5c6||e1c1,e1h1,b2b3,e5c4,e5g4,e5g6,e5d7,e5f7',
+ 'hidden-5|hidden|L|0|4r1k1/Q4ppp/8/4b3/8/8/5PPP/4K3 b - - 0 1|e5d4,e5b8||e8e7,e8a8,g8h8|e8a8>a7a8:2',
+ 'hidden-5m|hidden|L|0|1k1r4/ppp4Q/8/3b4/8/8/PPP5/3K4 b - - 0 1|d5e4,d5g8||b8a8,d8d7,d8h8|d8h8>h7h8:2',
  'pawns-5|pawns|L|0|8/8/8/8/8/3k2N1/4p3/K7 w - - 0 1|g3e2|',
  'pawns-5m|pawns|L|0|8/8/8/8/8/1N2k3/3p4/7K w - - 0 1|b3d2|',
- 'count-7|count|L|0|6k1/5ppp/3n4/8/2B1P3/5P2/6PP/6K1 b - - 0 1|d6c4|',
- 'count-7m|count|L|0|1k6/ppp5/4n3/8/3P1B2/2P5/PP6/1K6 b - - 0 1|e6f4|',
- 'fork-6|fork|L|0|6k1/5pp1/7p/2n1n3/8/3P4/5PPP/3R2K1 w - - 0 1|d3d4|',
- 'fork-6m|fork|L|0|1k6/1pp5/p7/3n1n2/8/4P3/PPP5/1K2R3 w - - 0 1|e3e4|',
- 'm6a|free|R|800|rnb1k2r/pp2bppp/2pp4/5N2/8/3PB3/PP3PPP/RN3RK1 b kq - 0 13|c8f5|',
- 'm7b|hidden|R|800|rn5r/ppk2ppp/2pR4/8/5B2/8/Pb3PPP/4R1K1 w - - 1 20|d6d2|',
- 'm12b|pin|R|800|r1b1k3/4q3/p2b1n2/1pppn2P/8/N1PP4/PP2BQP1/R3K1NR b KQq - 2 20|e5d3|',
- 'm15b|fork|R|800|r2qk2r/3nb2p/p1p1Qpp1/3n4/8/2PB1P1P/PB4P1/R3K1NR b KQkq - 3 20|d5f4|d7e5',
- 'm16a|safety|R|800|r2qk2r/7p/p1p2pp1/4n3/2Q5/2PBbP1P/PB2N1K1/R6R w kq - 3 25|c4e6|',
- 'm16b|free|R|800|r2qk2r/7p/p1p2pp1/4n3/4Q3/2PBbP1P/PB2N1K1/R6R b kq - 4 25|d8d3|',
+ 'count-7|count|L|0|6k1/5ppp/3n4/8/2B1P3/5P2/6PP/6K1 b - - 0 1|d6c4||d6b5,d6f5',
+ 'count-7m|count|L|0|1k6/ppp5/4n3/8/3P1B2/2P5/PP6/1K6 b - - 0 1|e6f4||e6c5,e6g5',
+ 'fork-6|fork|L|0|6k1/5pp1/7p/2n1n3/8/3P4/5PPP/3R2K1 w - - 0 1|d3d4||d1a1,d1b1,d1c1,d1e1,d1f1>e5d3,d1d2,g1f1>e5d3,g1h1,f2f3,f2f4>e5d3,g2g3>e5d3,g2g4>e5g4,h2h3>e5d3,h2h4>e5d3',
+ 'fork-6m|fork|L|0|1k6/1pp5/p7/3n1n2/8/4P3/PPP5/1K2R3 w - - 0 1|e3e4||b1a1>f5e3,b1c1,e1c1,e1d1>f5e3,e1f1>f5e3,e1g1>f5e3,e1h1>f5e3,e1e2>f5e3,a2a3>f5e3,a2a4,b2b3,b2b4>d5b4,c2c3>f5e3,c2c4',
+ 'm6a|free|R|800|rnb1k2r/pp2bppp/2pp4/5N2/8/3PB3/PP3PPP/RN3RK1 b kq - 0 13|c8f5||c6c5,d6d5,a7a5,b7b6,b7b5,e7h4,e7g5>f5d6,e7d8,f7f6,h7h6,b8d7,c8e6,c8d7,h8f8,e8g8',
+ 'm7b|hidden|R|800|rn5r/ppk2ppp/2pR4/8/5B2/8/Pb3PPP/4R1K1 w - - 1 20|d6d2||e1a1,e1c1,e1e5>b2e5,e1e6,e1e8,f4c1>b2c1,f4d2,f4e3,f4e5>b2e5,f4g5,f4h6,d6d7,d6d8',
+ 'm12b|pin|R|800|r1b1k3/4q3/p2b1n2/1pppn2P/8/N1PP4/PP2BQP1/R3K1NR b KQq - 2 20|e5d3||e5f3,e5g6,f6e4,f6h5>e2h5,e7a7,e7b7,e7d7,e7h7,c8h3>h1h3,c8f5',
+ 'm16a|safety|R|800|r2qk2r/7p/p1p2pp1/4n3/2Q5/2PBbP1P/PB2N1K1/R6R w kq - 3 25|c4e6||a1b1,a1c1,a1d1,a1e1,a1f1,a1g1,h1b1,h1c1,h1d1,h1e1,h1f1,h1g1,h1h2,a2a3,a2a4,b2c1,b2a3,e2c1,e2g1,e2g3,e2d4,e2f4,g2f1,g2h2,g2g3,d3b1,d3c2,d3e4,d3f5,d3g6>h7g6,f3f4,h3h4,c4b3>d8d3,c4a4>d8d3,c4b4>d8d3,c4d4,c4e4,c4f4>d8d3,c4g4,c4h4>d8d3,c4b5,c4c5,c4d5>d8d5,c4a6,c4c6,c4f7>e8f7,c4g8||O',
+ 'm16b|free|R|800|r2qk2r/7p/p1p2pp1/4n3/4Q3/2PBbP1P/PB2N1K1/R6R b kq - 4 25|d8d3||e3d4>c3d4,e3f4,f6f5>e4e5,d8d4>c3d4,d8c7,d8e7,d8b8,d8c8,e8d7',
  'm17a|mate1|R|800|5r1k/7p/p5p1/2Q1r1q1/2P2p2/1B4bP/P3N3/R1BR1K2 w - - 0 37|c5f8|',
- 'm22b|free|R|800|r3k1r1/ppp1qpp1/2npb3/2b1p1B1/4P3/2PP1Q2/PP2BP2/RN2K1NR b KQq - 0 13|e7g5|',
- 'm23b|free|R|800|rn2k2r/pp2bpq1/3pb2p/P1p5/1n6/4P3/1Q3PPP/RN2KBNR w Kkq - 0 17|b2g7|',
- 'm24b|free|R|800|rnbk1r2/pp3p2/3p3p/P1pn4/8/N3P3/3Q1PPP/b3KBNR w K - 0 23|d2d5|g1e2,a3b1,a3b5',
- 'm32b|free|R|1100|Q1b2krr/R2B1p2/3b4/1p5p/8/1P2PPpq/2P5/3R2K1 w - - 5 33|a8c8|d7h3',
+ 'm22b|free|R|800|r3k1r1/ppp1qpp1/2npb3/2b1p1B1/4P3/2PP1Q2/PP2BP2/RN2K1NR b KQq - 0 13|e7g5||c5e3,c5b4,c5d4,c5b6,c6b4,c6a5,c6b8,c6d8,d6d5,e6b3,e6h3,e6c4,e6g4>f3g4,e6d5,e6f5,e6d7,e6c8,a7a6,a7a5,b7b6,b7b5,e7f6,e7d8,f7f5,g7g6,a8b8,a8c8,a8d8,e8d7,e8d8,e8f8,g8f8,g8h8>h1h8,e8c8',
+ 'm23b|free|R|800|rn2k2r/pp2bpq1/3pb2p/P1p5/1n6/4P3/1Q3PPP/RN2KBNR w Kkq - 0 17|b2g7||a1a3,a1a4,b1d2,b1a3,e1d1,e1d2,e1e2,f1e2,f1d3>b4d3,f1c4,f1a6,g1e2,g1f3,g1h3,b2c1,b2a2,b2c2,b2d2,b2e2,b2b3,b2d4,b2e5>g7e5,b2f6,f2f3,f2f4,g2g3,g2g4,h2h3,h2h4,e3e4,a5a6',
+ 'm24b|free|R|800|rnbk1r2/pp3p2/3p3p/P1pn4/8/N3P3/3Q1PPP/b3KBNR w K - 0 23|d2d5|g1e2,a3b1|d2b2,d2c3,d2b4>d5b4,d2d4',
+ 'm32b|free|R|1100|Q1b2krr/R2B1p2/3b4/1p5p/8/1P2PPpq/2P5/3R2K1 w - - 5 33|a8c8,d7h3||a7a5,a8e4,a8b8|d1a1>h3h2:2,d1b1>h3h2:2,d1c1>h3h2:2,d1e1>h3h2:2,d1d3>h3h2:2,d1d4>h3h2:2,d1d5>h3h2:2,d1d6>h3h2:2,c2c3>h3h2:2,c2c4>h3h2:2,b3b4>h3h2:2,e3e4>d6c5:2,f3f4>h3h2:2,a7a1>h3h2:2,a7a2>h3h2:2,a7a3>h3h2:2,a7a4>h3h2:2,a7a5>h3h2:2,a7a6>h3h2:2,a7b7>h3h2:2,a7c7>h3h2:2,d7g4>h3h2:2,d7b5>h3h2:2,d7f5>h3h2:2,d7c6>h3h2:2,d7e6>h3h2:2,d7c8>h3h2:2,d7e8>h3h2:2,a8e4>h3h2:2,a8d5>h3h2:2,a8c6>h3h2:2,a8b7>h3h2:2,a8b8>h3h2:2',
  'm36a|mate1|R|1400|3rr2k/1Q4pp/p7/1p6/8/5b1q/PPP3RP/1K4R1 w - - 7 35|b7g7|',
- 'm37b|fork|R|1400|r6r/ppb1kp2/2p5/2P1p2p/2R2n1q/3PNB1p/PP2PP1N/4Q1RK w - - 0 27|e3f5|f3c6',
- 'm40b|fork|R|1400|k7/1p3r1p/p5p1/8/3n1P1P/P5B1/1PPK4/6R1 b - f3 0 35|d4f3|',
- 'm41a|safety|R|1400|rn2k2r/ppq2ppp/2pbp3/8/3Pn3/PQ1BPN2/1P3PPP/R1B1K2R b KQkq - 2 11|e4f6|',
- 'm45b|fork|R|1400|r4b1r/Bp1k1pp1/2n4p/3p1p2/N7/1P6/1PP2PPP/R3R1K1 w - - 1 18|a4b6|',
+ 'm37b|fork|R|1400|r6r/ppb1kp2/2p5/2P1p2p/2R2n1q/3PNB1p/PP2PP1N/4Q1RK w - - 0 27|e3f5|f3c6|e1a1,g1g2,g1g5,g1g6>f7g6,e3g2,e3g4,e3d5>c6d5,f3g2,f3h5>h4h5',
+ 'm40b|fork|R|1400|k7/1p3r1p/p5p1/8/3n1P1P/P5B1/1PPK4/6R1 b - f3 0 35|d4f3||d4c2,d4e2,d4b3',
+ 'm41a|safety|R|1400|rn2k2r/ppq2ppp/2pbp3/8/3Pn3/PQ1BPN2/1P3PPP/R1B1K2R b KQkq - 2 11|e4f6||e4d2,e4f2,e4c3>b3c3,e4g3>h2g3,e4c5,e4g5,c6c5,d6h2>d3e4,d6a3>b3a3,d6g3>h2g3,d6b4,d6f4>e3f4,d6c5,d6e5,d6e7,d6f8,e6e5,a7a6,a7a5,b7b6,b7b5,c7b6>b3b6,c7d7,c7e7,c7c8,c7d8,f7f6>b3e6,f7f5,g7g6,g7g5,h7h6,h7h5,b8a6,b8d7,e8d7,e8e7,e8d8,e8f8,h8f8,h8g8,e8g8||S',
+ 'm45b|fork|R|1400|r4b1r/Bp1k1pp1/2n4p/3p1p2/N7/1P6/1PP2PPP/R3R1K1 w - - 1 18|a4b6||a1b1>a8a7,a1c1>a8a7,a1d1>a8a7,a1a2>a8a7,a1a3>f8a3,e1b1>a8a7,e1c1>a8a7,e1d1>a8a7,e1f1>a8a7,e1e2>a8a7,e1e3>a8a7,e1e4>a8a7,e1e6,e1e7>f8e7,e1e8>a8e8,g1f1>a8a7,g1h1>a8a7,c2c4>a8a7,f2f3>a8a7,f2f4>a8a7,g2g3>a8a7,h2h3>a8a7,h2h4>a8a7,b3b4>a8a7,a7b8>a8b8',
  'm49b|mate1|R|1400|8/5ppp/1kp1p3/1nN1P3/1PK2P2/1P6/R4P1P/3r4 b - - 10 33|d1d4|',
  'm50b|mate1|R|1400|2r2r1k/1R4np/4B1p1/p7/P4P1n/3Pq2P/5R2/Q5K1 w - - 2 31|a1g7|',
- 'm51b|pin|R|1400|2B2r1k/1R4np/6p1/p4n2/P4P2/3P2qP/5R2/Q6K w - - 3 33|c8f5|',
- 'm56b|pin|R|1400|3rk2r/ppp2pb1/2n1p1pp/3nP3/2P2B2/P2B1NPP/1P3P2/R2K3R b k c3 0 14|d5f4|',
- 'm57b|fork|R|1400|3rk2r/ppp1npb1/2n1p1pp/4P3/2P2B1P/P2B1NP1/1P3P2/R2K3R b k - 0 15|d8d3|g6g5',
- 'm60b|free|R|1400|2knr3/1bp3pp/p7/1pb1p3/4N3/PB3N1P/1PP1KPP1/R7 b - - 1 19|b7e4|',
- 'm105a|safety|R|800|2kr1b1r/1p1q1pp1/pBn1bn2/3p3p/4p3/2PP1Q1P/PPN1BPP1/R3K1NR w KQ - 0 13|f3f4,f3e3,f3g3|',
- 'm106a|safety|R|800|2kr4/1pp4p/p1n1qp1Q/2p1p2p/2N1P2P/2Pr2P1/PP2KP2/R6R w - - 1 22|c4e3|',
- 'm107b|free|R|800|2r1k1n1/pp2b2r/5q1p/B7/6p1/2P1P3/PPQ2P1P/3RR1K1 w - - 0 23|c2h7|c2d3',
- 'm115b|pin|R|800|4k3/3rnpp1/2Qpq3/1B2p3/P3P2r/2NP4/1PP2P2/R4K2 w - - 1 23|c6a8|',
+ 'm51b|pin|R|1400|2B2r1k/1R4np/6p1/p4n2/P4P2/3P2qP/5R2/Q6K w - - 3 33|c8f5||a1b1,a1c1,a1d1,a1e1>g3h3,a1f1,a1g1>g3h3,a1a2,a1b2>g3h3,a1a3>f8c8,a1c3,a1d4,a1e5,a1f6>g3h3,a1g7,f2f1>g3h3,f2a2,f2b2,f2c2,f2d2,f2e2,f2g2>g3h3,f2h2,f2f3,d3d4,h3h4,b7b1,b7b2,b7b3,b7b4,b7b5,b7b6,b7a7,b7c7,b7d7,b7e7>f5e7,b7f7>f8f7,b7g7>g3h3,b7b8,c8e6,c8d7',
+ 'm56b|pin|R|1400|3rk2r/ppp2pb1/2n1p1pp/3nP3/2P2B2/P2B1NPP/1P3P2/R2K3R b k c3 0 14|d5f4||d5f6,c6a5,c6e5>f4e5,c6b8,b7b5,f7f6,g7e5>f4e5,g7f6,g7f8,d8d6,d8a8,d8b8,d8c8,e8d7',
+ 'm57b|fork|R|1400|3rk2r/ppp1npb1/2n1p1pp/4P3/2P2B1P/P2B1NP1/1P3P2/R2K3R b k - 0 15|d8d3|g6g5|g7e5,d8d4,d8d5,d8d6',
+ 'm60b|free|R|1400|2knr3/1bp3pp/p7/1pb1p3/4N3/PB3N1P/1PP1KPP1/R7 b - - 1 19|b7e4||b5b4,c5e3,a6a5,b7d5,b7c6,b7a8,c7c6,g7g6,g7g5,h7h6,h7h5,c8d7,c8b8,d8c6,d8e6>b3e6,d8f7>e4c5,e8e6,e8e7,e8f8,e8g8>e4c5,e8h8',
+ 'm105a|safety|R|800|2kr1b1r/1p1q1pp1/pBn1bn2/3p3p/4p3/2PP1Q1P/PPN1BPP1/R3K1NR w KQ - 0 13|f3f4,f3e3,f3g3||a1b1,a1c1,a1d1,e1d1,e1f1,e1d2,h1h2,a2a3,a2a4,b2b3,b2b4,c2a3,c2e3,c2b4,c2d4,e2d1,e2f1,g2g3,g2g4,c3c4,d3d4,f3e4,f3g4,f3f5,f3h5>h8h5,f3f6,h3h4,b6e3,b6d4,b6a5,b6c5,b6a7,b6c7,b6d8,e1c1||S',
+ 'm106a|safety|R|800|2kr4/1pp4p/p1n1qp1Q/2p1p2p/2N1P2P/2Pr2P1/PP2KP2/R6R w - - 1 22|c4e3||a1b1,a1c1,a1d1,a1e1,a1f1,a1g1,h1b1,h1c1,h1d1,h1e1,h1f1,h1g1,h1h2,a2a3,a2a4,b2b4,e2e1,e2f1,f2f3,f2f4,g3g4>e6g4,c4d2,c4b6,c4d6,h6c1,h6d2>e6c4,h6e3>e6c4,h6f4,h6g5,h6h5,h6f6,h6g6,h6g7,h6h7,h6f8||O',
+ 'm107b|free|R|800|2r1k1n1/pp2b2r/5q1p/B7/6p1/2P1P3/PPQ2P1P/3RR1K1 w - - 0 23|c2h7|c2d3|c2f5,c2g6,f2f3,f2f4>g4f3',
+ 'm115b|pin|R|800|4k3/3rnpp1/2Qpq3/1B2p3/P3P2r/2NP4/1PP2P2/R4K2 w - - 1 23|c6a8||a1b1,a1c1,a1d1,a1e1,a1a2,a1a3,f1e1,f1g1,f1e2,f1g2,b2b3,b2b4,f2f3,f2f4,c3b1,c3a2,c3e2,c3d5,d3d4,a4a5,b5a6,c6c4>e6c4,c6c5,c6d5,c6d6,c6c8|f1g1>e6g4:2,f1g2>e6h3:2',
  'm117a|mate1|R|800|3r1k2/5pp1/2Qp4/1B2p3/P3P1qr/3PN3/1PP2P2/4RK2 b - - 6 29|h4h1|',
- 'm119b|free|R|800|r1b1r3/pp1k1p2/2n3p1/3p1BB1/8/2P5/PP3qPQ/2KR2NR b - - 0 24|f2f5|',
+ 'm119b|free|R|800|r1b1r3/pp1k1p2/2n3p1/3p1BB1/8/2P5/PP3qPQ/2KR2NR b - - 0 24|f2f5||e8e6>d1d5|g6f5>d1d5:2,e8e6>d1d5:2',
  'm121a|mate1|R|800|2b4r/5kp1/5q1p/8/7P/r2PB1P1/N1PQ1P2/2K3RR b - - 0 27|f6a1|',
  'm122b|mate1|R|800|5k2/1pp5/8/p2pN3/q2P4/2P3Q1/PP6/1K6 b - - 11 45|a4d1|',
- 'm124b|free|R|800|r2kn2r/p2n1p2/3R4/1p3BP1/7N/1P5K/5P2/8 w - - 1 39|d6d7|',
+ 'm124b|free|R|800|r2kn2r/p2n1p2/3R4/1p3BP1/7N/1P5K/5P2/8 w - - 1 39|d6d7||f2f3,f2f4,b3b4,h3g2,h3h2,h3g3,h3g4,f5b1,f5c2,f5d3,f5g4,f5e6,f5g6,f5d7,f5h7,g5g6,d6b6>d7b6,d6e6,d6f6,d6g6',
  'm125a|mate1|R|800|r3k1nr/p3b3/2N1P3/3pN1p1/3P4/6p1/PPB4q/R1BQRK2 b kq - 5 27|h2f2|',
- 'm128a|free|R|800|r1b2rk1/1pqpbppp/p1n1pn2/2p5/4P3/N1PP2QP/PP2BPP1/R1B1K1NR w KQ - 7 9|g3c7|',
- 'm129a|free|R|800|r1b2rk1/1pqpbp1p/p1n1pnpB/2p5/4P3/N1PP2QP/PP2BPP1/R3K1NR w KQ - 0 10|g3c7|',
- 'm130a|free|R|800|r1b2bk1/1pqp1p1p/p1n1pnp1/2p5/4P3/N1PP2QP/PP2BPP1/R3K1NR w KQ - 0 11|g3c7|',
- 'm136b|pin|R|800|r1b1k1nr/p2nb1p1/2p3qp/1p3p2/4pP2/1NP5/PP2B1PP/RNBQ1RK1 w kq - 2 14|e2h5|',
- 'm139b|fork|R|800|r3k2r/1p1bnpbn/3q2p1/p2pp1Np/7B/1PPPQ2P/P1N1BPP1/R4RK1 b kq - 4 16|e7f5|',
- 'm174b|hidden|R|1400|2kr3r/1bp1b1pp/p1n5/1p2p3/8/PBN1KN1P/1PP2PP1/R2R4 b - - 0 16|c6d4|e7c5',
- 'm177a|count|R|1400|4k2r/pp1n1ppp/1q2pn2/3p4/Q1rP4/P3BN2/5PPP/RR4K1 w k - 6 16|b1b6|b1b4',
- 'm177b|free|R|1400|4k2r/pp1n1ppp/1q2pn2/3p4/2QP4/P3BN2/5PPP/RR4K1 b k - 0 16|d5c4|',
- 'm179b|free|R|1400|r1r3k1/5p2/4p1qp/p1P1P1p1/P2PR2P/7Q/3B1P1P/R5K1 b - - 0 33|g6e4|',
- 'm183b|free|R|1400|r4k2/5p2/4p3/p1B1q3/P5Q1/8/5P1P/4R1K1 b - - 0 39|e5c5|',
- 'm184b|free|R|1400|rn2k2r/pp3ppp/2p1p3/4P3/6P1/2q3QP/P4PK1/R2R4 w kq - 0 18|g3c3|',
+ 'm128a|free|R|800|r1b2rk1/1pqpbppp/p1n1pn2/2p5/4P3/N1PP2QP/PP2BPP1/R1B1K1NR w KQ - 7 9|g3c7||c1h6>c7g3,e2h5>c7g3,f2f3,a3b5>c7g3,d3d4>c7g3,g3g4,g3e5,g3g5>f6e4,g3d6,g3g6,e4e5',
+ 'm129a|free|R|800|r1b2rk1/1pqpbp1p/p1n1pnpB/2p5/4P3/N1PP2QP/PP2BPP1/R3K1NR w KQ - 0 10|g3c7||f2f3,g3g4,g3e5,g3d6,h6g7>c7g3',
+ 'm130a|free|R|800|r1b2bk1/1pqp1p1p/p1n1pnp1/2p5/4P3/N1PP2QP/PP2BPP1/R3K1NR w KQ - 0 11|g3c7||e2h5>c7g3,f2f3,a3b5>c7g3,d3d4>c7g3,g3f4,g3g4,g3e5>c7e5,g3d6>f8d6,e4e5',
+ 'm136b|pin|R|800|r1b1k1nr/p2nb1p1/2p3qp/1p3p2/4pP2/1NP5/PP2B1PP/RNBQ1RK1 w kq - 2 14|e2h5||d1d3,d1d5,d1d6,d1d7,f1f3,e2d3,e2f3,e2c4,e2g4>g6g4,b3c5>e7c5',
+ 'm139b|fork|R|800|r3k2r/1p1bnpbn/3q2p1/p2pp1Np/7B/1PPPQ2P/P1N1BPP1/R4RK1 b kq - 4 16|e7f5||d6a3,d6b4,d6c5,d6b6,d6e6,d7h3>e3h3,a8a7,e8d8,h8g8,e8c8',
+ 'm174b|hidden|R|1400|2kr3r/1bp1b1pp/p1n5/1p2p3/8/PBN1KN1P/1PP2PP1/R2R4 b - - 0 16|c6d4|e7c5|b5b4>a3b4,c6b4,e7b4,e7h4,e7g5,d8d2>e3d2,d8d3,d8d5>b3d5,d8g8,h8g8',
+ 'm177a|count|R|1400|4k2r/pp1n1ppp/1q2pn2/3p4/Q1rP4/P3BN2/5PPP/RR4K1 w k - 6 16|b1b6||a1a2>b6b1,b1c1,b1d1,b1e1,b1f1,b1b2,b1b3,b1b5,g1f1,g1h1,g2g3,g2g4,h2h3,h2h4,e3c1,e3d2,e3f4,e3g5,e3h6,f3e1,f3d2,f3h4,f3e5,f3g5,a4c2,a4b4,a4a5,a4a6,a4c6>b6c6',
+ 'm177b|free|R|1400|4k2r/pp1n1ppp/1q2pn2/3p4/2QP4/P3BN2/5PPP/RR4K1 b k - 0 16|d5c4||b6b3>c4b3,b6b4>c4b4,b6b5>c4b5,b6c5>c4c5,b6c7,f6g8,d7c5>c4c5,d7f8,g7g6,g7g5,h7h5,e8e7',
+ 'm179b|free|R|1400|r1r3k1/5p2/4p1qp/p1P1P1p1/P2PR2P/7Q/3B1P1P/R5K1 b - - 0 33|g6e4||g5g4>e4g4,g6f6',
+ 'm183b|free|R|1400|r4k2/5p2/4p3/p1B1q3/P5Q1/8/5P1P/4R1K1 b - - 0 39|e5c5||e5d6,f8e8',
+ 'm184b|free|R|1400|rn2k2r/pp3ppp/2p1p3/4P3/6P1/2q3QP/P4PK1/R2R4 w kq - 0 18|g3c3||d1d2>c3d2,d1d3,d1d4>c3d4,d1d5>c3g3,d1d6,d1d7>c3g3,g3e3>c3e3',
  'm185a|mate1|R|1400|7Q/4b1p1/4p1k1/p3Pp2/3P2P1/5NK1/2r4P/8 w - f6 0 35|h8h5|',
- 'm188b|free|R|1400|r2k3r/2q2ppp/p1Q1p3/3p1n2/P7/B6P/P4PP1/1R3RK1 w - - 5 23|c6a8|a3e7',
- 'm189b|free|R|1400|r1b3k1/5rpp/p2Bppq1/1p1p4/3P4/Pn3Q2/1P3PPP/3R1RK1 w - - 2 25|f3b3|',
- 'm190b|free|R|1400|r5k1/5rpp/p2B1pq1/1p1Qp3/3P4/P6b/1P3PPP/3R1RK1 w - - 1 27|d5a8|',
+ 'm188b|free|R|1400|r2k3r/2q2ppp/p1Q1p3/3p1n2/P7/B6P/P4PP1/1R3RK1 w - - 5 23|c6a8||b1a1,b1d1,b1e1,b1b2,b1b3,b1b4,b1b5,b1b7,b1b8>a8b8,f1d1,f1e1,g1h1,f2f3,f2f4,g2g3,g2g4,a3c1,a3b2,a3b4,a3c5,a3d6,a3f8,h3h4,a4a5,c6c2,c6c3,c6c4>c7c4,c6b5,c6d6>c7d6,c6d7,c6e8>h8e8',
+ 'm189b|free|R|1400|r1b3k1/5rpp/p2Bppq1/1p1p4/3P4/Pn3Q2/1P3PPP/3R1RK1 w - - 2 25|f3b3||d1a1>b3d4,d1b1,d1c1>b3d4,d1d2,a3a4,f3e4,f3g4,f3f5>g6f5,f3h5,d6c7>b3d4,d6e7>b3d4,d6b8>b3d4,d6f8>b3d4',
+ 'm190b|free|R|1400|r5k1/5rpp/p2B1pq1/1p1Qp3/3P4/P6b/1P3PPP/3R1RK1 w - - 1 27|d5a8||d5e4,d5b7,d6c7>h3g2,d6b8,d6f8',
  'm193b|free|R|1400|2r1k2r/pp1n1pp1/2q1p1p1/P2pP3/3P2P1/4Q2P/1P2NPn1/R3KB1R w KQk - 3 20|f1g2|',
- 'm194b|free|R|1400|r5k1/pp1n4/2pq3p/3p1rp1/3P4/2Q1R3/PPP3pP/5RK1 w - - 0 22|f1f5|',
- 'm197b|hidden|R|1400|7q/pp6/6R1/1kp5/8/1P1P4/1K2Q3/5r2 w - - 1 52|d3d4|',
+ 'm194b|free|R|1400|r5k1/pp1n4/2pq3p/3p1rp1/3P4/2Q1R3/PPP3pP/5RK1 w - - 0 22|f1f5||f1f2>f5f2,f1f4>d6f4,c3e1,c3d3,c3c4>g2f1r,e3e1>g2f1r,e3f3',
+ 'm197b|hidden|R|1400|7q/pp6/6R1/1kp5/8/1P1P4/1K2Q3/5r2 w - - 1 52|d3d4||e2e5,g6f6>h8f6',
  'm199b|mate1|R|1400|r2q1rk1/1p1n1ppp/4p3/pN1pP1N1/3P1nP1/R2Q4/2P4P/5RK1 w - - 0 18|d3h7|',
- 'm200b|fork|R|1400|1r4k1/5ppp/2pbpn2/q2pN3/3P1B2/P5NP/1rb2PP1/R1Q2RK1 w - - 2 18|e5c6|',
- 'm209b|free|R|1400|4kb1r/4pp1p/p5p1/np1B4/3P4/P1rbB3/4NPPP/R3R1K1 w k - 0 18|e2c3|e3d2',
+ 'm200b|fork|R|1400|1r4k1/5ppp/2pbpn2/q2pN3/3P1B2/P5NP/1rb2PP1/R1Q2RK1 w - - 2 18|e5c6||a1b1,a1a2,c1b1>c2b1,c1d1,c1b2,c1c2,f1d1,g3e4>f6e4,e5f7>d6f4',
+ 'm209b|free|R|1400|4kb1r/4pp1p/p5p1/np1B4/3P4/P1rbB3/4NPPP/R3R1K1 w k - 0 18|e2c3|e3d2|e1d1,e1f1,d5b3,d5c4,d5c6,d5e6>d3e2',
  'm211a|mate1|R|1400|1r3k1r/pQ5R/4B2n/2p5/8/8/PP2NP1q/2R1K3 w - - 1 29|b7e7|'
 ];
 /* ── Beginner teaching (F9.1 to F9.5) ───────────────────────────────────
@@ -8192,16 +8194,25 @@ var PSKILL_OF = {};
 PSKILL.forEach(function (s, i) { s.n = i + 1; PSKILL_OF[s.k] = s; });
 
 /* ── the practice positions (12p-pdata.js), read once ──
-   'id|skill|source|band|fen|accepted|close': source L a lesson position,
-   R another player's real one (band: their rating band); accepted, the
-   moves within 4 points of Stockfish's best at 1,000,000 nodes (on a mate
-   in one, the mates); close, within 10 */
+   'id|skill|source|band|fen|accepted|close|captures|mates|hint2': source L
+   a lesson position, R another player's real one (band: their rating
+   band); accepted, the moves within 4 points of Stockfish's best at
+   8,000,000 nodes (on a mate in one, the mates); close, within 10; and the
+   facts its claims read (V3.1, test/truth/pfacts.js), so that no practice
+   claim reads a live search: captures, the misses whose capture reason
+   holds where the line settles ('e1e2' names the capture pracCapture
+   finds, 'e1e2>d8d1' Stockfish's own), mates, the misses that let them
+   mate in two ('g1f1>d1d2:2', its first move and length), hint2, Hint 2's
+   case (S exactly one safe square, O one move of the piece holds) */
 var pracMemo = null;
 function pracData() {
   if (pracMemo) return pracMemo;
   var by = {}, sk = {};
   (typeof PRAC_DATA !== 'undefined' ? PRAC_DATA : []).forEach(function (row) {
-    var f = row.split('|'), p = { id: f[0], skill: f[1], src: f[2], band: +f[3] || 0, fen: f[4], ok: f[5] ? f[5].split(',') : [], cl: f[6] ? f[6].split(',') : [] };
+    var f = row.split('|'), p = { id: f[0], skill: f[1], src: f[2], band: +f[3] || 0, fen: f[4], ok: f[5] ? f[5].split(',') : [], cl: f[6] ? f[6].split(',') : [],
+                                  caps: {}, mates: {}, h2: f[9] || '' };
+    (f[7] ? f[7].split(',') : []).forEach(function (x) { var y = x.split('>'); p.caps[y[0]] = y[1] || ''; });
+    (f[8] ? f[8].split(',') : []).forEach(function (x) { var y = /^(\w+)>(\w+):(\d+)$/.exec(x); if (y) p.mates[y[1]] = { r: y[2], n: +y[3] }; });
     by[p.id] = p;
     (sk[p.skill] = sk[p.skill] || []).push(p);
   });
@@ -8241,7 +8252,7 @@ function pracItem(key) {
   var p = pracData().byId[String(key).slice(3)], st = p ? stateFromFen(p.fen) : null;
   if (!p || !st) return null;
   pracItems[key] = { key: key, prac: true, id: p.id, skill: p.skill, src: p.src, band: p.band, fen: p.fen, ok: p.ok, cl: p.cl,
-                     g: { id: 'prac', color: st.w ? 'white' : 'black', mv: '' }, b: {} };
+                     caps: p.caps, mates: p.mates, h2: p.h2, g: { id: 'prac', color: st.w ? 'white' : 'black', mv: '' }, b: {} };
   return pracItems[key];
 }
 function lessonItem(key) {
@@ -8349,48 +8360,94 @@ function pracTry(m) {
    game, rated about 800.") */
 function pracSrc(a) { return a.it.src === 'R' ? CARD_COPY.P4() : CARD_COPY.P3(); }
 function pracSrcOn(a) { return !!a && !!a.prac && a.phase === 'guess' && !a.attempts && !a.hints && !a.revealed; }
-/* why a practice try fails, true on the board after it: their mate in one
-   ("Then queen takes on f2 is checkmate." at tier 1, "Then Qxf2 is
-   checkmate.", where neither fits "Black could checkmate you."), else the capture that wins most for them ("Their knight
-   takes your queen.", tier 3 "Nxg5 takes your queen."), each played by See
-   it; else the skill's own words (a mate missed, the free piece left, the
-   pawn let through, the attacked piece left), else, as the card says with
-   no score, "That helps Black." (the try is 10 points or more below the
-   best: every move not accepted or close is) */
-function pracWhy(a, m) {
-  var after = cloneState(a.pre), opp = sidesOf(a).opp, me = myPov(a.it), t1 = inWords(a), sk = a.it.skill;
-  applyMove(after, m);
-  var replies = legalMoves(after), why = { cands: [], fall: 'That helps ' + opp + '.', d: 0, u: '', took: '', mate: false };
-  var mate = replies.filter(function (r) { var x = cloneState(after); applyMove(x, r); return isMate(x); })[0];
-  var tw = function (r, check, mt) { return { from: r.from, to: r.to, piece: pType(after.b[r.from]), captured: after.b[r.to] ? pType(after.b[r.to]) : null, check: check, mate: mt, san: sanOf(after, r) }; };
-  if (mate) {
-    var ms = capSan(after, mate), mw = moveWords(after, mate);
-    /* tier 1 says no move in SAN: where the words do not fit, that they could */
-    why.cands = [t1 ? 'Then ' + mw + ' is checkmate.' : 'Then ' + ms + ' is checkmate.', opp + ' could checkmate you.'];
-    why.reply = moveUci(mate); why.threat = tw(mate, true, true); why.u = why.reply; why.mate = true;
-    return why;
-  }
+/* the capture a practice try lets them make, as the static exchange sees it
+   (the reply that nets them most, the bigger piece on a tie; never a king,
+   never en passant): the capture a practice reason names, unless the
+   position's facts hold Stockfish's own (pracWhy, test/truth/pfacts.js);
+   null when no capture pays */
+function pracCapture(after, me) {
   var best = null, gain = 0;
-  replies.forEach(function (r) {
+  legalMoves(after).forEach(function (r) {
     var t = after.b[r.to];
     if (!t || r.ep >= 0 || colorW(t) !== me || pType(t) === 'K') return;
     var g = dzSeeMove(after.b, r.from, r.to);
     if (g > gain || (g === gain && best && MOTIF_VAL[pType(t)] > MOTIF_VAL[pType(after.b[best.to])])) { gain = g; best = r; }
   });
-  if (best && gain > 0) {
-    var P = PIECE_WORD[pType(after.b[best.to])];
-    why.cands = a.tier >= 3 ? [capSan(after, best) + ' takes your ' + P + '.'] : ['Their ' + PIECE_WORD[pType(after.b[best.from])] + ' takes your ' + P + '.'];
-    why.reply = moveUci(best); why.threat = tw(best, checkersOf((function () { var x = cloneState(after); applyMove(x, best); return x; })()).length > 0, false);
-    why.u = why.reply; why.took = pType(after.b[best.to]);
+  return best && gain > 0 ? best : null;
+}
+/* a try that takes a piece of theirs worth a knight or more for free */
+function pracFreeTake(st, m) {
+  var t = st.b[m.to];
+  return !!t && m.ep < 0 && pType(t) !== 'P' && pType(t) !== 'K' && dzSeeMove(st.b, m.from, m.to) >= MOTIF_VAL[pType(t)];
+}
+/* why a practice try fails (V3.2): true on the board after it, or by the
+   position's facts (12p-pdata.js, from test/truth/pfacts.js; never a live
+   search), the skill's own reason first:
+   - a mate task: "That is not mate.";
+   - a free-piece or count task, a guarded piece taken for a loss by the
+     exchange: "That piece is guarded." (See it: the guard takes back);
+   - their mate in one: "Then queen takes on f2 is checkmate." (tier 1),
+     "Then Qxf2 is checkmate.", where neither fits "Black could checkmate
+     you.";
+   - a runaway pawn let through: "Then their pawn can become a queen." (a
+     promotion nothing takes at once);
+   - their mate in two the facts hold: "Then they mate in two." (tier 1
+     "Then they can force checkmate."), See it playing its first move;
+   - a capture the facts hold, its loss standing where the line settles:
+     "Their knight takes your queen.", tier 3 "Nxg5 takes your queen.";
+   - the skill's own words: the free piece left (never when the try took
+     one), the safe one left, the attacked piece left;
+   - else, as the card says with no score, "That helps Black." (every move
+     not accepted or close is 10 points or more below the best).
+   Each one that names a move has See it play it; why.kind says which:
+   task, guarded, mate, promo, forced, capture, skill, or '' */
+function pracWhy(a, m) {
+  var after = cloneState(a.pre), opp = sidesOf(a).opp, me = myPov(a.it), t1 = inWords(a), sk = a.it.skill, u = moveUci(m);
+  applyMove(after, m);
+  var replies = legalMoves(after), why = { kind: '', cands: [], fall: 'That helps ' + opp + '.', d: 0, u: '', took: '', mate: false };
+  var tw = function (r, mt) {
+    var x = cloneState(after); applyMove(x, r);
+    return { from: r.from, to: r.to, piece: pType(after.b[r.from]), captured: after.b[r.to] ? pType(after.b[r.to]) : null, check: checkersOf(x).length > 0, mate: mt, san: sanOf(after, r) };
+  };
+  var says = function (kind, cands, r, mt) {
+    why.kind = kind; why.cands = cands;
+    if (r) { why.reply = moveUci(r); why.threat = tw(r, !!mt); why.u = why.reply; }
     return why;
+  };
+  if (sk === 'mate1' || sk === 'backrank') return says('task', ['That is not mate.']);
+  if ((sk === 'free' || sk === 'count') && a.pre.b[m.to] && m.ep < 0 && attackersOf(a.pre.b, m.to, colorW(a.pre.b[m.to])).length && dzSeeMove(a.pre.b, m.from, m.to) < 0) {
+    /* a guard on the board (an x-ray alone is none here), and the cheapest
+       takes back */
+    var back = replies.filter(function (r) { return r.to === m.to; }).sort(function (x, y) { return MOTIF_VAL[pType(after.b[x.from])] - MOTIF_VAL[pType(after.b[y.from])] || x.from - y.from; })[0];
+    if (back) { why.took = pType(after.b[m.to]); return says('guarded', ['That piece is guarded.'], back); }
   }
-  if ((sk === 'mate1' || sk === 'backrank') && !isMate(after)) why.cands = ['That is not mate.'];
-  else if (sk === 'free' && pracClaim(a.pre, a.best, 'free')) why.cands = ['A piece of theirs was free.'];
-  else if (sk === 'count' && pracClaim(a.pre, a.best, 'count')) why.cands = ['One of them was safe to take.'];
-  else if (sk === 'pawns' && replies.some(function (r) { return !!r.promo; })) why.cands = ['Then their pawn can become a queen.'];
-  else if (sk === 'safety') {
+  var mate = replies.filter(function (r) { var x = cloneState(after); applyMove(x, r); return isMate(x); })[0];
+  if (mate) {
+    why.mate = true;
+    /* tier 1 says no move in SAN: where the words do not fit, that they could */
+    return says('mate', [t1 ? 'Then ' + moveWords(after, mate) + ' is checkmate.' : 'Then ' + capSan(after, mate) + ' is checkmate.', opp + ' could checkmate you.'], mate, true);
+  }
+  if (sk === 'pawns') {
+    var run = replies.filter(function (r) { if (!r.promo) return false; var x = cloneState(after); applyMove(x, r); return !legalMoves(x).some(function (y) { return y.to === r.to; }); })[0];
+    if (run) return says('promo', ['Then their pawn can become a queen.'], run);
+  }
+  var fm = a.it.mates && a.it.mates[u], fr = fm && fm.n === 2 ? uciToMove(after, fm.r) : null;
+  if (fr) {
+    why.fmate = 2;
+    return says('forced', [t1 ? 'Then they can force checkmate.' : 'Then they mate in two.', 'Then they can force checkmate.'], fr);
+  }
+  var cu = a.it.caps ? a.it.caps[u] : undefined, cr = cu === undefined ? null : cu ? uciToMove(after, cu) : pracCapture(after, me);
+  var vic = cr ? (cr.ep >= 0 ? after.b[cr.ep] : after.b[cr.to]) : null;
+  if (vic && colorW(vic) === me && pType(vic) !== 'K') {
+    var P = PIECE_WORD[pType(vic)];
+    why.took = pType(vic);
+    return says('capture', a.tier >= 3 ? [capSan(after, cr) + ' takes your ' + P + '.'] : ['Their ' + PIECE_WORD[pType(after.b[cr.from])] + ' takes your ' + P + '.'], cr);
+  }
+  if (sk === 'free' && pracClaim(a.pre, a.best, 'free') && !pracFreeTake(a.pre, m)) return says('skill', ['A piece of theirs was free.']);
+  if (sk === 'count' && pracClaim(a.pre, a.best, 'count')) return says('skill', ['One of them was safe to take.']);
+  if (sk === 'safety') {
     var still = dangerAttacked(after, me).map(function (x) { return x[0]; }), was = a.pre.b[a.best.from];
-    if (still.indexOf(a.best.from) >= 0 && after.b[a.best.from] === was) why.cands = ['Your ' + PIECE_WORD[pType(was)] + ' is still attacked.'];
+    if (still.indexOf(a.best.from) >= 0 && after.b[a.best.from] === was) return says('skill', ['Your ' + PIECE_WORD[pType(was)] + ' is still attacked.']);
   }
   return why;
 }
@@ -8470,14 +8527,27 @@ function pracDanger(a) {
   var pk = dangerPick(dangerAttacked(st, myPov(a.it)).map(function (x) { return { sq: x[0], p: st.b[x[0]], by: x.slice(1) }; }), [], skip);
   return pk ? { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return { from: x.from, to: x.to, kind: 'threat', key: 'danger' }; }) } : null;
 }
-/* Hint 2's words on a practice card: "Find a safe square." when the piece
-   it circles is attacked and the answer takes it out of danger */
-function pracSafeSq(a) {
-  var due = a.best, at = dangerAttacked(a.pre, myPov(a.it)).map(function (x) { return x[0]; });
-  if (at.indexOf(due.from) < 0) return false;
-  var after = cloneState(a.pre);
-  applyMove(after, due);
-  return !(dzSee(after.b, due.to, !myPov(a.it)) > 0);
+/* Hint 1's question on a practice card with no danger to draw: the skill's
+   own (its ask), but "Find a piece with no guard." only where a piece of
+   theirs that could be taken has none; otherwise the task line alone */
+function pracAsk(a) {
+  var sk = PSKILL_OF[a.it.skill], st = a.pre, me = myPov(a.it);
+  if (sk.k !== 'free') return sk.ask;
+  var loose = legalMoves(st).some(function (m) { var t = st.b[m.to]; return !!t && m.ep < 0 && colorW(t) !== me && pType(t) !== 'P' && pType(t) !== 'K' && !isDefended(st.b, m.to); });
+  return loose ? sk.ask : sk.task;
+}
+/* Hint 2's words on a practice card (from the position's facts): the
+   circled piece attacked and every safe square of it an accepted move (one,
+   or several and all accepted: the orchestrator's call after V2.3, so the
+   hint invites nothing rejected), "Find a safe square."; else V2.3's
+   ladder: one move of it that holds, "Only one queen move holds." (tier 1
+   "Only one queen move is best.": another may be a good move); else "Move
+   the circled piece." */
+function pracHint2(a) {
+  var h = a.it.h2, p = PIECE_WORD[pType(a.pre.b[a.best.from])];
+  if (h === 'S') return [CARD_COPY.H3c(), CARD_COPY.H3b()];
+  if (h === 'O' && p) return ['Only one ' + p + ' move ' + (a.tier === 1 ? 'is best.' : 'holds.'), CARD_COPY.H3b()];
+  return [CARD_COPY.H3b()];
 }
 /* the practice result, into nl:skill (never nl:srs): first try or not, real
    or a lesson's; the run and the step (3 first tries in a row up, 2 misses
@@ -8852,14 +8922,16 @@ function packOfferHtml() {
 }
 /* a practice position's Details: not from the player's games, where it is
    from, the move found (or the answer) and what it does, the other moves
-   accepted ("Knight to b3 works too."), the skill's idea */
+   accepted, the skill's idea. A move reads in words at tier 1, else in SAN
+   with its case kept: "Your move: g6. That stops the mate.", "Also good:
+   h6." (V3.2; a capital would make a pawn's file a piece, "B6") */
 function pracDetailsHtml(a) {
   var it = a.it, sk = PSKILL_OF[it.skill], mv = a.found || a.best;
   var say = function (m) { return inWords(a) ? moveWords(a.pre, m) : sanOf(a.pre, m); }, claim = pracClaim(a.pre, mv, it.skill);
   var other = it.ok.filter(function (u) { return u !== moveUci(mv); }).map(function (u) { return say(uciToMove(a.pre, u)); });
   return '<div class="kicker">Details</div><p class="ctx">' + (it.src === 'R' ? 'From another player\'s game, rated about ' + it.band + '.' : 'A lesson position.') + '</p>'
-    + '<div class="dt-lines"><p class="dt-line tl-good"><span class="tl-dot" aria-hidden="true"></span><span>' + (a.found ? 'Your move: ' : 'The answer: ') + esc(upFirst(say(mv))) + '.' + (claim ? ' ' + esc(claim) : '') + '</span></p>'
-    + (other.length ? '<p class="dt-line tl-alt"><span class="tl-dot" aria-hidden="true"></span><span>' + esc(other.length === 1 ? upFirst(other[0]) + ' works too.' : 'These work too: ' + other.join(', ') + '.') + '</span></p>' : '') + '</div>'
+    + '<div class="dt-lines"><p class="dt-line tl-good"><span class="tl-dot" aria-hidden="true"></span><span>' + (a.found ? 'Your move: ' : 'The answer: ') + esc(say(mv)) + '.' + (claim ? ' ' + esc(claim) : '') + '</span></p>'
+    + (other.length ? '<p class="dt-line tl-alt"><span class="tl-dot" aria-hidden="true"></span><span>' + esc('Also good: ' + other.join(', ') + '.') + '</span></p>' : '') + '</div>'
     + '<p class="dt-more">Practice position, not from your games.</p>'
     + (sk ? '<p class="habit">' + esc(sk.name) + ': ' + esc(sk.idea) + '</p>' : '');
 }
@@ -12002,11 +12074,12 @@ function hintText(a) {
   var gm = a.game && !(a.sol && a.solIdx > 0), sk = a.prac ? PSKILL_OF[a.it.skill] : null;
   /* Hint 3 (F9.2): what the red squares do, "Red squares lose your knight." */
   if (a.hints >= 3 && marks.reds.length) { cands = hint3Words(hint3Of(a)); fall = ''; }
-  /* a practice position (F9.4): hint 1 its board's danger where that is
-     its skill (pracDanger), else the skill's question; hint 2 the circled
-     piece, "Find a safe square." where the answer takes it out of danger */
-  else if (sk && a.hints >= 2) { cands = (pracSafeSq(a) ? [CARD_COPY.H3c()] : []).concat([CARD_COPY.H3b()]); fall = ''; }
-  else if (sk) { cands = marks.dz ? dangerWords(a, marks.dz) : [sk.ask]; fall = sk.ask; }
+  /* a practice position (F9.4, V3.2): hint 1 its board's danger where that
+     is its skill (pracDanger), else the skill's question where it holds
+     (pracAsk); hint 2 the circled piece from its facts (pracHint2: "Find a
+     safe square." when every safe square is accepted, else V2.3's words) */
+  else if (sk && a.hints >= 2) { cands = pracHint2(a); fall = ''; }
+  else if (sk) { cands = marks.dz ? dangerWords(a, marks.dz) : [pracAsk(a)]; fall = pracAsk(a); }
   else if (gm && a.hints >= 2) { cands = marks.dz ? dangerWords(a, marks.dz) : (safeSquare(a, due) ? [CARD_COPY.H3c()] : []).concat([CARD_COPY.H3b()]); fall = ''; }
   else if (gm) { row = checkRow(a); cands = marks.rep ? repeatedWords(a, marks.rep) : row.slice(0, 1); fall = row[0]; }
   /* hint 2 on a piece hint 1 rang as in danger: where to take it (content's
