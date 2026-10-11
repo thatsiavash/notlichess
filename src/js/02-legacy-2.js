@@ -114,15 +114,17 @@ var boardSeq = 0, boardFxSeen = {};
 /* the marks over the board: one colour and one shape per
    meaning, never a second one. Arrows by kind: your game move (solid red),
    their threat (dashed red), their expected reply in a forcing line (dashed
-   blue-grey), the better move (green), Stockfish's pick (gold), a lesson's
-   line of attack (gold, thinner: a lesson has no Stockfish, F9.3) */
+   blue-grey), your guess of that reply (solid blue-grey, F10.1), the
+   better move (green), Stockfish's pick (gold), a lesson's line of attack
+   (gold, thinner: a lesson has no Stockfish, F9.3) */
 var MARK_ARROW = {
   lesson: { color: 'rgba(182,130,53,.95)', w: 5, cls: 'lesson-arrow' },
   game: { color: 'rgba(201,80,60,.9)', w: 6, cls: 'bad-arrow' },
   better: { color: 'rgba(61,139,58,.92)', w: 6, cls: 'good-arrow' },
   explore: { color: 'rgba(182,130,53,.85)', w: 6, cls: 'ghost-arrow' },
   threat: { color: 'rgba(201,80,60,.9)', w: 5, cls: 'threat-arrow', dash: '7 5.5' },
-  reply: { color: 'rgba(122,150,184,.95)', w: 5, cls: 'reply-arrow', dash: '7 5.5' }
+  reply: { color: 'rgba(122,150,184,.95)', w: 5, cls: 'reply-arrow', dash: '7 5.5' },
+  guess: { color: 'rgba(122,150,184,.85)', w: 5, cls: 'guess-arrow' }
 };
 /* a verdict, by kind: the tint under both squares of the move just made,
    and the badge on its landing square (the close badge is hollow, so it

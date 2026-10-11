@@ -146,8 +146,9 @@ function flushStage(board) {
   /* a board that just changed counts as a slide that ended now */
   if (moved) motionUntil = now;
   if (text) { stageQ.push('text'); textNotBefore = now + TEXT_GAP; stageRun(); }
-  /* the forcing reply not yet played: the input starts it, and is dropped */
-  if (rp && !rp.played && !reducedMotion()) return theirReply(a, true);
+  /* the forcing reply not yet played: the input starts it, and is dropped;
+     not while its guess is asked for (F10.1), where the board takes input */
+  if (rp && !rp.played && !rp.ask && !reducedMotion()) return theirReply(a, true);
   return false;
 }
 function stageReset() {

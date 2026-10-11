@@ -81,6 +81,9 @@ function heroWords() {
    its words in order; insRows(h) each skill's row (name, glyph, the focus with "Start here", plain
    line, games and positions, progress words, the bar's parts as l/c/g and their sizes, under "Also
    seen"); sinceText(h) the "since you started" card's words; clockText(h) the clock's */
+/* how we count at tier 3 also says what its rows on how games are decided count (F10.3) */
+const DECIDED_COUNT = ['+2 means Stockfish had you two pawns or more ahead at some point of the game, \u22122 as far behind.',
+  'Players at your level: lichess games from July 2026 at the lichess rating that matches yours, measured by lichess\'s own analysis, so they are context, not a target.'];
 const INS = `function insAt(tier) {
   playerTier = function () { return tier; };
   var box = { innerHTML: '' }, el0 = el;
@@ -1577,10 +1580,15 @@ const SIM = `function simRun(seed, days, plan, noRule) {
             var hl = hn >= 2 ? 'No more hints' : hn ? 'Hint 2' : 'Hint', hw = hn ? ', hints ' + hn : '';
             for (var fk = 0; fk < a.sol.length - 1; fk += 2) {
               var fat = at + ' forcing move ' + (fk / 2 + 1) + hw, frp;
+              /* at tier 3 the first move found asks for their best reply first (F10.1):
+                 "Right" / "Now their best reply?" beside [Their reply], which skips it */
+              var asks = tier >= 3 && fk === 0;
+              if (asks) SF.state = 'ready';
               gradeMove(uciToMove(a.st, a.sol[fk]));
               if (!(frp = a.reply)) { out.push(fat + ': no reply, ' + a.phase); break; }
+              if (!!frp.ask !== asks) out.push(fat + ': asks for their reply: ' + !!frp.ask);
               d = band(fat + ', right', a); w13(fat + ', right', d);
-              if (d.row1 !== 'Right' || d.row2 !== sidesOf(a).opp + ' replies next.' || d.buttons.map(function (x) { return x.label + (x.off ? ' (off)' : ''); }).join(' | ') !== hl + ' (off) | Show the answer (off)')
+              if (d.row1 !== 'Right' || d.row2 !== (asks ? 'Now their best reply?' : sidesOf(a).opp + ' replies next.') || d.buttons.map(function (x) { return x.label + (x.off ? ' (off)' : ''); }).join(' | ') !== (asks ? ' (off) | Their reply' : hl + ' (off) | Show the answer (off)'))
                 out.push(fat + ' reads ' + d.row1 + ' / ' + d.row2 + ' | ' + JSON.stringify(d.buttons));
               ui.reducedTest = true; d = band(fat + ', right, reduced motion', a); w13(fat + ', right, reduced motion', d); ui.reducedTest = false;
               if (d.buttons.map(function (x) { return x.label + (x.off ? ' (off)' : ''); }).join(' | ') !== ' (off) | Their reply') out.push(fat + ' under reduced motion offers ' + JSON.stringify(d.buttons));
@@ -2584,7 +2592,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(r[1].link && r[2].link && r[3].link, 'how we count, a sheet');
     eq(JSON.stringify(r[1].count), JSON.stringify(['Insights', 'How we count', 'A big mistake: a move that made your position much worse.', 'A move cost you the game if you never came back from it. A drawn game counts as half a game.']), 'how we count, tier 1 (a big mistake, as the app says it everywhere)');
     eq(JSON.stringify(r[2].count), JSON.stringify(['Insights', 'How we count', 'A big mistake cut your winning chances by 15 points or more (20 under 1200, 12 at 1800+).', 'A move decided a game if you never came back from it. A drawn game counts as half a game.', 'Each bar shows your practice on that skill\'s positions: learned, climbing, to go.']), 'how we count, tier 2');
-    eq(JSON.stringify(r[3].count), JSON.stringify(r[2].count), 'tier 3 names the threshold its games are counted at (15 for the fixture\'s 1350s)');
+    /* tier 3 adds what its rows on how games are decided count (F10.3): +2, and the peer figures' source */
+    eq(JSON.stringify(r[3].count), JSON.stringify(r[2].count.concat(DECIDED_COUNT)), 'tier 3 names the threshold its games are counted at (15 for the fixture\'s 1350s)');
     eq(r.few[0], 'Your mistakes, grouped by the skill that would prevent them.', 'under 5 losses: the fallback headline');
     eq(r.fewFirst, false, 'the list always starts above "Also seen"');
     ok(/^Based on 45 of 50 rapid games so far, /.test(p), 'while reading: the part read so far: ' + p);
@@ -2893,7 +2902,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       return latestGamesHtml(); })()`);
     eq(JSON.stringify(r[1].slice(2, 4)), JSON.stringify(['A big mistake: a move that made your position much worse.', 'Since you started, every game counts the same way.']), 'tier 1: a big mistake, and since you started counts every game the same way');
     eq(JSON.stringify(r[2].slice(2, 4)), JSON.stringify(['A big mistake cut your winning chances by 15 points or more (20 under 1200, 12 at 1800+).', 'Since you started, every game counts at 15 points, the line on your start day.']), 'tier 2: the line since you started counts at');
-    eq(JSON.stringify(r[3]), JSON.stringify(r[2]), 'tier 3 the same');
+    eq(JSON.stringify(r[3]), JSON.stringify(r[2].concat(DECIDED_COUNT)), 'tier 3 the same, with what its rows on how games are decided count (F10.3)');
     eq(r.two, 'Since you started, rapid games count at 15 points and blitz games at 20, the lines on your start day.', 'two formats at different lines');
     eq(r.alike, 'Since you started, every game counts at 15 points, the line on your start day.', 'two formats at one line');
     eq(r.t1line, 'Since you started, every game counts the same way.', 'tier 1 names no number');
@@ -3609,6 +3618,62 @@ const SIM = `function simRun(seed, days, plan, noRule) {
 
   /* ── beginner teaching (F9.1 to F9.5): its tests in test/practice.js ── */
   for (const t of require('./practice')({ boot, eq, ok, tick })) await test(t[0], t[1]);
+
+  /* how your games are decided (F10.3): decidedText(h) the rows' words, in order */
+  const DECIDED = `function decidedText(h) { var m = /<h3 class="ins-h">How your games are decided<\\/h3><div class="clock-rows dec-rows">([\\s\\S]*?)<\\/div>/.exec(h); return m ? m[1].split('</p>').filter(Boolean).map(function (p) { return insText(p).join(' '); }) : null; }`;
+  await test('F10.3: the fixture as a chess.com 2000 player, at tier 3 under the headline: "Converting wins: won 21 of 30 games after reaching +2.", "Saving bad positions: saved 11 of 38 after falling to \u22122." and "Slow slides: 8 of 27 losses had no single losing move.", the peer figures 72% and 31% beside the first two (lichess rapid 2100), Practise these on the rows with positions, no verdict word; none at tiers 1 and 2; a row needs 10 games; no peer figure for a format the blob lacks; the definitions are the peer script\'s', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS} ${DECIDED}
+      SF.state = 'failed';
+      data.user = { perfs: { rapid: { rating: 2000 } } };
+      var res = { t3: decidedText(insAt(3)), t2: decidedText(insAt(2)), t1: decidedText(insAt(1)), d: decidedReport() };
+      var h3 = insAt(3);
+      res.order = [h3.indexOf('class="lead"'), h3.indexOf('How your games are decided'), h3.indexOf('What decided your games')];
+      res.links = (h3.match(/data-spec="\\{&quot;type&quot;:&quot;(convert|save)&quot;/g) || []).length;
+      /* the drills hold the positions behind their rows: after +2 in a game not won, after -2 in one lost */
+      var conv = drillItems({ type: 'convert' }, 100), save = drillItems({ type: 'save' }, 100);
+      res.conv = conv.length; res.save = save.length;
+      res.convOk = conv.every(function (it) { var s = gameSwings(it.g); return it.g.res !== 'win' && s.reach != null && it.b.p > s.reach; });
+      res.saveOk = save.every(function (it) { var s = gameSwings(it.g); return it.g.res === 'loss' && s.fell != null && it.b.p > s.fell; });
+      /* the thresholds: the win chances of 200 and -200 centipawns */
+      res.thr = [Math.round(CONV_WIN * 10) / 10, Math.round(RES_WIN * 10) / 10];
+      /* the band: chess.com rapid counts 150 more on lichess (2150: 2100), lichess as it is */
+      data.user.perfs.rapid.rating = 2049; res.p2049 = Math.round(decidedReport().conv.peer * 10) / 10;
+      data.user.perfs.rapid.rating = 600; res.p600 = Math.round(decidedReport().conv.peer * 10) / 10;
+      data.user.perfs.rapid.rating = 3000; res.p3000 = Math.round(decidedReport().conv.peer * 10) / 10;
+      /* a daily game among them: no peer figure */
+      var dg = data.games.filter(function (g) { var s = gameSwings(g); return s && s.reach != null; })[0], perf0 = dg.perf;
+      data.user.perfs.rapid.rating = 2000;
+      dg.perf = 'daily'; cfg.perfs = ['rapid', 'blitz', 'daily']; windowMemo.key = ''; modelDirty();
+      res.daily = decidedReport().conv;
+      dg.perf = perf0; cfg.perfs = null; windowMemo.key = ''; modelDirty();
+      /* no rating known: the counts, no peer figure */
+      data.user = null;
+      res.norating = decidedText(insAt(3));
+      /* under 10 qualifying games: no row */
+      var keep = data.games.slice();
+      data.games = keep.filter(function (g) { var s = gameSwings(g); return !(s && s.reach != null); }).concat(keep.filter(function (g) { var s = gameSwings(g); return s && s.reach != null; }).slice(0, 9));
+      modelDirty();
+      res.few = decidedReport();
+      data.games = keep; modelDirty();
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify(r.t3), JSON.stringify(['Converting wins: won 21 of 30 games after reaching +2. Practise these › Lichess players at your level: 72%.',
+      'Saving bad positions: saved 11 of 38 after falling to \u22122. Practise these › Lichess players at your level: 31%.',
+      'Slow slides: 8 of 27 losses had no single losing move.']), 'the three rows at tier 3');
+    eq(JSON.stringify([r.d.conv.n, r.d.conv.won, r.d.save.n, r.d.save.saved, r.d.slow.n, r.d.slow.none]), '[30,21,38,11,27,8]', 'the counts');
+    eq(JSON.stringify([Math.round(r.d.conv.peer * 10) / 10, Math.round(r.d.save.peer * 10) / 10]), '[71.9,30.6]', 'lichess rapid 2100: 71.9% and 30.6%');
+    ok(r.order[0] > 0 && r.order[0] < r.order[1] && r.order[1] < r.order[2], 'under the headline and its lead, above the skills: ' + r.order);
+    eq(JSON.stringify([r.t2, r.t1]), '[null,null]', 'none at tiers 2 and 1');
+    eq(r.links, 2, 'Practise these on the two rows with positions');
+    ok(r.conv >= 5 && r.save >= 5 && r.convOk && r.saveOk, 'the drills hold their rows\' positions: ' + JSON.stringify([r.conv, r.save, r.convOk, r.saveOk]));
+    eq(JSON.stringify(r.thr), '[67.6,32.4]', '+2 and -2 as the win chances of 200 and -200 centipawns');
+    eq(JSON.stringify([r.p2049, r.p600, r.p3000]), '[71.9,59,77.9]', 'chess.com 2049 is lichess 2199 (2100); 600 the 800 band; 3000 the 2400 band');
+    eq(r.daily && r.daily.peer, null, 'a daily game among them: no peer figure');
+    ok(r.daily && r.daily.n === 30, 'its count stands');
+    eq(JSON.stringify(r.norating), JSON.stringify(['Converting wins: won 21 of 30 games after reaching +2. Practise these ›', 'Saving bad positions: saved 11 of 38 after falling to \u22122. Practise these ›', 'Slow slides: 8 of 27 losses had no single losing move.']), 'no rating known: no peer figure');
+    eq(r.few.conv, null, 'under 10 games that reached +2: no row');
+    ok(!/better|worse|good|bad|well|weak|strong/i.test(r.t3.join(' ').replace(/Saving bad positions/, '')), 'no verdict word');
+  });
 
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'sessions and bookkeeping: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));

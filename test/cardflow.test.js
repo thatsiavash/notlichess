@@ -131,7 +131,12 @@ const SPOILER = `function spoilerFaults(a, f) {
   if (o.good) arrows.push({ from: o.good[0], to: o.good[1], kind: 'better' });
   if (o.ghost) arrows.push({ from: o.ghost[0], to: o.ghost[1], kind: 'explore' });
   if (o.bad) arrows.push({ from: o.bad[0], to: o.bad[1], kind: 'game' });
+  /* F10.1: while their best reply is asked for, nothing of that reply shows (its telegraph would be the answer) */
+  var asking = a.phase === 'reply' && a.reply && a.reply.ask;
+  if (asking) { arrows.concat(o.arrows || []).concat(rings).forEach(function (m) { if (m.kind === 'reply') out.push('their reply marked while its guess is asked'); }); if (/Blue arrow|their reply/.test(String(o.label || ''))) out.push('the board name says their reply while its guess is asked'); }
   arrows.concat(o.arrows || []).forEach(function (m) {
+    /* the player's own guess of their reply (F10.1) is input, as their drawn shapes are */
+    if (m.kind === 'guess') return;
     if ((m.kind === 'game' && sameMove([a.played.from, a.played.to], [m.from, m.to])) || (m.kind === 'reply' && rm && sameMove(rm, [m.from, m.to]))) return;
     var what = m.kind === 'better' ? 'green arrow' : m.kind === 'explore' ? 'gold arrow' : m.kind + ' arrow';
     if (m.kind === 'better' || m.kind === 'explore') out.push(what + ' on ' + sqName(m.from) + '-' + sqName(m.to));
@@ -164,8 +169,8 @@ const SPOILER = `function spoilerFaults(a, f) {
      reply's own arrow and token, the move just played's badge, which names
      no square) */
   var lab = String(o.label || ''), gm = 'Red arrow: your game move, ', pw = function (sq) { var p = a.st.b[sq]; return p ? PIECE_WORD[pType(p)] : ''; };
-  /* (in game mode the game move's faded piece stands for its red arrow, F8.1, and is exempt as it is) */
-  var rest = lab.split(/(?<=[.]) /).filter(function (x) { return x.indexOf(gm) !== 0 && !/: where your game move went[.]$/.test(x) && !(rm && (x.indexOf('Blue arrow: ') === 0 || (/ was taken on | won a /.test(x) && x.indexOf(' ' + sqName(rm[1]) + '.') >= 0))); }).join(' ');
+  /* (in game mode the game move's faded piece stands for its red arrow, F8.1, and is exempt as it is; so is the player's own guess of their reply, F10.1) */
+  var rest = lab.split(/(?<=[.]) /).filter(function (x) { return x.indexOf(gm) !== 0 && x.indexOf('Blue arrow: your guess') !== 0 && !/: where your game move went[.]$/.test(x) && !(rm && (x.indexOf('Blue arrow: ') === 0 || (/ was taken on | won a /.test(x) && x.indexOf(' ' + sqName(rm[1]) + '.') >= 0))); }).join(' ');
   if (rest.indexOf(pw(due.from) + ' ' + sqName(due.from) + ' to ' + sqName(due.to)) >= 0) out.push('the board name says the answer move: ' + lab);
   if (rest.split(/[^a-h1-8]+/).indexOf(sqName(due.to)) >= 0) out.push('the board name names the answer square ' + sqName(due.to) + ': ' + lab);
   if (/the answer|better move|Green arrow|Gold arrow/.test(lab)) out.push('the board name says ' + lab);
@@ -178,6 +183,7 @@ const SPOILER = `function spoilerFaults(a, f) {
     if (!lb) return;
     window.__labelled = (window.__labelled || 0) + 1;
     if (lb.text === 'better' || lb.text === 'the answer') out.push('the label "' + lb.text + '" before an answer');
+    if (asking && lb.text === 'their reply') out.push('the label "their reply" while its guess is asked');
     if (lb.x < (cx + 1) * Q - 0.5 && lb.x + lb.w > cx * Q + 0.5 && lb.y < (cy + 1) * Q - 0.5 && lb.y + lb.h > cy * Q + 0.5) out.push('the label "' + lb.text + '" on the answer square ' + sqName(due.to));
   });
   return out;
@@ -213,7 +219,8 @@ const DOM = `(function () {
   var kind = { bwrap: 'board', ebar: 'board', 'ebar-fill': 'board', marks: 'marks', trainbox: 'frame', ckeys: 'keys' };
   var FLAG = { tried: /class="tried"/, xfade: /class="xfade"/, ring: /class="ring-threat"/, aring: /class="ring-attacked"/, arrow: /class="threat-arrow"/, token: /token-lost/, slide: /anim-piece/,
     target: /class="ring-target"/, hint: /class="hint-ring"/, ghost: /:s0"/, tick: /badge-good/, info: /badge-info/, green: /good-arrow/, won: /token-won/, red: /bad-arrow/, guard: /guard-line/, faded: /ghost-piece/,
-    rring: /class="reply-ring"/, rdash: /class="reply-arrow"[^>]*stroke-dasharray/, rsolid: /class="reply-arrow"(?![^>]*stroke-dasharray)/, slow: /anim-slow/, glow: /url\\(#checkglow/ };
+    rring: /class="reply-ring"/, rdash: /class="reply-arrow"[^>]*stroke-dasharray/, rsolid: /class="reply-arrow"(?![^>]*stroke-dasharray)/, slow: /anim-slow/, glow: /url\\(#checkglow/,
+    guess: /class="guess-arrow"/ };
   var kept = function (id, x) {
     if (id === 'cband' || id === 'cbar' || id === 'ckeys') return x;
     if (id === 'bwrap' || id === 'marks') return Object.keys(FLAG).filter(function (k) { return FLAG[k].test(x); }).join(' ');
@@ -363,6 +370,13 @@ const BAR = `(function () {
               if (a.phase !== 'reply' || !a.reply) { check(at + ': no reply but ' + a.phase, true); break; }
               var rp = a.reply;
               check(at + ', your move sliding'); a.animMove = null; check(at + ', your move landed');
+              /* F10.1 at tier 3: their reply asked for, a piece of theirs picked up, then a guess
+                 (a move of theirs other than the line's), its arrow drawn while the reply comes */
+              if (rp.ask) {
+                var gm0 = legalMoves(a.st).filter(function (m) { return moveUci(m) !== a.sol[a.solIdx]; })[0] || uciToMove(a.st, a.sol[a.solIdx]);
+                a.sel = gm0.from; check(at + ', their piece picked up for a guess'); a.sel = -1;
+                makeGuess(a, gm0); check(at + ', guessed');
+              }
               rp.tele = true; check(at + ', the telegraph');
               theirReply(a, false); check(at + ', sliding'); a.animMove = null; a.animSlow = false; check(at + ', landed');
               replyDone(a, rp); check(at + ', your move again');
@@ -6426,7 +6440,7 @@ const BAR = `(function () {
     ['attacked', 'watch', 'circled'].forEach((k) => ok(r.kinds[k], 'hint 2 kinds seen: ' + Object.keys(r.kinds).join(', ')));
   });
 
-  await test('F8.1: no game-mode frame gives anything away: every fixture card at tiers 2 and 3 as a game-mode review, in every frame (open, a piece picked up, both hints, the game move tried with its reason, See it and Try again, the hints after it, a forcing line\'s steps, found and settled, the answer shown), keeps the spoiler rule and game mode\'s own, within 15 words', () => {
+  await test('F8.1: no game-mode frame gives anything away: every fixture card at tiers 2 and 3 as a game-mode review, in every frame (open, a piece picked up, both hints, the game move tried with its reason, See it and Try again, the hints after it, a forcing line\'s steps with tier 3\'s question and a guess, found and settled, the answer shown), keeps the spoiler rule and game mode\'s own, within 15 words', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME} ${SPOILER}
       var out = [], n = 0, labelled = 0;
@@ -6450,6 +6464,8 @@ const BAR = `(function () {
             var rp = a.reply;
             if (!rp) break;
             a.animMove = null; cb('forcing ' + k + ', right', a);
+            /* at tier 3 the first move asks for their best reply (F10.1), beside the Review tag: a guess */
+            if (rp.ask) { makeGuess(a, uciToMove(a.st, a.sol[k + 1])); a.animMove = null; cb('forcing ' + k + ', guessed', a); }
             rp.tele = true; cb('forcing ' + k + ', the telegraph', a);
             theirReply(a, false); a.animMove = null; a.animSlow = false; cb('forcing ' + k + ', landed', a);
             replyDone(a, rp); cb('forcing ' + k + ', your move', a);
@@ -6785,6 +6801,500 @@ const BAR = `(function () {
     eq(JSON.stringify(r.shift), '[3,3]', 'shiftDays moves when a foil was shown, as it moves the reminder\'s times');
     eq(JSON.stringify(r.file), JSON.stringify(['nl:foil:cc:tester', 'nl:log:cc:tester', 'nl:srs:cc:tester']), 'the progress file carries the foil store, never the reminder or the install note');
     eq(JSON.stringify(gone), JSON.stringify({ foil: null, srs: null }), 'Reset clears it with the practice history');
+  });
+
+  /* ── predict their reply (F10.1) ── */
+  /* the forcing cards at tier 3 */
+  const T3F = `JSON.stringify((function () { playerTier = function () { return 3; }; return allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && c.sol && c.sol.length >= 3; }).map(function (it) { return it.key; }); })())`;
+  /* the guess's list on the card's record, from their side ([uci, cp, mate]), with the
+     position's legal replies counted; ALTS: their legal replies other than the line's */
+  const SET_RL = (l) => `(function (a) { var st = replyNode(a); a.it.b.rl = { k: dzSig(a.it.b), n: legalMoves(st).length, l: ${JSON.stringify(l)} }; return 1; })(ui.session.active)`;
+  const ALTS = `JSON.stringify((function (a) { return legalMoves(a.st).map(moveUci).filter(function (u) { return u !== a.sol[a.solIdx]; }); })(ui.session.active))`;
+  const GUESS = (u) => `(function (a) { var m = uciToMove(a.st, '${u}'); sessionClick(m.from); sessionClick(m.to); return a.guess ? a.guess.v || 'pending' : 'none'; })(ui.session.active)`;
+
+  await test('F10.1: at tier 3 the first move of a forcing line asks for their best reply ("Right" / "Now their best reply?" beside [Their reply], no honey button): nothing moves until a guess or that button (no telegraph, no slide, a minute on), Enter presses nothing, a piece of yours says whose move it is; the list it is judged by is one search of the position after the expected move (250,000 nodes, three lines), kept from their side and asked once', async () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev(BAR);
+    A.ev('(window.readyEngine(), 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(T3F)), lead = A.ev('SLIDE_LEAD');
+    ok(keys.length >= 8, 'tier 3 forcing cards: ' + keys.length);
+    const own = () => A.ev(`(function (a) { for (var s = 0; s < 64; s++) if (a.st.b[s] && isW(a.st.b[s]) === myPov(a.it)) return s; return -1; })(ui.session.active)`);
+    for (const key of keys.slice(0, 4)) {
+      const at = key;
+      A.ev(`(playerTier = function () { return 3; }, window.readyEngine(), window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      const t = A.getNow();
+      eq(A.ev(FIRST('tap')), 'reply', at + ': the first move found');
+      run(lead + 220 + 200);
+      const s0 = JSON.parse(A.ev('JSON.stringify((function (a) { return { ask: !!a.reply.ask, tele: !!a.reply.tele, played: a.reply.played, solIdx: a.solIdx, on: !!a.guessOn, opp: sidesOf(a).opp }; })(ui.session.active))'));
+      eq(JSON.stringify([s0.ask, s0.tele, s0.played, s0.solIdx, s0.on]), '[true,false,false,1,true]', at + ': asking, ' + JSON.stringify(s0));
+      let ws = WR(A, t), band = ws.filter((w) => w.id === 'cband').pop(), bar = ws.filter((w) => w.id === 'cbar').pop();
+      eq(R1(band.v) + ' / ' + R2(band.v), 'Right / Now their best reply?', at + ': the question');
+      ok(/class="slot-empty" data-slot="0"/.test(bar.v) && /class="btn-line" data-slot="1" data-icon="play" data-act="theirReply">Their reply</.test(bar.v) && !/btn-big/.test(bar.v), at + ': [Their reply] alone, no honey button, ' + bar.v);
+      eq(A.ev('honeySlot()'), -1, at + ': no honey slot');
+      /* a minute: nothing moves; Enter presses nothing */
+      const tq = A.getNow();
+      run(3000); A.advance(57000);
+      A.key('Enter');
+      ws = WR(A, tq);
+      eq(ws.filter((w) => w.id === 'bwrap' || (w.id === 'marks' && /rring|rdash|rsolid/.test(w.v))).length, 0, at + ': nothing drawn while it asks, ' + JSON.stringify(ws));
+      eq(A.ev('JSON.stringify([ui.session.active.phase, ui.session.active.solIdx, !!ui.session.active.reply.ask, ui.session.active.reply.played])'), '["reply",1,true,false]', at + ': after a minute and Enter');
+      /* the board's name never names their reply while it asks */
+      const lab = A.ev('boardOptsFor(ui.session.active).opts.label'), rinfo = JSON.parse(A.ev(REPLY_INFO));
+      ok(!/Blue arrow|reply/.test(lab) && lab.indexOf(A.ev(`sqName(${rinfo.to})`) + '.') < 0, at + ': the board name says nothing of their reply: ' + lab);
+      /* a piece of yours: whose move it is, for a while */
+      const tn = A.getNow();
+      A.tap(own());
+      run(300);
+      const nb = WR(A, tn).filter((w) => w.id === 'cband').pop();
+      eq(nb && R2(nb.v), 'Guess their move: a ' + s0.opp.toLowerCase() + ' piece.', at + ': a tap on a piece of yours');
+      eq(A.ev('ui.session.active.sel'), -1, at + ': nothing picked up');
+      run(3000);
+      eq(R2(WR(A, tn).filter((w) => w.id === 'cband').pop().v), 'Now their best reply?', at + ': the question again');
+      /* a piece of theirs picks up, with its dots */
+      const theirs = rinfo.from;
+      A.ev(`(sessionClick(${theirs}), 1)`);
+      run(100);
+      ok(A.ev('ui.session.active.sel') === theirs && A.ev('(boardOptsFor(ui.session.active).opts.dots || []).length') > 0, at + ': their piece picked up, its moves dotted');
+      A.ev(`(sessionClick(${theirs}), 1)`);
+      eq(A.ev('ui.session.active.sel'), -1, at + ': and put down');
+      /* the list: one search, prioritized, of the position after the expected move */
+      const jobs = JSON.parse(A.ev(`JSON.stringify(window.__evals.filter(function (j) { return j.opts.rl && j.opts.tag === '${key}'; }).map(function (j) { return { fen: j.fen, nodes: j.nodes, mpv: j.opts.multipv, prio: j.prio, want: stateFen(replyNode(ui.session.active)) }; }))`));
+      eq(jobs.length, 1, at + ': one list search');
+      eq(JSON.stringify([jobs[0].nodes, jobs[0].mpv, jobs[0].prio, jobs[0].fen === jobs[0].want]), '[250000,3,true,true]', at + ': 250,000 nodes, three lines, the position after the first move');
+      /* answered (scores from White's side): kept on the record from their side, the line's moves only */
+      const kept = JSON.parse(A.ev(`JSON.stringify((function (a) {
+        var j = window.__evals.filter(function (x) { return x.opts.rl && x.opts.tag === '${key}'; })[0], st = replyNode(a), them = !myPov(a.it), ms = legalMoves(st).map(moveUci);
+        var mk = function (u, cpThem, mateThem) { return { cp: them ? cpThem : -cpThem, mate: mateThem == null ? null : them ? mateThem : -mateThem, pv: [u] }; };
+        var lines = [mk(a.sol[1], 120), mk(ms.filter(function (u) { return u !== a.sol[1]; })[0], 60), mk(ms.filter(function (u) { return u !== a.sol[1]; })[1] || ms[0], -800, -3)];
+        j.res({ cp: lines[0].cp, mate: null, pv: lines[0].pv, lines: lines, depth: 18, stopped: false });
+        return { n: ms.length };
+      })(ui.session.active))`));
+      await tick();
+      const rl = JSON.parse(A.ev('JSON.stringify(ui.session.active.it.b.rl)'));
+      ok(rl && rl.k === A.ev('dzSig(ui.session.active.it.b)') && rl.n === kept.n && rl.l.length === 3, at + ': kept on the record, ' + JSON.stringify(rl));
+      eq(JSON.stringify(rl.l.map((x) => [x[1], x[2]])), JSON.stringify([[120, null], [60, null], [-800, -3]]), at + ': from their side');
+      eq(rl.l[0][0], A.ev('ui.session.active.sol[1]'), at + ': their best first');
+      /* asked once: the next showing of this card asks no search */
+      A.ev(`(playerTier = function () { return 3; }, window.readyEngine(), window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      A.ev(FIRST('tap'));
+      eq(A.ev(`window.__evals.filter(function (j) { return j.opts.rl && j.opts.tag === '${key}'; }).length`), 1, at + ': no second search');
+      ok(A.ev('!!ui.session.active.reply.ask'), at + ': asking again');
+    }
+  });
+
+  await test('F10.1: a guess plays their reply on its own timeline from the guess and says what it was: the guess arrow at once with "your guess", the bar off 150 ms later, the telegraph at 600 (the guess arrow gone where it is the same move), the slide 1450 to 1900, then "Your move" with "You saw it: X." (their reply), "Y was as good as X." (within 4 points), "Not Y: they had X." (more), "They had X." (off a list whose last line is as good as the best); a wrong guess is no miss; the record and the log keep it', async () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev(BAR);
+    A.ev('(window.readyEngine(), window.__clar = [], window.clarity = function (k, n) { window.__clar.push(n); }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(T3F)), lead = A.ev('SLIDE_LEAD');
+    const CASES = ['saw', 'good', 'not', 'open'], measures = [];
+    let n = 0;
+    for (const key of keys) {
+      A.ev(`(playerTier = function () { return 3; }, window.readyEngine(), window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      A.ev(FIRST('tap'));
+      run(lead + 220 + 200);
+      const sol1 = A.ev('ui.session.active.sol[1]'), alts = JSON.parse(A.ev(ALTS));
+      /* the next case this card can hold (a guess off a list of three needs three other replies) */
+      const kind = CASES[n % CASES.length], at = key + ' ' + kind;
+      if (kind === 'open' ? alts.length < 3 : kind !== 'saw' && alts.length < 1) continue;
+      n++;
+      measures.push('guess_' + { saw: 'right', good: 'right', not: 'wrong', open: 'open' }[kind]);
+      /* the list (their side): "good" lists the guess 1.5 points under the best, "not" 30 points under, "open" leaves it off a list of three as good as each other */
+      const list = kind === 'good' ? [[sol1, 100, null], [alts[0], 60, null]] : kind === 'not' ? [[sol1, 100, null], [alts[0], -300, null]] : kind === 'open' ? [[sol1, 100, null], [alts[1], 90, null], [alts[2] || alts[1], 80, null]] : [[sol1, 100, null]];
+      A.ev(SET_RL(list));
+      const guess = kind === 'saw' ? sol1 : alts[0];
+      const ysan = A.ev(`(function (a) { return capSan(a.st, uciToMove(a.st, a.sol[1])); })(ui.session.active)`), gsan = A.ev(`(function (a) { return capSan(a.st, uciToMove(a.st, '${guess}')); })(ui.session.active)`);
+      const tg = A.getNow();
+      const v = A.ev(GUESS(guess));
+      const want = { saw: 'You saw it: ' + ysan + '.', good: gsan + ' was as good as ' + ysan + '.', not: 'Not ' + gsan + ': they had ' + ysan + '.', open: 'They had ' + ysan + '.' }[kind];
+      eq(v, kind, at + ': judged at once');
+      /* the arrow at once, labelled; nothing slides */
+      let ws = WR(A, tg);
+      const b0 = ws.filter((w) => w.id === 'bwrap' && w.t === tg).pop();
+      ok(b0 && /guess/.test(b0.v) && !/rring|rdash|slide|slow/.test(b0.v), at + ': the guess arrow at once, ' + JSON.stringify(b0));
+      eq(A.ev('(function (a) { var l = frameLabel(a, boardOptsFor(a), 384, false); return l ? l.text : ""; })(ui.session.active)'), 'your guess', at + ': its label');
+      ok(/Blue arrow: your guess of (White|Black)'s reply, /.test(A.ev('boardOptsFor(ui.session.active).opts.label')), at + ': and its words for a screen reader');
+      run(200);
+      ws = WR(A, tg);
+      const bar1 = ws.filter((w) => w.id === 'cbar')[0], band1 = ws.filter((w) => w.id === 'cband').pop();
+      ok(bar1 && bar1.t === tg + 150 && (bar1.v.match(/btn-off/g) || []).length === 2 && !/data-act/.test(bar1.v), at + ': the bar off 150 ms later, ' + JSON.stringify(bar1));
+      ok(!band1 || R2(band1.v) === 'Now their best reply?', at + ': the question stays while their reply comes');
+      run(2200);
+      ws = WR(A, tg);
+      const marks = ws.filter((w) => w.id === 'marks'), boards = ws.filter((w) => w.id === 'bwrap');
+      const tele = marks.filter((w) => /rring/.test(w.v))[0];
+      ok(tele && tele.t === tg + 600 && /rdash/.test(tele.v) && /guess/.test(tele.v) === (kind !== 'saw'), at + ': the telegraph at 600, the guess beside it unless the same move, ' + JSON.stringify(marks));
+      const slide = boards.filter((w) => /slow/.test(w.v))[0];
+      ok(slide && slide.t === tg + 1500 - lead && /guess/.test(slide.v) === (kind !== 'saw'), at + ': the slide drawn at 1450, ' + JSON.stringify(boards));
+      const land = boards.filter((w) => w.t > slide.t)[0];
+      ok(land && land.t === tg + 1900 && /rsolid/.test(land.v) && !/guess|rring/.test(land.v), at + ': landed at 1900, the guess gone, ' + JSON.stringify(land));
+      const b2 = ws.filter((w) => w.id === 'cband' && w.t >= tg + 2050)[0];
+      ok(b2 && b2.t === tg + 2050 && R1(b2.v) === 'Your move' && R2(b2.v) === want, at + ': at 2050 "Your move" / ' + want + ', ' + JSON.stringify(b2 && [b2.t - tg, R1(b2.v), R2(b2.v)]));
+      eq(A.ev('JSON.stringify([ui.session.active.phase, ui.session.active.misses, ui.session.active.result || null, ui.session.active.solIdx])'), '["guess",0,null,2]', at + ': no miss, the line goes on');
+      /* the line finished: the record keeps a right guess, the log the guess */
+      A.ev(`(function (a) { for (var g = 0; g < 10 && a.phase !== 'done'; g++) { var m = uciToMove(a.st, a.sol[a.solIdx]); gradeMove(m); var rp = a.reply; if (rp) { theirReply(a, false); replyDone(a, rp); } } return 1; })(ui.session.active)`);
+      const after = JSON.parse(A.ev(`JSON.stringify({ phase: ui.session.active.phase, result: ui.session.active.result, pg: !!srsLoad()['${key}'].pg, gu: logLoad().filter(function (e) { return e.k === '${key}'; }).pop().gu })`));
+      eq(JSON.stringify([after.phase, after.result, after.pg, after.gu]), JSON.stringify(['done', 'first', kind === 'saw' || kind === 'good', kind]), at + ': solved first try, the guess kept, ' + JSON.stringify(after));
+    }
+    ok(n >= 8, 'cases run ' + n);
+    const clar = JSON.parse(A.ev('JSON.stringify(window.__clar)')).filter((x) => /^guess_/.test(x));
+    eq(JSON.stringify(clar), JSON.stringify(measures), 'the measure, once a showing, as a word');
+  });
+
+  await test('F10.1: Their reply skips the guess (the reply at once, its own words after); under reduced motion a guess draws the telegraph at once, the reply 300 ms later and its words 300 ms after that; no question at tier 2, after a move that works too (the card ends there), inside the line, or with the engine down (the reply on its timeline)', async () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev(BAR);
+    A.ev('(window.readyEngine(), 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(T3F)), lead = A.ev('SLIDE_LEAD');
+    const show = (key, tier) => { A.ev(`(playerTier = function () { return ${tier}; }, window.readyEngine(), window.__show(model().byKey['${key}']), 1)`); run(1000); };
+    /* skipped: [Their reply] plays it at once, F4 after it lands, the guess noted as skipped */
+    for (const key of keys.slice(0, 3)) {
+      show(key, 3);
+      A.ev(FIRST('tap'));
+      run(lead + 220 + 600);
+      const info = JSON.parse(A.ev(REPLY_INFO)), tp = A.getNow();
+      A.click('theirReply', null, 1);
+      const s = JSON.parse(A.ev(STATE));
+      ok(s.reply && s.reply.played && s.solIdx === 2 && s.mu === tp + lead + 400, key + ': skipped, the reply slides at once, ' + JSON.stringify(s));
+      run(lead + 400 + 300);
+      const b2 = WR(A, tp).filter((w) => w.id === 'cband').pop();
+      eq(R1(b2.v) + ' / ' + R2(b2.v), 'Your move / ' + info.want, key + ': its own words');
+      eq(A.ev('JSON.stringify(ui.session.active.guess)'), '{"skip":true}', key + ': noted as skipped');
+    }
+    /* reduced motion: the guess, the telegraph at once, the reply 300 ms later (no slide), its words 300 ms after */
+    A.ev('(ui.reducedTest = true, 1)');
+    for (const key of keys.slice(0, 3)) {
+      show(key, 3);
+      A.ev(FIRST('tap'));
+      run(400);
+      const bar = WR(A, A.getNow() - 400).filter((w) => w.id === 'cbar').pop();
+      ok(bar && /data-act="theirReply"/.test(bar.v) && !/btn-big/.test(bar.v), key + ': reduced motion, the question\'s bar, ' + JSON.stringify(bar));
+      ok(!A.ev('ui.session.active.reply.tele'), key + ': no telegraph while it asks');
+      const tg = A.getNow();
+      A.ev(GUESS(A.ev('ui.session.active.sol[1]')));
+      let ws = WR(A, tg), bt = ws.filter((w) => w.id === 'bwrap' && w.t === tg).pop();
+      ok(bt && /rring/.test(bt.v) && /rdash/.test(bt.v) && !/guess/.test(bt.v), key + ': the telegraph at once (the guess, the same move, under it), ' + JSON.stringify(ws));
+      A.advance(290);
+      eq(A.ev('ui.session.active.reply.played'), false, key + ': not yet at 290');
+      A.advance(20);
+      ws = WR(A, tg + 300);
+      ok(ws.filter((w) => w.id === 'bwrap' && /rsolid/.test(w.v) && !/slow|slide/.test(w.v))[0], key + ': the reply at 300, no slide, ' + JSON.stringify(ws));
+      A.advance(280);
+      eq(A.ev('ui.session.active.phase'), 'reply', key + ': its words wait');
+      A.advance(40);
+      const b2 = WR(A, tg).filter((w) => w.id === 'cband').pop();
+      ok(b2 && b2.t === tg + 600 && R1(b2.v) === 'Your move' && /^You saw it: /.test(R2(b2.v)), key + ': the words at 600, ' + JSON.stringify(b2 && [b2.t - tg, R1(b2.v), R2(b2.v)]));
+    }
+    A.ev('(ui.reducedTest = false, 1)');
+    /* tier 2: the reply on its timeline, no question */
+    show(keys[0], 2);
+    A.ev(FIRST('tap'));
+    eq(A.ev('JSON.stringify([!!ui.session.active.reply.ask, !!ui.session.active.guessOn])'), '[false,false]', 'tier 2 asks nothing');
+    run(lead + 220 + 700);
+    ok(A.ev('ui.session.active.reply.tele'), 'tier 2: the telegraph at 600');
+    /* inside the line: the second move found plays their reply on its timeline */
+    const long = keys.filter((k) => A.ev(`model().byKey['${k}'] && (playerTier = function () { return 3; }, cardFor(model().byKey['${k}']).sol.length)`) >= 5)[0];
+    ok(long, 'a line with two replies');
+    show(long, 3);
+    A.ev(FIRST('tap'));
+    run(lead + 220 + 600);
+    A.click('theirReply', null, 1);
+    run(1500);
+    eq(A.ev('ui.session.active.phase'), 'guess', long + ': the second move asked');
+    A.ev('(function (a) { a.tapped = true; gradeMove(uciToMove(a.st, a.sol[2])); return 1; })(ui.session.active)');
+    eq(A.ev('JSON.stringify([ui.session.active.phase, !!ui.session.active.reply.ask])'), '["reply",false]', long + ': no question at its second reply');
+    /* a move that works too: the card ends, no question */
+    show(keys[0], 3);
+    A.ev(`(function (a) { var b = a.it.b, alt = legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci && a.sol.indexOf(u) < 0; })[0];
+      window.__tryPv = null; window.__tryCp = b.eb; window.__tryMate = null; a.tapped = true; gradeMove(alt); return 1; })(ui.session.active)`);
+    await tick(); await tick();
+    eq(A.ev('JSON.stringify([ui.session.active.phase, !!ui.session.active.alt, !!ui.session.active.guess, !!ui.session.active.reply])'), '["done",true,false,false]', 'a move that works too ends the card with no question');
+    A.ev('(window.__tryCp = null, 1)');
+    /* the engine down: no question, the reply on its timeline */
+    show(keys[1], 3);
+    A.ev('(SF.state = "failed", 1)');
+    A.ev(FIRST('tap'));
+    eq(A.ev('!!ui.session.active.reply.ask'), false, 'the engine down: no question');
+    run(lead + 220 + 700);
+    ok(A.ev('ui.session.active.reply.tele'), 'the engine down: the telegraph at 600');
+    A.ev('(window.readyEngine(), 1)');
+  });
+
+  await test('F10.1: the question by keyboard and by drag: the strip\'s field says "Type their move", its example a legal move of theirs off the line and off the list; their move typed is the guess, anything else is answered as not legal with such an example and guesses nothing; their piece dragged to a square guesses too, and dropped where it cannot go it snaps back with nothing guessed; either way their reply plays from the guess and row 2 says what it was', async () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(window.readyEngine(), window.__said = [], notice = function (t) { window.__said.push(t); }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const keys = JSON.parse(A.ev(T3F)), lead = A.ev('SLIDE_LEAD');
+    let typed = 0, dragged = 0;
+    for (const key of keys) {
+      if (typed >= 2 && dragged >= 2) break;
+      A.ev(`(playerTier = function () { return 3; }, window.readyEngine(), window.__show(model().byKey['${key}']), 1)`);
+      run(1000);
+      A.ev(FIRST('tap'));
+      run(lead + 220 + 200);
+      const alts = JSON.parse(A.ev(ALTS)), sol1 = A.ev('ui.session.active.sol[1]');
+      if (alts.length < 2 || !A.ev('!!ui.session.active.reply.ask')) continue;
+      /* the list: one move as good as their reply, one far worse */
+      A.ev(SET_RL([[sol1, 100, null], [alts[0], 90, null], [alts[1], -400, null]]));
+      const byKey = typed <= dragged, at = key + (byKey ? ' typed' : ' dragged');
+      const ex = JSON.parse(A.ev(`JSON.stringify((function (a) { var h = stripHtml(a, ui.session), m = /placeholder="e\\.g\\. ([^ ]+) or ([a-h][1-8][a-h][1-8][qrbn]?)"/.exec(h);
+        return { label: /Type their move <input/.test(h) && /aria-label="Type their move"/.test(h), uci: m && m[2], legal: !!(m && uciToMove(a.st, m[2]) && sanToMove(a.st, m[1])), avoid: cardAvoid(a).concat(replyList(a.it.b).l.map(function (x) { return x[0]; })) }; })(ui.session.active))`));
+      ok(ex.label, at + ': "Type their move"');
+      ok(ex.legal && ex.avoid.indexOf(ex.uci) < 0, at + ': its example a move of theirs off the line and the list, ' + JSON.stringify(ex));
+      const san = (u) => A.ev(`(function (a) { return capSan(a.st, uciToMove(a.st, '${u}')); })(ui.session.active)`);
+      const ysan = san(sol1), guess = byKey ? alts[0] : alts[1], gsan = san(guess);
+      let tg;
+      if (byKey) {
+        A.key('Enter', false, { id: 'kbmove', value: 'Zz9' });
+        const said = A.ev('window.__said.pop() || ""'), eg = /Try one like ([^ ]+) or ([a-h][1-8][a-h][1-8][qrbn]?)\./.exec(said);
+        ok(eg && ex.avoid.indexOf(eg[2]) < 0 && A.ev(`!!uciToMove(ui.session.active.st, '${eg ? eg[2] : ''}')`), at + ': not legal, with an example off the line and the list: ' + said);
+        eq(A.ev('JSON.stringify([!!ui.session.active.reply.ask, ui.session.active.guess || null])'), '[true,null]', at + ': nothing guessed');
+        tg = A.getNow();
+        A.key('Enter', false, { id: 'kbmove', value: A.ev(`(function (a) { return sanOf(a.st, uciToMove(a.st, '${guess}')); })(ui.session.active)`) });
+        typed++;
+      } else {
+        const m = JSON.parse(A.ev(`JSON.stringify((function (a) { var m = uciToMove(a.st, '${guess}'), to = -1;
+          for (var s = 0; s < 64 && to < 0; s++) if (s !== m.from && !legalMoves(a.st).some(function (x) { return x.from === m.from && x.to === s; }) && !(a.st.b[s] && isW(a.st.b[s]) === !!a.st.w)) to = s;
+          return { from: m.from, to: m.to, bad: to }; })(ui.session.active))`));
+        A.drag(m.from, m.bad);
+        eq(A.ev('JSON.stringify([!!ui.session.active.reply.ask, ui.session.active.guess || null, ui.session.active.sel, ui.session.active.note ? ui.session.active.note.id : null])'), '[true,null,-1,"T5"]', at + ': dropped where it cannot go, it snaps back (T5), nothing guessed');
+        run(2100);
+        tg = A.getNow();
+        A.drag(m.from, m.to);
+        dragged++;
+      }
+      eq(A.ev('JSON.stringify(ui.session.active.guess && [ui.session.active.guess.uci, ui.session.active.guess.v])'), JSON.stringify([guess, byKey ? 'good' : 'not']), at + ': the guess, judged');
+      ok(A.ev('(boardOptsFor(ui.session.active).opts.arrows || []).some(function (x) { return x.kind === "guess"; })'), at + ': its arrow');
+      run(2200);
+      const b2 = WR(A, tg).filter((w) => w.id === 'cband').pop();
+      const want = byKey ? gsan + ' was as good as ' + ysan + '.' : 'Not ' + gsan + ': they had ' + ysan + '.';
+      ok(b2 && b2.t === tg + 2050 && R1(b2.v) === 'Your move' && R2(b2.v) === want, at + ': their reply from the guess, then "Your move" / ' + want + ', ' + JSON.stringify(b2 && [b2.t - tg, R1(b2.v), R2(b2.v)]));
+    }
+    eq(typed + ' ' + dragged, '2 2', 'typed and dragged');
+  });
+
+  await test('F10.1: at tier 3 a forcing card is learned only once their best reply was guessed right: the clean find 16 days on that would make it learned holds its step without one (its interval again, "held" in what moved, Details says why), and is learned with one', () => {
+    const A = boot();
+    A.ev('(window.readyEngine(), 1)');
+    const keys = JSON.parse(A.ev(T3F)), key = keys[0], DAYMS = 864e5;
+    /* the line played to its end: the first reply skipped or guessed (u), the others on their own */
+    const PLAY = (guess) => `(function () {
+      playerTier = function () { return 3; }; window.readyEngine();
+      var it = model().byKey['${key}'];
+      ui.session = { mode: 't', label: 't', keys: [it.key], idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} };
+      var a = cardFor(it); ui.session.active = a; a.shownAt = Date.now() - 60000;
+      a.it.b.rl = { k: dzSig(a.it.b), n: 9, l: [[a.sol[1], 100, null]] };
+      gradeMove(uciToMove(a.st, a.sol[0]));
+      if (!a.reply || !a.reply.ask) return 'no question';
+      ${guess ? `makeGuess(a, uciToMove(a.st, a.sol[1]));` : ''}
+      for (var g = 0; g < 10 && a.phase !== 'done'; g++) {
+        var rp = a.reply;
+        if (rp) { theirReply(a, false); replyDone(a, rp); continue; }
+        gradeMove(uciToMove(a.st, a.sol[a.solIdx]));
+      }
+      var rec = srsLoad()[it.key];
+      return JSON.stringify({ phase: a.phase, result: a.result, held: a.held, learned: !!rec.learned, box: rec.box, streak: rec.streak, due: Math.round((rec.due - Date.now()) / ${DAYMS}), pg: !!rec.pg,
+        moved: ui.session.sum[it.key].m, details: detailsHtml().indexOf(GUESS_HELD) >= 0, hd: logLoad().pop().hd || null });
+    })()`;
+    const now = A.getNow();
+    A.ev(`(function () { var s = srsLoad(); s['${key}'] = { box: 3, streak: 2, due: ${now} - 3600e3, last: ${now} - 17 * ${DAYMS}, ls: ${now} - 17 * ${DAYMS}, lapses: 0, n: 2 }; srsSave(s); return 1; })()`);
+    const r1 = JSON.parse(A.ev(PLAY(false)));
+    eq(JSON.stringify([r1.phase, r1.result, r1.held, r1.learned, r1.box, r1.streak, r1.pg, r1.moved, r1.details, r1.hd]), JSON.stringify(['done', 'first', 'guess', false, 3, 2, false, 'held', true, 'guess']), 'no right guess: held, ' + JSON.stringify(r1));
+    ok(r1.due >= 13 && r1.due <= 19, 'its step\'s interval again: ' + r1.due + ' days');
+    eq(A.ev('GUESS_HELD'), 'Found first try. One right guess of their best reply makes it learned.', 'Details says why');
+    /* 17 days on, a right guess: learned */
+    A.setNow(now + 17 * DAYMS);
+    const r2 = JSON.parse(A.ev(PLAY(true)));
+    eq(JSON.stringify([r2.result, r2.held || null, r2.learned, r2.pg, r2.moved, r2.details]), JSON.stringify(['first', null, true, true, 'learned', false]), 'a right guess: learned, ' + JSON.stringify(r2));
+    /* one right guess is kept for good: a record that had it is learned without guessing again */
+    A.ev(`(function () { var s = srsLoad(); s['${key}'] = { box: 3, streak: 2, due: Date.now() - 3600e3, last: Date.now() - 17 * ${DAYMS}, ls: Date.now() - 17 * ${DAYMS}, lapses: 0, n: 5, pg: 1 }; srsSave(s); return 1; })()`);
+    const r3 = JSON.parse(A.ev(PLAY(false)));
+    eq(JSON.stringify([r3.held || null, r3.learned]), '[null,true]', 'a right guess on record: learned with the guess skipped, ' + JSON.stringify(r3));
+  });
+
+  /* ── the engine re-check (F10.4) ── */
+  await test('F10.4: at tier 3 a try 1 point inside the band near a verdict line (3 points from the best: solved at first) is searched again at 1,000,000 nodes, and that search decides (here a miss); one inside the close band (9 points) the same; a re-search unanswered 8 s after the try leaves the first verdict, its search stopped, "Checking…" covering the wait; outside the bands (7 points) or at tier 2, one search', async () => {
+    const A = boot();
+    A.ev('(window.readyEngine(), window.__re = [], 1)');
+    /* the 1,000,000-node search of a try: scored with window.__reCp (the solver's side), or held (window.__reHold) */
+    A.ev(`(function () { var e0 = engineEval;
+      engineEval = function (fen, mt, prio, opts) {
+        if (!(opts && opts.tag === 'check' && mt && mt.nodes === CONFIRM_NODES)) return e0.apply(this, arguments);
+        var a = ui.session.active, sign = myPov(a.it) ? 1 : -1, u = opts.searchmoves[0], ex = opts.searchmoves[1];
+        var job = { fen: fen, opts: opts, prio: prio };
+        window.__re.push(job);
+        var lines = [{ cp: window.__reCp * sign, mate: null, pv: [u] }].concat(ex ? [{ cp: a.it.b.eb * sign, mate: null, pv: [ex] }] : []);
+        var r = { cp: lines[0].cp, mate: null, bestUci: u, pv: lines[0].pv, lines: lines, depth: 22, stopped: false };
+        return window.__reHold ? new Promise(function (res) { job.res = res; }) : Promise.resolve(r);
+      };
+      return 1; })()`);
+    /* a one-move card with no safe win and no mate: a try scored from the best by gap points */
+    const key = A.ev(`(function () { playerTier = function () { return 3; }; return allMistakes().filter(trainable).filter(function (x) { var c = cardFor(x); return c && !c.sol && !(x.b.mb > 0) && winPct(x.b.eb) < 60 && winPct(x.b.eb) > 30 && familyOf(patternOf(x.b)).key !== 'chances'; })[0].key; })()`);
+    const tryAt = (tier, gap, reGap, hold) => A.ev(`(function () { ${OPEN} ${TRY} ${AFTER}
+      window.__re = []; window.__stops = []; window.__reHold = ${!!hold}; window.__bestCp = null;
+      var a = openAt('${key}', ${tier}); a.shownAt = 0;
+      var b = a.it.b, off = offBook(a);
+      window.__reCp = cpFromWin(winPct(b.eb) - ${reGap});
+      window.__t0 = Date.now();
+      tryMove(a, moveUci(off), null, cpFromWin(winPct(b.eb) - ${gap}), null);
+      return a.phase; })()`);
+    const state = () => JSON.parse(A.ev('JSON.stringify({ phase: ui.session.active.phase, kind: ui.session.active.tried ? ui.session.active.tried.kind : null, result: ui.session.active.result || null, re: window.__re.map(function (j) { return j.opts.searchmoves.length + ":" + j.prio; }), said: ui.session.active.checkSaid, rc: ui.session.active.rc || null, stops: window.__stops.filter(function (s) { return s === "check"; }).length })'));
+    /* 3 points: solved by the first search, a miss by the second, which decides */
+    eq(tryAt(3, 3, 20, false), 'checking', 'the try is checked');
+    await tick(); await tick(); await tick();
+    let s = state();
+    eq(JSON.stringify([s.phase, s.kind, s.re, s.rc && [s.rc.n, s.rc.flip, s.rc.late]]), JSON.stringify(['tried', 'miss', ['2:true'], [1, 1, 0]]), 'a second search at 1,000,000 nodes decides: ' + JSON.stringify(s));
+    /* 9 points (the close band): close at first, solved by the second search */
+    tryAt(3, 9, 1, false);
+    await tick(); await tick(); await tick();
+    s = state();
+    eq(JSON.stringify([s.phase, s.result, s.re.length]), JSON.stringify(['done', 'first', 1]), 'the close band: the second search decides (found first try), ' + JSON.stringify(s));
+    /* held: "Checking…" until 8 s after the try, then the first verdict (solved), the search stopped */
+    tryAt(3, 3, 20, true);
+    await tick(); await tick(); await tick();
+    s = state();
+    eq(JSON.stringify([s.phase, s.re.length]), '["checking",1]', 'the second search runs: ' + JSON.stringify(s));
+    A.advance(300);
+    eq(state().said, 1, 'Checking… at 300 ms');
+    A.advance(2800);
+    eq(state().said, 2, 'Still checking at 3 s');
+    A.advance(4800);
+    eq(state().phase, 'checking', 'still checking at 7.9 s');
+    A.advance(200);
+    s = state();
+    eq(JSON.stringify([s.phase, s.result, s.stops, s.rc && [s.rc.n, s.rc.flip, s.rc.late]]), JSON.stringify(['done', 'first', 1, [1, 0, 1]]), 'at 8 s the first verdict stands, the search stopped: ' + JSON.stringify(s));
+    /* its late answer changes nothing */
+    A.ev('(function () { var j = window.__re[0]; j.res({ cp: 0, mate: null, pv: [], lines: [], stopped: true }); return 1; })()');
+    await tick(); await tick();
+    eq(state().result, 'first', 'a late answer changes nothing');
+    /* outside the bands, and at tier 2: one search */
+    tryAt(3, 7, 20, false);
+    await tick(); await tick(); await tick();
+    s = state();
+    eq(JSON.stringify([s.phase, s.kind, s.re.length]), JSON.stringify(['tried', 'close', 0]), '7 points: one search, ' + JSON.stringify(s));
+    tryAt(2, 3, 20, false);
+    await tick(); await tick(); await tick();
+    s = state();
+    eq(JSON.stringify([s.phase, s.result, s.re.length]), JSON.stringify(['done', 'first', 0]), 'tier 2: one search, ' + JSON.stringify(s));
+    /* a first answer that comes after 8 s is the verdict at once */
+    A.ev('(function () { window.__holdTry = true; return 1; })()');
+    A.ev(`(function () { ${OPEN} ${TRY} ${AFTER} var a = openAt('${key}', 3); a.shownAt = 0; window.__re = []; tryMove(a, moveUci(offBook(a)), null, cpFromWin(winPct(a.it.b.eb) - 3), null); return 1; })()`);
+    A.advance(8500);
+    A.ev('(function () { var j = window.__evals.filter(function (x) { return x.opts.tag === "check" && x.res; }).pop(); j.res(j.answer); return 1; })()');
+    await tick(); await tick(); await tick();
+    s = state();
+    eq(JSON.stringify([s.phase, s.result, s.re.length]), JSON.stringify(['done', 'first', 0]), 'a first answer after 8 s: no second search, ' + JSON.stringify(s));
+    A.ev('(window.__holdTry = false, 1)');
+  });
+
+  /* ── slice 10 with game-mode reviews and beginner teaching ── */
+  await test('F10.1 with F8.3: at tier 3 the time "Now their best reply?" stands open is no part of the solve time: a forcing review at its learned step (game mode, its Review tag beside the question), its question open 90 s and its moves found in 20 s, is learned with a right guess (the log keeps 20 s, and the 90 apart); with the guess skipped it holds for the guess, never the clock; found in 70 s it holds for F8.3 first ("Found first try in 1:10. Under 60 s makes it learned.", the question\'s 30 s left out), the next quick find holds for the guess, and a right guess makes it learned; a first sight found in 10 s keeps its week though the question stood a minute', () => {
+    const A = boot();
+    A.ev('(window.readyEngine(), 1)');
+    const key = JSON.parse(A.ev(T3F))[0], DAYMS = 864e5;
+    /* the card at its learned step: box 3, a run of two, 17 days on (written as it is: srsSave would
+       keep the record answered since) */
+    const STEP = `(function () { var s = srsLoad(); s['${key}'] = { box: 3, streak: 2, due: Date.now() - 3600e3, last: Date.now() - 17 * ${DAYMS}, ls: Date.now() - 17 * ${DAYMS}, lapses: 0, n: 2 }; store.set(srsKey(), s); srsMem = null; srsRevision++; return 1; })()`;
+    /* opened in a set of its own (its list on the record: their reply the best), the first move found
+       find1 ms after it shows, the question open for open ms, then right (their reply) or skipped
+       (Their reply), the rest of the line found find2 ms after the reply's words */
+    const play = (find1, open, right, find2) => {
+      A.ev(`(function () {
+        playerTier = function () { return 3; }; window.readyEngine();
+        var it = model().byKey['${key}'];
+        ui.session = { mode: 't', label: 't', keys: [it.key], idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} };
+        var a = cardFor(it); ui.session.active = a; a.shownAt = Date.now();
+        a.it.b.rl = { k: dzSig(a.it.b), n: 9, l: [[a.sol[1], 100, null]] };
+        window.__a = a; return 1; })()`);
+      A.advance(find1);
+      const q = JSON.parse(A.ev(`(function (a) { gradeMove(uciToMove(a.st, a.sol[0])); var d = displayFor(a);
+        return JSON.stringify({ game: a.game, ask: !!(a.reply && a.reply.ask), band: [d.row1, d.row2, d.tag].join(' | ') }); })(window.__a)`));
+      A.advance(open);
+      A.ev(`(function (a) { var rp = a.reply; ${right ? 'makeGuess(a, uciToMove(a.st, a.sol[1]));' : ''} theirReply(a, false); replyDone(a, rp); return 1; })(window.__a)`);
+      A.advance(find2);
+      return Object.assign(q, JSON.parse(A.ev(`(function (a) {
+        for (var g = 0; g < 10 && a.phase !== 'done'; g++) {
+          var rp = a.reply;
+          if (rp) { theirReply(a, false); replyDone(a, rp); continue; }
+          gradeMove(uciToMove(a.st, a.sol[a.solIdx]));
+        }
+        var rec = srsLoad()[a.key], e = logLoad().pop();
+        return JSON.stringify({ result: a.result, held: a.held || null, learned: !!rec.learned, box: rec.box, streak: rec.streak, pg: !!rec.pg, ms: a.ms,
+          moved: ui.session.sum[a.key].m || '', s: e.s, gt: e.gt || null, tb: e.tb || null, hd: e.hd || null, gu: e.gu || null,
+          dt: (/<p class="dt-more dt-held">([^<]*)<\\/p>/.exec(detailsHtml()) || [])[1] || null }); })(window.__a)`)));
+    };
+    /* a right guess, the question open 90 s, the moves found in 20 s: learned */
+    A.ev(STEP);
+    let r = play(10000, 90000, true, 10000);
+    eq(JSON.stringify([r.game, r.ask, r.band]), JSON.stringify([true, true, 'Right | Now their best reply? | Review']), 'a game-mode review asks, beside its Review tag');
+    eq(JSON.stringify([r.result, r.held, r.learned, r.moved, r.ms, r.s, r.gt, r.tb, r.hd, r.gu]), JSON.stringify(['first', null, true, 'learned', 20000, 20000, 90000, null, null, 'saw']),
+      'the question\'s 90 s left out: found in 20 s, learned; the log keeps the question apart, ' + JSON.stringify(r));
+    /* the guess skipped: held for the guess, not for the clock */
+    A.ev(STEP);
+    r = play(10000, 90000, false, 10000);
+    eq(JSON.stringify([r.result, r.held, r.learned, r.box, r.streak, r.moved, r.ms, r.gt, r.tb, r.hd, r.gu, r.dt]), JSON.stringify(['first', 'guess', false, 3, 2, 'held', 20000, 90000, null, 'guess', 'skip', 'Found first try. One right guess of their best reply makes it learned.']),
+      'skipped: held for want of a right guess, never as slow, ' + JSON.stringify(r));
+    /* found in 70 s (the question's 30 s apart): F8.3's hold first, its time without the question */
+    A.ev(STEP);
+    r = play(40000, 30000, false, 30000);
+    eq(JSON.stringify([r.result, r.held, r.learned, r.box, r.streak, r.moved, r.ms, r.gt, r.tb, r.hd, r.dt]), JSON.stringify(['first', 'slow', false, 3, 2, 'held', 70000, 30000, 1, 'slow', 'Found first try in 1:10. Under 60 s makes it learned.']),
+      'slow and no right guess: F8.3\'s reason, its time without the question, ' + JSON.stringify(r));
+    /* its step again: the next quick find, the guess skipped, holds for the guess */
+    A.setNow(A.getNow() + 17 * DAYMS);
+    r = play(5000, 45000, false, 5000);
+    eq(JSON.stringify([r.held, r.learned, r.streak, r.moved, r.hd]), JSON.stringify(['guess', false, 2, 'held', 'guess']), 'then quick, the guess skipped: held for the guess, ' + JSON.stringify(r));
+    /* and the next with a right guess: learned */
+    A.setNow(A.getNow() + 17 * DAYMS);
+    r = play(5000, 45000, true, 5000);
+    eq(JSON.stringify([r.held, r.learned, r.pg, r.moved]), JSON.stringify([null, true, true, 'learned']), 'then a right guess: learned, ' + JSON.stringify(r));
+    /* a first sight: found in 10 s, the question open a minute, keeps its week (box 2) */
+    A.ev(`(srsRestore('${key}', null), 1)`);
+    r = play(5000, 60000, true, 5000);
+    eq(JSON.stringify([r.game, r.ask, r.result, r.box, r.ms, r.gt]), JSON.stringify([false, true, 'first', 2, 10000, 60000]), 'a first sight (cued) asks too; found in 10 s, its week, ' + JSON.stringify(r));
+  });
+
+  await test('F10.1 with F9.3, F9.4: practice packs and lessons never ask for their reply: at tier 3 a lesson\'s frames, its position and a pack of five are played with no question and no reply search; guessable() refuses a practice position or a lesson even handed a forcing line, where an own forcing card after its first move asks', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      playerTier = function () { return 3; }; window.readyEngine(); window.__evals = [];
+      var out = { cards: [], asked: 0 };
+      var play = function () {
+        for (var i = 0; i < 20 && ui.session && !ui.session.finished; i++) {
+          var a = ui.session.active;
+          if (!a) { loadCard(); a = ui.session.active; if (!a) break; }
+          out.cards.push((a.lesson ? 'lesson' : a.prac ? 'practice' : 'own') + (guessable(a) ? ' asks' : ''));
+          if (a.phase === 'lesson') { lessonStep(1); continue; }
+          gradeMove(uciToMove(a.st, a.bestUci));
+          if (a.reply || a.guessOn || a.askAt) out.asked++;
+          nextCard();
+        }
+      };
+      startLesson('safety'); play();
+      ui.session = null; startPack('fork'); play();
+      out.searched = window.__evals.filter(function (j) { return j.opts && j.opts.rl; }).length;
+      /* handed a line, still never */
+      var line = ['a2a3', 'a7a6', 'b2b3'];
+      var p = pracCardFor(pracItem('pk:' + PSKILL_OF.safety.tryId)), l = lessonCardFor(lessonItem('ls:safety'));
+      out.handed = [guessable(Object.assign({}, p, { sol: line })), guessable(Object.assign({}, l, { sol: line }))];
+      var own = allMistakes().filter(trainable).map(cardFor).filter(function (c) { return c && c.sol; })[0], st = cloneState(own.pre);
+      applyMove(st, uciToMove(st, own.sol[0]));
+      out.own = guessable(Object.assign({}, own, { st: st }));
+      return JSON.stringify(out); })()`));
+    eq(r.cards.join(','), 'lesson,lesson,lesson,practice,lesson,lesson,lesson,practice,practice,practice,practice,practice', 'the lessons\' frames and positions, then the pack: none asks');
+    eq(r.asked, 0, 'no question on any');
+    eq(r.searched, 0, 'no reply list searched');
+    eq(JSON.stringify(r.handed), '[false,false]', 'a practice position or a lesson handed a line: no question');
+    eq(r.own, true, 'an own forcing card after its first move: the question');
   });
 
   results.forEach((l) => console.log(l));

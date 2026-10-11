@@ -1012,6 +1012,11 @@ body.in-session{padding-bottom:0}
 .clock-rows p{margin:0 0 8px;font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-1);font-variant-numeric:tabular-nums}
 .clock-rows p:last-child{margin-bottom:0}
 .clock-rows a{font-weight:700;white-space:nowrap}
+/* how your games are decided (F10.3, tier 3): the clock's card, each row's
+   name in bold, the peer figure under its count */
+.dec-rows b{font-weight:700}
+.dec-rows p{margin-bottom:12px}
+.dec-peer{display:block;margin-top:2px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
 .slice{background:var(--surface-1);border-radius:var(--r-btn);padding:16px 20px;margin:0 0 12px}
 .slice p{margin:0 0 6px;font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-1)}
 .slice a{font-size:var(--fs-small);font-weight:700}

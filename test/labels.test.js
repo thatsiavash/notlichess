@@ -53,16 +53,38 @@ const FRAMES = `function eachFrame(it, cb) {
     tryAgain(); a.triedHold = false; cb('after Try again', a);
   }
   if (a.sol) {
+    /* at tier 3 the first move asks for their best reply (F10.1): the engine
+       up for it, its list never searched here (each guess below sets one) */
+    var sf0 = SF.state, ee0 = engineEval;
+    SF.state = 'ready'; engineEval = function () { return new Promise(function () {}); };
     a = openCard(it);
     for (var k = 0; k < a.sol.length - 1; k += 2) {
       gradeMove(uciToMove(a.st, a.sol[k]));
       var rp = a.reply;
       if (!rp) break;
       a.animMove = null; cb('forcing ' + k + ', right', a);
+      /* the guess: their reply itself, its arrow and its label */
+      if (rp.ask) { makeGuess(a, uciToMove(a.st, a.sol[k + 1])); a.animMove = null; cb('forcing ' + k + ', guessed', a); }
       rp.tele = true; cb('forcing ' + k + ', the telegraph', a);
       theirReply(a, false); a.animMove = null; a.animSlow = false; cb('forcing ' + k + ', landed', a);
       replyDone(a, rp); cb('forcing ' + k + ', your move', a);
     }
+    /* the other guesses' words: within 4 points, more, and off a list that cannot rule it out */
+    [['good', 30], ['not', -400], ['open', 90]].forEach(function (c) {
+      a = openCard(it);
+      gradeMove(uciToMove(a.st, a.sol[0]));
+      var rq = a.reply;
+      if (!rq || !rq.ask) return;
+      var alts = legalMoves(a.st).map(moveUci).filter(function (u) { return u !== a.sol[1]; });
+      if (alts.length < (c[0] === 'open' ? 3 : 1)) return;
+      a.it.b.rl = { k: dzSig(a.it.b), n: alts.length + 1, l: c[0] === 'open' ? [[a.sol[1], 100, null], [alts[1], 95, null], [alts[2], 90, null]] : [[a.sol[1], 50, null], [alts[0], c[1], null]] };
+      makeGuess(a, uciToMove(a.st, alts[0])); a.animMove = null; cb('forcing 0, guessed ' + c[0], a);
+      rq.tele = true; cb('forcing 0, the telegraph after a guess ' + c[0], a);
+      theirReply(a, false); a.animMove = null; a.animSlow = false;
+      replyDone(a, rq); cb('forcing 0, your move after a guess ' + c[0], a);
+      delete a.it.b.rl;
+    });
+    SF.state = sf0; engineEval = ee0;
   }
   a = openCard(it);
   if (!a.sol) solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
@@ -97,6 +119,23 @@ function eachGameFrame(it, cb) {
       a.hints = 1; a.hintAt = a.misses; a.hintAfter = true; cb('game after a miss, hint 1', a); a.hints = 2; cb('game after a miss, hint 2', a);
     }
     a = mk(); reveal(); a.animMove = null; cb('game shown', a);
+    /* at tier 3 a forcing review asks for their best reply too (F10.1), beside its Review tag: the
+       question, a guess, the telegraph, the reply landed (the engine up for it, no list searched) */
+    a = mk();
+    if (a.sol) {
+      var sf0 = SF.state, ee0 = engineEval;
+      SF.state = 'ready'; engineEval = function () { return new Promise(function () {}); };
+      gradeMove(uciToMove(a.st, a.sol[0]));
+      var rp = a.reply;
+      if (rp && rp.ask) {
+        a.animMove = null; cb('game forcing, asked', a);
+        makeGuess(a, uciToMove(a.st, a.sol[1])); a.animMove = null; cb('game forcing, guessed', a);
+        rp.tele = true; cb('game forcing, the telegraph', a);
+        theirReply(a, false); a.animMove = null; a.animSlow = false; cb('game forcing, landed', a);
+        replyDone(a, rp); cb('game forcing, your move', a);
+      }
+      SF.state = sf0; engineEval = ee0;
+    }
   }
   var m2 = srsLoad();
   if (was) m2[it.key] = JSON.parse(was); else delete m2[it.key];
@@ -188,7 +227,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
         var bad = function (x) { out.push(what + ' at ' + px + (f.opts.flip ? ' flipped' : '') + ', "' + lb.text + '": ' + x); };
         if (lb.x < -0.01 || lb.y < -0.01 || lb.x + lb.w > px + 0.01 || lb.y + lb.h > px + 0.01) bad('off the board ' + JSON.stringify([lb.x, lb.y, lb.w, lb.h]));
         var ends = {};
-        all(new RegExp('<line class="(bad-arrow|threat-arrow|reply-arrow|good-arrow|ghost-arrow)"[^>]* x1="' + num + '" y1="' + num + '" x2="' + num + '" y2="' + num + '"[^>]* stroke-width="' + num + '"', 'g'), svg).forEach(function (m) {
+        all(new RegExp('<line class="(bad-arrow|threat-arrow|reply-arrow|guess-arrow|good-arrow|ghost-arrow)"[^>]* x1="' + num + '" y1="' + num + '" x2="' + num + '" y2="' + num + '"[^>]* stroke-width="' + num + '"', 'g'), svg).forEach(function (m) {
           var x1 = +m[2], y1 = +m[3], x2 = +m[4], y2 = +m[5], w = +m[6], l = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / l, uy = (y2 - y1) / l;
           ends[sq(x1, y1)] = ends[sq(x2 + ux * 20, y2 + uy * 20)] = 1;
           /* the shaft to the head's tip, its width plus 4 px each side */
@@ -465,6 +504,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
                 if (t === gw) by['ghost in words'] = 1;
               }
               else if (t === 'their reply') { var rr = arrowOf(f, mk); if (!rr || rr.kind !== 'reply') bad('no reply arrow'); }
+              /* the player's guess of their reply (F10.1): on its own arrow, the move guessed */
+              else if (t === 'your guess') { var gr = arrowOf(f, mk); if (!gr || gr.kind !== 'guess' || !a.guess || gr.from !== a.guess.from || gr.to !== a.guess.to) bad('not the guess\\'s arrow'); }
               else if (t === 'better') { var br = arrowOf(f, mk); if (!br || br.kind !== 'better' || br.key !== 'better' || a.phase !== 'done' || a.view.mode !== 'story') bad('not the story\\'s green arrow'); }
               else if (t === 'the answer') { var an = arrowOf(f, mk); if (!an || an.kind !== 'better' || an.key !== 'answer' || a.phase !== 'done' || a.view.mode !== 'show') bad('not the answer shown'); }
               else if (/^free /.test(t)) {
@@ -786,7 +827,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
             if (lab.indexOf((f.st.w ? 'White' : 'Black') + ' to move.') !== 0) bad.push('who moves');
             /* each drawn mark, counted in the svg, against its words */
             var pairs = [[/class="bad-arrow"/g, /Red arrow: your game move, /g, 'game arrow'], [/class="threat-arrow"/g, /Dashed red arrow: /g, 'threat arrow'],
-              [/class="reply-arrow"(?![^>]*stroke-dasharray)/g, /Blue arrow: /g, 'landed reply'], [/class="good-arrow"/g, /Green arrow: /g, 'green arrow'],
+              [/class="reply-arrow"(?![^>]*stroke-dasharray)/g, /Blue arrow: (?!your guess)/g, 'landed reply'], [/class="guess-arrow"/g, /Blue arrow: your guess of (White|Black)'s reply, /g, 'guess arrow'], [/class="good-arrow"/g, /Green arrow: /g, 'green arrow'],
               [/class="ghost-arrow"/g, /Gold arrow: /g, 'gold arrow'], [/class="hint-ring"/g, /Gold ring: /g, 'hint ring'], [/class="ring-target"/g, /Dashed gold ring: /g, 'prize ring'],
               [/token-lost/g, / was taken on |They could have taken your /g, 'lost token'], [/token-won/g, /You won a |@s0won@/g, 'won token'], [/class="guard-line"/g, /Green dots: /g, 'guard dots'],
               [/<g class="tried"/g, /Faint red line: |Red cross: a move /g, 'tried move'], [/url[(]#checkglow/g, / king is in check[.]/g, 'check'],
@@ -835,8 +876,9 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
               by['S0 pair'] = 1;
               if (!/Dashed red arrow: the [a-z]+ on [a-h][1-8] can (take|give check) on /.test(lab) || /after your game move/.test(lab)) bad.push('the S0 pair not read on its own board');
             }
-            /* a telegraphed or sliding reply is not named before it lands */
-            if ((o.arrows || []).some(function (x) { return x.kind === 'reply' && !x.solid; }) && /Blue arrow/.test(lab)) bad.push('the reply named before it landed');
+            /* a telegraphed or sliding reply is not named before it lands (the
+               player's own guess beside it, F10.1, is theirs to hear) */
+            if ((o.arrows || []).some(function (x) { return x.kind === 'reply' && !x.solid; }) && /Blue arrow: (?!your guess)/.test(lab)) bad.push('the reply named before it landed');
             n++;
             bad.forEach(function (x) { out.push('tier ' + tier + ' ' + it.key + ' ' + what + ': ' + x + ' | ' + lab); });
           });
@@ -858,7 +900,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
       return JSON.stringify({ out: out, n: n, by: Object.keys(by).sort() }); })()`));
     ok(r.n > 2000, 'frames ' + r.n);
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' || '));
-    ['game arrow', 'threat arrow', 'landed reply', 'green arrow', 'hint ring', 'lost token', 'won token', 'guard dots', 'tried move', 'tried cross', 'tick', 'cross', 'i', 'ghost', 'ghost on a piece', 'S0 pair', 'could token', 'castled rook'].forEach((k) => ok(r.by.indexOf(k) >= 0, 'never said: ' + k + ' (' + r.by.join(', ') + ')'));
+    ['game arrow', 'threat arrow', 'landed reply', 'guess arrow', 'green arrow', 'hint ring', 'lost token', 'won token', 'guard dots', 'tried move', 'tried cross', 'tick', 'cross', 'i', 'ghost', 'ghost on a piece', 'S0 pair', 'could token', 'castled rook'].forEach((k) => ok(r.by.indexOf(k) >= 0, 'never said: ' + k + ' (' + r.by.join(', ') + ')'));
   });
 
   await test('LABELS_ON false: no label on any frame, first sight included, and none painted or remembered', () => {

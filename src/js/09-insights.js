@@ -427,3 +427,86 @@ function clockReport() {
   };
 }
 
+/* ── how your games are decided (F10.3, master) ──────────────────────────
+   At tier 3, three counts over the window's own games, defined as record()
+   in tools/build-peer-baselines.py so that the peer figures measure the
+   same thing: a game reached +2 when the player's winning chances after
+   some ply came to those of 200 centipawns or more (winPct(200), 67.6; a
+   mate sits at the end of the scale, as the script's 1500 clamp does), and
+   fell to -2 at winPct(-200) or less; counted over games of 6 plies or more
+   with 5 or more of the player's moves scored. Converting wins: won of
+   those that reached +2; saving bad positions: not lost of those that fell
+   to -2; slow slides: losses that no single move decided (the headline
+   counts the others). A row needs DECIDED_MIN qualifying games. Beside the
+   first two, the peer figure (PEER_DECIDED): lichess rapid, blitz, bullet
+   and classical games of July 2026, 6.7 million, per 100-point band (800
+   and under to 2400 and over), trimmed from the v1 platform's blob to
+   these two numbers, at the player's lichess-equivalent rating
+   (bandEquivRating) in each format, weighted by the player's qualifying
+   games per format. Context, never a verdict: the peer games were scored
+   by lichess's own analysis, the player's by the series stored here */
+var DECIDED_MIN = 10;
+var CONV_WIN = winPct(200), RES_WIN = winPct(-200);
+var PEER_DECIDED = { src: 'lichess_db_standard_rated_2026-07', from: 800,
+  bullet: [[53.7,41.5],[56.5,43.4],[58.1,42.4],[58.5,42.1],[59.2,42.3],[59.1,41.5],[60.1,41.2],[61.5,41.6],[61.9,40.7],[62.3,39.7],[61.5,38.5],[61.7,38.7],[61.3,37.1],[60.7,34.8],[59.4,33.2],[61.0,35.0],[64.0,34.5]],
+  blitz: [[58.9,38.4],[61.1,38.9],[61.7,37.9],[63.3,37.8],[63.7,37.8],[63.5,36.4],[64.1,36.3],[65.9,36.4],[65.0,35.2],[65.0,34.3],[65.2,33.4],[65.7,32.4],[66.0,31.6],[66.8,31.7],[67.6,31.1],[69.5,32.0],[71.2,33.4]],
+  rapid: [[59.0,37.7],[61.2,37.4],[63.5,37.8],[63.0,36.4],[63.9,35.9],[64.5,35.6],[64.8,34.4],[66.8,34.1],[65.8,33.4],[66.3,33.1],[67.9,32.7],[68.0,31.4],[69.5,31.0],[71.9,30.6],[74.1,30.6],[77.1,31.6],[77.9,33.9]],
+  classical: [[58.7,27.4],[59.1,38.5],[61.7,35.1],[63.9,34.2],[62.8,33.8],[63.1,32.4],[67.1,34.4],[67.8,31.9],[66.9,31.3],[67.1,32.8],[69.2,31.4],[72.1,31.8],[75.0,28.6],[76.5,35.2],[75.8,35.4]] };
+/* a game's swings from its stored series, the player's side: the first
+   ply after which it stood at +2 (reach) and at -2 (fell), or null; null
+   for a game too short or too little scored to count */
+function gameSwings(g) {
+  if (!g.wp || (g.plies || 0) < 6) return null;
+  var mine = g.color === 'white' ? 0 : 1, scored = 0, reach = null, fell = null;
+  for (var i = 0; i < g.wp.length; i++) {
+    var w = wpAt(g, i);
+    if (w == null) continue;
+    if (i % 2 === mine) scored++;
+    if (reach == null && w >= CONV_WIN) reach = i;
+    if (fell == null && w <= RES_WIN) fell = i;
+  }
+  return scored >= 5 ? { reach: reach, fell: fell } : null;
+}
+/* the peer rate (k 0: converting, 1: saving) for the formats of games gs,
+   weighted by their count; null when a format has none (a daily game, a
+   rating unknown, a band the blob lacks) */
+function peerDecided(gs, k) {
+  var by = {}, sum = 0, n = 0, ok = true;
+  gs.forEach(function (g) { by[g.perf] = (by[g.perf] || 0) + 1; });
+  Object.keys(by).forEach(function (p) {
+    var rows = PEER_DECIDED[p], u = data.user && data.user.perfs && data.user.perfs[p], r = u ? bandEquivRating(p, u.rating) : null;
+    var row = rows && r != null ? rows[Math.max(0, Math.min(16, Math.floor(r / 100) - PEER_DECIDED.from / 100))] : null;
+    if (!row) { ok = false; return; }
+    sum += row[k] * by[p]; n += by[p];
+  });
+  return ok && n ? sum / n : null;
+}
+/* the three rows' counts: {conv: {n, won, peer}, save: {n, saved, peer},
+   slow: {n (losses), none (decided by no single move)}}, each null under
+   DECIDED_MIN qualifying games */
+function decidedReport() {
+  var reached = [], fell = [], won = 0, saved = 0, losses = 0, slow = 0;
+  /* the moves that decided games are marked by the model */
+  model();
+  coveredGames().forEach(function (g) {
+    if (g.res === 'loss') { losses++; if (!(g.bl || []).some(function (b) { return b.d === 1; })) slow++; }
+    var s = gameSwings(g);
+    if (!s) return;
+    if (s.reach != null) { reached.push(g); if (g.res === 'win') won++; }
+    if (s.fell != null) { fell.push(g); if (g.res !== 'loss') saved++; }
+  });
+  return {
+    conv: reached.length >= DECIDED_MIN ? { n: reached.length, won: won, peer: peerDecided(reached, 0) } : null,
+    save: fell.length >= DECIDED_MIN ? { n: fell.length, saved: saved, peer: peerDecided(fell, 1) } : null,
+    slow: losses >= DECIDED_MIN ? { n: losses, none: slow } : null
+  };
+}
+/* the positions behind a row (its Practise these): the big mistakes made
+   after a game reached +2 in the games not won ('convert'), or after it
+   fell to -2 in the games lost ('save') */
+function decidedPosition(it, kind) {
+  var g = it.g, s = gameSwings(g);
+  if (!s) return false;
+  return kind === 'convert' ? g.res !== 'win' && s.reach != null && it.b.p > s.reach : g.res === 'loss' && s.fell != null && it.b.p > s.fell;
+}
+

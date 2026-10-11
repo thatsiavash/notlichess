@@ -183,6 +183,30 @@
     const r = $('#bwrap').getBoundingClientRect(), p = [r.left + r.width / 2, r.top + r.height / 2];
     fire('pointerdown', p); fire('pointermove', [p[0] + dx / 2, p[1]]); fire('pointerup', [p[0] + dx, p[1]]);
   };
+  /* F10.1, tier 3: the first move of a forcing line asks for their best reply. Nothing moves until a guess
+     (or Their reply); the guess here is their reply itself, tapped or dragged on their piece and its square:
+     its arrow at once with "your guess", then the reply on its own timeline and "You saw it: X." */
+  W.asks = 0;
+  const answerAsk = async (how) => {
+    const x = T.card();
+    if (!(x.phase === 'reply' && x.reply && x.reply.ask)) return false;
+    W.asks++;
+    await sleep(400);
+    const b0 = $('#bwrap').innerHTML;
+    await sleep(2200);
+    ok('F10.1: their best reply asked for: "Right" / "Now their best reply?" beside [Their reply] (no honey button), nothing moving', !!T.card().reply && T.card().reply.ask && !T.card().reply.played && $('#bwrap').innerHTML === b0
+      && text('#cband .bd-r1') === 'Right' && text('#cband .bd-r2') === 'Now their best reply?' && /^\s*Their reply\s*$/.test(text('#cbar')) && !$('#cbar .btn-big') && !$('#bwrap .marks .reply-arrow, #bwrap .marks .reply-ring'), text('#cband') + ' | ' + text('#cbar'));
+    bandFits('their reply asked for');
+    const u = x.reply.uci;
+    if (how === 'drag') dragMove(u); else await tapMove(u);
+    await sleep(200);
+    const gl = $('#bwrap .blabel');
+    ok('F10.1: the guess draws its arrow (labelled "your guess" where the frame has room) and nothing slides yet', !!$('#bwrap .marks .guess-arrow') && !!T.card().reply && !T.card().reply.played && (!gl || gl.textContent === 'your guess'), gl && gl.textContent);
+    bandFits('their reply guessed');
+    const said = await until(() => T.card().phase === 'guess' && /^You saw it: /.test(text('#cband .bd-r2')), 6000);
+    ok('F10.1: their reply plays from the guess, then "Your move" / "You saw it: X."', !!said && text('#cband .bd-r1') === 'Your move' && !$('#bwrap .marks .guess-arrow'), text('#cband'));
+    return true;
+  };
   const legalOther = (c) => {
     /* a legal move that is neither the answer nor the game move */
     return T.ev(`(function () { var a = ui.session.active, ms = legalMoves(a.st).map(moveUci);
@@ -281,7 +305,8 @@
     for (let i = 0; i < want.length; i += 2) {
       await until(() => T.card().phase === 'guess', 6000);
       await tapMove(want[i]);
-      await until(() => ['done', 'guess'].indexOf(T.card().phase) !== -1 && (T.card().phase === 'done' || T.card().solIdx > i), 6000);
+      await until(() => T.card().phase === 'done' || T.card().solIdx > i, 6000);
+      await answerAsk('tap');
     }
     c = await until(() => { const x = T.card(); return x.phase === 'done' ? x : null; }, 15000);
     ok('playing the answer solves the card', !!c && (c.result === 'first' || c.result === 'hint'), c && c.result);
@@ -679,6 +704,7 @@
         dragMove(want2[i]);
         await until(() => T.card().phase === 'done' || T.card().solIdx > i, 6000);
         if (T.card().phase !== 'done' && T.card().solIdx <= i) break;
+        await answerAsk('drag');
       }
       const dn = await until(() => T.card().phase === 'done', 8000);
       await until(() => T.card().settle === 2, 3000);
@@ -740,7 +766,8 @@
         const x = T.card();
         if (x.finished || !x.key && x.session === false) break;
         const still = !T.ev('motionHold') && T.ev('motionUntil') <= Date.now();
-        if (x.phase === 'guess' && still && $('#kbmove')) {
+        /* at tier 3 the question of their best reply (F10.1) takes their move typed: their reply, the move due */
+        if ((x.phase === 'guess' || (x.phase === 'reply' && x.reply && x.reply.ask)) && still && $('#kbmove')) {
           const inp = $('#kbmove');
           inp.focus(); inp.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
           inp.value = T.ev('(function (a) { return sanOf(a.st, dueMove(a)); })(ui.session.active)');
@@ -889,6 +916,38 @@
       }
     } else ok('a card whose game move allows a capture or a check', false, 'none found');
 
+    /* ── F10.1 at tier 3: a forcing card's first move, then their best reply guessed ── */
+    if (T.ev('playerTier()') >= 3) {
+      /* a card forcing by its stored lines may not be once its deeper look has run: the first that still is */
+      const fks = T.ev(`allMistakes().filter(trainable).filter(function (x) { var c = cardFor(x); return c && c.sol && c.sol.length >= 3; }).map(function (x) { return x.key; })`);
+      ok('F10.1: the fixture has forcing cards at tier 3', fks.length > 0, fks.length);
+      let fc = null;
+      for (const fk of fks.slice(0, 6)) {
+        T.ev(`startDrill({ type: 'one', key: '${fk}', label: 'e2e' }); 'ok'`);
+        const x = await until(() => { const y = T.card(); return y.phase === 'guess' && y.key === fk ? y : null; }, 30000);
+        if (x && x.sol) { fc = x; break; }
+        click('[data-act=endSession]') || T.ev("endSession(); 'ok'");
+        await sleep(400);
+      }
+      ok('F10.1: a card still forcing after its deeper look', !!fc);
+      if (fc) {
+        await sleep(700);
+        await tapMove(fc.sol[0]);
+        await until(() => T.card().solIdx > 0, 6000);
+        ok('F10.1: a tier 3 forcing card asks for their best reply after its first move', await answerAsk('tap'), JSON.stringify(T.card().reply));
+        for (let i = 2; i < fc.sol.length; i += 2) {
+          await until(() => T.card().phase === 'guess' && !T.ev('motionHold') && T.ev('motionUntil') <= Date.now(), 8000);
+          await sleep(150);
+          await tapMove(fc.sol[i]);
+          await until(() => T.card().phase === 'done' || T.card().solIdx > i, 6000);
+        }
+        ok('F10.1: the line found to its end after the guess, first try', !!(await until(() => T.card().phase === 'done' && T.card().result === 'first', 8000)), T.card().phase + ' ' + T.card().result);
+        ok('F10.1: the right guess is kept on the record', T.ev(`!!srsLoad()['${fc.key}'].pg`));
+        click('[data-act=endSession]') || T.ev("endSession(); 'ok'");
+        await sleep(400);
+      }
+    }
+
     /* ── typed moves ─────────────────────────────────────────────────── */
     T.ev("startDrill({ type: 'family', fam: familyOf(patternOf(allMistakes().filter(trainable)[0].b)).key, label: 'e2e' }); 'ok'");
     c = await until(() => { const x = T.card(); return x.phase === 'guess' ? x : null; }, 30000);
@@ -909,5 +968,6 @@
   window.removeEventListener('unhandledrejection', onErr);
   ok('the layout holds at ' + innerWidth + ' x ' + innerHeight + ' (' + (phoneGrid() ? 'phone' : 'desktop') + ' grid) in every state reached', W.lay.length === 0, W.lay.length + ': ' + W.lay.slice(0, 4).join(' | '));
   ok('no uncaught errors during the run', errors.length === 0, errors.slice(0, 3).join(' | '));
+  log.push('note their best reply asked for ' + W.asks + ' times (tier 3 forcing lines, F10.1)');
   return { passed, failed, log };
 })();

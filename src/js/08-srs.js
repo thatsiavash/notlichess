@@ -2,15 +2,18 @@
    One record per mistake in nl:srs:<user>, keyed gameId:ply:
    { box, streak, due, last, lapses, learned, tricky, skips, ls, lt, n, fc,
    rs (the time of the current run's first clean find), sp (the time it was
-   spread to a later day, F7.1), q (the time it went back to the queue) }.
+   spread to a later day, F7.1), q (the time it went back to the queue), pg
+   (their best reply guessed right once, F10.1) }.
    The ladder (days): 1, 3, 7, 16, 35, 90. A position is Learned after its
    third clean solve in a row, the last one 16 or more days after the one
    before (at tiers 2 and 3 that one in game mode, under 30 s or 60 s at
-   tier 3: F8.3); it then returns once, 90 days later, as a spot check, and
-   a clean spot check retires it. Intervals of three days or more are spread by up to
-   15% either way, fixed per position, so one busy day does not come back as
-   one busy day. An answer before the due date never moves the date later
-   (a clean find changes nothing; a hint or a miss may bring it sooner). */
+   tier 3: F8.3; at tier 3 a forcing card also needs their best reply
+   guessed right once: F10.1); it then returns once, 90 days later, as a
+   spot check, and a clean spot check retires it. Intervals of three days
+   or more are spread by up to 15% either way, fixed per position, so one
+   busy day does not come back as one busy day. An answer before the due
+   date never moves the date later (a clean find changes nothing; a hint or
+   a miss may bring it sooner). */
 
 var SRS_DAYS = [1, 3, 7, 16, 35, 90];
 var DAY = 864e5;
@@ -76,9 +79,12 @@ function spreadDays(days, key) {
 }
 /* result: 'first' (no miss, no hint), 'hint' (a hint, or good-then-best),
    'retry' (solved after a miss), 'fail' (shown the answer), 'skip'.
-   info: { ms: solve time, gameMove: the game move was tried again, tier and
-   game: the card's tier and whether it showed in game mode (F8.3); held is
-   written back when a find that would make it learned holds instead } */
+   info: { ms: solve time (less the time their reply's question stood open,
+   F10.1), gameMove: the game move was tried again, tier and game: the
+   card's tier and whether it showed in game mode (F8.3), guess: their reply
+   was asked for on this showing and guessRight: that guess was right
+   (F10.1); held is written back when a find that would make it learned
+   holds instead } */
 function srsRecord(it, result, info) {
   info = info || {};
   var map = srsLoad(), now = Date.now();
@@ -92,6 +98,8 @@ function srsRecord(it, result, info) {
   /* a spread position is graded as due, so it still climbs (F7.1) */
   var dueNow = anew || !!rec.sp || rec.due == null || rec.due <= now + 12 * 3600 * 1000;
   var prevGap = rec.ls ? now - rec.ls : 0;
+  /* their best reply guessed right, on any showing (F10.1): kept for good */
+  if (info.guessRight) rec.pg = 1;
   if (result === 'skip') {
     rec.skips = (rec.skips || 0) + 1;
     if (dueNow) rec.due = now + DAY;
@@ -109,8 +117,17 @@ function srsRecord(it, result, info) {
     /* F8.3: at tiers 2 and 3 the find that would make a position learned
        must be clean in game mode and quick (learnMs); a slower one, or one
        shown with the arrow, holds its step: the same interval again, its run
-       as it was (info.held says why, for Details and what moved) */
+       as it was (info.held says why, for Details and what moved). Its reason
+       comes first where F10.1 would hold it too */
     info.held = info.game ? 'slow' : 'cued';
+    rec.due = now + spreadDays(SRS_DAYS[rec.box], it.key) * DAY;
+    rec.ls = now;
+  } else if (result === 'first' && info.guess && !rec.pg && !anew && !rec.learned && prevGap >= 15.5 * DAY && (rec.streak || 0) >= 2) {
+    /* F10.1: at tier 3 a forcing card is learned only once their best reply
+       was guessed right; until then the find that would make it learned
+       holds its step: the same interval again, its run as it was (info.held
+       says why, for Details and what moved) */
+    info.held = 'guess';
     rec.due = now + spreadDays(SRS_DAYS[rec.box], it.key) * DAY;
     rec.ls = now;
   } else if (result === 'first') {
@@ -184,6 +201,14 @@ function srsNoteTries(it, fc) {
   rec.fc = ((rec.fc || '') + fc).slice(-8);
   srsSave(map);
 }
+/* their best reply guessed right on a showing that grades nothing (one
+   more try, F10.1): kept on the record it already has */
+function srsNoteGuess(it) {
+  var map = srsLoad(), rec = map[it.key];
+  if (!rec || rec.pg) return;
+  rec.pg = 1;
+  srsSave(map);
+}
 /* one position's record put back as it was (null: it had none), as the
    Undo of a removal does: the rest saved as srsSave keeps them */
 function srsRestore(key, rec) {
@@ -210,11 +235,13 @@ function srsHide(it) {
    mode, review number, days since last shown, category, tries, hints, time
    to the first move, solve time, the game move replayed, a long first
    interval's first review, a spread position, one back from the queue, a
-   practice position), one for each set started (e 's': mode, size, due,
-   new, of them back from the queue, spread, practice, overdue, a healthy
-   load) and one for each day's first opening (e 'o': due, kept, spread,
-   queued, left due for want of room, overdue), the last 500 (about 40
-   KB). For testing: a progress file carries it.
+   practice position, a find held and why (F8.3, F10.1); at tier 3 the
+   guess of their reply, how long its question stood open and the re-checks
+   of a try: F10.1, F10.4), one for each set started (e 's': mode, size,
+   due, new, of them back from the queue, spread, practice, overdue, a
+   healthy load) and one for each day's first opening (e 'o': due, kept,
+   spread, queued, left due for want of room, overdue), the last 500 (about
+   40 KB). For testing: a progress file carries it.
    Written after the practice records and only where there is room, so it
    never pushes them (or the games) out */
 var LOG_MAX = 500;

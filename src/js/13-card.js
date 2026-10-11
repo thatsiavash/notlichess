@@ -182,8 +182,10 @@ function loadCard() {
     setTimeout(scrollTrainerTop, 60);
     prefetchCards(ss);
     /* tier 3's settled line has figures: the card's two-line search, when
-       its record has none (F1.4) */
+       its record has none (F1.4); a forcing line's guess of their reply is
+       judged against a three-line list, asked for now (F10.1) */
     if (a.tier >= 3 && !a.foil) ensureGap(it);
+    if (a.tier >= 3 && a.sol) ensureReplies(a, false);
     /* the first game-mode card says what changed, once (F8.1) */
     if (a.game && !store.get('nl:tip:gamemode', 0)) { store.set('nl:tip:gamemode', 1); notice(GAME_NOTE, null, 9000); }
     track('card_shown');
@@ -229,6 +231,8 @@ function sessionClick(sq) {
   if (!a || a.pendingPromo) return;
   /* a lesson's frames take no moves (F9.3) */
   if (a.phase === 'lesson') return;
+  /* their best reply asked for (F10.1): the board takes a guess */
+  if (a.reply && a.reply.ask && a.phase === 'reply') { guessClick(a, sq); return; }
   /* under reduced motion the reply waits for its button: the same */
   if (a.reply && !a.explore && (a.phase === 'reply' || a.phase === 'done')) { replyTap(a, sq); return; }
   if (a.phase === 'checking') {
@@ -380,7 +384,9 @@ function gradeMove(m) {
 }
 /* the forcing line, move by move (S10): your move found lands with its
    tick ("Right"), then their reply plays by itself on its timeline
-   (replyClock); the line's last move is the solve */
+   (replyClock); the line's last move is the solve. At tier 3 the first
+   move found asks for their best reply first (F10.1): nothing moves until
+   a guess or Their reply */
 function stepLine(m, u) {
   var a = ui.session.active;
   noteWon(a, m);
@@ -397,13 +403,164 @@ function stepLine(m, u) {
   a.hintAfter = false;
   /* the tick, the green tints and the sound land with the piece */
   a.cue = 'good';
-  a.verdict = verdictOf('good', CARD_COPY.F1(), [CARD_COPY.F2(a)], '');
+  var ask = a.solIdx === 1 && u === a.sol[0] && guessable(a);
+  a.guessOn = ask;
+  a.verdict = verdictOf('good', CARD_COPY.F1(), [ask ? CARD_COPY.Q2() : CARD_COPY.F2(a)], '');
   var rm = reducedMotion(), lands = a.animMove && !rm ? SLIDE_LEAD + 220 : 0;
   startReply(a, reply, false);
-  /* under reduced motion the reply waits for its button, which gets the keyboard */
-  a.focusRight = rm;
+  /* the question: no telegraph (it would show the answer), no timeline;
+     the three-line list it is judged against is asked for now if the
+     card's load did not bring it */
+  if (ask) { a.reply.ask = true; a.reply.tele = false; a.askAt = Date.now(); ensureReplies(a, true); }
+  /* under reduced motion the reply waits for its button, which gets the
+     keyboard; the question's button only skips it, so it gets none */
+  a.focusRight = rm && !ask;
   renderCard();
-  replyClock(a, lands);
+  if (!ask) replyClock(a, lands);
+}
+/* ── predict their reply (F10.1) ─────────────────────────────────────────
+   On a tier 3 forcing card (and its game-mode reviews), after the line's
+   first move is found: "Right" / "Now their best reply?" and [Their reply]
+   to skip. The player taps a piece of theirs and a square: a blue-grey
+   arrow, "your guess"; nothing moves. The guess is judged against a
+   three-line list for the position after the expected move (searched at
+   the card's load, 250,000 nodes, kept on the record as b.rl), right when
+   it is their reply or within 4 points of their best; then the reply plays
+   on its own timeline from the guess (its telegraph at 600, its slide at
+   1500, its words at 2050, or under reduced motion 300 ms later at once),
+   and row 2 says what the guess was. A wrong guess is not a miss; a right
+   one is kept on the record (rec.pg), which a tier 3 forcing card needs
+   once before it can be learned. No guess after a move that works too (the
+   card ends there), inside the line, on a line shown, with the engine down
+   (the reply plays as before) or with one legal reply; never on a practice
+   position or a lesson (F9.3, F9.4), which hold no line. The time the
+   question stands open is no part of the card's solve time (askClose) */
+var GUESS_TOL = 4;
+/* the node after the line's first move (a.st there) can be asked about */
+function guessable(a) {
+  if ((a.tier || 2) < 3 || !a.sol || a.prac || a.lesson || a.explore || SF.state === 'failed') return false;
+  return legalMoves(a.st).length >= 2;
+}
+/* the question closed (a guess, or Their reply): how long it stood open,
+   kept apart from the solve time, so F8.3's 30 s (60 s) never counts it */
+function askClose(a) {
+  if (!a.askAt) return;
+  a.askMs = (a.askMs || 0) + Date.now() - a.askAt;
+  a.askAt = 0;
+}
+/* the list, while it is current for the record's lines: {k, n (legal
+   replies), l [[uci, cp, mate], ...]} with scores from their side, best
+   first; null when not read */
+function replyList(b) { var r = b && b.rl; return r && r.k === dzSig(b) ? r : null; }
+function replyNode(a) {
+  var st = cloneState(a.pre), m = a.sol ? uciToMove(st, a.sol[0]) : null;
+  if (!m) return null;
+  applyMove(st, m);
+  return st;
+}
+/* the list, asked once per card (at its load in the background, the
+   player's own question from the first move found), tagged with the card */
+var replyPending = {};
+function ensureReplies(a, prio) {
+  var it = a.it, b = it.b, key = it.key, myGen = gen;
+  if (!a.sol || (a.tier || 2) < 3 || replyList(b) || b.x || SF.state === 'failed') return;
+  if (replyPending[key]) { if (prio) promoteTag(key); return; }
+  var st = replyNode(a), n = st ? legalMoves(st).length : 0;
+  if (n < 2) return;
+  var sig = dzSig(b), mine = myPov(it);
+  replyPending[key] = engineEval(stateFen(st), { nodes: DEEP_NODES }, !!prio, { multipv: 3, tag: key, rl: 1 }).then(function (r) {
+    delete replyPending[key];
+    if (!r || r.stopped || stale(myGen) || b.x || dzSig(b) !== sig) return;
+    var l = (r.lines || []).filter(function (x) { return x && x.pv && x.pv[0] && uciToMove(st, x.pv[0]); }).slice(0, 3).map(function (x) {
+      return [x.pv[0], mine ? -x.cp : x.cp, x.mate == null ? null : mine ? -x.mate : x.mate];
+    });
+    if (!l.length) return;
+    b.rl = { k: sig, n: n, l: l };
+    scheduleSave();
+  }, function () { delete replyPending[key]; });
+}
+/* a line of the list within 4 points of the best, from their side: a
+   mate against them only beside one at least as far off as the best's, a
+   mate of theirs only beside another */
+function guessNear(x, best) {
+  var xm = x[2], bm = best[2];
+  if (bm != null && bm < 0) return xm != null && xm < 0 && xm <= bm;
+  if (xm != null && xm < 0) return false;
+  if (bm != null && bm > 0) return xm != null && xm > 0;
+  return winPct(x[1]) >= winPct(best[1]) - GUESS_TOL;
+}
+/* the guess uci, judged: 'saw' (their reply itself), 'good' (within 4
+   points of their best), 'not', or 'open' when the list cannot say (none
+   yet, or a move off it while its last line is as good as the best: it may
+   be too); null while the list is on its way, unless final */
+function guessVerdict(a, uci, final) {
+  if (uci === a.sol[1]) return 'saw';
+  var rl = replyList(a.it.b);
+  if (!rl) return final ? 'open' : null;
+  var l = rl.l, best = l[0], g = l.filter(function (x) { return x[0] === uci; })[0];
+  if (g) return guessNear(g, best) ? 'good' : 'not';
+  return l.length >= Math.min(3, rl.n || 3) && !guessNear(l[l.length - 1], best) ? 'not' : 'open';
+}
+/* a tap while the question is asked: a piece of theirs picks up (its dots
+   drawn), a square it can go to is the guess; a piece of yours says whose
+   move it is (Q1); a drop where the piece cannot go snaps back (T5) */
+function guessClick(a, sq) {
+  var p = a.st.b[sq], theirs = !!a.st.w;
+  if (p && isW(p) === theirs) {
+    if (pointerState.suppressClick && a.sel >= 0 && a.sel !== sq) { a.sel = -1; renderCardBoard(); tapNote(a, 'T5', 2000, null); return; }
+    a.sel = a.sel === sq ? -1 : sq;
+    snd('tap');
+    renderCardBoard();
+    return;
+  }
+  if (a.sel < 0) { if (p) tapNote(a, 'Q1', 2500, sq); return; }
+  var legal = legalMoves(a.st).filter(function (m) { return m.from === a.sel && m.to === sq; });
+  if (!legal.length) {
+    var dropped = pointerState.suppressClick;
+    a.sel = -1;
+    renderCardBoard();
+    if (dropped) tapNote(a, 'T5', 2000, null);
+    else if (p) tapNote(a, 'Q1', 2500, sq);
+    return;
+  }
+  /* a promotion: the piece their reply makes, if it is that move, else a queen */
+  var want = a.sol[a.solIdx];
+  makeGuess(a, legal.filter(function (m) { return moveUci(m) === want; })[0] || legal.filter(function (m) { return !m.promo || pType(m.promo) === 'Q'; })[0] || legal[0]);
+}
+/* the guess is made: its arrow at once (the press's own feedback), the bar
+   switched off 150 ms later, and their reply on its timeline from now */
+function makeGuess(a, m) {
+  var rp = a.reply, u = moveUci(m);
+  if (!rp || !rp.ask) return;
+  rp.ask = false;
+  askClose(a);
+  a.sel = -1;
+  a.guess = { uci: u, from: m.from, to: m.to, san: capSan(a.st, m), v: guessVerdict(a, u, false) };
+  snd('tap');
+  /* under reduced motion its telegraph at once, as a reply waiting for its
+     button has it, and the reply itself 300 ms later */
+  var rm = reducedMotion();
+  if (rm) rp.tele = true;
+  stage(['board', TEXT_GAP, 'text']);
+  if (rm) stageAt(300, function (a2) { if (a2.reply === rp && !rp.played) theirReply(a2, true); });
+  else replyClock(a, 0);
+}
+/* the guess's verdict for the record, the log and the measure: judged at
+   the latest when it is said (or the card is left) */
+function guessResult(a) {
+  var g = a.guess;
+  if (!g) return null;
+  if (g.skip) return 'skip';
+  if (!g.v) g.v = guessVerdict(a, g.uci, true);
+  return g.v;
+}
+function guessRight(a) { var v = guessResult(a); return v === 'saw' || v === 'good'; }
+/* a measure (F0.7): the guess, once a showing, as a word */
+function noteGuess(a) {
+  if (a.guessSent || !a.guess) return;
+  a.guessSent = true;
+  var v = guessResult(a);
+  track('guess_' + (v === 'skip' ? 'skip' : v === 'open' ? 'open' : v === 'not' ? 'wrong' : 'right'));
 }
 /* the forcing reply (S10), the one move that plays by itself, inside a
    forcing line being solved or shown (show: after Play it). a.reply:
@@ -453,9 +610,13 @@ function theirReply(a, early) {
   if (!rp || rp.played) return false;
   var m = a.sol && a.sol[a.solIdx] === rp.uci ? uciToMove(a.st, rp.uci) : null;
   if (!m) { a.reply = null; return false; }
+  /* the question not answered (F10.1): Their reply plays it, the guess
+     skipped */
+  if (rp.ask) { rp.ask = false; askClose(a); a.sel = -1; a.guess = { skip: true }; }
   var before = cloneState(a.st), took = m.ep >= 0 ? a.st.b[m.ep] : a.st.b[m.to];
   rp.played = true;
   rp.tele = true;
+  rp.san = capSan(before, m);
   /* and what their reply took, so the settled board reads the line whole */
   if (took) (a.lineLost = a.lineLost || []).push({ sq: m.ep >= 0 ? m.ep : m.to, p: took });
   applyMove(a.st, m);
@@ -518,6 +679,13 @@ function replyDone(a, rp) {
     a.showWait = false;
     if (!(a.solIdx < a.sol.length)) settleShown(a);
     return;
+  }
+  /* the question's end (F10.1): the guess judged now at the latest, and
+     said in row 2 before what the reply did */
+  if (a.guessOn) {
+    a.guessOn = false;
+    if (a.guess && !a.guess.skip) { guessResult(a); a.replySaid = guessWords(a.guess, rp.san).concat(a.replySaid || []); }
+    noteGuess(a);
   }
   a.phase = 'guess';
   a.verdict = null;
@@ -793,7 +961,7 @@ function cannotCheck(a, m) {
    the best move was measured at */
 var checkSeq = 0;
 function checkMove(m, u, inLine) {
-  var ss = ui.session, a = ss.active, it = a.it, b = it.b;
+  var ss = ui.session, a = ss.active;
   /* no engine at all: the try is shown, never counted as a miss */
   if (SF.state === 'failed') { a.animMove = a.tapAnim; a.tapAnim = null; cannotCheck(a, m); return; }
   a.phase = 'checking';
@@ -804,7 +972,7 @@ function checkMove(m, u, inLine) {
   /* the checking frame draws the move: it slides there, once */
   a.animMove = a.tapAnim; a.tapAnim = null;
   renderCard();
-  var cardKey = a.key, fen = stateFen(a.st), sign = myPov(it) ? 1 : -1;
+  var cardKey = a.key, fen = stateFen(a.st);
   /* one counter for every card: a check started before a pause can never
      answer a move played after the resume */
   var tok = a.checkTok = ++checkSeq;
@@ -816,7 +984,7 @@ function checkMove(m, u, inLine) {
   [[300, 1], [3000, 2]].forEach(function (k) {
     stageAt(land + k[0], function (a2) { if (live(a2)) { a2.checkSaid = k[1]; stage(['text']); } });
   });
-  var timer = setTimeout(function () {
+  var t0 = Date.now(), timer = setTimeout(function () {
     var a2 = ui.session && ui.session.active;
     if (live(a2)) cannotCheck(a2, m);
   }, 9000);
@@ -824,65 +992,113 @@ function checkMove(m, u, inLine) {
      scored side by side, so depth noise cannot decide the verdict */
   var expect = inLine ? a.sol[a.solIdx] : a.bestUci;
   /* tagged, so Try again, Show the answer and leaving the card stop it */
-  engineEval(fen, { nodes: inLine ? EXT_NODES : DEEP_NODES }, true,
-             { searchmoves: expect && expect !== u ? [u, expect] : [u], multipv: expect && expect !== u ? 2 : 1, tag: 'check' }).then(function (r) {
+  var search = function (nodes) {
+    return engineEval(fen, { nodes: nodes }, true, { searchmoves: expect && expect !== u ? [u, expect] : [u], multipv: expect && expect !== u ? 2 : 1, tag: 'check' });
+  };
+  search(inLine ? EXT_NODES : DEEP_NODES).then(function (r) {
     clearTimeout(timer);
     var a2 = ui.session && ui.session.active;
     if (!live(a2)) return;
-    a2.ghostMove = null;
-    var mine = null, theirs = null;
-    (r.lines || []).forEach(function (ln) {
-      if (ln.pv && ln.pv[0] === u) mine = ln;
-      else if (ln.pv && ln.pv[0] === expect) theirs = ln;
-    });
-    mine = mine || r;
-    var myCp = mine.cp * sign, myMate = mine.mate != null ? mine.mate * sign : null;
-    var wMove = winPct(myCp);
-    var wBest = theirs ? winPct(theirs.cp * sign) : winPct(b.eb);
-    if (wMove > wBest) wBest = wMove;
-    r = mine;
+    var v = tryVerdict(a2, u, expect, r, inLine), left = t0 + RECHECK_MS - Date.now();
     /* a foil passes any move short of the player's mistake threshold for
-       that game (D10); at or over it the try is a miss, said as any is */
+       that game (D10); at or over it the try is a miss, said as any is.
+       Searched once: F10.4's second search is for a card's own verdicts */
     if (a2.foil) {
-      if (wBest - wMove < mistakeMinFor(it.g)) foilPass(m, wBest - wMove);
-      else miss(m, u, { cp: myCp, mate: myMate, pv: r.pv || [], win: wMove }, false);
+      a2.ghostMove = null;
+      if (v.wBest - v.wMove < mistakeMinFor(a2.it.g)) foilPass(m, v.wBest - v.wMove);
+      else miss(m, u, { cp: v.myCp, mate: v.myMate, pv: v.line.pv || [], win: v.wMove }, false);
       return;
     }
-    var mateCard = b.mb != null && b.mb > 0;
-    var keepsMate = myMate != null && myMate > 0;
-    /* a safe winning move passes, except on a missed chance, where the
-       lesson is the tactic itself: there a lesser move is only "close" */
-    var chances = familyOf(patternOf(b)).key === 'chances';
-    var safeWin = wMove >= 70 && wBest >= 70 && wMove >= b.wa + 15 && !chances;
-    var solvedIt = mateCard ? keepsMate
-      : (wBest - wMove <= SOLVE_TOL || safeWin || keepsMate);
-    if (solvedIt) {
-      var cont = r.pv && r.pv[0] === u ? r.pv.slice(1) : (r.pv || []);
-      var before = inLine ? a2.sol.slice(0, a2.solIdx) : [];
-      a2.yours = { uci: before.concat([u], cont), cp: myCp, at: before.length };
-      solved(m, u, { win: wMove, best: wBest, mate: myMate }, inLine);
-      return;
-    }
-    if (closeTry(b, wMove, wBest, mateCard, chances, inLine)) {
-      /* a good move that is not the best: not a miss (S5). The first one is
-         remembered, so a later solve or the answer counts as help; a second
-         says row 1 alone */
-      var again = !!a2.foundGood;
-      if (!again) {
-        track('close_shown');
-        a2.foundGood = { san: sanOf(a2.st, m), win: wMove };
-        keepProgress(a2);
-      }
-      a2.cue = 'tap';
-      showTry(a2, m, 'close', null, null, again);
-      return;
-    }
-    miss(m, u, { cp: myCp, mate: myMate, pv: r.pv || [], win: wMove }, inLine);
+    if ((a2.tier || 2) < 3 || left <= 0 || !recheckBand(v, inLine)) { applyTry(a2, m, u, inLine, v); return; }
+    /* F10.4: the second search decides, unless the first verdict's 8 s
+       from the try run out first (the band still says "Checking…") */
+    var rc = a2.rc = a2.rc || { n: 0, flip: 0, late: 0 }, settled = false;
+    rc.n++;
+    var cap = setTimeout(function () {
+      var a3 = ui.session && ui.session.active;
+      if (settled || !live(a3)) return;
+      settled = true;
+      rc.late++;
+      engineStop('check');
+      applyTry(a3, m, u, inLine, v);
+    }, left);
+    var decide = function (v2) {
+      clearTimeout(cap);
+      var a3 = ui.session && ui.session.active;
+      if (settled || !live(a3)) return;
+      settled = true;
+      if (v2.kind !== v.kind) rc.flip++;
+      applyTry(a3, m, u, inLine, v2);
+    };
+    search(CONFIRM_NODES).then(function (r2) { decide(r2 && !r2.stopped ? tryVerdict(a2, u, expect, r2, inLine) : v); }, function () { decide(v); });
   }, function () {
     clearTimeout(timer);
     var a2 = ui.session && ui.session.active;
     if (live(a2)) cannotCheck(a2, m);
   });
+}
+/* a try's verdict from a search r that scored it (and the expected move,
+   expect): 'solved', 'close' or 'miss', with the figures it was read from */
+function tryVerdict(a, u, expect, r, inLine) {
+  var b = a.it.b, sign = myPov(a.it) ? 1 : -1, mine = null, theirs = null;
+  (r.lines || []).forEach(function (ln) {
+    if (ln.pv && ln.pv[0] === u) mine = ln;
+    else if (ln.pv && ln.pv[0] === expect) theirs = ln;
+  });
+  mine = mine || r;
+  var myCp = mine.cp * sign, myMate = mine.mate != null ? mine.mate * sign : null;
+  var wMove = winPct(myCp);
+  var wBest = theirs ? winPct(theirs.cp * sign) : winPct(b.eb);
+  if (wMove > wBest) wBest = wMove;
+  var mateCard = b.mb != null && b.mb > 0;
+  var keepsMate = myMate != null && myMate > 0;
+  /* a safe winning move passes, except on a missed chance, where the
+     lesson is the tactic itself: there a lesser move is only "close" */
+  var chances = familyOf(patternOf(b)).key === 'chances';
+  var safeWin = wMove >= 70 && wBest >= 70 && wMove >= b.wa + 15 && !chances;
+  var solvedIt = mateCard ? keepsMate : (wBest - wMove <= SOLVE_TOL || safeWin || keepsMate);
+  return { kind: solvedIt ? 'solved' : closeTry(b, wMove, wBest, mateCard, chances, inLine) ? 'close' : 'miss',
+           line: mine, myCp: myCp, myMate: myMate, wMove: wMove, wBest: wBest, mateCard: mateCard, keepsMate: keepsMate, safeWin: safeWin };
+}
+/* F10.4 (master's round 3): at tier 3 a try whose first score lands near a
+   verdict's line is searched again at 1,000,000 nodes: 2 to 6 points from
+   the best (the solve line, 4) or, outside a forcing line, 8 to 12 (the
+   close line, 10), where 24 of the 28 verdicts a deeper search changed
+   lay; not where a mate or a safe win decides. The second search decides;
+   if it has not answered RECHECK_MS after the try, the first verdict
+   stands (a 1,000,000-node search takes 4 to 10 s on a weak phone) */
+var RECHECK_MS = 8000;
+function recheckBand(v, inLine) {
+  if (v.mateCard || v.keepsMate || v.safeWin) return false;
+  var gap = v.wBest - v.wMove;
+  return (gap >= 2 && gap <= 6) || (!inLine && gap >= 8 && gap <= 12);
+}
+/* the verdict, given: solved, a good move that is not the best, or a miss */
+function applyTry(a2, m, u, inLine, v) {
+  a2.ghostMove = null;
+  var r = v.line;
+  if (v.kind === 'solved') {
+    var cont = r.pv && r.pv[0] === u ? r.pv.slice(1) : (r.pv || []);
+    var before = inLine ? a2.sol.slice(0, a2.solIdx) : [];
+    a2.yours = { uci: before.concat([u], cont), cp: v.myCp, at: before.length };
+    solved(m, u, { win: v.wMove, best: v.wBest, mate: v.myMate }, inLine);
+    return;
+  }
+  if (v.kind === 'close') {
+    /* a good move that is not the best: not a miss (S5). The first one is
+       remembered, so a later solve or the answer counts as help; a second
+       says row 1 alone */
+    var again = !!a2.foundGood;
+    if (!again) {
+      track('close_shown');
+      a2.foundGood = { san: sanOf(a2.st, m), win: v.wMove };
+      keepProgress(a2);
+    }
+    a2.cue = 'tap';
+    showTry(a2, m, 'close', null, null, again);
+    return;
+  }
+  miss(m, u, { cp: v.myCp, mate: v.myMate, pv: r.pv || [], win: v.wMove }, inLine);
 }
 /* the close rule (S5), the one path for a good move that is not the best:
    a move that loses nothing by the card's own measure (within STRONGER_TOL
@@ -1371,7 +1587,11 @@ function finishCard(result, beats) {
   var ss = ui.session, a = ss.active;
   a.phase = 'done';
   a.result = result;
-  a.ms = Date.now() - a.t0;
+  /* the solve time leaves out the time their reply's question stood open
+     (F10.1): thinking over their move is no time spent finding yours, so
+     F8.3's learned time, the first sight's step and the log never count it */
+  askClose(a);
+  a.ms = Date.now() - a.t0 - (a.askMs || 0);
   var relearn = ss.relearnOf && ss.relearnOf[a.key], prev = a.foil || a.prac ? null : logPrev(a), first = !relearn && !a.foil && !a.prac && !Object.keys(srsLoad()).length;
   if (ss.progress) delete ss.progress[a.key];
   if (a.prac) {
@@ -1394,9 +1614,10 @@ function finishCard(result, beats) {
     a.rec = null;
     ss.results[a.key] = result;
   } else if (!relearn) {
-    var info = { ms: a.ms, gameMove: a.triedGameMove, attempted: a.attempts > 0, alt: !!a.alt, fc: a.fc, tier: a.tier, game: !!a.game };
+    var info = { ms: a.ms, gameMove: a.triedGameMove, attempted: a.attempts > 0, alt: !!a.alt, fc: a.fc, tier: a.tier, game: !!a.game, guess: !!a.guess, guessRight: guessRight(a) };
     var rec = srsRecord(a.it, result, info);
-    /* a find that would have made it learned, held by F8.3 */
+    /* a find that would have made it learned, held by F8.3 (slow, cued) or
+       for want of a right guess of their reply (F10.1: guess) */
     a.held = info.held || null;
     if (a.attempts > 0) { ss.attempted = (ss.attempted || 0) + 1; countDay(ss, 0); }
     a.rec = rec;
@@ -1410,6 +1631,7 @@ function finishCard(result, beats) {
     }
   } else {
     srsNoteTries(a.it, a.fc);
+    if (guessRight(a)) srsNoteGuess(a.it);
     a.rec = srsRec(a.it);
     ss.results[a.key + '#r'] = result;
   }
@@ -1483,11 +1705,13 @@ function settleLeft(a) {
   if (a.phase === 'lesson') { if (a.lesson.i >= 2) lessonDone(a); return; }
   var again = ss_relearn(a), result = a.misses ? 'fail' : (a.hints ? 'hint' : 'skip'), prev = a.foil || a.prac ? null : logPrev(a), first = !again && !a.foil && !a.prac && !Object.keys(srsLoad()).length;
   /* a foil is never scheduled (F8.2); a practice position left after a miss
-     counts so in nl:skill alone (F9.4) */
+     counts so in nl:skill alone (F9.4); a right guess of their reply is
+     kept on the record (F10.1) */
   if (a.foil) a.rec = null;
   else if (a.prac) { a.rec = null; if (a.misses) pracRecord(a, 'fail'); }
-  else if (!again) a.rec = srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove, fc: a.fc });
-  else srsNoteTries(a.it, a.fc);
+  else if (!again) a.rec = srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove, fc: a.fc, guess: !!a.guess, guessRight: guessRight(a) });
+  else { srsNoteTries(a.it, a.fc); if (guessRight(a)) srsNoteGuess(a.it); }
+  noteGuess(a);
   logCard(a, result, prev, again);
   if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
   if (a.attempts > 0) { ss.attempted = (ss.attempted || 0) + 1; countDay(ss, 0); }
@@ -1544,8 +1768,9 @@ function rungsOf(rec) { return rec ? (rec.learned ? 3 : Math.min(2, rec.streak |
 /* what one showing did on its ladder (F2.2): 'learned' (it became learned),
    'up' (a clean find that climbed), 'held' (works too, a good move first, a
    hint or a first look, a find that would have made it learned held by
-   F8.3: held), 'start' (a miss or the answer shown), '' (a find before its
-   due date, a spot check, a skip) */
+   F8.3 or for want of a right guess of their reply, F10.1: held), 'start'
+   (a miss or the answer shown), '' (a find before its due date, a spot
+   check, a skip) */
 function ladderMove(cat, prev, rec, held) {
   if (cat === 'skip' || !rec) return '';
   if (rec.learned && !(prev && prev.learned)) return 'learned';
@@ -1601,7 +1826,9 @@ function logPrev(a) {
    'game' (F8.1) or 'foil' (F8.2, with its verdict fv: good or playable);
    review number 0 at first sight (unknown, null, for a record older than
    the count, and for a foil, which is no review); tb: a find that would
-   have made it learned, held by F8.3. Measured as card_result_<tier>_
+   have made it learned, held by F8.3 (hd says why: slow, cued, or guess
+   for F10.1's hold); s the solve time, with the time their reply's
+   question stood open apart in gt (F10.1). Measured as card_result_<tier>_
    <mode>_<category> (F0.7), which names no player, rating or position */
 function logCard(a, result, prev, again) {
   var mode = a.prac ? 'practice' : a.foil ? 'foil' : a.game ? 'game' : 'cued', cat = cardCategory(a, result);
@@ -1610,10 +1837,12 @@ function logCard(a, result, prev, again) {
   /* a practice position's skill and source (F9.4) */
   if (a.prac) { e.sk = a.it.skill; e.src = a.it.src; }
   if (a.foil && a.foilKind) e.fv = a.foilKind;
-  if (a.held) e.tb = 1;
+  if (a.held === 'slow' || a.held === 'cued') e.tb = 1;
   e.d = prev && prev.last ? Math.round((now - prev.last) / DAY * 10) / 10 : null;
   e.f = a.firstAt ? a.firstAt - (a.shownAt || a.t0) : null;
-  e.s = a.ms != null ? a.ms : now - a.t0;
+  askClose(a);
+  e.s = a.ms != null ? a.ms : now - a.t0 - (a.askMs || 0);
+  if (a.askMs) e.gt = a.askMs;
   if (a.triedGameMove) e.g = 1;
   /* each wrong try's check step (F1.2), in order */
   if (a.fc) e.fc = a.fc;
@@ -1623,6 +1852,12 @@ function logCard(a, result, prev, again) {
   if (prev && prev.sp) e.sp = 1;
   if (prev && prev.q) e.q = 1;
   if (prev && prev.pr) e.pr = 1;
+  /* F10.1: the guess of their reply (saw, good, not, open or skip), and a
+     find held (slow, cued, or for want of a right guess); F10.4: the
+     re-checks (searched, the verdict changed, the first verdict kept at 8 s) */
+  if (a.guess) e.gu = guessResult(a);
+  if (a.held) e.hd = a.held;
+  if (a.rc) e.rc = [a.rc.n, a.rc.flip, a.rc.late];
   logAdd(e);
   track('card_result_' + (a.tier || 2) + '_' + mode + '_' + cat);
 }

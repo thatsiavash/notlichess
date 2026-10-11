@@ -773,8 +773,8 @@ function reducedMotion() { return !!(ui.reducedTest || (window.matchMedia && win
 function typedMove(txt) {
   if (flushStage()) return;
   var a = ui.session && ui.session.active;
-  var xp = a && a.phase === 'done' && a.explore;
-  if (!a || (a.phase !== 'guess' && a.phase !== 'tried' && !xp)) return;
+  var xp = a && a.phase === 'done' && a.explore, guessing = !!(a && a.phase === 'reply' && a.reply && a.reply.ask);
+  if (!a || (a.phase !== 'guess' && a.phase !== 'tried' && !xp && !guessing)) return;
   var st = xp ? a.explore.st : a.st;
   var t = String(txt || '').trim().replace(/0/g, 'O');
   var m = /^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(t) ? uciToMove(st, t.toLowerCase()) : null;
@@ -785,8 +785,13 @@ function typedMove(txt) {
   if (!m && big && !/^b([1-8]|x)/.test(t)) m = sanToMove(st, big);
   if (!m && t) m = sanToMove(st, t);
   if (!m && big) m = sanToMove(st, big);
-  if (!m) { var eg = typedExample(st, xp ? [] : cardAvoid(a)); notice('That move is not legal here.' + (eg ? ' Try one like ' + eg + '.' : '')); return; }
+  /* an example is never a move the card asks for, nor (asking for their
+     reply) one of their best replies */
+  var rl = guessing ? replyList(a.it.b) : null;
+  if (!m) { var eg = typedExample(st, xp ? [] : cardAvoid(a).concat(rl ? rl.l.map(function (x) { return x[0]; }) : [])); notice('That move is not legal here.' + (eg ? ' Try one like ' + eg + '.' : '')); return; }
   if (xp) { explorePlay(m, false); var kb = el('kbmove'); if (kb) { kb.value = ''; kb.focus(); } }
+  /* their move typed while the question is asked: the guess (F10.1) */
+  else if (guessing) makeGuess(a, m);
   else { if (a.phase === 'tried') clearTry(a); gradeMove(m); }
 }
 /* Enter and Space on focusable actions; the view tabs keep their own role */
@@ -855,6 +860,8 @@ function boardState(a) {
   var due = a.phase === 'done' && !a.showWait ? showDue(a) : null;
   if (due) return { st: a.st, live: true, show: due };
   if (a.phase === 'guess') return { st: a.st, live: true };
+  /* their best reply asked for (F10.1): their pieces pick up for a guess */
+  if (a.phase === 'reply' && a.reply && a.reply.ask) return { st: a.st, live: true, guess: true };
   if (a.phase === 'tried') return { st: triedFrame(a).st, live: true, tried: true };
   if (a.phase === 'checking') return { st: checkingFrame(a), live: false, checking: true };
   return { st: a.st, live: false };
@@ -1063,7 +1070,8 @@ window.__nlTest = {
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
              hints: a.hints, predraw: !!a.predraw, result: a.result || null, pattern: a.prac || a.lesson ? null : patternOf(a.it.b), view: a.view,
              lesson: a.lesson ? { k: a.lesson.k, i: a.lesson.i } : null, skill: a.prac ? a.it.skill : null, tried: a.tried || null, reason: a.reason || 0, settle: a.settle || 0, showWait: !!a.showWait,
-             reply: a.reply ? { uci: a.reply.uci, tele: !!a.reply.tele, played: !!a.reply.played, show: !!a.reply.show } : null,
+             reply: a.reply ? { uci: a.reply.uci, tele: !!a.reply.tele, played: !!a.reply.played, show: !!a.reply.show, ask: !!a.reply.ask } : null,
+             guess: a.guess ? { uci: a.guess.uci || null, v: a.guess.v || null, skip: !!a.guess.skip } : null,
              story: a.phase === 'done' && a.view && a.view.mode === 'story' ? (function (S) { return { i: a.view.i, n: S.steps.length, g: S.g, cap: S.steps[a.view.i].cap, pre: !!a.view.pre }; })(buildStory(a)) : null,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
              sentences: a.cls ? a.cls.sentences : null, sel: a.sel, b: a.it.b, note: a.note && a.note.key === cardStateKey(a) ? a.note.id : null,

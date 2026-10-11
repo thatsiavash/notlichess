@@ -109,7 +109,12 @@ var CARD_COPY = {
   P5: function () { return 'Now find it in your games.'; },
   H4: function () { return 'Hint 1 of 3'; },
   H5: function () { return 'Hint 2 of 3'; },
-  H6: function () { return 'Hint 3 of 3'; }
+  H6: function () { return 'Hint 3 of 3'; },
+  /* predict their reply (F10.1): the question after the first move of a
+     forcing line at tier 3 (Q2), and a tap on a piece of yours while it
+     asks (Q1) */
+  Q1: function (a) { return 'Guess their move: a ' + sidesOf(a).opp.toLowerCase() + ' piece.'; },
+  Q2: function () { return 'Now their best reply?'; }
 };
 /* the first game-mode card's notice, once (F8.1) */
 var GAME_NOTE = 'Reviews now look like your game: no arrow, and not every position hides a mistake.';
@@ -135,6 +140,20 @@ function clockWhen(it) {
   var b = it.b;
   if (it.foil) return b.fc != null ? b.fc : null;
   return b.c != null && b.tt != null ? b.c + b.tt - incOf(it.g) : null;
+}
+/* F10.1: what a guess of their reply was, as row 2 says it once the reply
+   has landed (g: the guess, its verdict g.v; y: the reply played, as SAN
+   with no check sign): their reply itself, "You saw it: Qxc2."; another
+   move within 4 points of their best, "Qxd2 was as good as Qxc2."; else
+   "Not Qxd2: they had Qxc2."; one the three-line list cannot judge (no
+   list, or a move off it that may be as good as the third), the shorter
+   true line, "They had Qxc2." */
+function guessWords(g, y) {
+  if (!g || g.skip || !y) return [];
+  if (g.v === 'saw') return ['You saw it: ' + y + '.'];
+  if (g.v === 'good') return [g.san + ' was as good as ' + y + '.', 'They had ' + y + '.'];
+  if (g.v === 'not') return ['Not ' + g.san + ': they had ' + y + '.', 'They had ' + y + '.'];
+  return ['They had ' + y + '.'];
 }
 /* F4: their reply in a forcing line, once it has landed, as row 2 says it:
    what it took, or the check it gives, or the move itself; st is the
@@ -163,7 +182,8 @@ function pipsOf(a) {
 var NOTE_COPY = {
   T4: function (a) { return [CARD_COPY.T4(a), 'Move a ' + sidesOf(a).mine + ' piece.']; },
   T5: function (a) { return [CARD_COPY.T5(a)]; },
-  N1: function (a) { return [CARD_COPY.N1(a)]; }
+  N1: function (a) { return [CARD_COPY.N1(a)]; },
+  Q1: function (a) { return [CARD_COPY.Q1(a)]; }
 };
 
 /* the live region leads with the verdict in words, so meaning never rests
@@ -1497,7 +1517,7 @@ function rowRoom(a, b) {
 function cardStateKey(a) {
   var t = a.tried;
   var v = a.view;
-  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, v ? (v.mode === 'story' ? 'story:' + v.i : v.mode) : '', a.explore ? 'x' : ''].join('|');
+  return [a.phase, a.fxn || 0, t ? t.uci + (t.seen ? '+' : '') : '', a.hints, a.solIdx, v ? (v.mode === 'story' ? 'story:' + v.i : v.mode) : '', a.explore ? 'x' : '', a.guess ? 'g' : ''].join('|');
 }
 function bandOf(a) {
   var t = a.tried, v = a.verdict;
@@ -1575,8 +1595,11 @@ function answerRow(a, settled) {
     return { disc: t.kind === 'miss' ? 'bad' : t.kind, kind: t.kind === 'miss' ? 'bad' : t.kind === 'unchecked' ? 'info' : 'close',
              row1: tv.row1, cands: wait ? [] : tv.cands, fall: wait ? '' : tv.fall, chip: wait ? '' : t.chip || '', stepChip: !!t.chip, tag: tag };
   }
-  /* a move of the forcing line found (S10): right, and their reply comes */
-  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: CARD_COPY.F1(), cands: [CARD_COPY.F2(a)], fall: '', budget: LINE_BUDGET, tag: tag };
+  /* a move of the forcing line found (S10): right, and their reply comes;
+     at tier 3 after the first move, the question until the reply's words
+     (F10.1: a guess, or Their reply to skip it), in game mode beside its
+     Review tag (F8.1) */
+  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: CARD_COPY.F1(), cands: [a.guessOn ? CARD_COPY.Q2() : CARD_COPY.F2(a)], fall: '', budget: LINE_BUDGET, tag: tag };
   /* a hint says itself on the showing it came with (pressed, or the
      automatic one this Try again brought: S4), and afterwards while its
      marks stand on the board, so band and board agree; a hint in words
@@ -1709,6 +1732,9 @@ function labelCands(a, f, seen) {
       if (w.say && seen('threat')) short.push(cand(w.say, 'red', null, ar.to, ar.from, mk, 1));
     }
     else if (ar.kind === 'reply') short.push(cand('their reply', 'blue', null, ar.to, ar.from, mk, 0));
+    /* the player's guess of their reply (F10.1): their reply's own label
+       goes first once its telegraph is up */
+    else if (ar.kind === 'guess') short.push(cand('your guess', 'blue', null, ar.to, ar.from, mk, 0.5));
     else if (ar.kind === 'better' && answered) short.push(cand(ar.key === 'answer' ? 'the answer' : 'better', 'green', null, ar.to, ar.from, mk, 3));
     else if (ar.kind === 'explore') short.push(cand(a.tier === 1 ? 'the computer' : 'Stockfish', 'gold', null, ar.to, ar.from, mk, 5));
   });

@@ -514,6 +514,8 @@ function specFilter(spec) {
         return spec.phase === 'open' ? mv <= 12 : (spec.phase === 'mid' ? mv > 12 && mv <= 35 : mv > 35);
       }
       case 'clock': return timeTrouble(it);
+      /* how your games are decided (F10.3): after +2 in a game not won, after -2 in a game lost */
+      case 'convert': case 'save': return decidedPosition(it, spec.type);
       case 'opening': return it.g.color === spec.colour && openingFamily(it.g) === spec.family && it.b.p < 30;
       case 'game': return it.g.id === spec.id;
       case 'one': return it.key === spec.key;

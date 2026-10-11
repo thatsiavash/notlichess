@@ -1126,8 +1126,9 @@ function boardOptsFor(a) {
     }
     view = { st: st, last: last, ev: it.b.eb };
     opts.sel = a.sel;
-    /* a piece tapped during the forcing reply is picked up as it lands */
-    if ((a.phase === 'guess' || (a.phase === 'reply' && a.reply && a.reply.played)) && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
+    /* a piece tapped during the forcing reply is picked up as it lands; a
+       piece of theirs picked up for a guess of it (F10.1) shows its moves */
+    if ((a.phase === 'guess' || (a.phase === 'reply' && a.reply && (a.reply.played || a.reply.ask))) && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
     opts.shapes = a.shapes;
     /* the game move: its red arrow on a cued card; in game mode nothing
        before the first graded try, then its faded piece (F8.1); a practice
@@ -1216,7 +1217,7 @@ function boardOptsFor(a) {
   return {
     st: view.st, last: view.last, ev: view.ev, evLive: evLive, opts: opts, slideMs: slideMs, land: land,
     fadeMs: a.jump && !slideMs ? XFADE : 0,
-    live: a.phase === 'guess' || a.phase === 'tried' || !!(a.phase === 'done' && (a.explore || (!a.showWait && showDue(a)))),
+    live: a.phase === 'guess' || a.phase === 'tried' || !!(a.phase === 'reply' && a.reply && a.reply.ask) || !!(a.phase === 'done' && (a.explore || (!a.showWait && showDue(a)))),
     /* the bar fills only while exploring: a tall bar during the guess would
        say "you are winning, find it", and a moving one is motion nobody
        asked for */
@@ -1233,11 +1234,18 @@ function boardOptsFor(a) {
    slide (they go as it lands) */
 function addReplyMarks(a, view, opts, noLanded) {
   var rp = a.reply, rk = a.replyMark, o = null, sliding = false;
+  /* the guess of their reply (F10.1), the player's own solid arrow: from the
+     guess until the reply lands (riding its slide), and where the reply
+     makes the same move its telegraph takes the guess's place. No
+     telegraph while the question is asked: it would be the answer */
+  var g = a.guessOn && a.guess && !a.guess.skip ? a.guess : null;
+  var guessed = function (from, to) { if (g && !sameMove([g.from, g.to], [from, to])) o.arrows.push({ from: g.from, to: g.to, kind: 'guess', key: 'guess' }); };
   if (rp && !rp.played) {
-    if (rp.tele && a.sol && a.sol[a.solIdx] === rp.uci) o = { rings: [{ sq: rp.from, kind: 'reply' }], arrows: [{ from: rp.from, to: rp.to, kind: 'reply', key: 'reply' }] };
+    if (rp.tele && !rp.ask && a.sol && a.sol[a.solIdx] === rp.uci) { o = { rings: [{ sq: rp.from, kind: 'reply' }], arrows: [{ from: rp.from, to: rp.to, kind: 'reply', key: 'reply' }] }; guessed(rp.from, rp.to); }
+    else if (g) o = { arrows: [{ from: g.from, to: g.to, kind: 'guess', key: 'guess' }] };
   } else if (rk && sameMove(view.last, [rk.from, rk.to])) {
     sliding = sameMove(opts.anim, view.last);
-    if (sliding) o = { rings: [{ sq: rk.from, kind: 'reply' }], arrows: [{ from: rk.from, to: rk.to, kind: 'reply', key: 'reply' }] };
+    if (sliding) { o = { rings: [{ sq: rk.from, kind: 'reply' }], arrows: [{ from: rk.from, to: rk.to, kind: 'reply', key: 'reply' }] }; guessed(rk.from, rk.to); }
     else if (!noLanded) {
       o = { arrows: [{ from: rk.from, to: rk.to, kind: 'reply', key: 'reply', solid: true }] };
       if (rk.token) { o.tokens = [{ sq: rk.token.sq, p: rk.token.p, kind: colorW(rk.token.p) === myPov(a.it) ? 'lost' : 'won', fx: rk.fx }]; if (!opts.fx) opts.fx = rk.fx; }
@@ -1291,6 +1299,8 @@ function boardAria(a, st, o) {
       out.push('Dashed red arrow: ' + (hint ? 'after your game move, ' : '') + 'the ' + (ap ? PIECE_WORD[pType(ap)] : 'piece') + ' on ' + sqName(m.from) + (hint ? ' could ' : ' can ') + verb + sqName(m.to) + '.');
     }
     else if (m.kind === 'reply' && m.solid) out.push('Blue arrow: ' + side(!myPov(a.it)) + '\'s reply, ' + mv(m) + '.');
+    /* the player's own guess of their reply (F10.1) */
+    else if (m.kind === 'guess') out.push('Blue arrow: your guess of ' + side(!myPov(a.it)) + '\'s reply, ' + mv(m) + '.');
     else if (m.kind === 'better') out.push('Green arrow: ' + (m.key === 'answer' ? 'the answer, ' : 'the better move, ') + mv(m) + '.');
     else if (m.kind === 'explore') out.push('Gold arrow: ' + (a.tier === 1 ? 'the computer\'s pick, ' : 'Stockfish\'s pick, ') + mv(m) + '.');
     /* a lesson's arrow (F9.3): a piece's line, as its caption says it */
@@ -2246,6 +2256,9 @@ function barSlots(a, ss) {
             { act: 'reveal', label: 'Show the answer', cls: 'btn-line' }];
   }
   if (a.phase === 'checking') return [{ act: 'takeBack', label: 'Take back', cls: 'btn-line' }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
+  /* their best reply asked for (F10.1): its button skips the guess, so it
+     is no honey button (Enter presses nothing while the board asks) */
+  if (a.reply && a.reply.ask) return [{ label: '', cls: 'slot-empty', off: true, empty: true }, { act: 'theirReply', label: 'Their reply', cls: 'btn-line' }];
   /* their reply on its way (S10): the guess bar, switched off; under
      reduced motion the reply waits for its button, alone on the right */
   if (replyButton(a)) return [{ label: '', cls: 'slot-empty', off: true, empty: true }, replyButton(a)];
@@ -2261,10 +2274,11 @@ function honeyOf(slots) {
    can follow (F9.2), "Hint 3" after Hint 2 */
 function hintLabel(a) { return a.hints >= hintMax(a) ? 'No more hints' : a.hints ? 'Hint ' + (a.hints + 1) : 'Hint'; }
 /* "Their reply" (S10, S19): under reduced motion no timer moves a piece,
-   so the forcing reply waits for this gold button; null when no reply waits */
+   so the forcing reply waits for this gold button; null when no reply
+   waits, or when a guess of it brings it 300 ms later by itself (F10.1) */
 function replyButton(a) {
   var rp = a.reply;
-  return rp && !rp.played && reducedMotion() && a.sol && a.sol[a.solIdx] === rp.uci ? { act: 'theirReply', label: 'Their reply', cls: 'btn-big' } : null;
+  return rp && !rp.played && !rp.ask && !(a.guess && !a.guess.skip && a.guessOn) && reducedMotion() && a.sol && a.sol[a.solIdx] === rp.uci ? { act: 'theirReply', label: 'Their reply', cls: 'btn-big' } : null;
 }
 /* the bar while a try is on the board: the gold right-hand button takes it
    back (Try again; Keep looking after a good move that is not the best). On
@@ -2417,6 +2431,12 @@ function stripHtml(a, ss) {
       var ex = typedExample(a.st, cardAvoid(a));
       return '<label class="kb-move">Type your move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false"' + (ex ? ' placeholder="e.g. ' + esc(ex) + '"' : '') + ' aria-label="Type your move"></label>';
     }
+    /* their best reply asked for (F10.1): their move typed is the guess;
+       its example is never one of their best replies */
+    if (a.phase === 'reply' && a.reply && a.reply.ask) {
+      var rl = replyList(a.it.b), ex2 = typedExample(a.st, cardAvoid(a).concat(rl ? rl.l.map(function (x) { return x[0]; }) : []));
+      return '<label class="kb-move">Type their move <input id="kbmove" autocomplete="off" autocapitalize="off" spellcheck="false"' + (ex2 ? ' placeholder="e.g. ' + esc(ex2) + '"' : '') + ' aria-label="Type their move"></label>';
+    }
     return '';
   }
   if (a.explore) return xpHtml(a);
@@ -2555,7 +2575,7 @@ function detailsHtml() {
   h += '</div>' + (th ? '<p class="dt-more">' + esc(th) + '</p>' : '') + (ck ? '<p class="dt-more dt-clock">' + esc(ck) + '</p>' : '')
     + '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
     + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>'
-    + (a.held === 'slow' ? '<p class="dt-more dt-held">' + esc(heldLine(a)) + '</p>' : '')
+    + (a.held === 'slow' ? '<p class="dt-more dt-held">' + esc(heldLine(a)) + '</p>' : a.held === 'guess' ? '<p class="dt-more dt-held">' + GUESS_HELD + '</p>' : '')
     + '<p class="habit">' + esc(cl) + '</p>';
   /* no engine, no exploring */
   if (SF.state !== 'failed') h += '<div class="acts-row sheet-acts"><a class="btn-line" data-act="explore">Try your own moves with Stockfish ›</a></div>';
@@ -2583,6 +2603,9 @@ function foilDetailsHtml(a, row) {
   if (SF.state !== 'failed') h += '<div class="acts-row sheet-acts"><a class="btn-line" data-act="explore">Try your own moves with Stockfish ›</a></div>';
   return h;
 }
+/* a clean find that would have made a tier 3 forcing card learned, held
+   because their best reply was never guessed right (F10.1) */
+var GUESS_HELD = 'Found first try. One right guess of their best reply makes it learned.';
 /* the exploration (S14): the trail with the way back, Stockfish's
    sentence, and its three best moves at the position on screen */
 function xpHtml(a) {
@@ -2807,6 +2830,8 @@ function renderInsights() {
       : who + ' decided the most: ' + fmtGames(top.cost) + (tie ? ' each, lost or drawn.' : ' lost or drawn.');
   }
   h += '<h2>' + head + '</h2>' + (lead ? '<p class="lead">' + lead + '</p>' : '');
+  /* how your games are decided (F10.3), at tier 3 under the headline */
+  if (tier >= 3) h += decidedHtml(decidedReport());
   /* since you started (F6.2), once a set is finished */
   var st = sinceStats();
   if (st && st.before.n) {
@@ -2928,6 +2953,23 @@ function clockHtml(c, tier) {
   }
   return '<h3 class="ins-h">Your clock</h3><div class="clock-rows">' + rows.map(function (x) { return '<p>' + x + '</p>'; }).join('') + '</div>';
 }
+/* how your games are decided (F10.3): the rows decidedReport supports,
+   each its count in one sentence ("Converting wins: won 21 of 30 games
+   after reaching +2."), Practise these where the row has positions, and
+   under the first two the peer figure, as context and never as a verdict
+   ("Lichess players at your level: 72%."). A loss no single move decided
+   is said so ("no single losing move", as Today's rail says it): a slow
+   slide may still hold big mistakes that did not decide it */
+function decidedHtml(d) {
+  if (!d || !(d.conv || d.save || d.slow)) return '';
+  var rows = [];
+  var practise = function (type, label) { return drillItems({ type: type }, 1).length ? ' <a data-act="drill" data-spec="' + esc(JSON.stringify({ type: type, label: label })) + '">Practise these ›</a>' : ''; };
+  var peer = function (x) { return x != null ? '<span class="dec-peer">Lichess players at your level: ' + Math.round(x) + '%.</span>' : ''; };
+  if (d.conv) rows.push('<b>Converting wins:</b> won ' + d.conv.won + ' of ' + plur(d.conv.n, 'game') + ' after reaching +2.' + practise('convert', 'Converting wins') + peer(d.conv.peer));
+  if (d.save) rows.push('<b>Saving bad positions:</b> saved ' + d.save.saved + ' of ' + d.save.n + ' after falling to −2.' + practise('save', 'Saving bad positions') + peer(d.save.peer));
+  if (d.slow) rows.push('<b>Slow slides:</b> ' + d.slow.none + ' of ' + plur(d.slow.n, 'loss', 'losses') + ' had no single losing move.');
+  return '<h3 class="ins-h">How your games are decided</h3><div class="clock-rows dec-rows">' + rows.map(function (x) { return '<p>' + x + '</p>'; }).join('') + '</div>';
+}
 /* how we count (F6.1), a sheet: tier 1 in plain words; tiers 2 and 3 name
    the threshold the player's games are counted at now (their newest game's
    band), the other two after it. "Big mistake" means that everywhere; once
@@ -2943,6 +2985,11 @@ function countHtml() {
       since,
       'A move decided a game if you never came back from it. A drawn game counts as half a game.',
       'Each bar shows your practice on that skill\'s positions: learned, climbing, to go.'];
+    /* tier 3's rows on how games are decided (F10.3): what +2 means, and
+       where the peer figures come from */
+    var dr = t >= 3 ? decidedReport() : null;
+    if (dr && (dr.conv || dr.save)) lines.push('+2 means Stockfish had you two pawns or more ahead at some point of the game, −2 as far behind.',
+      'Players at your level: lichess games from July 2026 at the lichess rating that matches yours, measured by lichess\'s own analysis, so they are context, not a target.');
   }
   return '<div class="kicker">Insights</div><h3>How we count</h3>' + lines.filter(Boolean).map(function (x) { return '<p>' + x + '</p>'; }).join('');
 }
