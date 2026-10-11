@@ -1330,8 +1330,10 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         frames++;
         seen[what] = (seen[what] || 0) + 1;
         cap(what + ', row 1', d.row1, 26, 99); cap(what + ', row 2', d.row2, 40, 7); cap(what + ', caption', d.cap, 60, 8); cap(what + ', chip', d.chip, 14, 3);
+        /* the tag row's context line (F4.2): its own cap of 22 characters, the opponent's name one word */
+        cap(what + ', tag', d.tag, 22, 3);
         /* and in plain words, the explore panel aside (S14) */
-        if (!a.explore) [d.row1, d.row2, d.cap, d.chip, d.strip].concat(d.buttons.map(function (b) { return b.label; })).forEach(function (x) {
+        if (!a.explore) [d.row1, d.row2, d.cap, d.chip, d.tag, d.strip].concat(d.buttons.map(function (b) { return b.label; })).forEach(function (x) {
           var bad = unplain(String(x || '').replace(/<[^>]*>/g, ' '), a.tier);
           if (bad) out.push(what + ': "' + bad + '" on the card face at tier ' + a.tier + ': ' + x);
           plainSeen++;
@@ -1340,8 +1342,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         /* the strip counts too (its typed-move field is off screen until it
            has the keyboard): empty before an answer, Details once settled */
         var strip = String(d.strip || '').replace(/<label class="kb-move">[\\s\\S]*?<\\/label>/g, '').replace(/<[^>]*>/g, ' ');
-        var n = [d.row1, d.row2, d.chip, d.cap, strip].concat(d.buttons.map(function (b) { return b.label; })).reduce(function (x, y) { return x + words(y); }, 0);
-        if (n > 15) out.push(what + ': ' + n + ' words, ' + [d.row1, d.row2, d.chip, strip.trim()].join(' / ') + ' | ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
+        var n = [d.row1, d.row2, d.chip, d.tag, d.cap, strip].concat(d.buttons.map(function (b) { return b.label; })).reduce(function (x, y) { return x + words(y); }, 0);
+        if (n > 15) out.push(what + ': ' + n + ' words, ' + [d.row1, d.row2, d.chip, d.tag, strip.trim()].join(' / ') + ' | ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
         /* the board's label counts too (principle 5), as a first-sight
            label or a short one, on a phone's board and the desktop's; it is
            the first word to go, so the band never shrinks for it */
@@ -1526,7 +1528,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           }
           /* the forcing line (S10), at each move of yours found: "Right" and
              "{Opp} replies next." beside the bar switched off (under reduced
-             motion "Their reply ›" alone on the right), the telegraph, their
+             motion "Their reply" alone on the right), the telegraph, their
              reply landed, then "Your move" with F4; at most 13 words */
           if (a.sol) [0, 1, 2].forEach(function (hn) {
             /* and after hints (taken at an earlier move: the line's own
@@ -1545,7 +1547,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
               if (d.row1 !== 'Right' || d.row2 !== sidesOf(a).opp + ' replies next.' || d.buttons.map(function (x) { return x.label + (x.off ? ' (off)' : ''); }).join(' | ') !== hl + ' (off) | Show the answer (off)')
                 out.push(fat + ' reads ' + d.row1 + ' / ' + d.row2 + ' | ' + JSON.stringify(d.buttons));
               ui.reducedTest = true; d = band(fat + ', right, reduced motion', a); w13(fat + ', right, reduced motion', d); ui.reducedTest = false;
-              if (d.buttons.map(function (x) { return x.label + (x.off ? ' (off)' : ''); }).join(' | ') !== ' (off) | Their reply ›') out.push(fat + ' under reduced motion offers ' + JSON.stringify(d.buttons));
+              if (d.buttons.map(function (x) { return x.label + (x.off ? ' (off)' : ''); }).join(' | ') !== ' (off) | Their reply') out.push(fat + ' under reduced motion offers ' + JSON.stringify(d.buttons));
               frp.tele = true; d = band(fat + ', the telegraph', a); w13(fat + ', the telegraph', d);
               theirReply(a, false); d = band(fat + ', landed', a); w13(fat + ', landed', d);
               if (d.row1 !== 'Right') out.push(fat + ': the words changed as their reply landed: ' + d.row1);
@@ -1589,7 +1591,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
             /* the strip's Details is a word of the budget: row 2 has that much less room */
             var room = 15 - words(d.row1) - d.buttons.reduce(function (x, b) { return x + words(b.label); }, 0) - 1;
             if (rowRoom(a, { row1: d.row1, chip: '' }) !== room) out.push(what + ': row 2 has ' + rowRoom(a, { row1: d.row1, chip: '' }) + ' words of room, not ' + room);
-            if (!/^See why › \| (Continue|Finish)$/.test(d.buttons.map(function (b) { return b.label; }).join(' | '))) out.push(what + ' settled bar ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
+            if (!/^See why \| (Continue|Finish)$/.test(d.buttons.map(function (b) { return b.label; }).join(' | '))) out.push(what + ' settled bar ' + d.buttons.map(function (b) { return b.label; }).join(' | '));
             d = band(what + ', settled, N1', note(a, 'N1'));
             if (d.row2 !== 'To try moves, open Details.') out.push(what + ' N1 reads ' + d.row2);
             /* the story (S12): every step one caption beside the verdict's
@@ -2571,6 +2573,102 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(ev('day_counted'), 1, 'the day counted, once');
     const flat = JSON.stringify(r.calls);
     ok(!/tester|135\d|\b\d{12}\b|[a-h][1-8][a-h][1-8]|\//.test(flat), 'no name, rating, key or position: ' + flat);
+  });
+
+  /* ── slice 4: the Coach Panel card and moments ── */
+  await test('F4.3: after the answer Details says the ladder with the real interval: a miss on a box-3 card "Back to the start · back in 3 days"; a due clean find on box 2 "Step 2 of 3 · back in N days"; the find that makes it learned "Learned · one last check in N days"; a first sight with a hint "Starting out · back tomorrow"', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      playerTier = function () { return 2; };
+      var its = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol; }), now = Date.now(), srs = srsLoad(), out = {};
+      var when = function () { return (/<span class="when">([^<]*)</.exec(detailsHtml()) || [])[1]; };
+      var days = function (it) { return Math.round((srsRec(it).due - Date.now()) / DAY); };
+      var best = function (a) { a.attempts = Math.max(1, a.attempts); solved(uciToMove(a.st, a.bestUci), a.bestUci, null); };
+      srs[its[0].key] = { box: 3, streak: 2, due: now - 3600e3, last: now - 16 * DAY, ls: now - 16 * DAY, lapses: 0 };
+      srs[its[1].key] = { box: 2, streak: 1, due: now - 3600e3, last: now - 7 * DAY, ls: now - 7 * DAY, lapses: 0 };
+      srs[its[2].key] = { box: 3, streak: 2, due: now - 3600e3, last: now - 16 * DAY, ls: now - 16 * DAY, lapses: 0 };
+      srsSave(srs);
+      /* a miss (not the game move), then found */
+      var a = openCard(its[0]); a.misses = 1; best(a);
+      out.miss = when();
+      a = openCard(its[1]); best(a);
+      out.step = when(); out.stepDays = days(its[1]);
+      a = openCard(its[2]); best(a);
+      out.learned = when(); out.learnedDays = days(its[2]); out.isLearned = !!srsRec(its[2]).learned;
+      a = openCard(its[3]); a.hints = 1; best(a);
+      out.hint = when();
+      return JSON.stringify(out); })()`));
+    eq(r.miss, 'Back to the start · back in 3 days', 'a miss on a box-3 card');
+    eq(r.step, 'Step 2 of 3 · back in ' + r.stepDays + ' days', 'a due clean find on box 2, with the real interval');
+    ok(r.stepDays >= 13 && r.stepDays <= 19, 'about 16 days: ' + r.stepDays);
+    ok(r.isLearned, 'the third clean find 16 days on is learned');
+    eq(r.learned, 'Learned · one last check in ' + r.learnedDays + ' days', 'learned, with its one last check');
+    eq(r.hint, 'Starting out · back tomorrow', 'one day reads "tomorrow"');
+  });
+
+  await test('F4.4, F4.5: a set that makes a position learned and meets the week\'s goal shows both: the seal stamps, the medal shows as it ends, "Goal met: 1 day this week."; the ding, then the four notes; drawn again, nothing moves or sounds; a goal alone settles its medal; a set with neither plays its own; the summary in order, the next set in the bar at its foot', () => {
+    const A = boot();
+    A.ev(`(function () { ${OPEN}
+      playerTier = function () { return 2; };
+      window.__snd = []; snd = function (n) { window.__snd.push(n + '@' + Date.now()); };
+      var it = model().byKey['184455333378:68'], best = function (a) { a.attempts = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); };
+      /* card 1 found clean three times: at first sight, when due, then 16 days on */
+      var a = openCard(it); best(a);
+      shiftDays(Math.ceil((srsRec(it).due - Date.now()) / DAY)); a = openCard(it); best(a);
+      shiftDays(Math.max(16, Math.ceil((srsRec(it).due - Date.now()) / DAY)));
+      /* the week's goal of 1, not yet met this week: the third find meets it */
+      store.set('nl:weekGoal', 1); store.del('nl:goalSent:' + playerId());
+      rewardLog.splice(0); window.__snd = [];
+      a = openCard(it); best(a);
+      ui.session.active = null; ui.session.finished = true;
+      window.__ss1 = ui.session;
+      return 1; })()`);
+    const r1 = JSON.parse(A.ev(`(function () { var ss = window.__ss1, h = doneHtml(ss); summaryMoments(ss);
+      return JSON.stringify({ learned: !!srsRec(model().byKey['184455333378:68']).learned, goal: ss.goalMet, seal: /<div class="recap-item recap-learned" data-fx="seal"/.test(h), medal: (/<span class="medal"( data-fx="medal")? aria-hidden="true"><\\/span>/.exec(h) || [''])[0],
+        line: /Goal met: 1 day this week\\./.test(h), sounds: window.__snd.map(function (x) { return x.split('@')[0]; }), rewards: rewardLog.map(function (x) { return x.kind; }),
+        order: ['result-row', 'id="recap-h"', 'recap-moved', 'recap-week met', 'class="recap"', 'recap-habit', 'recap-acts'].map(function (k) { return h.indexOf(k); }),
+        acts: (/<div class="acts-row recap-acts">([\\s\\S]*?)<\\/div>/.exec(h) || [])[1] || '' }); })()`));
+    A.advance(500);
+    const r2 = JSON.parse(A.ev(`(function () { var ss = window.__ss1, h = doneHtml(ss); summaryMoments(ss);
+      return JSON.stringify({ sounds: window.__snd.map(function (x) { return x.split('@')[0]; }), gap: window.__snd.length > 1 ? +window.__snd[1].split('@')[1] - +window.__snd[0].split('@')[1] : null, fx: /data-fx=/.test(h) }); })()`));
+    ok(r1.learned && !!r1.goal, 'learned, and the goal met in this set');
+    ok(r1.seal, 'the learned tile stamps its seal');
+    eq(r1.medal, '<span class="medal" aria-hidden="true"></span>', 'the medal shows as it ends');
+    ok(r1.line, '"Goal met: 1 day this week."');
+    eq(JSON.stringify(r1.sounds), JSON.stringify(['learned']), 'the ding first');
+    eq(JSON.stringify(r1.rewards), JSON.stringify(['learned', 'goal']), 'both moments');
+    eq(JSON.stringify(r2.sounds), JSON.stringify(['learned', 'goal']), 'then the four notes');
+    eq(r2.gap, 450, 'the notes 450 ms after the ding');
+    ok(!r2.fx, 'drawn again: nothing moves, nothing more sounds');
+    ok(r1.order.every((x, i) => x > 0 && (i === 0 || x > r1.order[i - 1])), 'the summary in order: result row, headline, what moved, the week, the tiles, the habit card, the bar: ' + r1.order.join(' '));
+    ok(/^<a class="btn-big" data-icon="arrow" data-act="keepGoing">Next set of \d+<\/a><a class="btn-line" data-act="endSession">Back to Today<\/a>$/.test(r1.acts), 'the bar: the next set, then the way back: ' + r1.acts);
+    /* a goal alone settles its medal; a set with neither plays its own sound */
+    const r3 = JSON.parse(A.ev(`(function () {
+      var mk = function (goal) { var k = allMistakes().filter(trainable)[3].key, ss = { mode: 'today', label: 'Today', keys: [k], idx: 1, results: {}, notes: {}, sum: {}, relearn: [], relearnOf: {}, finished: true, goalMet: goal };
+        ss.results[k] = 'first'; ss.sum[k] = { c: 'first', s: 3, m: 'up', p: 1 }; return ss; };
+      window.__snd = []; rewardLog.splice(0);
+      var g = mk({ days: 4, goal: 4 }), hg = doneHtml(g); summaryMoments(g);
+      var n = mk(null), hn = doneHtml(n); summaryMoments(n);
+      return JSON.stringify({ medal: /<span class="medal" data-fx="medal" aria-hidden="true">/.test(hg), line: /Goal met: 4 days this week\\./.test(hg), plain: !/medal/.test(hn),
+        sounds: window.__snd.map(function (x) { return x.split('@')[0]; }), rewards: rewardLog.map(function (x) { return x.kind; }) }); })()`));
+    ok(r3.medal && r3.line, 'a goal alone: its medal settles, its line');
+    ok(r3.plain, 'neither: no medal');
+    eq(JSON.stringify(r3.sounds), JSON.stringify(['goal', 'set']), 'the four notes; a set with neither its own three');
+    eq(JSON.stringify(r3.rewards), JSON.stringify(['goal']), 'one moment');
+  });
+
+  await test('F4.4: the week\'s goal met brings its medal once a week, and again in a week met after a week missed (the run of weeks at the goal is 1 both times)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      store.set('nl:weekGoal', 1); store.del('nl:goalSent:' + playerId());
+      var out = [], day = function () { var d = dayLoad(); d.counted = 1; daySave(d); }, ss;
+      day(); ss = {}; goalCheck(ss); out.push(!!ss.goalMet, weeksAtGoal());
+      ss = {}; goalCheck(ss); out.push(!!ss.goalMet);
+      /* two weeks on, last week missed: this week's first counted day meets it again */
+      shiftDays(14);
+      day(); ss = {}; goalCheck(ss); out.push(!!ss.goalMet, weeksAtGoal());
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r), JSON.stringify([true, 1, false, true, 1]), 'met, once that week, met again two weeks on');
   });
 
   results.forEach((l) => console.log(l));

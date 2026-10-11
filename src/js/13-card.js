@@ -373,7 +373,7 @@ function startReply(a, m, show) {
    slide's board is drawn SLIDE_LEAD before the piece is let go, and a shown
    line's words fade out 100 ms before that (theirReply). Under reduced
    motion nothing runs: the telegraph is drawn at once and the reply waits
-   for "Their reply ›" */
+   for "Their reply" */
 var REPLY_TELE = 600, REPLY_SLIDE = 1500;
 function replyClock(a, landIn) {
   var rp = a.reply;
@@ -933,7 +933,7 @@ function showDue(a) {
    S0's marks, then R4 and the bar to the story. Played by hand (byHand)
    it goes at once, as the player's own moves do: tapped it slides, dragged
    it lands where it was dropped. Their reply plays on S10's timeline, and
-   waits for "Their reply ›" under reduced motion */
+   waits for "Their reply" under reduced motion */
 function playIt(dragged, byHand) {
   var a = ui.session && ui.session.active, m = a && a.phase === 'done' && !a.explore && !a.showWait ? showDue(a) : null;
   if (!m) return;
@@ -989,7 +989,7 @@ function settleBeats(a) {
     stage(['text']);
   });
 }
-/* See why (S12): from S0 (See why ›, →, a left swipe) the story opens at
+/* See why (S12): from S0 (See why, →, a left swipe) the story opens at
    G1. A revealed card offers it once settled */
 function seeWhy() {
   var a = ui.session && ui.session.active;

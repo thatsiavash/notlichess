@@ -177,7 +177,7 @@ function stageReset() {
    elsewhere is deliberate. A slot whose meaning changed before its new
    label is painted (pendSlot) takes nothing until it is painted */
 var SLOT_GUARD = 450;
-var slotSig = [], slotAct = [], slotChangedAt = [], slotHidAt = [], slotPend = [], slotPress = null;
+var slotSig = [], slotAct = [], slotHoney = [], slotChangedAt = [], slotHidAt = [], slotPend = [], slotPress = null;
 function hideSlot(i) { if (slotHidAt[i] == null) slotHidAt[i] = Date.now(); }
 function pendSlot(i) { slotPend[i] = true; }
 /* a bar slot pressed (a click on it, or the key that stands for it) */
@@ -196,8 +196,9 @@ function noteSlots(slots) {
       slotChangedAt[i] = slotHidAt[i] != null ? slotHidAt[i] : kept && i !== pr.i ? 0 : now;
     }
     slotAct[i] = s.off ? null : s.act || null;
+    slotHoney[i] = !!slotAct[i] && /\bbtn-big\b/.test(s.cls || '') && !/nav-off/.test(s.cls || '');
   });
-  for (var j = slots.length; j < slotSig.length; j++) { slotSig[j] = null; slotAct[j] = null; slotChangedAt[j] = now; }
+  for (var j = slots.length; j < slotSig.length; j++) { slotSig[j] = null; slotAct[j] = null; slotHoney[j] = false; slotChangedAt[j] = now; }
   slotHidAt = [];
   slotPend = [];
   slotPress = null;
@@ -208,3 +209,6 @@ function slotGuarded(i) { return i != null && i >= 0 && (slotHidAt[i] != null ||
 /* the slot that holds an action now, -1 if none; the right-hand one */
 function slotOfAct(act) { return slotAct.indexOf(act); }
 function rightSlot() { for (var i = slotSig.length - 1; i >= 0; i--) if (slotSig[i] != null) return i; return -1; }
+/* the honey button's slot as painted, the one Enter presses (F4.1); -1
+   when the bar has none on (a fresh card: Enter does nothing) */
+function honeySlot() { return slotHoney.indexOf(true); }

@@ -159,7 +159,7 @@ function renderTrain() {
   var box = el('trainbox');
   if (!box || !cfg.user) return;
   var ss = ui.session;
-  if (ss && ss.finished) { box.dataset.card = ''; box.innerHTML = doneHtml(ss); return; }
+  if (ss && ss.finished) { box.dataset.card = ''; box.innerHTML = doneHtml(ss); summaryMoments(ss); return; }
   if (ss) { renderCard(); return; }
   box.dataset.card = '';
   var n = analysisNumbers();
@@ -233,13 +233,15 @@ function agoWords(ts) {
   return gameDateLine({ ts: ts });
 }
 function sinceHtml() { return data.greeting ? '<p class="since">' + data.greeting + '</p>' : ''; }
-/* the weekly goal as its own shape: one segment per day of the goal */
-function weekHtml() {
+/* the weekly goal as its own shape: one segment per day of the goal; on
+   the summary of the set that met it, its medal leads (lead) and its line
+   says so (line, F4.4) */
+function weekHtml(lead, line) {
   var goal = goalThisWeek(), done = Math.min(weekDays(), goal), today = dayCounts(dayRecOf(new Date())), segs = '';
   for (var i = 0; i < goal; i++) segs += '<span class="wseg' + (i < done ? ' on' : (i === done && !today ? ' wseg-now' : '')) + '"></span>';
   var weeks = weeksAtGoal();
-  return '<div class="week"><div class="wsegs" aria-hidden="true">' + segs + '</div>'
-    + '<span>' + Math.min(weekDays(), 7) + ' of ' + goal + ' days this week.' + (weeks >= 2 ? ' ' + weeks + ' weeks in a row at your goal.' : '') + '</span></div>';
+  return '<div class="week">' + (lead || '') + '<div class="wsegs" aria-hidden="true">' + segs + '</div>'
+    + '<span>' + (line || Math.min(weekDays(), 7) + ' of ' + goal + ' days this week.') + (weeks >= 2 ? ' ' + weeks + ' weeks in a row at your goal.' : '') + '</span></div>';
 }
 function heroHtml() {
   var plan = todayPlan();
@@ -521,12 +523,13 @@ function starsHtml(n) {
 /* a position just learned leads the tiles (F2.2): "Learned: Rg1, from
    your loss to opponent1. Found 3 times over 23 days." (tier 1 the move in
    words), with the learned glyph, its honey seal (F3.1) */
-function learnedHtml(it, e, tier) {
+function learnedHtml(it, e, tier, fx) {
   var pre = stateAtPly(it.g.mv, it.b.p), pm = pre && uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
   if (!pre || !pm) return '';
   var g = it.g, mv = tier === 1 ? moveWords(pre, pm) : sanOf(pre, pm).replace(/[+#]$/, '');
   var from = g.res === 'loss' ? 'loss to ' : g.res === 'draw' ? 'draw with ' : 'win against ';
-  return '<div class="recap-item recap-learned" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'One position' })) + '">'
+  /* fx: its seal stamps once, as the summary first paints (F4.4) */
+  return '<div class="recap-item recap-learned"' + (fx ? ' data-fx="seal"' : '') + ' data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'One position' })) + '">'
     + boardSvg(pre, { flip: g.color === 'black', bad: [pm.from, pm.to], decor: true }) + resultGlyph('learned')
     + '<span class="learned-say"><b>Learned: ' + esc(mv) + ', from your ' + from + esc(g.opp) + '.</b> '
     + (e.d != null ? 'Found ' + plur(e.n, 'time') + ' over ' + plur(e.d, 'day') + '.' : 'Found ' + plur(e.n, 'time') + ' in a row.') + '</span>'
@@ -542,14 +545,25 @@ function resultGlyph(c) {
   var g = RESULT_GLYPH[c];
   return g ? '<span class="rg rg-' + g + '" aria-hidden="true"></span>' : '';
 }
+/* the summary (F4.5): the result row (one glyph per position, in the
+   set's order), the headline and its second line, what moved, the week
+   (once the goal is met, its medal and "Goal met: 4 days this week."), when
+   positions come back, the tiles (two columns on a phone, 160 px tiles in an
+   880 px column on a wide screen, a position just learned leading them
+   across both), the habit card, and a sticky bar with the next set. Its
+   moments (F4.4) run on its first paint only (ss.fxShown, set by
+   summaryMoments): a position learned stamps its seal, else a goal met
+   settles its medal; with both, the seal moves and the medal shows as it
+   ends */
 function doneHtml(ss) {
-  var tier = playerTier(), uniq = [];
+  var tier = playerTier(), uniq = [], fx = !ss.fxShown, row = '';
   ss.keys.forEach(function (k) { if (uniq.indexOf(k) === -1) uniq.push(k); });
   var learned = '', recap = uniq.map(function (k) {
     var it = model().byKey[k], e = sumOf(ss, k);
     /* a card taken out as not a real mistake has left the model: gone from the summary too */
     if (!it || !e || !ss.results[k]) return '';
-    if (e.m === 'learned' && !learned) { learned = learnedHtml(it, e, tier); if (learned) return ''; }
+    row += resultGlyph(e.c);
+    if (e.m === 'learned' && !learned) { learned = learnedHtml(it, e, tier, fx); if (learned) return ''; }
     /* a card that came back for one more try says how that went too (a
        try left untouched adds nothing) */
     var e2 = ss.results[k + '#r'] ? sumOf(ss, k + '#r') : null, word = CAT_WORD[e.c] + (e2 && CAT_AGAIN[e2.c] ? ', ' + CAT_AGAIN[e2.c] : '');
@@ -565,25 +579,42 @@ function doneHtml(ss) {
       + (e.f && e.l ? '<span class="tile-check">' + esc(e.l) + '</span>' : '') + '</div>';
   }).join('');
   var sc = recapScore(ss, uniq, tier), moved = movedWords(ss, uniq), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
+  var gm = ss.goalMet, week = gm ? weekHtml('<span class="medal"' + (fx && !learned ? ' data-fx="medal"' : '') + ' aria-hidden="true"></span>', 'Goal met: ' + plur(gm.days, 'day') + ' this week.') : weekHtml();
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
+    + (row ? '<div class="result-row" aria-hidden="true">' + row + '</div>' : '')
     + '<h2 class="done-big" id="recap-h" tabindex="-1">' + sc.head + '</h2>'
     + (sc.then ? '<p class="recap-then">' + sc.then + '</p>' : '')
     + (moved ? '<p class="recap-moved">' + moved + '</p>' : '')
     + ladderHtml(ss, uniq)
-    /* the next set is the main way on: in reach without scrolling */
-    + '<div class="acts-row recap-acts">'
-      + (more ? '<a class="btn-big" data-icon="arrow" data-act="keepGoing">' + nextSetWords(more) + '</a>' : '')
-      + '<a class="' + (more ? 'btn-quiet' : 'btn-big') + '" data-act="endSession">Back to Today</a>'
-    + '</div>'
-    + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
+    + '<div class="recap-week' + (gm ? ' met' : '') + '"><div class="kicker">This week</div>' + week + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
+    + (learned || recap ? '<div class="recap">' + learned + recap + '</div>' : '')
     + (keep.length || ss.routine ? '<div class="focus recap-habit">' + (ss.routine && tier >= 2 ? '<p class="plan routine">' + ROUTINE_LINE + '</p>' : '')
       + (keep.length === 1 ? '<p class="plan">Keep in mind: ' + esc(keep[0]) + '</p>'
         : keep.length ? '<p class="plan">Keep in mind:</p><ul class="plans">' + keep.map(function (h) { return '<li class="plan">' + esc(h) + '</li>'; }).join('') + '</ul>' : '')
     + '</div>' : '')
-    + (learned || recap ? '<div class="recap">' + learned + recap + '</div>' : '')
+    /* the next set is the main way on: a bar that stays at the foot of the
+       screen, the next set twice as wide as the way back */
+    + '<div class="acts-row recap-acts">'
+      + (more ? '<a class="btn-big" data-icon="arrow" data-act="keepGoing">' + nextSetWords(more) + '</a>' : '')
+      + '<a class="' + (more ? 'btn-line' : 'btn-big') + '" data-act="endSession">Back to Today</a>'
+    + '</div>'
     + '</div>';
+}
+/* the summary's moments (F4.4), once, after its first paint: a position
+   learned dings, a goal met plays its four notes (both: the ding, then the
+   notes), and a set with neither its own three; under reduced motion the
+   stylesheet draws the seal and the medal as they end, and the sound stays.
+   Sound off silences them all (snd) */
+var NOTES_AFTER_DING = 450;
+function summaryMoments(ss) {
+  if (!ss || ss.fxShown) return;
+  ss.fxShown = true;
+  var learned = Object.keys(ss.sum || {}).some(function (k) { return ss.sum[k].m === 'learned' && !!model().byKey[k]; });
+  if (learned) { reward('learned'); snd('learned'); }
+  if (ss.goalMet) { reward('goal'); if (learned) setTimeout(function () { snd('goal'); }, NOTES_AFTER_DING); else snd('goal'); }
+  if (!learned && !ss.goalMet) snd('set');
 }
 
 /* ── the card ────────────────────────────────────────────────────────────── */
@@ -1310,9 +1341,12 @@ function paintBoard(a, instant) {
   if (fade) fadeOut(a);
   /* the bar: the player's view of the position, with no pawn number; still
      while it waits */
-  var eb = el('ebar'), fill = el('ebar-fill');
+  var eb = el('ebar'), fill = el('ebar-fill'), fillH = el('ebar-fillh');
   if (eb) eb.classList.toggle('pending', f.pending);
-  if (fill && !f.pending) fill.style.height = winPct(evalWhite(it, f.ev != null ? f.ev : it.b.eb)) + '%';
+  var evPct = f.pending ? null : winPct(evalWhite(it, f.ev != null ? f.ev : it.b.eb)) + '%';
+  if (fill && evPct) fill.style.height = evPct;
+  /* a phone draws it across, under the board (F4.1) */
+  if (fillH && evPct) fillH.style.width = evPct;
   /* the slide starts two frames from now (releaseAnims), and ends ms later;
      the old board's fade-out starts now */
   if (ms) motionUntil = Date.now() + SLIDE_LEAD + ms;
@@ -1398,14 +1432,18 @@ function renderCard(beats) {
   if (box.dataset.card !== a.key) {
     stageReset();
     box.dataset.card = a.key;
+    /* the Coach Panel (F4.1): the board first, then one panel under it (beside
+       it on a wide screen) with the band's words at its top and the strip at
+       its foot, then the bar. The eval bar shows only while exploring: beside
+       the board on a wide screen, under it on a phone (its own fill there) */
     box.innerHTML = '<div class="card">'
       + '<div class="card-top" id="ctop"></div>'
-      + '<div class="band-slot" id="cband"></div>'
       + '<div class="board-col"><div class="board-row">'
-        + '<div class="evalbar pending' + (flip ? ' flip' : '') + '" id="ebar"><i class="evalbar-fill" id="ebar-fill"></i><span class="evalbar-label" id="ebar-lab"></span></div>'
+        + '<div class="evalbar pending' + (flip ? ' flip' : '') + '" id="ebar"><i class="evalbar-fill" id="ebar-fill"></i><i class="evalbar-fill-h" id="ebar-fillh"></i><span class="evalbar-label" id="ebar-lab"></span></div>'
         + '<div class="board-wrap" id="bwrap"></div>'
       + '</div></div>'
-      + '<div class="panel" id="cpanel"><div class="strip" id="cstrip"></div><div class="acts-row sticky-acts" id="cbar"></div><p class="keyline" id="ckeys"></p></div>'
+      + '<div class="panel" id="cpanel"><div class="coach k-neutral" id="ccoach"><div class="band-slot" id="cband"></div><div class="strip" id="cstrip"></div></div>'
+        + '<div class="acts-row sticky-acts" id="cbar"></div><p class="keyline" id="ckeys"></p></div>'
       + '</div>';
     watchBoardSize();
   }
@@ -1429,7 +1467,7 @@ function watchBoardSize() {
    bar as slots, the strip's markup and the live region's words */
 function displayFor(a) {
   var b = bandFor(a), ss = ui.session, buttons = barSlots(a, ss);
-  return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', sweep: !!b.sweep, pips: b.pips || null,
+  return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', tag: b.tag || '', sweep: !!b.sweep, pips: b.pips || null,
            buttons: buttons, strip: stripHtml(a, ss), live: liveWords(a, b), keys: keyLine(a, buttons) };
 }
 /* the desktop key line under the panel (2.0): only the keys that do
@@ -1437,9 +1475,10 @@ function displayFor(a) {
    them. Enter presses the bar's or the strip's control that has the
    keyboard (foc: its label, reached by Tab or handed to it by the card), so
    the line names that one; with no control focused (a pointer's click
-   hands focus back to the band, 15-shell.js) it is the right-hand button,
-   when that button is on (not while a move is checked, where Enter does
-   nothing, nor during a forcing reply but for its own button); any other
+   hands focus back to the band, 15-shell.js) it is the honey button alone
+   (F4.1), when there is one and it is on: none on a fresh card, so Enter
+   there does nothing and never shows the answer; none while a move is
+   checked, nor during a forcing reply but for its own button; any other
    control focused (foc.other): Enter presses that, so the line names no
    Enter. ? while a hint is left to give (over a try too: the try goes
    first); → plays See it on a wrong try, and opens See why from the
@@ -1447,10 +1486,9 @@ function displayFor(a) {
    Space steps it forward) or the exploration, where ← on its first move
    goes back to the lesson, as Esc does; Esc takes back a move being checked */
 function keyLine(a, slots, foc) {
-  var k = [], right = null, has = function (act) { return slots.filter(function (s) { return s.act === act && !s.off && !/nav-off/.test(s.cls || ''); })[0]; };
-  for (var i = slots.length - 1; i >= 0 && !right; i--) if (!slots[i].empty) right = slots[i];
+  var k = [], honey = honeyOf(slots), has = function (act) { return slots.filter(function (s) { return s.act === act && !s.off && !/nav-off/.test(s.cls || ''); })[0]; };
   if (foc && foc.label && (a.phase !== 'reply' || foc.act === 'theirReply')) k.push('Enter: ' + foc.label.replace(/ ›$/, ''));
-  else if (!foc && right && right.act && !right.off && a.phase !== 'checking' && (a.phase !== 'reply' || right.act === 'theirReply')) k.push('Enter: ' + right.label.replace(/ ›$/, ''));
+  else if (!foc && honey && a.phase !== 'checking' && (a.phase !== 'reply' || honey.act === 'theirReply')) k.push('Enter: ' + honey.label.replace(/ ›$/, ''));
   if (a.phase === 'done' && a.explore) {
     if (a.explore.at === 0) { if (has('xpFwd')) k.push('→ step'); k.push('← or Esc: back to the lesson'); }
     else { k.push(has('xpFwd') ? '← → step' : '← step'); k.push('Esc: back to the lesson'); }
@@ -1469,7 +1507,7 @@ function keyLine(a, slots, foc) {
 /* the control that has the keyboard, as the key line reads it: a bar or
    strip control Enter would press ({act, label}), any other control
    ({other}), or null (nothing focused, the band's heading, a switched-off
-   slot: Enter is the right-hand button) */
+   slot: Enter is the honey button, if the bar has one) */
 function keyFocus() {
   var f = document.activeElement, act = f && f.getAttribute && f.getAttribute('data-act');
   if (!act || f.tagName === 'INPUT' || !f.closest) return null;
@@ -1546,13 +1584,17 @@ function paintText(a) {
      "Your move", never to the button that took its slot */
   else if (a.focusTask && a.phase === 'guess' && lost && el('task-h')) el('task-h').focus({ preventScroll: true });
   /* exploring opens with the keyboard on its band's heading (S20): Enter
-     is the right-hand button, Space plays nothing, a row takes a key only
+     is the honey button, Space plays nothing, a row takes a key only
      once Tab or a tap has put the focus there */
   else if (xe && xe.focusHead && el('result-h')) { xe.focusHead = false; el('result-h').focus({ preventScroll: true }); }
   else if (focKey && fp) {
-    /* a bar button: the one now in its slot, or the right-hand one (S20)
-       when that slot is off or gone */
-    var back = focSlot != null ? barButton(focSlot) || barButton(rightSlot())
+    /* a bar button: the one now in its slot, or the honey one (S20, F4.1)
+       when that slot is off or gone; never Show the answer taking the place
+       of another button under the keyboard (Try again turning into it), so
+       Enter never shows the answer unless the player went there */
+    var slotNow = focSlot != null ? barButton(focSlot) : null;
+    if (slotNow && slotNow.getAttribute('data-act') === 'reveal' && focKey.split('|')[0] !== 'reveal') slotNow = null;
+    var back = focSlot != null ? slotNow || barButton(honeySlot()) || el('task-h')
       : focKey.indexOf('|') < 0 ? el(focKey) : fp.querySelector('[data-act="' + focKey.split('|')[0] + '"]' + (focKey.split('|')[1] ? '[data-k="' + focKey.split('|')[1] + '"]' : ''));
     /* the band's head is the task before an answer and the result after */
     if (!back && /^(task|result)-h$/.test(focKey)) back = el('task-h') || el('result-h');
@@ -1563,7 +1605,7 @@ function paintText(a) {
     }
     /* never the typed-move box, which would pop up a phone's keyboard: a
        control that went falls back to the bar's right-hand button */
-    (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : barButton(rightSlot()) || (bar && bar.querySelector('[data-act]'))) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
+    (back || (xe ? (fp.querySelector('#xp .xp-mv.on') || el('xp')) : barButton(honeySlot())) || el('task-h') || el('result-h') || fp).focus({ preventScroll: true });
   }
   a.focusTask = false;
   /* the keys once the keyboard has settled (2.0) */
@@ -1607,8 +1649,35 @@ function paintTop(a, ss) {
   makeFocusable(ct);
   if (tIdx !== -1) { var tb = ct.querySelectorAll('[data-act], a[href]')[tIdx]; if (tb) tb.focus({ preventScroll: true }); }
 }
-/* the band, the strip: each written only when its words changed */
-function paintBand(a, d) { setHtml(el('cband'), bandHtml(a, d)); }
+/* the band, the strip: each written only when its words changed. The
+   Coach Panel around them takes the band's state (its 4 px edge and 10%
+   tint, F4.1), with the words; a found verdict's first words bring the
+   found pop (F4.4), once a card */
+function paintBand(a, d) {
+  var band = el('cband'), fresh = setHtml(band, bandHtml(a, d)), co = el('ccoach');
+  var cls = 'coach k-' + d.kind + (d.cap ? ' cap' : '') + (a.phase === 'done' && a.explore ? ' exploring' : '');
+  if (co && co.className !== cls) co.className = cls;
+  if (fresh && foundMoment(a, d)) {
+    a.rewarded = true;
+    var disc = band.querySelector && band.querySelector('.bd-disc');
+    if (disc && disc.classList) disc.classList.add(a.tier >= 3 ? 'fx-found3' : 'fx-found');
+    reward('found', a);
+  }
+}
+/* the found moment (F4.4): the verdict of a card found (first try, after
+   help, or a move that works too), its first words on a board that is
+   still (the text beat runs after the piece lands), once a card; never an
+   answer shown, a hint, a wrong try, a forcing line's step or See why */
+function foundMoment(a, d) {
+  return !a.rewarded && a.phase === 'done' && !a.revealed && !a.explore && !!a.view && a.view.mode === 's0' && d.disc === 'good' && !d.cap;
+}
+/* the rewards given (F4.4), in order: { kind: found, learned or goal, key,
+   at }. A test reads them: none during a hint, a wrong try or See why */
+var rewardLog = [];
+function reward(kind, a) {
+  rewardLog.push({ kind: kind, key: a ? a.key : null, at: Date.now() });
+  if (rewardLog.length > 50) rewardLog.shift();
+}
 function paintStrip(d) {
   ui.repainting = true;
   try { setHtml(el('cstrip'), d.strip); } finally { ui.repainting = false; }
@@ -1635,20 +1704,28 @@ function paintLive(d) {
   if (!live) { live = document.createElement('div'); live.id = 'sr-live'; live.className = 'sr-live'; live.setAttribute('aria-live', 'polite'); live.setAttribute('data-clarity-mask', 'true'); document.body.appendChild(live); }
   if (live.textContent !== d.live) live.textContent = d.live;
 }
-/* the band: the fixed box above the board. A disc, then
+/* the band: the words at the Coach Panel's top (F4.1). A 32 px disc, then
    row 1 (the heading the card focuses: the task before an answer, the
-   result after) with the relearn chip or a forcing line's pips at its
-   right, then row 2; or one caption while exploring */
+   result after) with a forcing line's pips at its right, row 2, and the
+   tag row; or one caption (a story step) over the tag row's place */
 function bandHtml(a, d) {
   /* a story step keeps the card's verdict disc beside its caption; the
      explorer's sentence stands alone (the live region says it) */
   /* a trade in the board's own pieces (ledgerHtml), its words for a screen reader */
-  if (d.cap && d.disc) return '<div class="card-task k-' + d.kind + ' cap">' + discHtml(a, d.disc) + '<p class="bd-cap">' + ledgerHtml(d.cap) + '</p></div>';
-  if (d.cap) return '<div class="card-task k-' + d.kind + ' cap" aria-hidden="true"><p class="bd-cap">' + ledgerHtml(d.cap) + '</p></div>';
+  if (d.cap) return '<div class="card-task k-' + d.kind + ' cap"' + (d.disc ? '' : ' aria-hidden="true"') + '>' + discHtml(a, d.disc)
+    + '<div class="bd-rows"><p class="bd-cap">' + ledgerHtml(d.cap) + '</p>' + tagRowHtml(d) + '</div></div>';
   return '<div class="card-task k-' + d.kind + (d.sweep ? ' sweep' : '') + '">' + discHtml(a, d.disc)
     + '<div class="bd-rows"><div class="bd-top"><h2 class="bd-r1" id="' + (a.phase === 'done' ? 'result-h' : 'task-h') + '" tabindex="-1">' + esc(d.row1) + '</h2>'
-    + (d.pips ? pipsHtml(d.pips) : d.chip ? '<span class="bd-chip">' + esc(d.chip) + '</span>' : '') + '</div>'
-    + '<p class="bd-r2">' + ledgerHtml(d.row2) + '</p></div></div>';
+    + (d.pips ? pipsHtml(d.pips) : '') + '</div>'
+    + '<p class="bd-r2">' + ledgerHtml(d.row2) + '</p>' + tagRowHtml(d) + '</div></div>';
+}
+/* the tag row (F4.2): one 24 px pill at most, in a place of its own that
+   never moves: the band's chip (the relearn chip "One more try" in honey,
+   a wrong try's check step in slate) or the context line on a decisive
+   first sight ("Lost vs opponent1", neutral, never coral) */
+function tagRowHtml(d) {
+  var t = d.chip || d.tag, cls = !t ? '' : d.chip ? (d.chip === CARD_COPY.T3() ? 'tag-honey' : 'tag-slate') : 'tag-ctx';
+  return '<div class="bd-tags">' + (t ? '<span class="tag ' + cls + '">' + esc(t) + '</span>' : '') + '</div>';
 }
 /* the forcing pips (2.0): a 7 px dot per move of yours, filled for each
    one found, ringed for the one due now; they repeat nothing the band does
@@ -1698,10 +1775,11 @@ function barSlots(a, ss) {
       var xe = a.explore, xn = xpCur(xe), xr = xe.res[xn.key];
       var fwdOff = !(xe.at < xe.nodes.length - 1 || (xr && xr.lines[0] && !xpSpoil(xn) && !xpGameOver(xn.st)));
       /* at the trail's end › plays Stockfish's pick, and says so (S14; at
-         tier 1 "its pick", the computer's, as the band and sentence say) */
+         tier 1 the computer's, as the band and sentence say), in the body
+         size (the design lead's review of slice 3) */
       var xEnd = xe.at >= xe.nodes.length - 1;
       return [{ act: 'xpBack', label: '‹', cls: 'nav-btn', aria: xe.at === 0 ? 'Back to the lesson' : 'Back one move' },
-              { act: 'xpFwd', label: xEnd ? (a.tier === 1 ? 'Play its pick' : 'Play Stockfish\'s pick') : '›', cls: 'btn-line xp-fwd' + (fwdOff ? ' nav-off' : ''), aria: xEnd ? null : 'Forward one move' }, cont];
+              { act: 'xpFwd', label: xEnd ? (a.tier === 1 ? 'Computer\'s pick' : 'Stockfish\'s pick') : '›', cls: 'btn-line xp-fwd' + (fwdOff ? ' nav-off' : ''), aria: xEnd ? null : 'Forward one move' }, cont];
     }
     /* the story (S12): ‹, Next move › in gold until the last step, where it
        is switched off (outlined, greyed) and Continue turns gold */
@@ -1714,9 +1792,9 @@ function barSlots(a, ss) {
     /* the answer shown (S7): Continue, and Play it in gold; switched off
        while their reply plays, and once played until the card settles */
     if (a.view.mode === 'show' || (a.revealed && a.settle < 2))
-      return [{ act: 'next', label: cont.label, cls: 'btn-line' }, replyButton(a) || { act: 'playIt', label: 'Play it ›', cls: 'btn-big', off: a.showWait || !showDue(a) }];
+      return [{ act: 'next', label: cont.label, cls: 'btn-line' }, replyButton(a) || { act: 'playIt', label: 'Play it', cls: 'btn-big', off: a.showWait || !showDue(a) }];
     /* settled (S0): the story, and Continue in gold */
-    return [{ act: 'seeWhy', label: 'See why ›', cls: 'btn-line' }, cont];
+    return [{ act: 'seeWhy', label: 'See why', cls: 'btn-line' }, cont];
   }
   if (a.phase === 'tried') return triedSlots(a);
   /* a move being checked keeps the guess bar until the band says so (K1,
@@ -1735,14 +1813,19 @@ function barSlots(a, ss) {
   if (replyButton(a)) return [{ label: '', cls: 'slot-empty', off: true, empty: true }, replyButton(a)];
   return [{ act: 'hint', label: hintLabel(a), cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
 }
+/* the honey button among the slots, the one Enter presses (F4.1): on, with
+   an action; null when the bar has none (a fresh card) */
+function honeyOf(slots) {
+  return (slots || []).filter(function (s) { return !s.empty && !s.off && s.act && /\bbtn-big\b/.test(s.cls || '') && !/nav-off/.test(s.cls || ''); })[0] || null;
+}
 /* Hint is named by the hint it gives next: the worked example (S9), whose
    band says "Hint 1 of 2" from the start, reads "Hint 2" too */
 function hintLabel(a) { return a.hints >= 2 ? 'No more hints' : a.hints ? 'Hint 2' : 'Hint'; }
-/* "Their reply ›" (S10, S19): under reduced motion no timer moves a piece,
+/* "Their reply" (S10, S19): under reduced motion no timer moves a piece,
    so the forcing reply waits for this gold button; null when no reply waits */
 function replyButton(a) {
   var rp = a.reply;
-  return rp && !rp.played && reducedMotion() && a.sol && a.sol[a.solIdx] === rp.uci ? { act: 'theirReply', label: 'Their reply ›', cls: 'btn-big' } : null;
+  return rp && !rp.played && reducedMotion() && a.sol && a.sol[a.solIdx] === rp.uci ? { act: 'theirReply', label: 'Their reply', cls: 'btn-big' } : null;
 }
 /* the bar while a try is on the board: the gold right-hand button takes it
    back (Try again; Keep looking after a good move that is not the best). On
@@ -1754,7 +1837,7 @@ function triedSlots(a, seen) {
   var t = a.tried, left;
   if (seen == null) seen = t.seen;
   if (t.kind === 'close') return [{ act: 'reveal', label: 'Show the answer', cls: 'btn-line' }, { act: 'dismissStronger', label: 'Keep looking', cls: 'btn-big' }];
-  if (t.kind === 'miss' && t.reply && !seen) left = { act: 'seeIt', label: 'See it ›', cls: 'btn-line' };
+  if (t.kind === 'miss' && t.reply && !seen) left = { act: 'seeIt', label: 'See it', cls: 'btn-line' };
   else if (t.kind === 'unchecked' || a.misses >= 3) left = { act: 'reveal', label: 'Show the answer', cls: 'btn-line' };
   else if (a.hints >= 2) left = { act: 'hint', label: 'No more hints', cls: 'btn-line', off: true };
   else left = { act: 'hint', label: hintLabel(a), cls: 'btn-line' };
@@ -1764,10 +1847,14 @@ function triedSlots(a, seen) {
    switched-off one has no action; an empty one keeps its place. Its icon
    (F3.1) is named by its action, on or off, and drawn by the stylesheet */
 var BAR_ICON = { hint: 'bulb', reveal: 'eye', tryAgain: 'rotate', seeIt: 'play', seeWhy: 'play', playIt: 'play', theirReply: 'play', next: 'arrow' };
+/* a lone chevron (‹ back, › forward) is drawn as its Lucide chevron, 22
+   px; the glyph stays as the button's text, unseen, so it reads as before */
+var NAV_ICON = { '‹': 'back', '›': 'fwd' };
 function barHtml(slots) {
   return slots.map(function (s, i) {
     if (s.empty) return '<span class="slot-empty" data-slot="' + i + '" aria-hidden="true"></span>';
-    return '<a class="' + s.cls + (s.off ? ' btn-off' : '') + '" data-slot="' + i + '"' + (BAR_ICON[s.act] ? ' data-icon="' + BAR_ICON[s.act] + '"' : '')
+    var ic = NAV_ICON[s.label] || BAR_ICON[s.act];
+    return '<a class="' + s.cls + (NAV_ICON[s.label] ? ' nav-ic' : '') + (s.off ? ' btn-off' : '') + '" data-slot="' + i + '"' + (ic ? ' data-icon="' + ic + '"' : '')
       + (s.off ? ' aria-disabled="true" tabindex="-1"' : ' data-act="' + s.act + '"' + (s.k != null ? ' data-k="' + esc(s.k) + '"' : ''))
       + (s.aria ? ' aria-label="' + esc(s.aria) + '"' : '') + '>' + esc(s.label) + '</a>';
   }).join('');
@@ -1850,7 +1937,7 @@ function menuHtml(a) {
     + (xpOpen(a) && !a.reply ? '<a data-act="explore" data-k="menu">Try your own moves</a>' : '')
     /* the keys only where there is a keyboard to press them: never on a
        touch screen */
-    + (!touchScreen() ? '<span class="menu-keys">↑ ↓: this menu · Enter: the right-hand button · ?: hint · ← →: step · Esc: back to the lesson</span>' : '')
+    + (!touchScreen() ? '<span class="menu-keys">↑ ↓: this menu · Enter: the main button · ?: hint · ← →: step · Esc: back to the lesson</span>' : '')
     + '</div>';
 }
 function ctxHtml(a) {
@@ -1891,8 +1978,8 @@ function stripHtml(a, ss) {
   if (a.view.mode === 'story') return storyStripHtml(a);
   /* the first card ever queued to come back says so, once (C1) */
   var tip = retryTipOn(a) ? '<p class="story-note retry-tip">' + RETRY_TIP + '</p>' : '';
-  /* settled (S0): one link to everything else (S13) */
-  return tip + (a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="btn-quiet details-link" data-icon="info" data-act="details">Details</a></p>' : '');
+  /* settled (S0): one link to everything else (S13), a 40 px chip */
+  return tip + (a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="strip-chip details-link" data-icon="info" data-act="details">Details</a></p>' : '');
 }
 /* the bar grows by a segment when a card is queued to come back (S16):
    on the first card ever queued (nl:tip:retry, on this device) the strip
@@ -2074,21 +2161,28 @@ function fitRows() {
   if (!bar || !board) return;
   var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap'), rh = '';
   if (window.innerWidth <= 860) {
-    /* on a phone the panel runs from the board's foot to the bar (S14):
-       under the trail and the sentence, as many whole rows as fit (on a
-       short phone the head tightens so one does; none if even that is too
-       short, and the bar's Play Stockfish's pick still plays the gold
-       arrow), the caption only when a row does not need its
-       place, and what is left shared out among the rows, up to 60 px each,
-       so the panel ends at the bar */
+    /* on a phone the analysis fills the Coach Panel from under the band to
+       the panel's foot (S14, F4.1): under the trail and the sentence, as
+       many whole rows as fit (on a short phone the head tightens so one
+       does; none if even that is too short, and the bar's Stockfish's pick
+       still plays the gold arrow), the caption only when a row does not
+       need its place, and what is left shared out among the rows, up to 60
+       px each, so the rows end at the panel's foot */
     if (cap) cap.style.display = 'none';
     rowsEl.style.display = '';
-    var xpEl = el('xp'), barTop = bar.getBoundingClientRect().top, capH = 18;
+    var xpEl = el('xp'), co = el('ccoach'), cr = co && co.getBoundingClientRect(), capH = 24;
+    var barTop = cr && cr.height ? cr.bottom - 8 : bar.getBoundingClientRect().top;
     var roomOf = function () { return barTop - rowsEl.getBoundingClientRect().top; };
     xpEl.classList.remove('tight');
     var room = roomOf();
-    /* no room for a row: the head gives up 16 px and the sentence its 4 */
-    if (room < XP_ROW) { xpEl.classList.add('tight'); room = roomOf(); if (room < XP_ROW) { xpEl.classList.remove('tight'); room = roomOf(); } }
+    /* no room for a row: the head gives up 16 px and the sentence its 4,
+       kept where that makes a row fit, or where the sentence would
+       otherwise run past the panel's foot */
+    if (room < XP_ROW) {
+      xpEl.classList.add('tight');
+      var tightRoom = roomOf();
+      if (tightRoom < XP_ROW && room >= 0) xpEl.classList.remove('tight'); else room = tightRoom;
+    }
     k = Math.max(0, Math.min(3, Math.floor(room / XP_ROW)));
     var withCap = k > 0 && room - XP_ROW * k >= capH;
     if (withCap) room -= capH;
@@ -2166,13 +2260,18 @@ function threatLine(a) {
   }
   return t ? threatWords(t, a.tier || 2) : '';
 }
-/* when the card comes back, in a few words */
+/* the ladder in words, after the answer (F4.3): where the position stands
+   and when it comes back, always the real interval to its due date: "Step
+   2 of 3 · back in 16 days" (its run of clean finds, rungsOf), "Back to the
+   start · back in 3 days" after a miss or the answer shown ("back
+   tomorrow" for one day), "Learned · one last check in 87 days"; a
+   position not yet on a step that fell nowhere is "Starting out" */
 function scheduleWords(rec, a) {
   if (!rec) return '';
-  if (isLearned(rec)) return 'Learned. A check-in ' + dueWhen(rec.due);
-  if (a.relearnQueued) return 'Back later in this session';
-  var w = dueWhen(rec.due);
-  return 'Back ' + (w === 'later today' ? 'later today' : w);
+  if (isLearned(rec)) return rec.retired || rec.due == null ? 'Learned for good' : 'Learned · one last check ' + dueWhen(rec.due);
+  var rung = rungsOf(rec), fell = !!a && (a.result === 'retry' || a.result === 'fail' || a.misses > 0 || !!a.revealed || (rec.lapses || 0) > 0);
+  var head = rung > 0 ? 'Step ' + rung + ' of 3' : fell ? 'Back to the start' : 'Starting out';
+  return rec.due == null ? head : head + ' · back ' + dueWhen(rec.due);
 }
 function scrollTrainerTop() {
   if (window.innerWidth > 860) return;
@@ -2253,12 +2352,45 @@ function openSheet(kind, back) {
   /* the phone's Back gesture closes the sheet, not the page */
   if (!was) { try { history.pushState({ nlSheet: 1, nlSession: history.state && history.state.nlSession }, '', location.href); } catch (e) {} }
   if (!ui.sheetReturn) { ui.sheetReturn = document.activeElement; ui.sheetBack = back || null; }
-  ov.innerHTML = '<div class="scrim" data-act="closeSheet"><div class="sheet" role="dialog" aria-modal="true" aria-label="Details" tabindex="-1">'
+  /* a card's Details on a phone (F4.1): its top at the board's foot, so the
+     board stays in view above it, unshaded (with 160 px or more under the
+     board: an iPhone SE in Safari has 172; less, and it is the usual sheet);
+     on a phone held sideways it takes the column beside the board */
+  var bw = kind === 'details' && window.innerWidth <= 860 && el('bwrap'), br = bw && bw.getBoundingClientRect ? bw.getBoundingClientRect() : null;
+  var side = !!br && window.innerWidth > window.innerHeight && window.innerHeight < 600;
+  var atBoard = !!br && !side && br.bottom > 0 && window.innerHeight - br.bottom >= 160, atSide = side && br.right > 0 && window.innerWidth - br.right >= 280;
+  ov.innerHTML = '<div class="scrim' + (atBoard ? ' at-board' : atSide ? ' at-side' : '') + '" data-act="closeSheet"><div class="sheet" role="dialog" aria-modal="true" aria-label="Details" tabindex="-1"'
+    + (atBoard ? ' style="height:' + Math.floor(window.innerHeight - br.bottom) + 'px"' : atSide ? ' style="width:' + Math.floor(window.innerWidth - br.right - 8) + 'px"' : '') + '>'
     + '<a class="close" data-act="closeSheet" aria-label="Close">×</a>' + body + '</div></div>';
   document.documentElement.style.overflow = 'hidden';
   var sh = ov.querySelector('.sheet'), h3 = sh && sh.querySelector('h3');
   if (h3) { h3.id = 'sheet-title'; sh.removeAttribute('aria-label'); sh.setAttribute('aria-labelledby', 'sheet-title'); }
   if (sh) sh.focus({ preventScroll: true });
+  if (sh && sh.addEventListener) swipeToClose(sh);
+}
+/* a sheet on a phone closes with a swipe down from its top (F4.1): it
+   follows the finger while the sheet is scrolled to its top, and a pull of
+   80 px or more closes it; less, and it settles back */
+var SWIPE_CLOSE = 80;
+function swipeToClose(sh) {
+  var y0 = null, dy = 0;
+  sh.addEventListener('touchstart', function (e) {
+    y0 = sh.scrollTop > 0 || !e.touches || e.touches.length !== 1 ? null : e.touches[0].clientY;
+    dy = 0;
+  }, { passive: true });
+  sh.addEventListener('touchmove', function (e) {
+    if (y0 == null || !e.touches) return;
+    dy = sh.scrollTop > 0 ? 0 : Math.max(0, e.touches[0].clientY - y0);
+    sh.style.transform = dy > 6 ? 'translateY(' + dy + 'px)' : '';
+  }, { passive: true });
+  var end = function () {
+    if (y0 == null) return;
+    y0 = null;
+    if (dy >= SWIPE_CLOSE) { closeSheet(); return; }
+    sh.style.transform = '';
+  };
+  sh.addEventListener('touchend', end);
+  sh.addEventListener('touchcancel', end);
 }
 function closeSheet(fromPop) {
   if (!ui.sheet) return;

@@ -33,8 +33,10 @@
   --eval-light:#F4F0E8; --eval-dark:#3A3731;
 
   /* type: one family, rounded, in seven sizes (phone; desktop from 861 px
-     below). Weights: score and title 900, verdict, heading and tag 800,
-     small 700, body 600. Tags are sentence case. Nunito misses its first
+     below). Weights (the design lead's review of slice 3): score and title
+     900; verdict, heading, band row 1, button labels and tags 800; meta,
+     kickers and emphasised lines (the habit, a story caption) 600 to 700;
+     small 600; body 500. Tags are sentence case. Nunito misses its first
      paint at most once (display=optional): then each platform's own face
      (rounded on Apple), and Arial before system-ui, whose wide Linux faces
      would crowd the bar */
@@ -65,6 +67,9 @@
   --ic-minus:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14'/%3E%3C/svg%3E");
   --ic-x:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E");
   --ic-search:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21 21-4.34-4.34'/%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3C/svg%3E");
+  --ic-back:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m15 18-6-6 6-6'/%3E%3C/svg%3E");
+  --ic-fwd:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
+  --ic-medal:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15'/%3E%3Cpath d='M11 12 5.12 2.2'/%3E%3Cpath d='m13 12 5.88-9.8'/%3E%3Cpath d='M8 7h8'/%3E%3Ccircle cx='12' cy='17' r='5'/%3E%3Cpath d='M12 18v-2h-.5'/%3E%3C/svg%3E");
   --ic-seal:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cmask id='m'%3E%3Crect width='24' height='24' fill='%23fff' stroke='none'/%3E%3Cpath d='m16 9-5.5 5.5L8 12' stroke='%23000'/%3E%3C/mask%3E%3Cpath d='M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z' fill='%23000' mask='url(%23m)'/%3E%3C/svg%3E");
 }
 @media (min-width:861px){
@@ -83,7 +88,7 @@ html{scrollbar-gutter:stable}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg)}
 body{
-  color:var(--text-2);font-family:var(--font);font-weight:600;font-size:var(--fs-body);line-height:var(--lh-body);
+  color:var(--text-2);font-family:var(--font);font-weight:500;font-size:var(--fs-body);line-height:var(--lh-body);
   font-variant-numeric:lining-nums;padding:0 0 56px;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;min-height:100vh;
 }
 h1,h2,h3{margin:0}
@@ -91,15 +96,19 @@ b,strong{font-weight:800}
 a{color:var(--honey);text-decoration:none;cursor:pointer}
 a:hover{color:var(--honey-hover)}
 button{font-family:inherit}
-*:focus-visible{outline:2px solid var(--text-1);outline-offset:2px}
-.by-pointer #cbar [data-act]:focus-visible{outline:none}
+/* the focus ring: honey, 2 px, 2 px out; on a honey button the light text
+   colour. After a tap or a click (by-pointer) the card's controls, the •••
+   menu and a sheet's buttons show none: it is for steering with keys */
+*:focus-visible{outline:2px solid var(--honey);outline-offset:2px}
+.btn-big:focus-visible{outline-color:var(--text-1)}
+.by-pointer #cbar [data-act]:focus-visible,.by-pointer .card-menu a:focus-visible,.by-pointer .sheet [data-act]:focus-visible,.by-pointer .sheet .close:focus-visible{outline:none}
 ::selection{background:var(--honey-14)}
 [hidden]{display:none !important}
 .tnum{font-variant-numeric:tabular-nums}
 .loss{color:var(--coral)}
 .dim{color:var(--text-3)}
 .sec{color:var(--text-2)}
-.kicker{font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;color:var(--text-3)}
+.kicker{font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:700;color:var(--text-3)}
 /* sentence case: a kicker written in lower case for the old capitals still starts with one */
 .kicker::first-letter{text-transform:uppercase}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -116,6 +125,8 @@ button{font-family:inherit}
 [data-icon=arrow]{--ic:var(--ic-arrow)}
 [data-icon=info]{--ic:var(--ic-info)}
 [data-icon=search]{--ic:var(--ic-search)}
+[data-icon=back]{--ic:var(--ic-back)}
+[data-icon=fwd]{--ic:var(--ic-fwd)}
 .icon{width:22px;height:22px;display:block;stroke-width:2}
 .icon-btn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;color:var(--text-2)}
 .icon-btn:hover{background:var(--surface-2);color:var(--text-1)}
@@ -167,7 +178,7 @@ button{font-family:inherit}
 .chip-on{border-color:var(--honey);color:var(--text-1);background:var(--honey-14)}
 .input{
   background:var(--surface-1);border:2px solid var(--border);border-radius:var(--r-btn);color:var(--text-1);
-  font-family:inherit;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;padding:12px 16px;
+  font-family:inherit;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600;padding:12px 16px;
 }
 .input::placeholder{color:var(--text-3)}
 .input:focus{border-color:var(--honey);outline:none}
@@ -214,7 +225,7 @@ button{font-family:inherit}
 .first-form .input{flex:1 1 240px;min-width:0;min-height:56px}
 .first-form .btn-big{min-height:52px;min-width:200px}
 .first-form .btn-big::before{width:22px;height:22px}
-.first-foot{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;margin:12px 0 0;color:var(--text-3)}
+.first-foot{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;margin:12px 0 0;color:var(--text-3)}
 .confirm{
   border:2px solid var(--honey);border-radius:var(--r-card);padding:16px 18px;max-width:560px;margin:8px 0 16px;
   display:flex;gap:14px;align-items:center;background:var(--honey-10);
@@ -222,25 +233,25 @@ button{font-family:inherit}
 .confirm img{width:52px;height:52px;border-radius:12px;object-fit:cover;flex:none;background:var(--surface-2)}
 .confirm .who{flex:1;min-width:0}
 .confirm .who b{display:block;font-size:var(--fs-heading);line-height:var(--lh-heading);color:var(--text-1)}
-.confirm .who span{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2)}
-.handoff{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);margin:0 0 12px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.confirm .who span{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+.handoff{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 12px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
 .proof{margin:24px 0 0;padding:16px 20px;border-left:4px solid var(--honey);background:var(--surface-1);border-radius:0 var(--r-btn) var(--r-btn) 0}
-.proof figcaption{font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;color:var(--text-3);margin-bottom:6px}
+.proof figcaption{font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:700;color:var(--text-3);margin-bottom:6px}
 .proof blockquote{margin:0;font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1)}
 .which-q{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:800;color:var(--text-1);margin:12px 0 8px}
 .which-row{display:flex;flex-wrap:wrap;gap:12px}
-.which-none{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);margin:12px 0 0}
+.which-none{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:12px 0 0}
 .value{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:16px;margin-top:48px}
 .value-item{background:var(--surface-1);border-radius:var(--r-card);padding:20px}
 .value-item b{display:block;font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin-bottom:6px}
-.value-item span{color:var(--text-2);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700}
+.value-item span{color:var(--text-2);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600}
 .landing{max-width:1200px;display:grid;grid-template-columns:minmax(0,1fr) 480px;gap:0 64px;padding-top:64px;align-items:start}
 .landing-copy{min-width:0}
 .landing-ex{background:var(--surface-1);border-radius:var(--r-card);padding:20px}
 .landing-ex .kicker{color:var(--text-3)}
 .landing-ex .board{border-radius:12px}
 .ex-task{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:16px 0 2px}
-.ex-sub{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);margin:0}
+.ex-sub{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0}
 .landing .value{grid-column:1/-1}
 .landing .first-foot.small{grid-column:1/-1;margin-top:24px}
 @media (max-width:1000px){
@@ -261,7 +272,7 @@ button{font-family:inherit}
 .narr-track{display:flex;gap:16px;width:max-content}
 .narr-card{display:flex;flex-direction:column;gap:6px;align-items:center;transition:opacity .45s ease,transform .45s ease}
 .narr-card .board{width:238px;border-radius:12px;box-shadow:var(--shadow-1)}
-.narr-card-cap{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-3)}
+.narr-card-cap{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3)}
 .narr-fade{opacity:0;transform:scale(.96)}
 .narr-wisdom{margin-top:30px;font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-2);max-width:30em;min-height:3.2em;transition:opacity .3s}
 @keyframes narr-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
@@ -275,7 +286,7 @@ button{font-family:inherit}
 .today-grid{max-width:1200px;display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
 @media (min-width:1000px){.today-grid{grid-template-columns:minmax(0,1fr) 380px;gap:32px;align-items:start}}
 .today-main{min-width:0}
-.since{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);margin:0 0 16px}
+.since{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 16px}
 .hero{background:var(--surface-1);border-radius:var(--r-card);padding:28px 28px 24px}
 .hero h2{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);margin:0 0 8px;letter-spacing:-.005em;font-variant-numeric:lining-nums tabular-nums}
 .hero.state h2{margin-bottom:8px}
@@ -283,9 +294,9 @@ button{font-family:inherit}
 .hero .acts{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center}
 .hero .btn-big{min-width:220px;min-height:44px}
 .hero .finds{margin:0 0 16px}
-.hero .find{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1);margin:4px 0}
+.hero .find{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-1);margin:4px 0}
 /* the weekly goal: one segment per day of the goal */
-.week{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);margin:0 0 28px;flex-wrap:wrap}
+.week{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 28px;flex-wrap:wrap}
 .wsegs{display:flex;gap:6px}
 .wseg{width:32px;height:8px;border-radius:4px;box-shadow:inset 0 0 0 2px var(--border)}
 .wseg.on{background:var(--honey);box-shadow:none}
@@ -293,15 +304,15 @@ button{font-family:inherit}
 .focus{position:relative;background:var(--surface-1);border-radius:var(--r-card);padding:24px;margin-top:24px}
 .focus .kicker{color:var(--text-3)}
 .focus-name{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:6px 0 4px}
-.focus p{margin:0 0 12px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2)}
+.focus p{margin:0 0 12px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
 .focus .sec{color:var(--text-2)}
-.focus-more{position:absolute;top:16px;right:16px;display:inline-flex;align-items:center;min-height:44px;padding:0 8px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:800;color:var(--honey)}
+.focus-more{position:absolute;top:16px;right:16px;display:inline-flex;align-items:center;min-height:44px;padding:0 8px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--honey)}
 .focus-more:hover{color:var(--honey-hover)}
 /* the habit: one line with a honey bulb, never a word more */
 .plan{display:flex;gap:10px;align-items:flex-start;color:var(--text-1);font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700}
 .plan::before{content:"";flex:none;width:20px;height:20px;margin-top:2px;background:var(--honey);-webkit-mask:var(--ic-bulb) center/contain no-repeat;mask:var(--ic-bulb) center/contain no-repeat}
 .focus .plan{background:var(--surface-2);border-radius:var(--r-btn);padding:12px 14px;margin:12px 0 0}
-.status{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);margin:16px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.status{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:16px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .status:empty{display:none}
 /* the latest games: each a way into its own mistakes */
 .latest{background:var(--surface-1);border-radius:var(--r-card);padding:16px 20px 12px}
@@ -316,24 +327,25 @@ a.lg-row{color:inherit}
 .lg-W{background:var(--leaf-14);color:var(--leaf)}
 .lg-L{background:var(--coral-14);color:var(--coral)}
 .lg-D{background:var(--slate-14);color:var(--slate)}
-.lg-who{flex:1 1 auto;min-width:0;font-size:var(--fs-body);line-height:var(--lh-small);font-weight:800;color:var(--text-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lg-who .dim{font-weight:700}
-.lg-who small{display:block;font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;color:var(--text-3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lg-state{flex:0 0 auto;text-align:right;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:800;color:var(--text-1)}
-.lg-state i{display:block;font-style:normal;font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;color:var(--text-2);margin-top:2px}
+.lg-who{flex:1 1 auto;min-width:0;font-size:var(--fs-body);line-height:var(--lh-small);font-weight:700;color:var(--text-1);overflow-wrap:anywhere}
+.lg-who .dim{font-weight:600}
+.lg-who small{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin-top:2px}
+/* the state never squeezes the name: both wrap, nothing is cut */
+.lg-state{flex:0 1 auto;max-width:44%;white-space:normal;text-align:right;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1)}
+.lg-state i{display:block;font-style:normal;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin-top:2px}
 .lg-state i::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--coral);margin-right:6px;vertical-align:0}
 .lg-state.ok{color:var(--leaf)}
 .lg-state.dim{color:var(--text-3)}
-.lg-foot{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;margin:8px 0 4px}
+.lg-foot{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;margin:8px 0 4px}
 /* the first minute: every state takes the Today card's place, one shape */
 .finding{background:var(--surface-1);border-radius:var(--r-card);padding:20px 22px}
 .finds{display:flex;flex-direction:column;gap:6px;margin:12px 0 16px}
-.find{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);animation:narr-in .35s ease}
+.find{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);animation:narr-in .35s ease}
 .find b{color:var(--text-1)}
 .read-prog{display:flex;align-items:center;gap:12px;margin:8px 0 4px}
 .rp-bar{flex:1 1 auto;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}
 .rp-bar i{display:block;height:100%;background:var(--honey);border-radius:3px;transition:width var(--dur-3) var(--ease)}
-.rp-n{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);white-space:nowrap}
+.rp-n{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);white-space:nowrap}
 a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:2px 6px}
 /* phones: the latest games sit right under the Today card, the way back in after a game */
 @media (max-width:860px){
@@ -350,9 +362,9 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
   .latest{padding:12px 16px 8px}
 }
 
-/* the card ───────────────────────────────────────────────────────────── */
-.card{display:grid;grid-template-columns:minmax(0,min(520px,max(340px,calc(100vh - 150px)))) minmax(0,1fr);gap:14px 30px;padding:14px 0 20px;align-items:start}
-.card-top{grid-column:1/-1;display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:48px}
+/* the card: the board, then the Coach Panel (F4.1) ────────────────────── */
+.card{display:grid;grid-template-columns:minmax(0,1fr);gap:0;padding:0;align-items:start}
+.card-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:44px}
 /* the session bar: end, progress, more */
 .sb-end{flex:none;width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;font-size:var(--fs-title);line-height:1;font-weight:700;color:var(--text-2);border-radius:12px;margin-left:-10px}
 .sb-end:hover{background:var(--surface-2);color:var(--text-1)}
@@ -376,21 +388,27 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .menu-pop a{display:flex;align-items:center;min-height:44px;padding:10px 12px;border-radius:10px;color:var(--text-1);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700}
 .menu-pop a:hover{background:var(--surface-1);color:var(--text-1)}
 .menu-pop .sep{height:1px;background:var(--surface-1);margin:4px 2px}
-.menu-keys{display:block;padding:8px 12px 4px;font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;color:var(--text-3);border-top:1px solid var(--surface-1);margin-top:4px}
+.menu-keys{display:block;padding:8px 12px 4px;font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:700;color:var(--text-3);border-top:1px solid var(--surface-1);margin-top:4px}
 
 /* the board column ─────────────────────────────────────────────────────── */
 .board-col{position:relative;min-width:0}
-.board-row{display:flex;gap:6px;align-items:stretch}
-.evalbar{width:14px;flex:none;border-radius:4px;position:relative;background:var(--eval-dark);z-index:2}
+.board-row{position:relative;display:flex;align-items:stretch}
+/* the eval bar shows only while exploring (F4.1): beside the board on a
+   wide screen, across under it on a phone (its own fill), never moving the
+   board; grey and still while it waits */
+.evalbar{display:none;position:absolute;z-index:2;border-radius:4px;background:var(--eval-dark)}
+.card.xp-card .evalbar{display:block}
 .evalbar-fill{position:absolute;left:0;right:0;bottom:0;background:var(--eval-light);transition:height .45s ease;border-radius:4px}
 .evalbar.flip .evalbar-fill{bottom:auto;top:0}
+.evalbar-fill-h{display:none;position:absolute;top:0;bottom:0;left:0;background:var(--eval-light);transition:width .45s ease;border-radius:3px}
+.evalbar.flip .evalbar-fill-h{left:auto;right:0}
 .evalbar-label{
   position:absolute;left:0;min-width:100%;box-sizing:border-box;white-space:nowrap;text-align:center;
   font-size:var(--fs-tag);line-height:14px;padding:0 3px;border-radius:4px;font-weight:800;font-variant-numeric:tabular-nums;
 }
 .evalbar-label:empty{display:none}
 .evalbar.pending{background:var(--surface-2)}
-.evalbar.pending .evalbar-fill{opacity:0}
+.evalbar.pending .evalbar-fill,.evalbar.pending .evalbar-fill-h{opacity:0}
 .board-wrap{position:relative;flex:1;min-width:0;container-type:inline-size}
 .board{width:100%;display:block;user-select:none;border-radius:4px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);touch-action:none}
 /* coordinates in the page's own font (boardSvg colours them: dark brown on
@@ -439,35 +457,41 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .promo-opt:hover{border-color:var(--honey)}
 .promo-opt svg{width:100%;height:100%}
 
-/* the band: one fixed 56 px box above the board on a phone, a 126 px
-   panel at the head of the side column on a wide screen. A disc, row 1
-   (the relearn chip or a forcing line's pips at its right) and row 2, or
-   one caption; the state shows as a 4 px left edge and a 10% tint, the
-   disc's glyph repeating it in shape. It fades in over 150 ms whenever its
-   words change */
+/* the Coach Panel (F4.1): one surface under the board (beside it on a wide
+   screen), the band's words at its top, the strip at its foot. The band's
+   state shows as the panel's 4 px left edge and a 10% tint of its colour
+   (the open card untinted, its edge the border colour), changing with its
+   words; story steps, hints and exploring keep the edge alone ─────────── */
+.panel{min-width:0;display:flex;flex-direction:column}
+.coach{position:relative;display:flex;flex-direction:column;min-width:0;background-color:var(--surface-1);border-radius:var(--r-card);
+  border-left:4px solid var(--border);padding:16px 16px 12px 12px;transition:background-color .15s var(--ease),border-color .15s var(--ease)}
+.coach.k-good{background-color:color-mix(in srgb,var(--leaf) 10%,var(--surface-1));border-left-color:var(--leaf)}
+.coach.k-bad{background-color:color-mix(in srgb,var(--coral) 10%,var(--surface-1));border-left-color:var(--coral)}
+.coach.k-close,.coach.k-info{background-color:color-mix(in srgb,var(--slate) 10%,var(--surface-1));border-left-color:var(--slate)}
+.coach.k-hint,.coach.k-explore{border-left-color:var(--honey)}
+/* the story (S12): a coral edge on your game's steps, a leaf one on the
+   better ones (the disc, a king or a tick, says which in shape) */
+.coach.k-sgame{border-left-color:var(--coral)}
+.coach.k-sbetter{border-left-color:var(--leaf)}
+
+/* the band, at the panel's top: a 32 px disc, 12 px from the rows; row 1
+   (28 px), row 2 (two lines, 48 px; honey in a hint) and the tag row (24
+   px), each in a place of its own, so nothing below them ever moves; or one
+   caption over rows 1 and 2. Its words fade in and rise 6 px over 150 ms
+   whenever they change (F4.4) */
 .band-slot{min-width:0}
-.card-task{position:relative;display:flex;align-items:center;gap:8px;box-sizing:border-box;height:56px;margin:0;padding:0 8px 0 10px;
-  border-left:4px solid transparent;overflow:hidden;animation:band-in .15s ease-out}
+.card-task{position:relative;display:flex;align-items:flex-start;gap:12px;margin:0;min-width:0}
 /* a move being checked: a line runs along the band's foot (still under
    reduced motion) */
-.card-task.sweep::after{content:'';position:absolute;bottom:0;left:-40%;width:40%;height:2px;background:var(--text-3);animation:sweep 1s ease-in-out infinite}
-@keyframes band-in{from{opacity:0}to{opacity:1}}
+.card-task.sweep::after{content:'';position:absolute;bottom:-4px;left:0;width:40%;height:2px;background:var(--text-3);animation:sweep 1s ease-in-out infinite}
 @keyframes sweep{0%{left:-40%}100%{left:100%}}
-.card-task.k-good{background:var(--leaf-10);border-left-color:var(--leaf)}
-.card-task.k-bad{background:var(--coral-10);border-left-color:var(--coral)}
-.card-task.k-close,.card-task.k-info{background:var(--slate-10);border-left-color:var(--slate)}
-.card-task.k-hint{border-left-color:var(--honey)}
-.card-task.k-hint .bd-r1,.card-task.k-hint .bd-r2{color:var(--honey)}
-.card-task.k-explore{border-left-color:var(--honey)}
-/* the story (S12): one caption beside the verdict disc, a coral edge on
-   your game's steps, a leaf one on the better ones (the disc, a king or a
-   tick, says which in shape) */
-.card-task.k-sgame{border-left-color:var(--coral)}
-.card-task.k-sbetter{border-left-color:var(--leaf)}
-.bd-disc{flex:none;width:28px;height:28px;display:block}
+@keyframes words-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+.bd-rows{flex:1 1 auto;min-width:0;animation:words-in .15s var(--ease)}
+.bd-disc{flex:none;width:32px;height:32px;display:block;animation:fade-in .15s var(--ease)}
 .bd-disc svg{width:100%;height:100%;display:block}
 .bd-disc.d-king{border-radius:50%;background:var(--surface-2);box-shadow:inset 0 0 0 1.5px var(--border)}
-.bd-disc.d-king svg{width:22px;height:22px;margin:3px}
+.bd-disc.d-king svg{width:24px;height:24px;margin:4px}
 /* the verdict discs in the Night colours (boardSvg's badges keep the
    board's): leaf with a dark tick, coral with a dark cross, a slate ring
    with a slate tick for a close move, slate with a dark eye for an answer
@@ -477,125 +501,139 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .d-close circle{fill:transparent;stroke:var(--slate)} .d-close path{stroke:var(--slate)}
 .d-info circle{fill:var(--slate)} .d-info path{stroke:var(--ink)}
 .d-checking circle,.d-unchecked circle{fill:var(--text-3)} .d-checking path,.d-unchecked path{stroke:var(--ink)}
-.bd-rows{flex:1 1 auto;min-width:0}
-/* row 1 and what stands at its right share one line: a step chip with no
-   room beside the words wraps out of sight, so the words are never cut
-   for it (F1.2: the chip goes first) */
-.bd-top{display:flex;flex-wrap:wrap;align-items:center;gap:0 8px;min-width:0;height:var(--lh-heading);overflow:hidden}
-.bd-r1{flex:0 1 auto;min-width:0;margin:0;font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);
+/* the found moment (F4.4): the verdict's disc pops, 0.6 to 1.08 to 1 in
+   240 ms with row 1 (tier 3: 0.8 to 1 in 150 ms), once a card, after the
+   board is still */
+.bd-disc.fx-found{animation:found-pop .24s linear}
+.bd-disc.fx-found3{animation:found-pop3 .15s var(--ease-pop)}
+@keyframes found-pop{0%{transform:scale(.6);animation-timing-function:var(--ease)}60%{transform:scale(1.08);animation-timing-function:ease-in-out}100%{transform:none}}
+@keyframes found-pop3{from{transform:scale(.8)}to{transform:none}}
+/* row 1 and a forcing line's pips share one line */
+.bd-top{display:flex;align-items:center;gap:0 8px;min-width:0;height:28px;overflow:hidden}
+.bd-r1{flex:0 1 auto;min-width:0;margin:0;font-size:var(--fs-heading);line-height:28px;font-weight:800;color:var(--text-1);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;outline:none}
-.bd-r2{margin:0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bd-r2:empty{display:none}
+.bd-r2{margin:0;height:48px;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:500;color:var(--text-2);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card-task.k-hint .bd-r1,.card-task.k-hint .bd-r2{color:var(--honey)}
+.bd-cap{margin:0;height:76px;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600;color:var(--text-1);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 /* a forcing line's pips (2.0): a dot per move of yours, filled when found,
    ringed when due */
 .bd-pips{flex:none;margin-left:auto;display:flex;gap:5px;align-items:center;padding-right:2px}
 .bd-pips .pip{width:8px;height:8px;border-radius:50%;box-sizing:border-box;border:1.5px solid var(--text-3)}
 .bd-pips .pip.done{background:var(--leaf);border-color:var(--leaf)}
 .bd-pips .pip.cur{border:2px solid var(--text-1)}
-.bd-chip{flex:none;margin-left:auto;display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:var(--r-pill);background:var(--honey-14);
-  color:var(--honey);font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;white-space:nowrap}
-.bd-cap{margin:0;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.card-task.cap .bd-cap{flex:1 1 auto;min-width:0}
+/* the tag row (F4.2): one 24 px pill at most, 10 px each side: the context
+   line neutral (never coral), "One more try" honey, a check step slate */
+.bd-tags{display:flex;align-items:center;gap:8px;height:24px;min-width:0;overflow:hidden}
+.tag{display:inline-flex;align-items:center;flex:none;height:24px;padding:0 10px;border-radius:var(--r-pill);font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;white-space:nowrap}
+.tag-ctx{background:var(--surface-2);color:var(--text-2)}
+.tag-honey{background:var(--honey-14);color:var(--honey)}
+.tag-slate{background:var(--slate-14);color:var(--slate)}
 /* the piece ledger (F1.2, F1.4): a trade in the board's own pieces, set in
    the line of text at its size; a black piece haloed so it reads on the
-   dark band */
+   dark panel */
 .pc-ico{display:inline-block;width:1.15em;height:1.15em;vertical-align:-.2em;margin:0 .02em}
 .pc-ico.pc-b{filter:drop-shadow(0 0 1.2px var(--text-1)) drop-shadow(0 0 .6px var(--text-1))}
 
-/* the strip under the board, and the panel ───────────────────────────── */
-.panel{min-width:0;display:flex;flex-direction:column}
-.card > .panel{align-self:stretch}
-.strip{display:flex;flex-direction:column;min-width:0}
-.checking{display:flex;align-items:center;gap:12px;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-2);margin:8px 0 12px}
+/* the strip, at the panel's foot (F4.1): 40 px chips (Details, the story's
+   two names), the one-time tip; nothing before an answer (the typed-move
+   field waits there, off screen until it has the keyboard) */
+.strip{display:flex;align-items:center;gap:12px;min-width:0;min-height:48px;margin-top:auto;padding-top:8px}
+.checking{display:flex;align-items:center;gap:12px;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:500;color:var(--text-2);margin:8px 0 12px}
 .checking .meter{flex:0 0 120px;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden;position:relative}
 .checking .meter i{position:absolute;top:0;bottom:0;width:40%;background:var(--honey);border-radius:3px;animation:sweep 1s ease-in-out infinite}
 .acts-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:8px 0 4px}
-.ctx{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);margin:0 0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ctx b{color:var(--text-1);font-weight:800}
-.stakes-tag{display:flex;align-items:center;gap:8px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:800;color:var(--text-1);margin:0 0 4px}
+.ctx{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 8px}
+.ctx b{color:var(--text-1);font-weight:700}
+.stakes-tag{display:flex;align-items:center;gap:8px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1);margin:0 0 4px}
 .dot-bad{flex:none;display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--coral)}
-/* the settled card's one link (S0), and the Details sheet behind it (S13) */
-.details-row{margin:2px 0 0}
-.details-link{display:inline-flex;align-items:center;min-height:44px}
-/* the story's strip: each segment's name in a chip and its steps as marks,
-   your game's as coral squares, the better line's as leaf discs (shape and
-   colour), the step on screen larger with a ring; folded to a count over 9 */
-.story-strip{display:flex;align-items:center;gap:14px;min-height:44px;flex-wrap:wrap}
-.st-seg{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 4px;margin:0 -4px;background:none;border:0;font:inherit;
-  font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);cursor:pointer;border-radius:10px}
-.st-seg.on{color:var(--text-1)}
-.st-name{display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border:2px solid var(--border);border-radius:var(--r-pill);background:var(--surface-2)}
-.st-seg:hover .st-name{border-color:var(--text-3)}
-.st-seg.on .st-name{border-color:var(--text-2)}
-.st-seg:focus-visible{outline:2px solid var(--text-1);outline-offset:2px}
-.st-dots{display:inline-flex;align-items:center;gap:7px}
+/* the settled card's one link (S0), a chip, and the Details sheet behind
+   it (S13) */
+.details-row{margin:0;flex:none}
+.strip-chip{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 14px 0 12px;border:2px solid var(--border);border-radius:var(--r-pill);background:var(--surface-2);
+  color:var(--text-1);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;white-space:nowrap;cursor:pointer}
+.strip-chip:hover{color:var(--text-1);border-color:var(--text-3)}
+/* the story's strip: each segment a 40 px chip with its name and its steps
+   as marks, your game's as coral squares, the better line's as leaf discs
+   (shape and colour), the step on screen larger with a ring; folded to a
+   count over 9 */
+.story-strip{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:nowrap}
+.st-seg{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:2px solid var(--border);border-radius:var(--r-pill);background:var(--surface-2);font:inherit;
+  font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);cursor:pointer;white-space:nowrap}
+.st-seg.on{color:var(--text-1);border-color:var(--text-2)}
+.st-seg:hover{border-color:var(--text-3)}
+.st-name{display:inline-flex;align-items:center}
+.st-dots{display:inline-flex;align-items:center;gap:6px}
 .st-dot{display:block;width:8px;height:8px;border-radius:50%;background:var(--border)}
 .st-game .st-dot{border-radius:2px;background:var(--coral);opacity:.55}
 .st-better .st-dot{background:var(--leaf);opacity:.55}
-.st-dot.on{opacity:1;transform:scale(1.35);box-shadow:0 0 0 1.5px var(--bg),0 0 0 3px var(--text-2)}
+.st-dot.on{opacity:1;transform:scale(1.35);box-shadow:0 0 0 1.5px var(--surface-1),0 0 0 3px var(--text-2)}
 .st-count{font-variant-numeric:lining-nums tabular-nums;color:var(--text-2)}
 .st-sep{color:var(--text-3)}
-.story-note{margin:0;min-height:44px;display:flex;align-items:center;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2)}
+.story-note{margin:0;flex:1 1 auto;min-width:0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
 
 /* the action bar: icon buttons, the honey one the step it suggests ─────── */
 .sticky-acts > *{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .guess-acts .slot-empty{flex:1 1 0;min-height:44px}
-/* each button as wide as its words need, the rest shared out, so the
-   longest label keeps its icon on a 360 px phone */
+/* each button as wide as its words need, never under 96 px, the rest shared
+   out and the honey one taking more of it, so it is never the smaller one
+   and the longest label keeps its icon on a 360 px phone */
 .guess-acts .btn-line,.guess-acts .btn-big,.guess-acts .btn-quiet,
-.done-acts .btn-line,.done-acts .btn-big{flex:1 1 auto;min-width:0;justify-content:center;text-align:center;min-height:44px;padding:0 12px}
+.done-acts .btn-line,.done-acts .btn-big{flex:1 1 auto;min-width:96px;justify-content:center;text-align:center;min-height:44px;padding:0 12px}
+.guess-acts .btn-big,.done-acts .btn-big{flex:1.4 1 auto}
 /* "Show the answer" is the tertiary choice: honey words, no fill, so
    giving up is never the loudest button */
 #cbar [data-icon=eye].btn-line{background:none;border-color:transparent;box-shadow:none;color:var(--honey);padding:0 6px}
 #cbar [data-icon=eye].btn-line:active{transform:none}
-/* the story's and exploring's back and forward glyphs */
+/* the story's and exploring's back and forward buttons: a 22 px Lucide
+   chevron, the glyph kept as unseen text */
 .nav-btn{display:inline-flex;align-items:center;justify-content:center;border:2px solid var(--border);border-radius:var(--r-btn);background:var(--surface-2);
   box-shadow:0 4px 0 var(--lip-2);margin-bottom:4px;font-size:var(--fs-title);line-height:1;font-weight:900;color:var(--text-1);cursor:pointer;padding-bottom:3px}
 .nav-btn:active{transform:translateY(2px);box-shadow:0 2px 0 var(--lip-2)}
 .nav-off{opacity:.4;pointer-events:none}
-.done-acts .nav-btn{flex:0 0 48px;height:44px;padding:0}
-/* exploring's forward slot: "Play Stockfish's pick" at the trail's end in
-   the small size, so it stays on one line beside Continue from a 360 px
-   phone to the desktop panel; › alone keeps the glyph's size */
-.done-acts .xp-fwd{font-size:var(--fs-small);padding:0 10px}
-.done-acts .xp-fwd[aria-label]{font-size:var(--fs-title);padding-bottom:3px}
-/* under 400 px exploring's Continue gives its icon up, so both labels stay whole */
-@media (max-width:399px){.xp-card .done-acts [data-icon]::before{display:none}}
+.nav-ic,.nav-ic:hover,.nav-ic:active{position:relative;color:transparent}
+.nav-ic[data-icon]::before{position:absolute;left:0;right:0;top:0;bottom:0;margin:auto;width:22px;height:22px;background:var(--text-1)}
+.done-acts .nav-btn{flex:0 0 48px;min-width:48px;height:44px;padding:0}
+/* exploring's forward slot: "Stockfish's pick" at the trail's end, in the
+   body size like every label; a lone › is its chevron */
+.done-acts .xp-fwd{padding:0 10px}
+/* on the narrowest phones exploring's Continue gives its icon up, so both labels stay whole */
+@media (max-width:374px){.xp-card .done-acts [data-act=next][data-icon]::before{display:none}}
 /* the keys that work now, under the bar, on the desktop only (2.0) */
 .keyline{display:none}
 #cbar a{-webkit-tap-highlight-color:transparent}
 /* text out (2.2): words about to change fade out in 100 ms before the board
    moves, and take no tap meanwhile; the next words take the class off. The
-   band keeps its colour, border and disc: only its words go */
-.band-slot.stale .bd-rows,.band-slot.stale .bd-cap,#cbar.stale,#cbar .stale,#cstrip.stale{opacity:0;transition:opacity .1s ease-out;pointer-events:none}
+   panel keeps its colour, border and disc: only its words go */
+.band-slot.stale .bd-rows,#cbar.stale,#cbar .stale,#cstrip.stale{opacity:0;transition:opacity .1s ease-out;pointer-events:none}
 .kb-move{position:absolute;left:-9999px;top:auto}
-.kb-move:focus-within{position:static;display:flex;gap:8px;align-items:center;margin:10px 0 0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2)}
-.kb-move input{background:var(--surface-1);border:2px solid var(--border);border-radius:10px;color:var(--text-1);padding:7px 9px;font:inherit;width:9em}
+.kb-move:focus-within{position:static;display:flex;gap:8px;align-items:center;margin:0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+.kb-move input{background:var(--surface-2);border:2px solid var(--border);border-radius:10px;color:var(--text-1);padding:7px 9px;font:inherit;width:9em}
 
-/* explore: the answered board as a question box ─────────────────────────── */
-.xp{position:relative;background:var(--surface-1);border-radius:var(--r-card);padding:8px 16px 4px;margin:0 0 12px}
-.xp-meter{position:absolute;left:0;right:0;top:0;height:3px;overflow:hidden;border-radius:var(--r-card) var(--r-card) 0 0;visibility:hidden}
+/* explore: Stockfish's analysis in the panel, under the band ───────────── */
+.xp{position:relative;padding:0;margin:0}
+.xp-meter{position:absolute;left:0;right:0;top:0;height:3px;overflow:hidden;border-radius:2px;visibility:hidden}
 .xp-meter.run{visibility:visible;background:var(--surface-2)}
 .xp-meter i{position:absolute;top:0;bottom:0;width:40%;background:var(--honey);animation:sweep 1s ease-in-out infinite}
-.xp-head{display:flex;align-items:center;gap:12px;height:28px}
+.xp-head{display:flex;align-items:center;gap:12px;height:44px}
 .xp-trail{flex:1 1 auto;min-width:0;display:flex;gap:8px;overflow:hidden;white-space:nowrap;font-size:var(--fs-small);font-variant-numeric:lining-nums tabular-nums}
-.xp-label{font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;color:var(--text-3)}
+.xp-label{font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:700;color:var(--text-3)}
 .xp-mv{color:var(--text-1);border:0;border-bottom:2px solid transparent;line-height:20px;background:none;padding:0;font:inherit;font-weight:800;cursor:pointer}
 .xp-mv.xp-sf{color:var(--text-3)}
 .xp-mv.on{border-bottom-color:var(--honey)}
-.xp-back{flex:none;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:800;color:var(--honey);padding:8px 0;cursor:pointer}
+.xp-back{flex:none;display:flex;align-items:center;min-height:44px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--honey);cursor:pointer}
 /* Stockfish's sentence: two lines kept, so the rows below never jump */
-.xp-say{margin:6px 0 0;min-height:40px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1)}
-.xp-cap{font-size:var(--fs-tag);line-height:18px;font-weight:800;color:var(--text-3);margin:8px 0 0}
-.xp-rows{display:flex;flex-direction:column;margin:0 -16px}
+.xp-say{margin:0 0 4px;min-height:40px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-1)}
+.xp-cap{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:4px 0 0}
+.xp-rows{display:flex;flex-direction:column;margin:0}
 .xp-rows.k1 .xp-row:nth-child(n+2),.xp-rows.k2 .xp-row:nth-child(n+3){display:none}
-.xp-row{position:relative;display:flex;align-items:center;gap:10px;width:100%;height:44px;padding:0 16px;border:0;border-top:1px solid var(--divider);
-  font:inherit;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-3);white-space:nowrap;text-align:left;background:none;cursor:pointer}
+.xp-row{position:relative;display:flex;align-items:center;gap:10px;width:100%;height:var(--xp-row,44px);padding:0 0 0 8px;border:0;border-top:1px solid var(--divider);
+  font:inherit;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);white-space:nowrap;text-align:left;background:none;cursor:pointer}
 .xp-row:first-child{border-top:0}
 @media (hover:hover){.xp-row:hover{background:var(--surface-2)}}
-.xp-row:focus-visible{outline:2px solid var(--text-1);outline-offset:-2px}
+.xp-row:focus-visible{outline:2px solid var(--honey);outline-offset:-2px}
 .xp-row.on::before{content:'';position:absolute;left:0;top:9px;bottom:9px;width:4px;border-radius:0 2px 2px 0;background:var(--honey)}
-.xp-chip{flex:none;min-width:72px;height:26px;padding:0 8px;border-radius:13px;background:var(--surface-2);color:var(--text-1);font-size:var(--fs-small);font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:lining-nums tabular-nums}
+.xp-chip{flex:none;min-width:72px;height:26px;padding:0 8px;border-radius:13px;background:var(--surface-2);color:var(--text-1);font-size:var(--fs-small);font-weight:700;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:lining-nums tabular-nums}
 .xp-first{flex:none;color:var(--text-1);font-weight:800;font-variant-numeric:lining-nums tabular-nums}
 .xp-cont{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:lining-nums tabular-nums}
 .xp-cont.t1{color:var(--text-2)}
@@ -603,65 +641,77 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .xp-row.skel .xp-chip,.xp-row.skel .xp-first,.xp-row.skel .xp-cont{color:transparent;background:var(--surface-2);border-radius:6px}
 .xp-kb{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .xp-kb:focus-within{position:static;width:auto;height:auto;clip:auto;margin:8px 0 4px;display:block}
+/* while exploring the panel holds the analysis: the band's row 2 on one
+   line, no tag row, and the strip, the analysis itself, filling the rest */
+.coach.exploring .bd-r2{height:24px;-webkit-line-clamp:1}
+.coach.exploring .bd-tags{display:none}
+.coach.exploring .strip{display:block;margin-top:8px;padding-top:0;flex:1 1 auto;min-height:0}
 .card.xp-card .tag-row,.card.xp-card .habit{display:none}
 
 /* session mode: the board and nothing else ──────────────────────────── */
 :root{
-  --board:clamp(360px, min(100vh - 144px, 100vw - 488px), 720px);
-  --board-phone:min(100vw - 6px, 100svh - 232px - env(safe-area-inset-bottom));
+  --board:clamp(360px, min(100vh - 120px, 100vw - 480px), 720px);
+  /* a phone (F4.1): the board as wide as the screen, 600 px at most,
+     leaving the session bar (44), the gap (12), the panel's least (96) and
+     the bar (64) their room: 344 at 360 by 640 with the browser's own bars
+     (about 560 px seen), 360 when the whole screen is the page's */
+  --board-phone:min(100%, 100svh - 216px - env(safe-area-inset-bottom), 600px);
+  /* a phone on its side (under 600 px tall): the board left, a column of
+     300 px or more on its right */
+  --board-land:min(100svh - 16px, 100vw - 316px);
 }
 body.in-session #bar,body.in-session .views,body.in-session #foot,body.in-session #settings{display:none}
 body.in-session{padding-bottom:0}
 @media (min-width:861px){
   body.in-session .page{max-width:1200px}
-  .card{grid-template-columns:minmax(0,calc(var(--board) + 20px)) minmax(280px,380px);justify-content:center;gap:16px 40px;padding:0 0 24px}
-  .card-top{padding-top:4px}
-  .board-row{gap:8px}
-  .evalbar{width:12px}
+  /* the board and the side column (380 px, 320 at the least): the panel at
+     its top, level with the board's top edge, the bar's foot level with the
+     board's, the key line below it */
+  .card{grid-template-columns:var(--board) minmax(320px,380px);grid-template-rows:auto auto;justify-content:center;gap:20px 40px;padding:0 0 32px}
+  .card-top{grid-column:1/-1;grid-row:1;min-height:48px;padding-top:4px}
+  .card > .board-col{grid-column:1;grid-row:2}
+  .card > .panel{grid-column:2;grid-row:2;align-self:stretch;position:relative}
   .board-wrap{flex:none;width:var(--board)}
-  /* the band heads the panel, level with the board's top edge, and the
-     board spans both rows beside them */
-  .card{grid-template-rows:auto auto 1fr}
-  .card > .board-col{grid-column:1;grid-row:2 / 4;padding-top:24px}
-  .card > .band-slot{grid-column:2;grid-row:2;padding-top:24px}
-  .card > .panel{grid-column:2;grid-row:3;position:relative}
-  /* a fixed height (row 1 on one line, row 2 on up to two), so a longer
-     row never moves the strip below it; the open card's edge in the border
-     colour, as the panel's will be */
-  .card-task{height:126px;align-items:flex-start;gap:14px;padding:20px 20px 20px 16px;border-radius:var(--r-card);background:var(--surface-1);border-left-color:var(--border)}
-  .card-task.k-good{background:linear-gradient(var(--leaf-10),var(--leaf-10)),var(--surface-1)}
-  .card-task.k-bad{background:linear-gradient(var(--coral-10),var(--coral-10)),var(--surface-1)}
-  .card-task.k-close,.card-task.k-info{background:linear-gradient(var(--slate-10),var(--slate-10)),var(--surface-1)}
-  .bd-disc{width:32px;height:32px}
-  .bd-disc.d-king svg{width:24px;height:24px;margin:4px}
-  .bd-r1{font-size:var(--fs-verdict);line-height:var(--lh-verdict)}
-  .bd-r2{margin-top:4px;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  /* the eval bar, while exploring: in the gutter left of the board */
+  .evalbar{right:100%;top:0;bottom:0;margin-right:8px;width:12px}
+  /* 200 px: the verdict, two body lines, the tag row, the strip */
+  .coach{min-height:200px;padding:16px 20px 12px 16px}
+  .coach.exploring{min-height:0}
   .bd-top{height:var(--lh-verdict)}
-  .bd-chip{margin-top:4px}
-  .bd-cap{font-size:var(--fs-body);line-height:var(--lh-body);-webkit-line-clamp:3}
+  .bd-r1{font-size:var(--fs-verdict);line-height:var(--lh-verdict)}
+  .bd-r2{height:52px}
+  .bd-cap{height:82px}
+  .coach.exploring .bd-r2{height:26px}
   .guess-acts,.done-acts{margin-top:auto;padding-top:12px}
   .card > .panel > .sticky-acts{margin-bottom:0}
   .sticky-acts{flex-wrap:nowrap}
   /* it hangs below the panel, in the card's bottom padding, so the buttons
      stay level with the board's bottom edge (2.0) */
-  .keyline{display:block;position:absolute;left:0;right:0;top:100%;margin:6px 0 0;min-height:16px;font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;color:var(--text-3)}
+  .keyline{display:block;position:absolute;left:0;right:0;top:100%;margin:6px 0 0;min-height:16px;font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:700;color:var(--text-3)}
   .done-acts .nav-btn{flex-basis:56px}
 }
 @media (max-width:860px){
-  .card{grid-template-columns:1fr;gap:0;padding-top:0}
-  /* above the band (4), which comes after it: the ••• menu opens over the band */
-  .card-top{position:sticky;top:0;z-index:6;background:var(--bg);flex-wrap:wrap;gap:0 8px;margin:0 calc(-1 * var(--gutter));padding:0 var(--gutter)}
-  /* the band rides under the session bar, so it stays in view */
-  .band-slot{position:sticky;top:48px;z-index:4;background:var(--bg)}
-  .board-col{margin:0 calc(-1 * var(--gutter))}
-  .board-row{gap:0;justify-content:center}
+  /* the card fills the screen and never scrolls: the session bar (44 px),
+     the board, the panel 12 px under it filling to 12 px above the bar,
+     the bar fixed at the foot (64 px and the safe area) */
+  .card{display:flex;flex-direction:column;align-items:stretch;height:100vh;height:100dvh;overflow:hidden;margin:0 calc(-1 * var(--gutter))}
+  .card-top{flex:none;height:44px;flex-wrap:nowrap;gap:0 8px;padding:0 var(--gutter);background:var(--bg);position:relative;z-index:6}
+  .board-col{flex:none}
+  .board-row{justify-content:center}
   .board,.marks,.xfade svg{border-radius:0}
-  .evalbar{width:6px;border-radius:0}
   .board-wrap{flex:none;width:var(--board-phone)}
+  /* the eval bar, while exploring: across, in the gap under the board */
+  .evalbar{left:0;right:0;top:100%;width:var(--board-phone);height:6px;margin:3px auto 0;border-radius:3px}
+  .evalbar-fill,.evalbar-label{display:none}
+  .evalbar-fill-h{display:block}
+  /* the 12 px over the bar gives way first on a short phone (an iPhone SE
+     with Safari's bars), so the panel keeps its 96 px beside the board's
+     formula: the gap is what the height leaves over the board, 12 px at most */
+  .card{--panel-gap:clamp(0px, 100svh - 216px - env(safe-area-inset-bottom) - min(100vw, 600px), 12px)}
+  .card > .panel{flex:1 1 0;min-height:0;padding:12px var(--gutter) calc(64px + var(--panel-gap) + env(safe-area-inset-bottom))}
+  .coach{flex:1 1 0;min-height:96px;container-type:size}
   /* the decisive tag stays for screen readers only */
   .panel .stakes-tag{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;margin:0;padding:0;min-height:0}
-  .panel{padding-top:8px;padding-bottom:84px}
-  .ctx{margin:0 0 8px}
   /* the bar: fixed at the foot, 64 px on the ground, 48 px buttons (a 44 px
      face and its 4 px lip), 12 px apart, 16 px from the edges */
   .sticky-acts{
@@ -675,83 +725,133 @@ body.in-session{padding-bottom:0}
   .sheet .close{margin:-10px -10px 0 0}
   .pchip{min-height:44px}
   .bar-right a{padding:10px 0}
-  /* explore: the invite sits right under the red line, above the fixed bar */
-  .card.xp-card .panel{padding-top:4px}
-  .card.xp-card .ctx{display:none}
-  .xp{order:-2;background:none;border-radius:0;padding:0;margin:0 calc(-1 * var(--gutter))}
-  /* the whole area from the board's foot to the bar (S14): the trail and
-     the way back, the sentence, then as many rows as fit (fitRows) */
-  .xp-kb{display:none}
-  .xp-meter{border-radius:0}
-  .xp-head{height:44px;padding:0 var(--gutter)}
-  .xp-back{display:flex;align-items:center;min-height:44px;padding:0}
-  .xp-say{margin:0 0 4px;padding:0 var(--gutter)}
-  .xp-cap{margin:0;padding:0 var(--gutter)}
-  .xp-rows{margin:0}
-  .xp-row{padding:0 var(--gutter);height:var(--xp-row,44px)}
-  /* the panel ends at the bar, so the page never scrolls under it */
-  .card.xp-card{padding-bottom:0}
-  .card.xp-card .panel{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
-  /* a short phone: the trail and the way back in 28 px, so one row fits */
+  /* a short phone: the trail and the way back in 28 px, so a row fits */
   .xp.tight .xp-head{height:28px}
   .xp.tight .xp-back{min-height:28px}
   .xp.tight .xp-say{margin-bottom:0}
 }
+/* a short panel (under 176 px: a 360 by 640 phone): the strip takes the tag
+   row's line (the tag row is empty once a card is answered, the strip before
+   it); under 120 px only the rows show, and Details is in the ••• menu */
+@container (max-height:175px){
+  .coach:not(.exploring) .strip{position:absolute;left:12px;right:16px;top:92px;min-height:40px;padding-top:0;margin:0;align-items:flex-start}
+  .coach:not(.exploring) .bd-tags{height:40px;align-items:flex-start}
+}
+@container (max-height:119px){
+  .coach:not(.exploring) .strip{top:auto;bottom:0;min-height:0;height:0;overflow:visible}
+  .coach:not(.exploring) .strip > :not(.kb-move),.coach:not(.exploring) .bd-tags{display:none}
+}
+/* exploring in a short panel: row 2 gives way under 176 px and the band
+   under 120 px, so the trail and Stockfish's sentence stay whole (the bar's
+   Stockfish's pick plays the gold arrow when no row fits) */
+@container (max-height:175px){.coach.exploring .bd-r2{display:none}}
+@container (max-height:119px){
+  /* out of sight but there for a screen reader, and for the keyboard that
+     exploring hands its heading */
+  .coach.exploring .card-task{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+  .coach.exploring .strip{margin-top:0}
+}
+/* a phone on its side (under 600 px tall): the board on the left, the
+   session bar, the panel and the bar in a column of 300 px or more beside it */
+@media (orientation:landscape) and (max-height:599px){
+  .card{margin:0 calc(-1 * var(--gutter));padding:8px 8px 8px 0;display:grid;grid-template-columns:var(--board-land) minmax(300px,1fr);grid-template-rows:auto minmax(0,1fr);align-items:stretch;gap:0 8px;height:100vh;height:100dvh;overflow:hidden}
+  .card-top{grid-column:2;grid-row:1;height:44px;margin:0;padding:0;background:none}
+  .card > .board-col{grid-column:1;grid-row:1 / 3;margin:0}
+  .board-row{justify-content:flex-start}
+  .board-wrap{width:var(--board-land)}
+  .board,.marks,.xfade svg{border-radius:4px}
+  .evalbar{left:auto;right:-7px;top:0;bottom:0;width:6px;height:auto;margin:0}
+  .evalbar-fill,.evalbar-label{display:block}
+  .evalbar-fill-h{display:none}
+  .card > .panel{grid-column:2;grid-row:2;min-height:0;padding:4px 0 0}
+  .card-top{padding:0}
+  .sticky-acts{position:static;height:auto;border-top:0;padding:12px 0 0;background:none}
+  .guess-acts,.done-acts{height:auto}
+}
 
-/* the summary ────────────────────────────────────────────────────────── */
-.recap-top{display:flex;align-items:center;max-width:680px;margin:0 auto}
-.recap-page{max-width:680px;margin:0 auto;padding-top:32px}
+/* the summary (F4.5) ─────────────────────────────────────────────────── */
+.recap-top{display:flex;align-items:center;max-width:880px;margin:0 auto}
+.recap-page{max-width:880px;margin:0 auto;padding-top:24px}
+/* the result row: one 28 px glyph per position, 6 px apart, ten a line at
+   most, wrapping for a set of 20 */
+.result-row{display:flex;flex-wrap:wrap;gap:6px;max-width:334px;margin:0 0 16px}
+.result-row .rg{width:28px;height:28px;vertical-align:0}
+.result-row .rg::after{width:17px;height:17px}
 .done-big{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);margin:0 0 24px;outline:none;font-variant-numeric:lining-nums tabular-nums}
 .recap-page .done-big{margin:0 0 20px}
 .recap-ladder{color:var(--text-2);margin:-8px 0 20px}
-.recap-acts{margin:20px 0 28px;gap:12px 20px}
-.recap-acts .btn-big{min-width:240px}
 .recap-week{margin:0 0 4px}
 .recap-week .week{margin:8px 0 12px}
+/* the week's goal met (F4.4): its medal leads the week, settling 0.92 to 1
+   in 300 ms on the summary's first paint, and the line says so */
+.recap-week.met .week > span:last-child{color:var(--text-1);font-weight:700}
+.medal{flex:none;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:var(--honey-14)}
+.medal::after{content:"";width:20px;height:20px;background:var(--honey);-webkit-mask:var(--ic-medal) center/contain no-repeat;mask:var(--ic-medal) center/contain no-repeat}
+.medal[data-fx=medal]{animation:medal-in .3s var(--ease-pop)}
+@keyframes medal-in{from{transform:scale(.92)}to{transform:none}}
 .recap-next{color:var(--text-1);margin:0 0 20px}
-.recap-habit{margin:0 0 20px}
+.recap-habit{margin:0 0 24px}
 /* the summary's one takeaway, in the body size (.focus p is small) */
 .recap-habit .plan,.recap-habit p.plan{margin:8px 0 0;background:none;padding:0;font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-1)}
 .recap-habit .plan:first-child{margin-top:0}
 .recap-habit .plans{margin:8px 0 0;padding-left:30px}
 .recap-habit .plans .plan{display:list-item;margin-top:6px}
 .recap-habit .plans .plan::before{display:none}
-/* the positions as tiles, each caption whole: the pattern, then the result
-   as its glyph and its word */
-.recap{display:flex;flex-wrap:wrap;gap:16px 12px;padding:8px 0 4px;margin:12px 0 16px}
-.recap-item{flex:none;width:calc((100% - 24px) / 3);max-width:136px;cursor:pointer;display:grid;grid-template-columns:24px minmax(0,1fr);column-gap:6px;align-items:start;align-content:start}
+/* the positions as tiles: two columns on a phone, (100vw - 44) / 2 px each;
+   160 px tiles in an 880 px column on a wide screen, five a line. Each: its
+   board, the pattern, the result as its glyph and its word in its colour,
+   the rungs (tiers 2 and 3) or the stars (tier 1), tier 3's check line */
+.recap{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 12px;padding:8px 0 4px;margin:12px 0 24px}
+.recap-item{min-width:0;cursor:pointer;display:grid;grid-template-columns:24px minmax(0,1fr);column-gap:6px;align-items:start;align-content:start}
 .recap-item > .board,.recap-item > span:not(.rg):not(.res){grid-column:1/-1}
 .recap-item .board{width:100%;box-shadow:none;border-radius:8px}
-.recap-item span{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);margin-top:6px}
+.recap-item span{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin-top:6px}
 .recap-item .rg{display:inline-flex;grid-column:1;margin:4px 0 0}
-.recap-item .res{grid-column:2;font-size:var(--fs-small);font-weight:800;color:var(--text-1);margin:6px 0 0}
+.recap-item .res{grid-column:2;font-size:var(--fs-small);font-weight:700;color:var(--text-1);margin:6px 0 0}
 /* the word in its glyph's colour (a card left, missed or skipped, quiet) */
 .rg-first + .res,.rg-good + .res{color:var(--leaf)}
 .rg-hint + .res,.rg-miss + .res{color:var(--honey)}
 .rg-shown + .res{color:var(--slate)}
 .rg-skip + .res{color:var(--text-3)}
 /* the honest score (F2.1, F2.2): its second line and what moved under the
-   headline; on each tile its stars (tier 1) or its rungs (three pips, the
-   third honey, lit when learned) and tier 3's computed check line; a
-   position just learned leads the tiles, with its seal; the routine line
-   (F2.3) */
-.recap-then{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1);margin:-16px 0 6px}
+   headline; on each tile its stars (tier 1) or its rungs (three 10 px pips,
+   6 px apart, honey when lit) and tier 3's computed check line; a position
+   just learned leads the tiles, across both columns, with its seal; the
+   routine line (F2.3) */
+.recap-then{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600;color:var(--text-1);margin:-16px 0 6px}
 .recap-moved{color:var(--text-2);margin:0 0 20px}
 .recap-moved + .recap-ladder{margin-top:-14px}
-.recap-habit .plan.routine{font-size:var(--fs-small);line-height:var(--lh-small);color:var(--text-2)}
-.recap-item .stars,.recap-item .rungs{display:flex;align-items:center;gap:4px;margin-top:6px}
+.recap-habit .plan.routine{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+.recap-item .stars,.recap-item .rungs{display:flex;align-items:center;gap:6px;margin-top:6px}
 .stars i{font-style:normal;font-size:var(--fs-small);line-height:1;color:var(--border)}
 .stars i.on{color:var(--honey)}
-.rungs i{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--text-3)}
-.rungs i.on{background:var(--leaf);border-color:var(--leaf)}
-.rungs i.on.gold{background:var(--honey);border-color:var(--honey)}
-.recap-item .tile-check{font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;color:var(--text-2)}
-.recap-item.recap-learned{width:100%;max-width:none;display:flex;align-items:center;gap:12px}
+.rungs i{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--border)}
+.rungs i.on{background:var(--honey);border-color:var(--honey)}
+.recap-item .tile-check{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+.recap-item.recap-learned{grid-column:1/-1;display:flex;align-items:center;gap:12px}
 .recap-learned .board{width:96px;flex:none}
 .recap-learned .rg,.recap-learned .rungs{margin:0}
 .recap-item .learned-say{flex:1 1 auto;min-width:0;font-size:var(--fs-small);line-height:var(--lh-small);color:var(--text-1);margin:0}
+/* a position learned (F4.4): its seal stamps, 1.4 to 1 in 200 ms, on the
+   summary's first paint */
+.recap-learned[data-fx=seal] .rg-learned{animation:seal-in .2s var(--ease-pop)}
+@keyframes seal-in{from{transform:scale(1.4)}to{transform:none}}
+/* the next set, in a bar that stays at the foot of the screen: 72 px and
+   the safe area, the next set twice as wide as the way back */
+.recap-acts{position:sticky;bottom:0;z-index:5;display:flex;flex-wrap:nowrap;align-items:center;gap:12px;min-height:calc(72px + env(safe-area-inset-bottom));
+  margin:0 calc(-1 * var(--gutter));padding:12px var(--gutter) calc(12px + env(safe-area-inset-bottom));background:var(--bg);border-top:1px solid var(--divider)}
+.recap-acts .btn-big,.recap-acts .btn-line{min-height:44px;margin:0 0 4px}
+.recap-acts .btn-big{flex:2 1 0;min-width:0}
+/* half the next set's width, never less than its words */
+.recap-acts .btn-line{flex:1 1 0;padding:0 12px}
+.recap-acts .btn-big:only-child{flex:1 1 auto}
+@media (min-width:861px){
+  .recap{grid-template-columns:repeat(auto-fill,160px);gap:24px 16px}
+  .recap-acts{margin:0;padding-left:0;padding-right:0}
+  .recap-acts .btn-big{flex:0 0 360px}
+  .recap-acts .btn-line{flex:0 0 180px}
+}
 @media (max-width:860px){
-  .recap-acts .btn-big,.recap-acts .btn-line{width:100%;min-height:52px}
   .recap-acts .btn-big[data-icon]::before{width:22px;height:22px}
 }
 
@@ -766,20 +866,20 @@ body.in-session{padding-bottom:0}
 .fam-row:first-child{border-top:0}
 .fam-row:hover{background:var(--surface-2);color:inherit}
 .fam-row:hover .fr-name{text-decoration:underline;text-underline-offset:3px}
-.fr-name{flex:1 1 auto;min-width:0;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:800;color:var(--text-1)}
-.fr-name small{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-3);margin-top:2px}
+.fr-name{flex:1 1 auto;min-width:0;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1)}
+.fr-name small{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin-top:2px}
 .fr-bar{flex:0 0 220px;height:10px;border-radius:5px;background:var(--surface-2);overflow:hidden}
 .fr-bar i{display:block;height:100%;background:var(--border);border-radius:5px}
 .fam-row.is-focus .fr-bar i{background:var(--honey)}
-.fr-n{flex:0 0 80px;text-align:right;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:800;color:var(--text-1);font-variant-numeric:tabular-nums}
+.fr-n{flex:0 0 80px;text-align:right;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1);font-variant-numeric:tabular-nums}
 .fr-go{color:var(--text-3);font-size:var(--fs-heading);font-weight:800}
 .slice{background:var(--surface-1);border-radius:var(--r-btn);padding:16px 20px;margin:0 0 12px}
 .slice p{margin:0 0 6px;font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-1)}
-.slice a{font-size:var(--fs-small);font-weight:800}
-.ins .sec{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700}
+.slice a{font-size:var(--fs-small);font-weight:700}
+.ins .sec{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600}
 /* the routine line under the families, at tiers 2 and 3 (F2.3) */
-.ins .routine{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);margin:12px 0 0}
-.loading{color:var(--text-3);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;padding:6px 0}
+.ins .routine{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:12px 0 0}
+.loading{color:var(--text-3);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;padding:6px 0}
 @media (max-width:860px){
   .ins{padding-top:20px}
   .ins .lead{display:none}
@@ -796,6 +896,13 @@ body.in-session{padding-bottom:0}
   border-radius:var(--r-card) var(--r-card) 0 0;padding:24px 20px 32px;box-shadow:var(--shadow-2);
 }
 @media (min-width:700px){.sheet{border-radius:var(--r-card);padding:28px 28px 32px}}
+/* a card's Details on a phone (F4.1): its top at the board's foot, the
+   board above it in view and unshaded; a tap on the board closes it, as a
+   swipe down does */
+.scrim.at-board{background:none;align-items:flex-end;padding:0}
+.scrim.at-board .sheet{width:100%;max-height:none;border-radius:var(--r-card) var(--r-card) 0 0;box-shadow:none}
+.scrim.at-side{background:none;justify-content:flex-end;align-items:stretch;padding:0}
+.scrim.at-side .sheet{max-height:none;height:100%;border-radius:var(--r-card) 0 0 var(--r-card);box-shadow:none}
 .sheet:focus{outline:none}
 .sheet h3{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);margin:4px 0 8px}
 .sheet .close{float:right;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;margin:-8px -8px 0 0;
@@ -804,18 +911,18 @@ body.in-session{padding-bottom:0}
 .sheet p{font-size:var(--fs-body);line-height:var(--lh-body)}
 .sheet .kicker{color:var(--text-3)}
 .sheet-sum{color:var(--text-2)}
-.sheet-back{display:inline-flex;align-items:center;min-height:44px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:800;color:var(--honey)}
+.sheet-back{display:inline-flex;align-items:center;min-height:44px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--honey)}
 .habit-block{background:var(--surface-2);border-radius:var(--r-btn);padding:14px 16px;margin:16px 0}
 .habit-block .plan{margin-top:8px}
 .sheet-acts{margin:0 0 8px}
 .pat-list{margin:20px 0 0;border-top:1px solid var(--divider)}
-.pat-row{display:flex;align-items:center;gap:12px;min-height:52px;border-bottom:1px solid var(--divider);color:var(--text-1);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;padding:0 4px}
-.pat-row span:first-child{flex:1 1 auto;font-weight:800}
+.pat-row{display:flex;align-items:center;gap:12px;min-height:52px;border-bottom:1px solid var(--divider);color:var(--text-1);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;padding:0 4px}
+.pat-row span:first-child{flex:1 1 auto;font-weight:700}
 .pat-row:hover{background:var(--surface-2);color:var(--text-1)}
 .ex-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(136px,1fr));gap:12px;margin:12px 0}
 .ex{cursor:pointer}
 .ex .board{box-shadow:none;border-radius:8px}
-.ex span{display:block;font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;color:var(--text-2);margin-top:6px}
+.ex span{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin-top:6px}
 @media (max-width:860px){.ex-list{grid-template-columns:1fr 1fr}}
 /* Details: the context, the lines (each marked by shape: a coral cross for
    your move's line, a leaf tick for the better one's, a ring for theirs),
@@ -823,18 +930,18 @@ body.in-session{padding-bottom:0}
 .sheet .ctx{white-space:normal}
 .sheet .stakes-tag{margin:8px 0 4px}
 .dt-lines{margin:14px 0 10px}
-.dt-line{display:flex;align-items:flex-start;gap:10px;margin:0 0 10px;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600;color:var(--text-1)}
-.dt-line.tl-opp{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2)}
+.dt-line{display:flex;align-items:flex-start;gap:10px;margin:0 0 10px;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:500;color:var(--text-1)}
+.dt-line.tl-opp{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
 .tl-dot{flex:none;width:16px;height:16px;margin-top:4px;background:var(--text-3);-webkit-mask:var(--ic-minus) center/contain no-repeat;mask:var(--ic-minus) center/contain no-repeat}
 .tl-bad .tl-dot{background:var(--coral);-webkit-mask-image:var(--ic-x);mask-image:var(--ic-x)}
 .tl-good .tl-dot,.tl-alt .tl-dot{background:var(--leaf);-webkit-mask-image:var(--ic-check);mask-image:var(--ic-check)}
 .tl-opp .tl-dot{width:10px;height:10px;margin:5px 3px 0;border-radius:50%;background:none;box-shadow:inset 0 0 0 2px var(--text-3);-webkit-mask:none;mask:none}
 /* under the lines: their threat and the clock (F2.5) */
-.sheet .dt-more{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);margin:0 0 8px}
+.sheet .dt-more{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 8px}
 .tag-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 8px}
-.when{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-3)}
+.when{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
 .pchip{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;min-height:36px;border:2px solid var(--border);border-radius:var(--r-pill);padding:0 14px;
-  background:var(--surface-2);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:800;color:var(--honey);cursor:pointer}
+  background:var(--surface-2);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--honey);cursor:pointer}
 .pchip:hover{border-color:var(--honey);color:var(--honey-hover)}
 .habit{margin:12px 0 4px}
 .sheet .habit{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border-radius:var(--r-btn);padding:12px 14px;color:var(--text-1);font-weight:700}
@@ -842,31 +949,31 @@ body.in-session{padding-bottom:0}
 /* settings */
 .set-block{border-top:1px solid var(--divider);padding-top:16px;margin-top:24px}
 .set-block > .kicker{display:block;margin-bottom:8px}
-.set-block p{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);margin:10px 0 8px}
-.set-block p.set-who{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:800;color:var(--text-1)}
-.switch-row{display:flex;align-items:center;justify-content:space-between;min-height:52px;cursor:pointer;color:var(--text-1);font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700}
+.set-block p{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:10px 0 8px}
+.set-block p.set-who{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1)}
+.switch-row{display:flex;align-items:center;justify-content:space-between;min-height:52px;cursor:pointer;color:var(--text-1);font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600}
 .switch-row input{position:absolute;opacity:0;width:1px;height:1px}
 .switch-row i{width:48px;height:28px;border-radius:14px;background:var(--surface-2);box-shadow:inset 0 0 0 2px var(--border);position:relative;transition:background var(--dur-1)}
 .switch-row i::after{content:"";position:absolute;left:4px;top:4px;width:20px;height:20px;border-radius:50%;background:var(--text-2);transition:transform var(--dur-1)}
 .switch-row input:checked + i{background:var(--honey);box-shadow:none}
 .switch-row input:checked + i::after{transform:translateX(20px);background:var(--on-honey)}
-.switch-row input:focus-visible + i{outline:2px solid var(--text-1);outline-offset:2px}
-.danger-row{display:flex;align-items:center;min-height:52px;color:var(--text-2);border-radius:12px;padding:0 10px;margin:0 -10px;font-weight:800}
+.switch-row input:focus-visible + i{outline:2px solid var(--honey);outline-offset:2px}
+.danger-row{display:flex;align-items:center;min-height:52px;color:var(--text-2);border-radius:12px;padding:0 10px;margin:0 -10px;font-weight:700}
 .danger-row:hover{color:var(--text-1)}
 .danger-row.armed{background:var(--coral-10);color:var(--coral)}
 
 /* footer, notices ────────────────────────────────────────────────────── */
 .foot{max-width:1200px;margin:40px auto 0;padding:16px var(--gutter) 24px;border-top:1px solid var(--divider);display:flex;flex-wrap:wrap;gap:8px 24px;align-items:center;justify-content:space-between}
-.foot-line{font-size:var(--fs-tag);line-height:var(--lh-tag);font-weight:800;color:var(--text-3)}
-.foot-links{display:flex;gap:20px;flex-wrap:wrap;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:800}
+.foot-line{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3)}
+.foot-links{display:flex;gap:20px;flex-wrap:wrap;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700}
 .foot-links a{color:var(--text-2)}
 .foot-links a:hover{color:var(--text-1)}
 .notice{
   position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:30;
   background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-btn);box-shadow:var(--shadow-2);
-  padding:12px 16px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1);max-width:min(90vw,560px);
+  padding:12px 16px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-1);max-width:min(90vw,560px);
 }
-.notice-act{margin-left:10px;font-weight:800;color:var(--honey)}
+.notice-act{margin-left:10px;font-weight:700;color:var(--honey)}
 @media (max-width:860px){.notice{bottom:86px}}
 @media (max-width:600px){
   .brand{gap:8px}
@@ -879,6 +986,8 @@ body.in-session{padding-bottom:0}
   .narr-line{animation:none}
   .checking .meter i,.xp-meter i{animation:none !important;left:0;width:100%;opacity:.5}
   .card-task.sweep::after{animation:none !important;left:0;width:100%;opacity:.5}
+  /* the words' beat still fades, without the rise (F4.4) */
+  .bd-rows{animation-name:fade-in !important;animation-duration:.15s !important}
   .btn-big:active,.btn-line:active,.nav-btn:active{transform:none}
   .btn-big:active{background:var(--honey-lip)}
   .btn-line:active,.nav-btn:active{background:var(--border)}

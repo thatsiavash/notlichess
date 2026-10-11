@@ -806,8 +806,9 @@ const BAR = `(function () {
         const at = 'tier ' + tier + ' ' + key;
         /* S1: the card opens, board and band at once (nothing slides) */
         A.ev(`(window.__show(model().byKey['${key}']), 1)`);
-        /* tier 1 names the game move in words, or no move where they do not fit (F1.6) */
-        ok(/Your turn Find a better move( than (\S+|[a-z ]+ [a-h][1-8]|castling))?\.$/.test(band()), at + ': the open band reads ' + band());
+        /* tier 1 names the game move in words, or no move where they do not fit (F1.6); a decisive first
+           sight from the player's fourth card on names its game in the tag row (F4.2) */
+        ok(/Your turn Find a better move( than (\S+|[a-z ]+ [a-h][1-8]|castling))?\.( (Lost|Drew) (vs \S+|the game))?$/.test(band()), at + ': the open band reads ' + band());
         run(1000);
         /* S2: a piece picked up and put down repaints the board alone */
         const t0 = textWrites();
@@ -1031,27 +1032,30 @@ const BAR = `(function () {
     press('seeIt');
     run(1500);
     eq(foc(), 'cbar tryAgain@1', 'after See it, whose slot turned into Hint 2, the keyboard is on Try again, where Enter goes');
-    /* Try again: both buttons change; the focus keeps its slot */
+    /* Try again: both buttons change; Show the answer never takes Try
+       again's place under the keyboard (F4.1: Enter never shows the answer),
+       so the keyboard goes to the band's task, where Enter does nothing */
     press('tryAgain');
     run(1500);
     eq(A.ev('ui.session.active.phase'), 'guess', 'Try again took the try back');
-    eq(foc(), 'cbar reveal@1', 'after Try again, the button now in its slot');
-    /* a slot that goes off (No more hints) hands the focus to the right-hand button */
+    eq(foc(), 'cband task-h', 'after Try again, the task, not Show the answer in its slot');
+    /* a slot that goes off (No more hints) hands the focus to the honey
+       button, and with none (a card asking) to the task */
     press('hint');
     run(1000);
     eq(foc(), 'cbar hint@0', 'after hint 1, Hint 2 keeps the focus');
     press('hint');
     run(1000);
     eq(A.ev('ui.session.active.hints'), 2, 'hint 2 given');
-    eq(foc(), 'cbar reveal@1', 'after hint 2 the focus is on the right-hand button');
-    /* Enter on the right-hand button now presses it, never an empty typed move */
+    eq(foc(), 'cband task-h', 'after hint 2 the focus is on the task, never on Show the answer');
+    /* Show the answer reached on purpose and pressed: it shows it, never an empty typed move */
     press('reveal');
     run(1000);
     eq(A.ev('ui.session.active.phase'), 'done', 'Show the answer pressed');
     eq(foc(), 'cbar playIt@1', 'the answer shown hands the keyboard to Play it, the right-hand button');
   });
 
-  await test('a pointer\'s click on the bar leaves no focus there, so Enter is the right-hand button the key line names; a control reached from the keyboard keeps it and the line names it (I2)', () => {
+  await test('a pointer\'s click on the bar leaves no focus there, so Enter is the honey button the key line names (none on a card asking: Enter does nothing); a control reached from the keyboard keeps it and the line names it (I2, F4.1)', () => {
     const A = boot();
     A.ev(DOM);
     A.ev('(playerTier = function () { return 2; }, 1)');
@@ -1073,10 +1077,10 @@ const BAR = `(function () {
     eq(foc(), 'cband task-h', 'a clicked Hint hands focus back to the band at once');
     run(1000);
     eq(S().hints, 1, 'hint 1 given'); eq(foc(), 'cband task-h', 'and the band keeps it after the words');
-    eq(keys(), 'Enter: Show the answer · ? hint', 'the key line names the right-hand button');
+    eq(keys(), '? hint', 'the key line names no Enter: the bar has no honey button');
     A.key('Enter');
     let s = S();
-    eq(s.hints + ' ' + s.result, '1 fail', 'Enter after a clicked Hint shows the answer (never Hint 2)');
+    eq(s.hints + ' ' + s.result + ' ' + s.phase, '1 null guess', 'Enter after a clicked Hint does nothing (never Hint 2, never the answer)');
     /* the same card from the keyboard: Hint reached by Tab keeps the focus, and the line names it */
     show(1);
     run(1000);
@@ -1090,7 +1094,7 @@ const BAR = `(function () {
     eq(keys(), 'Enter: Hint 2 · ? hint', 'and the line names what is there now');
     A.ev('(document.activeElement = null, 1)');
     A.fire('focusin');
-    eq(keys(), 'Enter: Show the answer · ? hint', 'focus gone: the right-hand button again');
+    eq(keys(), '? hint', 'focus gone: no Enter again');
     /* a miss, See it clicked: the focus goes back to the band; Enter is Try again */
     show(2);
     run(1000);
@@ -1106,16 +1110,16 @@ const BAR = `(function () {
       eq(S().phase, 'guess', 'Enter takes the try back');
     }
     /* the story, clicked into: the band there has no heading, so the
-       focus falls back to the right-hand button (Continue), and the line
-       names that; from the keyboard it is Next move (S20), named too */
+       focus falls back to the honey button (Next move, F4.1), and the line
+       names it; from the keyboard too (S20) */
     A.ev('(function () { var a = ui.session.active; sessionClick(a.best.from); sessionClick(a.best.to); return 1; })()');
     run(2500);
     tapBtn('seeWhy');
     run(1500);
     s = S();
     eq(s.view, 'story', 'See why clicked');
-    eq(foc(), 'cbar next@2', 'in the story clicked into, the keyboard is on the right-hand button');
-    ok(/^Enter: (Continue|Finish) · ← → step · Space: next · Esc: back$/.test(keys()), 'the line names it: ' + keys());
+    eq(foc(), 'cbar storyFwd@1', 'in the story clicked into, the keyboard is on the honey button');
+    ok(/^Enter: Next move · ← → step · Space: next · Esc: back$/.test(keys()), 'the line names it: ' + keys());
     A.ev(`(window.__els.cbar.querySelector('[data-act="storyFwd"]').focus(), 1)`);
     A.fire('focusin');
     ok(/^Enter: Next move · ← → step · Space: next · Esc: back$/.test(keys()), 'Next move focused, the line names it: ' + keys());
@@ -1225,18 +1229,20 @@ const BAR = `(function () {
     eq(r.out.length, 0, r.out.slice(0, 5).join(' | '));
   });
 
-  await test('Enter presses the right-hand button in guess and tried, and waits out its slot', () => {
+  await test('Enter presses the honey button alone (F4.1): nothing on a card asking, never the answer; Try again in tried, Keep looking on a close move, each waiting out its slot', () => {
     const A = boot();
     A.ev(DOM);
     A.ev('(playerTier = function () { return 2; }, 1)');
     A.ev(BAR);
-    const S = () => JSON.parse(A.ev('JSON.stringify((function (a) { return { phase: a.phase, result: a.result || null, misses: a.misses }; })(ui.session.active))'));
+    const S = () => JSON.parse(A.ev('JSON.stringify((function (a) { return { phase: a.phase, result: a.result || null, misses: a.misses, hints: a.hints }; })(ui.session.active))'));
     const show = (n) => A.ev(`(function () { window.__show(allMistakes().filter(trainable).filter(function (x) { return unpackUci(x.b.ru).length; })[${n}]); return 1; })()`);
-    /* guess: [Hint] [Show the answer]; Enter shows the answer */
+    const barAt = () => A.ev('(window.__writes.filter(function (w) { return w.id === "cbar" && w.what === "innerHTML"; }).pop() || {}).t');
+    /* guess: [Hint] [Show the answer], no honey button: Enter does nothing */
     show(0);
     A.advance(1000);
     A.key('Enter');
-    eq(S().result, 'fail', 'Enter in guess shows the answer');
+    let s = S();
+    eq(s.phase + ' ' + s.result + ' ' + s.hints, 'guess null 0', 'Enter in guess does nothing: no answer, no hint');
     /* tried, the game move again: [See it] [Try again]; Enter takes the try back */
     show(1);
     A.advance(1000);
@@ -1244,21 +1250,29 @@ const BAR = `(function () {
     A.advance(1000);
     eq(S().phase, 'tried', 'the game move stays');
     A.key('Enter');
-    let s = S();
+    s = S();
     eq(s.phase, 'guess', 'Enter in tried takes the try back'); eq(s.result, null, 'and shows no answer');
-    /* Try again changes both slots once its crossfade is over (the words
-       come 300 ms after the tap); they faded out at the tap and took no tap
-       since, so their half second runs from it: Enter 400 ms after the tap
-       (100 ms after the bar changed) is ignored, 500 ms after shows the
-       answer */
-    A.advance(300);
-    A.advance(100);
+    /* back on the card asking: Enter does nothing, whenever it comes */
+    A.advance(400);
+    A.key('Enter');
+    A.advance(1000);
     A.key('Enter');
     s = S();
-    eq(s.phase, 'guess', 'Enter 100 ms after the bar changed'); eq(s.result, null, 'no answer 100 ms after the bar changed');
-    A.advance(100);
+    eq(s.phase + ' ' + s.result, 'guess null', 'Enter after Try again never shows the answer');
+    /* the guard: the game move again turns [Hint] [Show the answer] into
+       [See it] [Try again]; Enter 100 ms after that bar is painted is
+       ignored, 500 ms after it takes the try back */
+    const tg = A.getNow();
+    A.ev('(function () { var a = ui.session.active; gradeMove(uciToMove(a.st, a.playedUci)); return 1; })()');
+    for (let t = 0; t < 1500 && !(barAt() > tg); t += 10) A.advance(10);
+    const t0 = barAt();
+    ok(t0 > tg && S().phase === 'tried', 'the miss\'s bar painted');
+    A.advance(t0 + 100 - A.getNow());
     A.key('Enter');
-    eq(S().result, 'fail', 'Enter 500 ms after the tap shows the answer');
+    eq(S().phase, 'tried', 'Enter 100 ms after the bar changed is ignored');
+    A.advance(400);
+    A.key('Enter');
+    eq(S().phase, 'guess', 'Enter 500 ms after the bar changed takes the try back');
     /* a good move that is not the best: [Show the answer] [Keep looking];
        Enter keeps looking, as Try again does after a miss, and never shows
        the answer */
@@ -1319,14 +1333,14 @@ const BAR = `(function () {
     }
     A.ev('(window.__holdTry = false, 1)');
     eq(out.length, 0, out.join(' | '));
-    eq(lines.open, 'Enter: Show the answer · ? hint', 'the card asking');
-    eq(lines.hint2, 'Enter: Show the answer', 'no hint left');
+    eq(lines.open, '? hint', 'the card asking: no honey button, so no Enter (F4.1)');
+    eq(lines.hint2, '', 'no hint left, and no Enter');
     eq(lines.miss, 'Enter: Try again · → see it · ? hint', 'a miss: → plays See it (round D)');
     eq(lines.close, 'Enter: Keep looking · ? hint', 'a close move');
     eq(lines.checking, 'Esc: take back', 'a move being checked');
     eq(lines.checkingEarly, '? hint · Esc: take back', 'a move being checked, before the band says so');
     eq(lines.settled, 'Enter: Finish · → see why', 'the settled result (the last card)');
-    eq(lines.story, 'Enter: Finish · ← → step · Space: next · Esc: back', 'the story');
+    eq(lines.story, 'Enter: Next move · ← → step · Space: next · Esc: back', 'the story: Enter is the honey Next move');
     eq(lines.storyEnd, 'Enter: Finish · ← step · Esc: back', 'the story\'s last step');
     eq(lines.shown, 'Enter: Play it', 'the answer shown');
     /* exploring opens on its first move, where ← goes back to the lesson as Esc does */
@@ -1339,7 +1353,7 @@ const BAR = `(function () {
        it (a bar or strip control), or names no Enter (any other control) */
     eq(A.ev(`(function () { ${SET} window.__show(c1); return keyLine(ui.session.active, barSlots(ui.session.active, ui.session), { act: 'hint', label: 'Hint' }); })()`), 'Enter: Hint · ? hint', 'the Hint button focused');
     eq(A.ev(`keyLine(ui.session.active, barSlots(ui.session.active, ui.session), { other: true })`), '? hint', 'another control focused');
-    eq(A.ev(`keyLine(ui.session.active, barSlots(ui.session.active, ui.session), null)`), 'Enter: Show the answer · ? hint', 'nothing focused');
+    eq(A.ev(`keyLine(ui.session.active, barSlots(ui.session.active, ui.session), null)`), '? hint', 'nothing focused: no honey button, no Enter');
     /* keyFocus reads the focused element: a bar button by its words, the band's heading as nothing */
     const kf = (o) => A.ev(`(function () { var o = ${JSON.stringify(o)}; document.activeElement = { tagName: 'BUTTON', textContent: o.text, getAttribute: function (n) { return n === 'data-act' ? o.act : null; }, closest: function (sel) { return sel === o.in ? this : null; } };
       var r = JSON.stringify(keyFocus()); document.activeElement = null; return r; })()`);
@@ -2196,7 +2210,7 @@ const BAR = `(function () {
               var b = bar(a), at = 'tier ' + tier + ' ' + it.key + ' miss ' + i + (seen ? ', See it' : '');
               n++;
               if (b[1] !== 'tryAgain:Try again:btn-big') out.push(at + ': right slot ' + b[1]);
-              var left = !seen ? 'seeIt:See it ›:btn-line' : i >= 3 ? 'reveal:Show the answer:btn-line'
+              var left = !seen ? 'seeIt:See it:btn-line' : i >= 3 ? 'reveal:Show the answer:btn-line'
                 : a.hints >= 2 ? 'hint:No more hints:btn-line:off' : a.hints ? 'hint:Hint 2:btn-line' : 'hint:Hint:btn-line';
               if (b[0] !== left) out.push(at + ': left slot ' + b[0] + ', not ' + left);
             });
@@ -3042,7 +3056,7 @@ const BAR = `(function () {
       ok(snd.filter((x) => x.n === 'good').length === 1 && snd.filter((x) => x.n === 'good')[0].t - t0 === tick.dt, at + ': its sound with it, ' + JSON.stringify(snd));
       const v = ws.filter((w) => w.id === 'cband' && w.r1 === 'Found it')[0], bar = ws.filter((w) => w.id === 'cbar')[0];
       ok(v && v.r2 === '' && v.dt >= tick.dt + 150, at + ': Found it alone, 150 ms after the tick, ' + JSON.stringify(v));
-      ok(bar && /^See why › \| (Continue|Finish)$/.test(bar.bar) && bar.dt === v.dt, at + ': the bar with it, ' + JSON.stringify(bar));
+      ok(bar && /^See why \| (Continue|Finish)$/.test(bar.bar) && bar.dt === v.dt, at + ': the bar with it, ' + JSON.stringify(bar));
       const gh = ws.filter((w) => w.id === 'bwrap' && /ghost/.test(w.v))[0], chances = A.ev(`familyOf(patternOf(model().byKey['${key}'].b)).key`) === 'chances';
       ok(gh && gh.dt === v.dt + MARKS, at + ': the ghost ' + MARKS + ' ms after the words, ' + JSON.stringify(gh) + ' vs ' + v.dt);
       ok(chances ? !/ring|arrow/.test(gh.v) : (/ring/.test(gh.v) && /arrow/.test(gh.v)) === A.ev('(function (a) { var t = threatOf(a.cls.gameLine, 1); return !!(t && a.st.b[t.from] === a.cls.gameLine.nodes[1].before.b[t.from] && s0ThreatHolds(a, a.st, t)); })(ui.session.active)'),
@@ -3084,7 +3098,7 @@ const BAR = `(function () {
       eq(s.note, 'shown', at + ': the summary note');
       eq(s.r1 + ' / ' + s.r2, 'The answer: ' + s.san + ' / Play the green arrow.', at + ': V1 / V2');
       eq(s.disc, 'info', at + ': the i disc');
-      eq(s.bar.replace('Finish', 'Continue'), 'Continue | Play it ›', at + ': the bar');
+      eq(s.bar.replace('Finish', 'Continue'), 'Continue | Play it', at + ': the bar');
       eq(JSON.stringify(s.arrows), JSON.stringify([s.want]), at + ': the green arrow alone, no game arrow');
       ok(!s.bad && s.live, at + ': the board takes that one move');
       if (how === 'by hand') {
@@ -3119,10 +3133,10 @@ const BAR = `(function () {
       const r4 = ws.filter((w) => w.id === 'cband' && w.r2 && w.r2 !== 'Play the green arrow.')[0];
       ok(!ws.some((w) => w.id === 'cband' && w.dt < (r4 ? r4.dt : 1e9)), at + ': the band stays until R4, ' + JSON.stringify(ws.filter((w) => w.id === 'cband')));
       const bars = ws.filter((w) => w.id === 'cbar'), gh = ws.filter((w) => w.id === 'bwrap' && /ghost/.test(w.v))[0];
-      ok(bars[0] && /^(Continue|Finish) \| Play it ›$/.test(bars[0].bar) && bars[0].dt === lead + 520, at + ': the bar repainted once played, ' + JSON.stringify(bars));
+      ok(bars[0] && /^(Continue|Finish) \| Play it$/.test(bars[0].bar) && bars[0].dt === lead + 520, at + ': the bar repainted once played, ' + JSON.stringify(bars));
       ok(gh && gh.dt === lead + 520 + 700 && /info/.test(gh.v), at + ': S0\'s marks 700 ms after, ' + JSON.stringify(gh));
       ok(r4 && r4.dt === lead + 520 + 850 && /^The answer: /.test(r4.r1), at + ': R4 850 ms after, under the answer, ' + JSON.stringify(r4));
-      ok(bars[1] && /^See why › \| (Continue|Finish)$/.test(bars[1].bar) && bars[1].dt === r4.dt, at + ': and the bar to the story, ' + JSON.stringify(bars));
+      ok(bars[1] && /^See why \| (Continue|Finish)$/.test(bars[1].bar) && bars[1].dt === r4.dt, at + ': and the bar to the story, ' + JSON.stringify(bars));
       eq(A.ev('ui.session.active.result + " " + ui.session.notes[ui.session.active.key]'), 'fail shown', at + ': graded once, as shown');
     }
     /* Continue at any point ends the card */
@@ -3193,7 +3207,7 @@ const BAR = `(function () {
       run(2000);
       const end = JSON.parse(A.ev(`JSON.stringify((function (a) { var d = displayFor(a); return { mode: a.view.mode, settle: a.settle, idx: a.solIdx, n: a.sol.length, bar: d.buttons.map(function (x) { return x.label; }).join(' | '), r1: d.row1, r2: d.row2 }; })(ui.session.active))`));
       eq(end.mode + ' ' + end.settle + ' ' + (end.idx === end.n), 's0 2 true', at + ': the line ends, the card settles');
-      eq(end.bar, 'See why › | Continue', at + ': the bar to the story');
+      eq(end.bar, 'See why | Continue', at + ': the bar to the story');
       ok(/^The answer: /.test(end.r1) && end.r2, at + ': R4 under the answer, ' + end.r1 + ' / ' + end.r2);
     }
     ok(steps >= 4, 'replies stepped ' + steps);
@@ -3582,7 +3596,7 @@ const BAR = `(function () {
             var rp = a.reply, mv = k / 2 + 1, d1 = displayFor(a), h1 = bandHtml(a, d1);
             if (!rp || a.phase !== 'reply') { out.push(at + ' move ' + mv + ': no reply but ' + a.phase); break; }
             if (!d1.pips || d1.pips.n !== want || d1.pips.done !== mv || d1.pips.cur !== -1) out.push(at + ' move ' + mv + ': pips ' + JSON.stringify(d1.pips));
-            if (d1.chip || /bd-chip/.test(h1)) out.push(at + ' move ' + mv + ': the chip stays beside the pips');
+            if (d1.chip || /bd-chip|class="tag /.test(h1)) out.push(at + ' move ' + mv + ': the chip stays beside the pips (in the tag row since F4.1)');
             if ((h1.match(/class="pip/g) || []).length !== want || (h1.match(/pip done/g) || []).length !== mv || / cur"/.test(h1) || !/aria-hidden="true"/.test(h1.slice(h1.indexOf('bd-pips'))))
               out.push(at + ' move ' + mv + ': drawn as ' + h1.slice(h1.indexOf('bd-pips')));
             theirReply(a, false); replyDone(a, rp);
@@ -3756,7 +3770,7 @@ const BAR = `(function () {
     eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
   });
 
-  await test('reduced motion: no reply without a tap; "Their reply ›" plays it at once, its words 300 ms later (a line being solved, and a line shown)', () => {
+  await test('reduced motion: no reply without a tap; "Their reply" plays it at once, its words 300 ms later (a line being solved, and a line shown)', () => {
     const A = boot();
     A.ev(DOM);
     A.ev(BAR);
@@ -3778,7 +3792,7 @@ const BAR = `(function () {
       const b0 = ws.filter((w) => w.id === 'bwrap');
       ok(b0.length === 2 && b0[1].t === t && !/slide/.test(b0[1].v) && /tick/.test(b0[1].v) && /rring/.test(b0[1].v) && /rdash/.test(b0[1].v), at + ': the tick and the telegraph at once, ' + JSON.stringify(b0));
       const bar0 = ws.filter((w) => w.id === 'cbar')[0];
-      ok(bar0 && bar0.t === t + 150 && /class="slot-empty" data-slot="0"/.test(bar0.v) && /data-act="theirReply"[^>]*>Their reply ›</.test(bar0.v) && /btn-big/.test(bar0.v), at + ': the bar, ' + JSON.stringify(bar0));
+      ok(bar0 && bar0.t === t + 150 && /class="slot-empty" data-slot="0"/.test(bar0.v) && /data-act="theirReply"[^>]*>Their reply</.test(bar0.v) && /btn-big/.test(bar0.v), at + ': the bar, ' + JSON.stringify(bar0));
       eq(R1(ws.filter((w) => w.id === 'cband')[0].v), 'Right', at + ': Right');
       /* a minute: no timer plays it, and no other input does */
       run(3000);
@@ -3811,7 +3825,7 @@ const BAR = `(function () {
     A.click('reveal', null, 1); run(600);
     A.click('playIt', null, 1); run(600);
     const bar = WR(A, A.getNow() - 600).filter((w) => w.id === 'cbar').pop();
-    ok(bar && /data-act="next"/.test(bar.v) && /data-act="theirReply"[^>]*>Their reply ›</.test(bar.v), 'shown: [Continue] [Their reply ›], ' + JSON.stringify(bar));
+    ok(bar && /data-act="next"/.test(bar.v) && /data-act="theirReply"[^>]*>Their reply</.test(bar.v), 'shown: [Continue] [Their reply], ' + JSON.stringify(bar));
     const idx = A.ev('ui.session.active.solIdx');
     A.advance(60000);
     eq(A.ev('ui.session.active.solIdx'), idx, 'shown: no reply without its tap');
@@ -5252,7 +5266,7 @@ const BAR = `(function () {
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
     const untilLabel = (want) => { for (let t = 0; t < 2000 && fwd() !== want; t += 10) A.advance(10); eq(fwd(), want, 'the label ' + want); return A.getNow(); };
     /* a trail of two picks, then back to its start */
-    eq(fwd(), "Play Stockfish's pick", 'at the start, the end of an empty trail');
+    eq(fwd(), "Stockfish's pick", 'at the start, the end of an empty trail');
     A.click('xpFwd', null, 1); await xpSettle(A);
     A.click('xpFwd', null, 1); await xpSettle(A);
     eq(JSON.stringify(X()), '{"at":2,"n":3}', 'two picks');
@@ -5268,7 +5282,7 @@ const BAR = `(function () {
     eq(fwd(), '›', 'the button still reads ›');
     A.click('xpFwd', null, 1);
     eq(JSON.stringify(X()), '{"at":2,"n":3}', 'a tap on the old label plays nothing');
-    const tp = untilLabel("Play Stockfish's pick");
+    const tp = untilLabel("Stockfish's pick");
     A.setNow(tp + 440); A.click('xpFwd', null, 1);
     eq(JSON.stringify(X()), '{"at":2,"n":3}', 'a tap 440 ms after the new label');
     A.setNow(tp + 460); A.click('xpFwd', null, 1);
@@ -5289,14 +5303,14 @@ const BAR = `(function () {
     eq(JSON.stringify(X()), '{"at":3,"n":4}', 'a held → stops at the end');
     /* a slow key repeat, which lets the label paint and its half second pass, too */
     for (let t = 0; t < 2000; t += 250) { A.key('ArrowRight', true); run(250); }
-    eq(JSON.stringify(X()) + ' ' + fwd(), '{"at":3,"n":4} Play Stockfish\'s pick', 'a slow held → stops at the end');
+    eq(JSON.stringify(X()) + ' ' + fwd(), '{"at":3,"n":4} Stockfish\'s pick', 'a slow held → stops at the end');
     /* a fresh → there plays the pick, but only once its label has shown 450 ms */
     A.key('ArrowLeft'); run(1000);
     A.key('ArrowRight');
     eq(JSON.stringify(X()), '{"at":3,"n":4}', '→ to the end');
     run(50); A.key('ArrowRight');
     eq(JSON.stringify(X()), '{"at":3,"n":4}', 'a fresh → before the label shows');
-    const tk = untilLabel("Play Stockfish's pick");
+    const tk = untilLabel("Stockfish's pick");
     A.setNow(tk + 440); A.key('ArrowRight');
     eq(JSON.stringify(X()), '{"at":3,"n":4}', 'a fresh → 440 ms after the label');
     A.setNow(tk + 460); A.key('ArrowRight');
@@ -6069,7 +6083,8 @@ const BAR = `(function () {
       return JSON.parse(A.ev(`(function () { var ss = ui.session; ss.active = null; ss.finished = true; var h = doneHtml(ss);
         return JSON.stringify({ close: '${close}', head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], then: (/class="recap-then">([^<]*)</.exec(h) || [])[1], cats: ss.keys.map(function (k) { return ss.sum[k].c; }).join(' '),
           stars: ss.keys.map(function (k) { return ss.sum[k].s; }).join(''), words: (h.match(/class="res[^"]*">[^<]*/g) || []).map(function (x) { return x.replace(/^.*>/, ''); }),
-          glyphs: (h.match(/<span class="rg rg-\\w+" aria-hidden="true"><\\/span><span class="res/g) || []).map(function (x) { return /rg-(\\w+)/.exec(x)[1]; }).join(' ') }); })()`));
+          glyphs: (h.match(/<span class="rg rg-\\w+" aria-hidden="true"><\\/span><span class="res/g) || []).map(function (x) { return /rg-(\\w+)/.exec(x)[1]; }).join(' '),
+          row: (((/<div class="result-row" aria-hidden="true">([\\s\\S]*?)<\\/div>/.exec(h) || [])[1] || '').match(/rg-\\w+/g) || []).map(function (x) { return x.slice(3); }).join(' ') }); })()`));
     };
     const t2 = await run(2), t1 = await run(1);
     eq(t2.close, 'close', 'card 3: a good move first');
@@ -6077,6 +6092,7 @@ const BAR = `(function () {
     eq(t2.head + ' / ' + t2.then, '2 of 5 found first try. / Then 2 after a miss, 1 after a good move.', 'tier 2');
     eq(JSON.stringify(t2.words), JSON.stringify(['First try', 'After a miss', 'After a good move', 'After a miss', 'First try']), 'the tiles\' words');
     eq(t2.glyphs, 'first miss good miss first', 'each tile\'s glyph before its word (F3.1): ticks on cards 1 and 5, a ring tick on card 3, rotates on 2 and 4');
+    eq(t2.row, 'first miss good miss first', 'the result row leads the summary, one glyph per position in order (F4.5)');
     eq(t1.head + ' / ' + t1.then, '11 of 15 stars / Then 2 after a miss, 1 after a good move.', 'tier 1: stars, the same second line');
     eq(t1.stars, '32213', 'tier 1: card 2\'s First look and its miss with the automatic hint 2 stars; two misses 1');
   });
@@ -6141,6 +6157,93 @@ const BAR = `(function () {
     eq(JSON.stringify(r.oo), JSON.stringify(['Their threat: their bishop takes your knight.', 'Their threat: Bxc3 takes your knight.', 1]), 'the O-O card: the search kept their mate, O-O stopped it, so Bxc3');
     eq(JSON.stringify(r.c7), '[]', 'card 7: no other threat beside the mate Bf3 allows');
     eq(r.none, '', 'no clock, no line');
+  });
+
+  /* ── slice 4: the Coach Panel card and moments ── */
+  await test('F4.2: a decisive first sight on a player\'s fifth card at tier 2 names its game in the tag row ("Lost vs opponent1", a neutral pill) within 15 words; a draw "Drew vs opponent1", a long name "Lost the game"; on the first card the teaching label shows instead; it yields to a word for a tap, and shows on no hint and no review', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      playerTier = function () { return 2; };
+      var it = model().byKey['184455333378:68'], srs = srsLoad(), out = {}, x;
+      var words = function (d, lb) { return [d.row1, d.row2, d.chip, d.tag, d.cap].concat(d.buttons.map(function (b) { return b.label; })).reduce(function (n, s) { return n + wordsIn(s); }, 0) + (lb ? wordsIn(lb.text) : 0); };
+      /* the first card ever: the teaching label, no context line */
+      var a = openCard(it), d = displayFor(a), lb = frameLabel(a, boardOptsFor(a), 384, false);
+      out.first = { tag: d.tag, label: lb ? lb.text : '' };
+      /* four positions practised: this is the player's fifth card */
+      allMistakes().filter(trainable).filter(function (y) { return y.key !== it.key; }).slice(0, 4).forEach(function (y) { srs[y.key] = { box: 1, streak: 1, due: Date.now() + 3 * DAY, last: Date.now() - DAY, lapses: 0 }; });
+      srsSave(srs);
+      a = openCard(it); d = displayFor(a); lb = frameLabel(a, boardOptsFor(a), 384, false);
+      out.fifth = { tag: d.tag, words: words(d, lb), label: lb ? lb.text : '', pill: (x = /<div class="bd-tags"><span class="tag tag-ctx">([^<]*)<\\/span><\\/div>/.exec(bandHtml(a, d))) ? x[1] : '' };
+      /* a draw, a long name, a win */
+      var g = it.g, res = g.res, opp = g.opp;
+      g.res = 'draw'; out.draw = displayFor(openCard(it)).tag;
+      g.res = 'loss'; g.opp = 'averyverylongname4567'; out.long = displayFor(openCard(it)).tag;
+      g.opp = opp; g.res = 'win'; out.win = displayFor(openCard(it)).tag;
+      g.res = res;
+      /* a word for a tap takes row 2: the context line yields first */
+      a = openCard(it); a.note = { id: 'T4', key: cardStateKey(a) }; d = displayFor(a);
+      out.note = { tag: d.tag, row2: d.row2 };
+      /* not on a hint's frame, nor on a review */
+      a = openCard(it); a.hints = 1; out.hint = displayFor(a).tag;
+      srs[it.key] = { box: 1, streak: 1, due: Date.now() - 3600e3, last: Date.now() - 3 * DAY, lapses: 0 }; srsSave(srs);
+      out.review = displayFor(openCard(it)).tag;
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.first), JSON.stringify({ tag: '', label: 'Your game move' }), 'the first card: the teaching label, the context line yields to it');
+    eq(r.fifth.tag, 'Lost vs opponent1', 'the fifth card names its game');
+    ok(r.fifth.words <= 15, 'within 15 words, a label yielding to it: ' + r.fifth.words + ' ' + r.fifth.label);
+    eq(r.fifth.pill, 'Lost vs opponent1', 'in the tag row, a neutral pill');
+    eq(r.draw, 'Drew vs opponent1', 'a draw');
+    eq(r.long, 'Lost the game', 'a name over the cap of 22 characters');
+    eq(r.win, '', 'a win decided nothing');
+    eq(r.note.tag, '', 'a word for a tap: the context line yields');
+    ok(/^You are (White|Black)\. Move a (white|black) piece\.$/.test(r.note.row2), 'and the word is whole: ' + r.note.row2);
+    eq(r.hint, '', 'not on a hint');
+    eq(r.review, '', 'not on a review');
+  });
+
+  await test('F4.4: the found moment comes once, with the verdict\'s words, after the board is still; never during a hint, a wrong try, See it, See why or an answer shown', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    const log = () => JSON.parse(A.ev('JSON.stringify(rewardLog.splice(0))'));
+    log();
+    A.ev(`(function () { window.__show(model().byKey['184455333378:68']); return 1; })()`);
+    run(1000);
+    A.ev('(giveHint(), 1)');
+    run(1500);
+    eq(log().length, 0, 'no reward with a hint');
+    A.ev('(function () { var a = ui.session.active; sessionClick(a.played.from); sessionClick(a.played.to); return 1; })()');
+    run(2500);
+    eq(A.ev('ui.session.active.phase'), 'tried', 'a wrong try');
+    A.ev('(seeIt(), 1)');
+    run(2000);
+    eq(log().length, 0, 'no reward on a wrong try or See it');
+    A.ev('(tryAgain(), 1)');
+    run(1500);
+    A.ev('(function () { var a = ui.session.active; sessionClick(a.best.from); sessionClick(a.best.to); return 1; })()');
+    const still = A.ev('motionUntil');
+    ok(still > A.getNow(), 'the found move slides');
+    run(3000);
+    const found = log();
+    eq(found.map((x) => x.kind).join(' '), 'found', 'one found moment');
+    ok(found[0].at >= still + 150, 'with its words, after the board is still: ' + (found[0].at - still) + ' ms after the slide');
+    A.ev('(function () { var a = ui.session.active; a.settle = 2; seeWhy(); return 1; })()');
+    run(2500);
+    A.ev('(storyStep(1), 1)');
+    run(1500);
+    A.ev('(backToSettled(), 1)');
+    run(1500);
+    eq(log().length, 0, 'none in See why, nor back on the settled card');
+    /* an answer shown and played is no find */
+    A.ev(`(function () { window.__show(allMistakes().filter(trainable).filter(function (x) { var c = cardFor(x); return c && !c.sol && x.key !== '184455333378:68'; })[0]); return 1; })()`);
+    run(1000);
+    A.ev('(reveal(), 1)');
+    run(1500);
+    A.ev('(playIt(), 1)');
+    run(3000);
+    eq(log().length, 0, 'none for an answer shown and played');
+    ok(A.ev('ui.session.active.phase') === 'done' && A.ev('ui.session.active.revealed'), 'the answer was shown');
   });
 
   results.forEach((l) => console.log(l));

@@ -350,7 +350,7 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
       eq(b.map((x) => x.act).join(' '), 'xpBack xpFwd next', 'the bar');
       eq(b[0].label + '|' + b[0].aria, '‹|Back to the lesson', '‹ at the start');
       /* the button, the band and the sentence name the same one: the computer at tier 1 */
-      const pickLabel = tier === 1 ? 'Play its pick' : "Play Stockfish's pick";
+      const pickLabel = tier === 1 ? 'Computer\'s pick' : "Stockfish's pick";
       eq(b[1].label, pickLabel, '› at the end of the trail');
       ok(/nav-off/.test(b[1].cls), '› waits for Stockfish');
       ok(/^(Continue|Finish)$/.test(b[2].label) && /btn-big/.test(b[2].cls), 'Continue in gold');

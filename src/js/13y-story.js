@@ -150,7 +150,8 @@ var WORD_BUDGET = 15;
 var LINE_BUDGET = 13;
 function wordsIn(s) { return oneUnit(s).split(/\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w); }).length; }
 function barWords(slots) { return (slots || []).reduce(function (n, b) { return n + wordsIn(b.label); }, 0); }
-function bandWords(b, slots) { return wordsIn(b.row1) + wordsIn(b.row2) + wordsIn(b.chip) + wordsIn(b.cap) + barWords(slots); }
+/* the tag row's context line counts too (F4.2) */
+function bandWords(b, slots) { return wordsIn(b.row1) + wordsIn(b.row2) + wordsIn(b.chip) + wordsIn(b.tag) + wordsIn(b.cap) + barWords(slots); }
 /* a verdict as the band says it: {kind, row1, row2, html},
    with row 2's ladder kept (cands, fall) so the band can fit it to the
    words left beside the bar */
@@ -751,9 +752,10 @@ function bandFit(a, b) {
   if (b.cands) {
     b.row2 = fitRow(b.cands, 'row2', b.fall);
     var room = rowRoom(a, b);
-    /* a step chip (F1.2) goes first when the frame has no room for it: the
-       reason is never cut for it */
+    /* a step chip (F1.2) or the context line (F4.2) goes first when the
+       frame has no room for it: the task and the reason are never cut for it */
     if (b.stepChip && wordsIn(b.row2) > room) { b.chip = ''; room = rowRoom(a, b); }
+    if (b.tag && wordsIn(b.row2) > room) { b.tag = ''; room = rowRoom(a, b); }
     if (wordsIn(b.row2) > room) b.row2 = fitRow(b.cands, { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
     /* a ladder step that would say something untrue (R4's found form) */
     if (b.never && b.never.indexOf(b.row2) >= 0) b.row2 = fitRow([], { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
@@ -1398,7 +1400,7 @@ function stripWords(a) {
 function rowRoom(a, b) {
   var ss = ui.session, slots = ss ? barSlots(a, ss) : [], bw = barWords(slots);
   if (ss && a.phase === 'tried' && a.tried && a.tried.kind === 'miss') bw = Math.max(barWords(triedSlots(a, false)), barWords(triedSlots(a, true)));
-  return (b.budget || WORD_BUDGET) - bandWords({ row1: b.row1, chip: b.chip }, []) - bw - stripWords(a);
+  return (b.budget || WORD_BUDGET) - bandWords({ row1: b.row1, chip: b.chip, tag: b.tag }, []) - bw - stripWords(a);
 }
 /* what the card is showing, so a word or an outline meant for one state
    never outlives it: a move (each one counted, so coming back to the same
@@ -1472,9 +1474,30 @@ function answerRow(a, settled) {
   }
   /* their reply has landed: your move, and what it did (F4) */
   if (mid) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: a.replySaid ? a.replySaid.slice() : [], fall: 'The next move is forcing too.', budget: LINE_BUDGET };
-  /* tier 1 names the game move in words, else says no move (F1.6) */
-  return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: inWords(a) ? [CARD_COPY.T2(a, true), 'Find a better move.'] : [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '' };
+  /* tier 1 names the game move in words, else says no move (F1.6); a
+     decisive first sight names the game it decided in the tag row (F4.2) */
+  return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: inWords(a) ? [CARD_COPY.T2(a, true), 'Find a better move.'] : [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '', tag: ctxLine(a) };
 }
+/* the context line (F4.2): on a decisive first sight, the game it decided,
+   "Lost vs opponent1" ("Drew vs opponent1" for a draw) within its own cap
+   of 22 characters (the opponent's name one word), else "Lost the game"
+   ("Drew the game"); '' on any other card. On a player's first three cards
+   it yields to the teaching board label its frame can show (a kind of mark
+   that teaches itself, such as "Your game move": asked as if nothing had
+   taught itself yet, so the band and the label agree whatever was seen);
+   after that a short label yields to it, as labelRoom counts it with the
+   band (build note 2). bandFit drops it first when the words are over */
+var CTX_CAP = 22;
+function ctxLine(a) {
+  var g = a.it.g, w = g.res === 'draw' ? 'Drew' : g.res === 'loss' ? 'Lost' : '';
+  if (!w || !a.firstSight || !a.it.b.d || ss_relearn(a)) return '';
+  var s = g.opp && (w + ' vs ' + g.opp).length <= CTX_CAP ? w + ' vs ' + g.opp : w + ' the game';
+  if (practisedCount() < 3 && labelCands(a, boardOptsFor(a), function () { return false; }).some(function (c) { return !!c.tip; })) return '';
+  return s;
+}
+/* how many positions the player has practised: their first three cards are
+   the ones met while it is under 3 */
+function practisedCount() { return Object.keys(srsLoad()).length; }
 
 /* ── the board's labels (copy L) ──────────────────────────────────────────
    One pill a frame names one mark, in words read from what is drawn, never

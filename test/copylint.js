@@ -10,7 +10,7 @@
 //   and captions only (names such as "Other tactics" elsewhere stay): tactic, decided and notation
 //   (a SAN move; a square alone, "on f2", is no notation).
 //   Caps: row 1 26 characters; row 2 40 characters and 7 words; a caption 60 and 8; a chip 14 and 3; at
-//   most 15 words in a still frame (rows, chip, caption, strip, buttons, board label). A move in words
+//   most 15 words in a still frame (rows, chip, tag row, caption, strip, buttons, board label). A move in words
 //   counts as one word; a piece of the ledger ("lost ♕♗ for ♜") no word, and two characters.
 //   One check line per card (F2.3): Details says the line the summary shows for it, and no screen holds
 //   an old habit sentence (the 22 habit lines and the hint fallbacks they replaced: `habit`, never on the
@@ -28,12 +28,13 @@ const T1 = [['material', /\bmaterial\b/i], ['balanced', /\bbalanced\b/i], ['leve
 /* SAN with a piece letter, a pawn's capture, a promotion or castling */
 const SAN = /(?:\b[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|\b[a-h]x[a-h][1-8]|\b[a-h][18]=[QRBN]|\bO-O(?:-O)?)[+#]?/;
 const T1_BAND = [['tactic', /\btactic(s|al)?\b/i], ['decided', /\bdecided\b/i], ['notation', SAN]];
-const BAND = { row1: 1, row2: 1, chip: 1, cap: 1 };
+const BAND = { row1: 1, row2: 1, chip: 1, tag: 1, cap: 1 };
 const MOVE_WORDS = /\b(?:king|queen|rook|bishop|knight|pawn)(?: from [a-h][1-8])? (?:to|takes on) [a-h][1-8](?: to make a (?:queen|rook|bishop|knight))?|\bcastling\b/gi;
 const words = (s) => String(s || '').replace(MOVE_WORDS, 'Mv').split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length;
 /* a row's length, each of the piece ledger's symbols (F1.2, F1.4) taking two characters */
 const len = (s) => String(s).length + (String(s).match(/[\u2654-\u265f]/g) || []).length;
-const CAPS = { row1: [26, 99], row2: [40, 7], cap: [60, 8], chip: [14, 3] };
+/* the tag row's context line has its own cap, 22 characters (F4.2) */
+const CAPS = { row1: [26, 99], row2: [40, 7], cap: [60, 8], chip: [14, 3], tag: [22, 3] };
 /* the habit sentences F2.3's check lines replaced (17 patterns', 5 families'), and the hint fallbacks
    that said a habit: none may come back on any screen */
 const OLD_HABITS = ['Before every move, look at every check your opponent could give.', 'When their king is short of squares, look at every check you have.',
@@ -54,7 +55,7 @@ const generic = (s) => String(s).replace(/\bopponent\d+\b/g, 'O').replace(MOVE_W
   .replace(/\b(?:king|queen|rook|bishop|knight|pawn)s?\b/gi, 'P').replace(/\b[a-h][1-8]\b/g, 'S').replace(/\d+/g, 'N');
 
 /* every frame and every screen, read in the realm: frames [tier, key, what, row1, row2, cap, chip,
-   buttons, strip, label], screens [tier, where, text], habits [tier, key, details, summary] */
+   buttons, strip, label, tag], screens [tier, where, text], habits [tier, key, details, summary] */
 const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
   var frames = [], screens = [], habits = [], seen = {};
   /* the typed-move field is off screen (the keyboard's way in), so not counted */
@@ -70,7 +71,7 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
       eachFrame(it, function (what, a) {
         var d = displayFor(a), lb = null;
         try { lb = frameLabel(a, boardOptsFor(a), 360, false); } catch (e) {}
-        frames.push([tier, it.key, what, d.row1, d.row2, d.cap, d.chip, d.buttons.map(function (b) { return b.label; }), bits(d.strip).join(' '), lb ? lb.text : '']);
+        frames.push([tier, it.key, what, d.row1, d.row2, d.cap, d.chip, d.buttons.map(function (b) { return b.label; }), bits(d.strip).join(' '), lb ? lb.text : '', d.tag]);
         /* the ••• menu, before and after an answer */
         if (what === 'open' || what === 'S0 settled') screen(tier, 'menu', menuHtml(a));
         if (what === 'S0 settled') {
@@ -116,8 +117,8 @@ module.exports = function copyLint(A, OPEN, FRAMES) {
     if (BAND[where]) T1_BAND.forEach(([n, re]) => { if (re.test(s)) add(tier, n, where, s); });
   };
   let strings = 0;
-  r.frames.forEach(([tier, key, what, row1, row2, cap, chip, buttons, strip, label]) => {
-    const parts = { row1, row2, cap, chip, strip, label };
+  r.frames.forEach(([tier, key, what, row1, row2, cap, chip, buttons, strip, label, tag]) => {
+    const parts = { row1, row2, cap, chip, tag, strip, label };
     buttons.forEach((b) => check(tier, 'button', b));
     Object.keys(parts).forEach((w) => {
       if (!parts[w]) return;
@@ -126,8 +127,8 @@ module.exports = function copyLint(A, OPEN, FRAMES) {
       const cap = CAPS[w];
       if (cap && (len(parts[w]) > cap[0] || words(parts[w]) > cap[1])) add(tier, 'caps', w, parts[w]);
     });
-    const n = [row1, row2, cap, chip, strip, label].concat(buttons).reduce((x, s) => x + words(s), 0);
-    if (n > 15) add(tier, 'over 15 words', what.replace(/\d+/g, 'N'), [row1, row2, cap, chip, strip, label].concat(buttons).filter(Boolean).join(' / '));
+    const n = [row1, row2, cap, chip, tag, strip, label].concat(buttons).reduce((x, s) => x + words(s), 0);
+    if (n > 15) add(tier, 'over 15 words', what.replace(/\d+/g, 'N'), [row1, row2, cap, chip, tag, strip, label].concat(buttons).filter(Boolean).join(' / '));
   });
   r.screens.forEach(([tier, where, s]) => { strings++; check(tier, where, s); });
   r.habits.forEach(([tier, key, d, s]) => { if (!d || !s || d !== s) add(tier, 'two check lines', 'details/summary', d + ' | ' + s); });
@@ -137,7 +138,7 @@ module.exports = function copyLint(A, OPEN, FRAMES) {
   const base = fs.existsSync(BASE) ? new Set(JSON.parse(fs.readFileSync(BASE, 'utf8')).known) : new Set();
   const fresh = [...found].filter((v) => !base.has(v)).sort(), gone = [...base].filter((v) => !found.has(v)).sort();
   /* F1.6: the card's own strings at tier 1 (its rows, chip, caption, strip, buttons and board label) */
-  const CARD = { row1: 1, row2: 1, chip: 1, cap: 1, strip: 1, label: 1, button: 1 };
+  const CARD = { row1: 1, row2: 1, chip: 1, tag: 1, cap: 1, strip: 1, label: 1, button: 1 };
   const t1card = [...found].filter((v) => { const f = v.split('|'); return f[0] === '1' && f[1] !== 'caps' && f[1] !== 'over 15 words' && CARD[f[2]]; }).sort();
   return { found: found.size, fresh, gone, t1card, habit: [...habit].sort(), routine: [...routine].sort(), habits: r.habits.length, strings, frames: r.frames.length };
 };

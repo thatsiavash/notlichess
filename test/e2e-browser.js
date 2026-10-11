@@ -80,7 +80,11 @@
   /* the band's words fit its box: no row cut short, nothing below the box (the phone check runs at 360 x 640),
      and the box keeps the height it had when the card opened, so nothing below it moves; no bar button cuts
      its label */
+  /* the words' entrance (a fade and a 6 px rise over 150 ms, F4.4) is motion, not layout: it is run to its end
+     before the layout is measured */
+  const settleWords = () => { try { document.getAnimations().forEach((x) => { const t = x.effect && x.effect.target; if (t && t.closest && t.closest('#cband')) x.finish(); }); } catch (e) {} };
   const bandFits = (what) => {
+    settleWords();
     const bx = $('#cband .card-task'), rows = document.querySelectorAll('#cband .bd-r1, #cband .bd-r2, #cband .bd-cap');
     const cut = !bx || bx.scrollHeight > bx.clientHeight || [].some.call(rows, (r) => r.scrollWidth > r.clientWidth + 1 || r.scrollHeight > r.clientHeight + 1);
     if (cut) W.fit.push(what + ': ' + (bx ? bx.innerText.replace(/\n+/g, ' / ') : 'no band'));
@@ -99,8 +103,13 @@
   /* the layout at this size, for every state the run reaches: on the phone grid (360 x 640, 390 x 844)
      nothing but the board's own marks and label sits on the board, and the gold button is wholly on
      screen and on top; on the desktop grid (1024 x 768, 1280 x 900) the side column never overlaps the
-     board; on every screen nothing scrolls sideways. Run in each real-page pass, not in CI */
+     board; on every screen nothing scrolls sideways. The Coach Panel (F4.1): on a phone its top 8 to 16
+     px under the board, at 360 x 640 the board 340 px or more and the panel 96 or more; on the desktop
+     the panel level with the board's top and the bar's foot with the board's; everywhere the tag row and
+     the strip keep their place in every state of a card (exploring aside). Run in each real-page pass,
+     not in CI */
   W.lay = [];
+  W.pos = {};
   const rectOf = (e) => e.getBoundingClientRect();
   const meets = (r, q) => r.width > 0 && r.height > 0 && r.left < q.right - 1 && q.left < r.right - 1 && r.top < q.bottom - 1 && q.top < r.bottom - 1;
   const phoneGrid = () => matchMedia('(max-width: 860px)').matches;
@@ -109,6 +118,7 @@
      (clientWidth) keeps the device's width */
   const vw = () => document.documentElement.clientWidth, vh = () => document.documentElement.clientHeight;
   function layoutCheck(what) {
+    settleWords();
     const de = document.documentElement;
     if (Math.max(de.scrollWidth, document.body.scrollWidth) > vw() + 1) W.lay.push(what + ': the page scrolls sideways, ' + Math.max(de.scrollWidth, document.body.scrollWidth) + ' px wide');
     const bd = $('#bwrap svg.board');
@@ -124,7 +134,26 @@
         if (r.left < -0.5 || r.top < -0.5 || r.right > vw() + 0.5 || r.bottom > vh() + 0.5) W.lay.push(what + ': the gold button is not wholly on screen (' + [r.top, r.bottom].map(Math.round).join('-') + ')');
         else if (!hit || !(hit === pb || pb.contains(hit))) W.lay.push(what + ': the gold button is covered by ' + (hit ? hit.className || hit.tagName : 'nothing'));
       }
-    } else ['#ctop', '#cband', '#cpanel'].forEach((sel) => { const e = $(sel); if (e && shown(e) && meets(rectOf(e), q)) W.lay.push(what + ': ' + sel + ' overlaps the board'); });
+      const co = $('#ccoach');
+      if (co && shown(co)) {
+        const c = rectOf(co), gap = c.top - q.bottom;
+        /* beside the board on a phone held sideways, else under it */
+        if (c.left < q.right - 1 && (gap < 7.5 || gap > 16.5)) W.lay.push(what + ': the panel\'s top is ' + Math.round(gap) + ' px under the board');
+        if (vw() <= 360 && vh() <= 640 && (q.width < 339.5 || c.height < 95.5)) W.lay.push(what + ': at 360 x 640 the board is ' + Math.round(q.width) + ' px and the panel ' + Math.round(c.height));
+      }
+    } else {
+      ['#ctop', '#cband', '#cpanel'].forEach((sel) => { const e = $(sel); if (e && shown(e) && meets(rectOf(e), q)) W.lay.push(what + ': ' + sel + ' overlaps the board'); });
+      const co = $('#ccoach'), bar = $('#cbar');
+      if (co && shown(co) && Math.abs(rectOf(co).top - q.top) > 2) W.lay.push(what + ': the panel\'s top is ' + Math.round(rectOf(co).top - q.top) + ' px from the board\'s');
+      if (bar && shown(bar) && !$('.card.xp-card') && Math.abs(rectOf(bar).bottom - q.bottom) > 2) W.lay.push(what + ': the bar\'s foot is ' + Math.round(rectOf(bar).bottom - q.bottom) + ' px from the board\'s');
+    }
+    /* the tag row and the strip keep their place in every state of a card */
+    const key = T.card() && T.card().key, tg = $('#cband .bd-tags'), sp = $('#cstrip');
+    if (key && tg && sp && shown(tg) && !$('.card.xp-card')) {
+      const now = [Math.round(rectOf(tg).top), Math.round(rectOf(sp).top)], was = W.pos[key];
+      if (!was) W.pos[key] = now;
+      else if (was[0] !== now[0] || was[1] !== now[1]) W.lay.push(what + ': the tag row or the strip moved, ' + was.join('/') + ' to ' + now.join('/'));
+    }
   }
   const $$ = (s) => document.querySelectorAll(s);
   /* the story: wait for step i to have landed (its caption painted) */
@@ -191,8 +220,14 @@
       && al0.split(/[\s.]+/).indexOf(best0) < 0 && !/answer|Green arrow/.test(al0), al0);
     /* the desktop key line: the keys that work now, 12 px; none on a phone */
     const kl = $('#ckeys');
-    if (innerWidth > 860) ok('the key line lists the keys that work now, in 12 px', !!kl && kl.textContent === T.ev('displayFor(ui.session.active).keys') && kl.textContent === 'Enter: Show the answer · ? hint' && getComputedStyle(kl).fontSize === '12px', kl && kl.textContent);
-    else ok('no key line on a phone', !!kl && getComputedStyle(kl).display === 'none');
+    if (innerWidth > 860) {
+      ok('the key line lists the keys that work now, in 12 px: no Enter on a card asking (F4.1)', !!kl && kl.textContent === T.ev('displayFor(ui.session.active).keys') && kl.textContent === '? hint' && getComputedStyle(kl).fontSize === '12px', kl && kl.textContent);
+      /* F4.1: Enter on a fresh desktop card does nothing: no answer, no hint */
+      await sleep(600);
+      (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await sleep(900);
+      ok('Enter on a fresh desktop card does nothing', T.card().phase === 'guess' && T.card().hints === 0 && T.card().result === null, T.card().phase + ' ' + T.card().hints + ' ' + T.card().result);
+    } else ok('no key line on a phone', !!kl && getComputedStyle(kl).display === 'none');
     recOn();
     ok('session mode hides the site chrome', document.body.classList.contains('in-session'));
     ok('the session bar has an end button and progress', !!$('.sb-end') && !!$('.dots'));
@@ -211,6 +246,12 @@
       var on = e && e.closest ? e.closest('#bwrap [data-sq]') : null, out = { sq: sq, hit: on ? +on.getAttribute('data-sq') : -1, tag: e ? e.tagName : '' };
       w.innerHTML = keep; return out; })()`);
     ok('a tap on a ghost\'s cross reaches the piece under it', gx.sq >= 0 && gx.hit === gx.sq, JSON.stringify(gx));
+    /* F4.4: the found moment's pop, noted as the verdict's disc takes it: once, with the board still */
+    const pops = [], popObs = new MutationObserver(() => {
+      const d = $('#cband .bd-disc.fx-found, #cband .bd-disc.fx-found3');
+      if (d && !d.dataset.seen) { d.dataset.seen = '1'; pops.push({ still: !T.ev('motionHold') && T.ev('motionUntil') <= Date.now(), late: Date.now() - T.ev('motionUntil') }); }
+    });
+    popObs.observe($('#cband'), { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
     const want = c.sol ? c.sol : [c.best];
     for (let i = 0; i < want.length; i += 2) {
       await until(() => T.card().phase === 'guess', 6000);
@@ -226,14 +267,19 @@
     ok('the solve lands as a tick on the square, with the band saying so', !!$('#bwrap .marks .badge-good') && /^(Found it|You got there|That works too)$/.test(text('#cband .bd-r1')), text('#cband'));
     await until(() => T.card().settle === 2, 3000);
     await sleep(300);
+    popObs.disconnect();
+    ok('the found pop runs once, with the board still (F4.4)', pops.length === 1 && pops[0].still, JSON.stringify(pops));
     ok('the settled result: the game move\'s ghost where it went', !!$('#bwrap .board .ghost-piece') === (T.ev('s0Marks(ui.session.active, ui.session.active.st).ghosts.length') > 0)
       && !!$('#bwrap .marks .badge-good'), T.ev('JSON.stringify(s0Marks(ui.session.active, ui.session.active.st))'));
     ok('the settled band reads the result over R4', /^(Found it|You got there|That works too)$/.test(text('#cband .bd-r1')) && /\S/.test(text('#cband .bd-r2')) && !!$('#cstrip [data-act=details]')
-      && /^See why ›\s*(Continue|Finish)$/.test(text('#cbar').replace(/\n/g, ' ').trim()), text('#cband') + ' | ' + text('#cstrip') + ' | ' + text('#cbar'));
+      && /^See why\s*(Continue|Finish)$/.test(text('#cbar').replace(/\n/g, ' ').trim()), text('#cband') + ' | ' + text('#cstrip') + ' | ' + text('#cbar'));
     bandFits('the card settled');
     ok('no pawn number on the board', !/[+-]\d+\.\d/.test(text('#ebar-lab')));
-    /* the Details sheet: both long sentences, the game, the pattern, the way to explore */
-    click('#cstrip [data-act=details]');
+    /* the Details sheet: both long sentences, the game, the pattern, the way to explore; from the strip, or,
+       in a panel under 120 px where the strip's link gives way (F4.1), from the ••• menu */
+    const viaStrip = !!$('#cstrip [data-act=details]') && $('#cstrip [data-act=details]').offsetParent !== null;
+    if (viaStrip) click('#cstrip [data-act=details]');
+    else { click('#ctop [data-act=menu]'); await until(() => $('#ctop [data-act=details]'), 3000); click('#ctop [data-act=details]'); }
     await until(() => $('#overlay .sheet'), 3000);
     /* both sentences as Details says them (each material claim the card face's own) */
     const sn = T.card().sentences, snBest = sn && T.ev('(function (a) { return detailsBest(a, a.cls.sentences, a.lines.best.san[0]); })(ui.session.active)');
@@ -243,7 +289,8 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(200);
     ok('Escape closes Details', !$('#overlay .sheet'));
-    ok('closing Details gives the keyboard back to its link', document.activeElement === $('#cstrip [data-act=details]'), document.activeElement && document.activeElement.outerHTML.slice(0, 80));
+    if (viaStrip) ok('closing Details gives the keyboard back to its link', document.activeElement === $('#cstrip [data-act=details]'), document.activeElement && document.activeElement.outerHTML.slice(0, 80));
+    else ok('in a panel under 120 px Details is in the ••• menu, and closing it gives the keyboard back to the ••• button', document.activeElement === $('#ctop [data-act=menu]'), document.activeElement && document.activeElement.outerHTML.slice(0, 80));
     /* from the ••• menu: the pattern named once (its chip), and the scrim gives focus back to the ••• button */
     click('#ctop [data-act=menu]');
     await until(() => $('#ctop [data-act=details]'), 3000);
@@ -338,7 +385,7 @@
     ok('exploring starts at the card position, with you to move', !!xr && xr.at === 0 && xr.fens[0] === T.ev('stateFen(ui.session.active.pre)') && T.ev('ui.session.active.explore.st.w === myPov(ui.session.active.it)'), xr && xr.fens[0]);
     ok('the band reads Try your own moves / Stockfish rates each move.', text('#cband .bd-r1') === 'Try your own moves' && text('#cband .bd-r2') === (T.ev('ui.session.active.tier') === 1 ? 'The computer' : 'Stockfish') + ' rates each move.' && !!$('#cband .d-king'), text('#cband'));
     await sleep(400);
-    const pickL = T.ev('ui.session.active.tier') === 1 ? 'Play its pick' : 'Play Stockfish\'s pick';
+    const pickL = T.ev('ui.session.active.tier') === 1 ? 'Computer\'s pick' : 'Stockfish\'s pick';
     ok('the bar is ‹, ' + pickL + ' at the trail\'s end, Continue', new RegExp('^‹\\s*' + pickL + '\\s*(Continue|Finish)$').test(text('#cbar').replace(/\n/g, ' ').trim()), text('#cbar'));
     const fr = $('#cbar .xp-fwd'), rg = document.createRange();
     if (fr) rg.selectNodeContents(fr);
@@ -351,9 +398,13 @@
     ok('rows say your winning chances or words, never a pawn number', !/[+-]\d+\.\d/.test(text('#xp')) && (T.ev('ui.session.active.tier') === 1 || /You \d{1,2}%|mate in \d/.test(text('#xp .xp-rows'))), text('#xp .xp-rows'));
     ok('one arrow at a time while exploring', document.querySelectorAll('#bwrap .ghost-arrow, #bwrap .good-arrow, #bwrap .bad-arrow').length <= 1);
     if (innerWidth <= 860) {
-      const bb = $('#bwrap .board').getBoundingClientRect(), xb = $('#xp').getBoundingClientRect(), cb = $('#cbar').getBoundingClientRect();
+      /* the analysis fills the Coach Panel under its band, to the panel's foot (F4.1): as many rows as
+         fit, one at least whenever the panel has room for one, none past its foot nor under the bar */
+      const bb = $('#bwrap .board').getBoundingClientRect(), xb = $('#xp').getBoundingClientRect(), cb = $('#cbar').getBoundingClientRect(), co = $('#ccoach').getBoundingClientRect();
       const rws = [].filter.call($$('#xp .xp-row'), (r) => r.offsetParent !== null), lb = rws.length ? rws[rws.length - 1].getBoundingClientRect().bottom : 0;
-      ok('on a phone the panel runs from the board\'s foot to the bar, nothing under the bar', xb.top >= bb.bottom - 1 && rws.length >= 1 && lb <= cb.top + 0.5 && cb.top - lb < 62, [bb.bottom, xb.top, lb, cb.top].map(Math.round).join(' / '));
+      const room = co.bottom - 8 - ($('#xp .xp-say') ? $('#xp .xp-say').getBoundingClientRect().bottom : co.bottom);
+      ok('on a phone the analysis fills the panel from under the board to its foot, nothing under the bar', xb.top >= bb.bottom - 1 && (rws.length >= 1 || room < 44) && (!rws.length || (lb <= co.bottom + 0.5 && co.bottom - lb < 62)) && co.bottom <= cb.top + 0.5,
+        [bb.bottom, xb.top, lb, co.bottom, cb.top, Math.round(room)].map(Math.round).join(' / '));
       ok('the page does not scroll under the bar', document.documentElement.scrollHeight <= innerHeight + 1, document.documentElement.scrollHeight + ' / ' + innerHeight);
     }
     if (xr) {
@@ -453,7 +504,8 @@
       press('#cbar [data-act=tryAgain]');
       await until(() => T.card().phase === 'guess', 3000);
       await sleep(400);
-      ok('after Try again the focus stays on the action bar, not the typed-move field', focusInBar(), focusName());
+      /* Show the answer never takes Try again's place under the keyboard (F4.1): the keyboard goes to the task */
+      ok('after Try again the focus is on the task, never the typed-move field nor Show the answer', !!document.activeElement && document.activeElement.id === 'task-h', focusName());
       const others = legalOther(c);
       ok('there are other legal moves to try', others.length >= 2, String(others.length));
       /* a try that is nearly as good counts as close, not as a miss: try another */
@@ -631,10 +683,13 @@
         if (hb) { hb.focus(); hb.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })); }
         await sleep(1200);
         ok('I2: a clicked Hint hands the focus back to the band', !!hb && document.activeElement && document.activeElement.id === 'task-h', document.activeElement && (document.activeElement.id || document.activeElement.textContent));
-        ok('I2: the key line then names the right-hand button', text('#ckeys') === 'Enter: Show the answer · ? hint', text('#ckeys'));
+        ok('I2: the key line then names no Enter: a card asking has no honey button (F4.1)', text('#ckeys') === '? hint', text('#ckeys'));
         (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
         await sleep(1200);
-        ok('I2: Enter after a clicked Hint shows the answer, never hint 2', T.card().phase === 'done' && T.card().hints === 1, T.card().phase + ' ' + T.card().hints);
+        ok('I2: Enter after a clicked Hint does nothing: never hint 2, never the answer', T.card().phase === 'guess' && T.card().hints === 1 && T.card().result === null, T.card().phase + ' ' + T.card().hints);
+        /* the answer by its own button, then on to the next card */
+        click('#cbar [data-act=reveal]');
+        await sleep(1200);
         x = await toGuess();
         /* the new card's words (and its focus on the task) are in before the keyboard moves */
         await until(() => T.card().phase === 'guess' && text('#ckeys') !== '' && document.activeElement && document.activeElement.id === 'task-h', 8000);
@@ -652,8 +707,29 @@
         }
       }
     }
-    /* finish quickly: reveal the rest */
-    for (let guard = 0; guard < 40; guard++) {
+    /* finish: on the desktop from the keyboard alone (F4.1: a set finishes without the mouse), each move
+       typed in the field Tab reaches from the task, Enter on the honey button; on a phone, reveal the rest */
+    if (innerWidth > 860) {
+      let typed = 0, honey = 0;
+      for (let guard = 0; guard < 80; guard++) {
+        const x = T.card();
+        if (x.finished || !x.key && x.session === false) break;
+        const still = !T.ev('motionHold') && T.ev('motionUntil') <= Date.now();
+        if (x.phase === 'guess' && still && $('#kbmove')) {
+          const inp = $('#kbmove');
+          inp.focus(); inp.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+          inp.value = T.ev('(function (a) { return sanOf(a.st, dueMove(a)); })(ui.session.active)');
+          inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          typed++;
+        } else if ((x.phase === 'tried' || x.phase === 'done') && still) {
+          (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          honey++;
+        }
+        await sleep(1100);
+        if (T.card().finished) break;
+      }
+      ok('the rest of the set finishes from the keyboard alone: moves typed, Enter on the honey button (F4.1)', !!T.card().finished || !!$('.recap-item'), typed + ' typed, ' + honey + ' Enter, ' + T.card().phase);
+    } else for (let guard = 0; guard < 40; guard++) {
       const x = T.card();
       if (x.finished || !x.key && x.session === false) break;
       if (x.phase === 'guess') click('[data-act=reveal]');
@@ -692,6 +768,20 @@
     ok('one check line per step met, said once', habits.length >= 1 && (text('.recap-habit').match(/Keep in mind:/g) || []).length === 1 && new Set(habits).size === habits.length && habits.every((h) => h.length > 10), habits.join(' | '));
     ok('no "spotted" line on the recap', !/spotted/i.test(text('#trainbox')));
     ok('the recap offers to play a game', !!$('.recap-acts .btn-big'));
+    /* F4.5: a glyph per position leads the summary; the next set, in the bar at the screen's foot, stays in
+       view at the summary's top and at its end, wider than Back to Today */
+    ok('the summary leads with a glyph per position (F4.5)', $$('.result-row .rg').length === $$('.recap-item').length, $$('.result-row .rg').length + ' glyphs, ' + $$('.recap-item').length + ' tiles');
+    const nextB = $('.recap-acts [data-act=keepGoing]'), backB = $('.recap-acts [data-act=endSession]');
+    if (nextB && backB) {
+      const inView = (e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.top >= 0 && r.bottom <= innerHeight + 0.5; };
+      window.scrollTo(0, 0); await sleep(150);
+      const atTop = inView(nextB);
+      window.scrollTo(0, document.documentElement.scrollHeight); await sleep(150);
+      const atEnd = inView(nextB);
+      window.scrollTo(0, 0);
+      const wn = nextB.getBoundingClientRect().width, wb = backB.getBoundingClientRect().width;
+      ok('the next set stays in view at the summary\'s top and end, wider than Back to Today (F4.5)', atTop && atEnd && wn > 1.2 * wb, [atTop, atEnd, Math.round(wn), Math.round(wb)].join(' / '));
+    }
     ok('reveal-only cards do not earn the day on their own', T.ev('ui.session ? (ui.session.attempted || 0) + (ui.session.carried || 0) >= 3 : false') || T.ev('dayLoad().sessions || 0') === sessionsBefore);
     click('[data-act=endSession]');
     await sleep(300);

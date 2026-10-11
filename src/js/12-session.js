@@ -21,7 +21,7 @@ function saveSession() {
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
-                         progress: ss.progress || {}, attempted: ss.attempted || 0, carried: ss.carried || 0, notes: ss.notes || {}, sum: ss.sum || {}, firstTime: !!ss.firstTime });
+                         progress: ss.progress || {}, attempted: ss.attempted || 0, carried: ss.carried || 0, notes: ss.notes || {}, sum: ss.sum || {}, firstTime: !!ss.firstTime, goalMet: ss.goalMet || null });
 }
 /* a paused session that is dropped or replaced: a card left after a miss
    is graded a fail, and its tries still count toward the day */
@@ -468,7 +468,7 @@ function resumeSession() {
   if (!s) return false;
   ui.session = { mode: s.mode, label: s.label, keys: s.keys, idx: s.idx, results: s.results || {},
                  relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {},
-                 attempted: s.attempted || 0, carried: s.carried || 0, notes: s.notes || {}, sum: s.sum || {}, firstTime: !!s.firstTime };
+                 attempted: s.attempted || 0, carried: s.carried || 0, notes: s.notes || {}, sum: s.sum || {}, firstTime: !!s.firstTime, goalMet: s.goalMet || null };
   setView('train', false);
   pushSessionState();
   /* a card answered before the reload is not asked again */
@@ -557,12 +557,18 @@ function countDay(ss, extra) {
   day.counted = 1;
   daySave(day);
   track('day_counted');
-  goalCheck();
+  goalCheck(ss);
 }
-function goalCheck() {
-  if (weekDays() >= goalThisWeek() && store.get('nl:goalSent:' + playerId(), 0) !== weeksAtGoal()) {
-    store.set('nl:goalSent:' + playerId(), weeksAtGoal());
+/* the week's goal met, once a week: the measure, and the summary of the
+   set that met it shows its medal (F4.4, ss.goalMet). Stamped with the
+   week's Monday, so a week met after a week missed counts again (the run
+   of weeks at the goal starts again at 1 there) */
+function goalCheck(ss) {
+  var wk = mondayOf(new Date());
+  if (weekDays() >= goalThisWeek() && store.get('nl:goalSent:' + playerId(), 0) !== wk) {
+    store.set('nl:goalSent:' + playerId(), wk);
     track('week_goal_met');
+    if (ss) ss.goalMet = { days: weekDays(), goal: goalThisWeek() };
   }
 }
 function finishSession() {
@@ -584,7 +590,7 @@ function finishSession() {
   if (ss.from) ui.session = ss.from;
   /* progress now matters: ask the browser not to clear this site's storage */
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {}); } catch (e) {}
-  snd('set');
+  /* its sound comes with the summary's moments (summaryMoments, F4.4) */
   track('session_done_' + ss.mode);
   renderHeader();
   renderViews();

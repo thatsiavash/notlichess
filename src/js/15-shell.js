@@ -704,10 +704,11 @@ document.addEventListener('keydown', function (e) {
     if (!a.checkSaid && slotOfAct('hint') >= 0 && !slotGuarded(slotOfAct('hint'))) giveHint();
   }
 });
-/* the right-hand button, pressed from the keyboard: a click on it, so the
-   double-tap guard and the action are the button's own */
+/* Enter with no control focused: the honey button alone (F4.1), a click on
+   it, so the double-tap guard and the action are the button's own. A fresh
+   card has none, so Enter does nothing there: it never shows the answer */
 function pressRight() {
-  var bar = el('cbar'), b = bar && bar.querySelector('[data-slot="' + rightSlot() + '"][data-act]');
+  var i = honeySlot(), bar = el('cbar'), b = i >= 0 && bar && bar.querySelector('[data-slot="' + i + '"][data-act]');
   if (b) b.click();
 }
 /* a bar button pressed by its key (→ for See it), the same way */
@@ -1092,7 +1093,7 @@ function shiftDays(n) {
   });
   moved.forEach(function (m) { store.del(m.from); });
   moved.forEach(function (m) { if (m.v) store.set(m.to, m.v); });
-  ['nl:firstSeen:', 'nl:lastSeen:'].forEach(function (k0) { var v = store.get(k0 + p, null); if (typeof v === 'number') store.set(k0 + p, back(v)); });
+  ['nl:firstSeen:', 'nl:lastSeen:', 'nl:goalSent:'].forEach(function (k0) { var v = store.get(k0 + p, null); if (typeof v === 'number') store.set(k0 + p, back(v)); });
   var rd = store.get('nl:retDay:' + p, null);
   if (rd) store.set('nl:retDay:' + p, stampBack(rd));
   /* the day's first opening (F7.1) moves back too, so today opens again */

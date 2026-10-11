@@ -1,7 +1,9 @@
 // Design system v2, Night (F3.1): the checks behind "a new look everywhere". Run from labels.test.js:
 // require('./design')(A) returns the failures (an empty list when all hold), A being a booted app realm.
-//   Type: Nunito from Google Fonts (one preloaded woff2, display=optional), the seven size tokens with the
-//   design lead's values on phones and from 861 px, and every font-size in app.css one of them.
+//   Type: Nunito from Google Fonts (500 to 900, one preloaded woff2, display=optional), the seven size tokens
+//   with the design lead's values on phones and from 861 px, and every font-size in app.css one of them; the
+//   body at 500, the small size never 800, and 12 px only for kickers, tags, pills, the key line, the menu's
+//   keys, the eval bar and board labels (the design lead's review of slice 3).
 //   Colour: the palette's values; every pair in use passes contrast (text 4.5:1; borders, glyphs and bold
 //   board coordinates 3:1), tints counted over the surface they sit on; no colour outside the tokens.
 //   Buttons, icons, glyphs: the honey primary with its lip, the filled secondary, the honey tertiary, the
@@ -43,7 +45,7 @@ module.exports = function designChecks(A) {
 
   /* ── type ── */
   const sheets = page.match(/<link rel="stylesheet" href="([^"]+)"/g) || [];
-  if (sheets.length !== 1 || !/fonts\.googleapis\.com\/css2\?family=Nunito:wght@600\.\.900&display=optional"/.test(sheets[0])) no('fonts: one Google Fonts stylesheet, Nunito 600 to 900, display=optional: ' + sheets.join(' '));
+  if (sheets.length !== 1 || !/fonts\.googleapis\.com\/css2\?family=Nunito:wght@500\.\.900&display=optional"/.test(sheets[0])) no('fonts: one Google Fonts stylesheet, Nunito 500 to 900, display=optional: ' + sheets.join(' '));
   const pre = page.match(/<link rel="preload"[^>]*>/g) || [];
   if (pre.length !== 1 || !/href="https:\/\/fonts\.gstatic\.com\/s\/nunito\/[^"]+\.woff2" as="font" type="font\/woff2" crossorigin/.test(pre[0])) no('fonts: one preloaded Nunito woff2: ' + pre.join(' '));
   if (/Cormorant|Lora|Georgia/.test(page + css)) no('fonts: an old family is still named');
@@ -58,6 +60,18 @@ module.exports = function designChecks(A) {
   const off = sizes.filter((v) => !/^var\(--fs-(score|title|verdict|heading|body|small|tag)\)$/.test(v));
   if (!sizes.length || off.length) no('type: every font-size is a token, ' + off.length + ' are not: ' + off.slice(0, 5).join(', '));
   if (/[^-]font\s*:\s*(?!inherit)[^;}]*\d/.test(rules)) no('type: a font shorthand sets a size outside the tokens');
+  /* the weights (review of slice 3): body 500; small text 600 or 700 (700 for emphasis and controls), never 800
+     (a game's result letter in its disc is a glyph, not text) */
+  if (!/(^|[}\s])body\{[^}]*font-weight:500[;}]/.test(rules)) no('type: the body is not 500');
+  const heavySmall = [];
+  rules.replace(/([^{}]+)\{([^}]*font-size\s*:\s*var\(--fs-small\)[^}]*)\}/g, (m, sel, body) => { if (/font-weight\s*:\s*(800|900)/.test(body) && sel.trim() !== '.lg-res') heavySmall.push(sel.trim()); return m; });
+  if (heavySmall.length) no('type: small text at 800 or more: ' + heavySmall.slice(0, 5).join(', '));
+  /* 12 px only where the words are not meant to be read as text: kickers, tags and pills, the key line, the
+     menu's keys, the eval bar's label, board labels */
+  const TAG_OK = /^(\.kicker|\.pill|\.tag|\.keyline|\.menu-keys|\.evalbar-label|\.blabel|\.proof figcaption|\.xp-label)$/;
+  const tiny = [];
+  rules.replace(/([^{}]+)\{([^}]*font-size\s*:\s*var\(--fs-tag\)[^}]*)\}/g, (m, sel, body) => { sel.split(',').map((x) => x.trim().replace(/^@media[^{]*\{\s*/, '')).forEach((x) => { if (!TAG_OK.test(x)) tiny.push(x); }); return m; });
+  if (tiny.length) no('type: meaningful text at 12 px: ' + tiny.slice(0, 5).join(', '));
   /* the page's own markup and scripts set no size of their own (the board's coordinates are board units) */
   const js = fs.readdirSync(path.join(SRC, 'js')).filter((f) => /\.js$/.test(f)).map((f) => fs.readFileSync(path.join(SRC, 'js', f), 'utf8')).join('\n');
   if (/font-size\s*:/.test(js) || /font-size\s*:/.test(page.replace(/<style>[\s\S]*<\/style>/, ''))) no('type: a font-size set outside app.css');
@@ -97,10 +111,11 @@ module.exports = function designChecks(A) {
   /* ── icons and glyphs ── */
   const icons = JSON.parse(A.ev('JSON.stringify(BAR_ICON)'));
   ['hint', 'reveal', 'tryAgain', 'seeIt', 'seeWhy', 'next'].forEach((act) => { if (!icons[act]) no('icons: no icon for ' + act); });
-  const named = new Set(Object.values(icons).concat(['info', 'search']));
+  const named = new Set(Object.values(icons).concat(['info', 'search', 'back', 'fwd']));
   named.forEach((n) => { if (!new RegExp('\\[data-icon=' + n + '\\]\\{--ic:var\\(--ic-' + n + '\\)\\}').test(rules) || !/^url\("data:image\/svg\+xml,/.test(P['--ic-' + n] || '')) no('icons: ' + n + ' is not drawn'); });
   const bar = A.ev(`barHtml([{ act: 'hint', label: 'Hint', cls: 'btn-line', off: true }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line' }, { act: 'storyBack', label: '‹', cls: 'nav-btn' }])`);
-  if (!/data-icon="bulb"[^>]*>Hint</.test(bar) || !/data-icon="eye" data-act="reveal">Show the answer</.test(bar) || /storyBack[^>]*data-icon|data-icon[^>]*storyBack/.test(bar)) no('icons: the bar names its icons, on or off, and only for actions that have one: ' + bar);
+  /* a lone chevron is drawn as its own icon, its glyph kept as the button's text (review of slice 3) */
+  if (!/data-icon="bulb"[^>]*>Hint</.test(bar) || !/data-icon="eye" data-act="reveal">Show the answer</.test(bar) || !/class="nav-btn nav-ic" data-slot="2" data-icon="back" data-act="storyBack">‹</.test(bar)) no('icons: the bar names its icons, on or off, and only for actions that have one, a lone chevron its own: ' + bar);
   ['first', 'good', 'hint', 'miss', 'shown', 'skip', 'learned'].forEach((g) => { if (!new RegExp('\\.rg-' + g + '\\{').test(rules)) no('glyphs: no ' + g + ' glyph'); });
   /* every category of the summary (its tile's word) has its glyph, and a position learned its seal */
   const WANT = { 'First try': 'first', 'Works too': 'first', 'After a good move': 'good', 'With a hint': 'hint', 'First look': 'hint', 'After a miss': 'miss', 'Shown': 'shown', 'Missed': 'skip', 'Skipped': 'skip', 'Learned': 'learned' };
