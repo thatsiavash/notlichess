@@ -90,6 +90,17 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
         }
       });
     });
+    /* foils (F8.2), at tiers 2 and 3: every frame of eight of them, their Details and menu */
+    var fk = tier >= 2 ? foilPool().slice(0, 8).map(function (f) { return f.key; }) : [];
+    fk.forEach(function (key) {
+      eachFoilFrame(key, function (what, a) {
+        var d = displayFor(a), lb = null;
+        try { lb = frameLabel(a, boardOptsFor(a), 360, false); } catch (e) {}
+        frames.push([tier, key, what, d.row1, d.row2, d.cap, d.chip, d.buttons.map(function (b) { return b.label; }), bits(d.strip).join(' '), lb ? lb.text : '', d.tag]);
+        if (what === 'foil open' || what === 'foil settled') screen(tier, 'menu', menuHtml(a));
+        if (what === 'foil settled') screen(tier, 'details', detailsHtml());
+      });
+    });
     ui.session = null;
     screen(tier, 'today', heroHtml() + whyTheseHtml(todayPlan()) + cleanLineHtml() + focusHtml() + latestGamesHtml() + nextDueHtml());
     var ks = allMistakes().filter(trainable).slice(0, 5).map(function (x) { return x.key; });
@@ -102,6 +113,14 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
     screen(tier, 'summary', diagHtml({ dx: { k: 'line' } }, tier) + diagHtml({ dx: { k: 'card', full: false, cov: { losses: 9, decided: 7, covered: 12, total: 40 } } }, tier)
       + diagHtml({ dx: { k: 'card', full: false, cov: { losses: 2, decided: 1, covered: 12, total: 40 } } }, tier) + cueCardHtml({ cue: 'backup' }));
     ui.cueSlot = 'evening'; screen(tier, 'settings', cueBody('settings')); ui.cueSlot = null;
+    /* a set with foils: their line and tiles (F8.2) */
+    if (fk.length >= 3) {
+      var fs = { mode: 'today', label: 'Today', keys: ks.concat(fk.slice(0, 3)), idx: ks.length + 3, results: {}, notes: { }, sum: {}, relearn: [], relearnOf: {}, finished: true };
+      ks.forEach(function (k, i) { fs.results[k] = res[i]; });
+      fs.notes[ks[3]] = 'shown';
+      [['first', { c: 'first', s: 3, fc: '', foil: 1, fk: 'good' }], ['retry', { c: 'miss', s: 1, fc: '3', foil: 1, fk: 'playable' }], ['fail', { c: 'shown', s: 0, fc: '', foil: 1 }]].forEach(function (x, i) { fs.results[fk[i]] = x[0]; fs.sum[fk[i]] = x[1]; });
+      screen(tier, 'summary', doneHtml(fs));
+    }
     ui.view = 'insights'; box.innerHTML = '';
     renderInsights();
     screen(tier, 'insights', box.innerHTML);

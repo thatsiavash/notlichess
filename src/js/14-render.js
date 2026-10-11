@@ -287,23 +287,28 @@ function weekHtml(fx, line) {
 }
 /* card 1's opening frame on Today (F5.1), drawn by the card's own frame
    code (boardOptsFor on the card as it opens): the red arrow on a cued
-   first sight, never a hint or the answer. Kept per position and record,
-   since Today is drawn again often while the games are read */
+   first sight, none on a game-mode review or a foil (F8.1; card 1 is never
+   a foil, Resume's card may be), never a hint or the answer. gm: the mode
+   a paused showing keeps (its kept progress), as the card reopens in it
+   though a miss ended its run. Kept per position and record, since Today
+   is drawn again often while the games are read */
 var firstFrameMemo = { k: null, h: '' };
-function firstFrameHtml(it) {
-  var r = srsRec(it), mk = it.key + '|' + (it.b.v || 0) + '|' + (it.b.bu || '') + '|' + (r ? (r.n || 0) + '|' + (r.q || 0) : '-') + '|' + playerTier();
+function firstFrameHtml(it, gm) {
+  var r = srsRec(it), mk = it.key + '|' + (it.b.v || 0) + '|' + (it.b.bu || '') + '|' + (r ? (r.n || 0) + '|' + (r.q || 0) + '|' + (r.streak || 0) : '-') + '|' + playerTier() + '|' + gm;
   if (firstFrameMemo.k === mk) return firstFrameMemo.h;
   var h = '';
   try {
-    var a = cardFor(it), f = a && boardOptsFor(a);
+    var a = cardFor(foilFace(it)), f;
+    if (a && gm != null) a.game = !!gm || a.foil;
+    f = a && boardOptsFor(a);
     if (f) h = boardSvg(f.st, Object.assign({}, f.opts, { decor: true, fx: null }));
   } catch (e) { h = ''; }
   firstFrameMemo = { k: mk, h: h };
   return h;
 }
 /* the board beside its caption, the board a way in too (a tap starts) */
-function firstHtml(it, act, cap) {
-  var b = it ? firstFrameHtml(it) : '';
+function firstHtml(it, act, cap, gm) {
+  var b = it ? firstFrameHtml(it, gm) : '';
   /* the board is a second way to the button beside it, for a finger or a
      mouse: the keyboard and a screen reader keep the one button */
   return '<div class="hero-first">' + (b ? '<a class="hero-board" data-act="' + act + '" tabindex="-1" aria-hidden="true">' + b + '</a>'
@@ -323,7 +328,7 @@ function firstCaption(it) {
 function heroHtml(plan) {
   plan = plan || todayPlan();
   var mins = Math.max(1, Math.round(plan.keys.length * 0.8));
-  var first0 = model().byKey[plan.keys[0]];
+  var first0 = itemOf(plan.keys[0]);
   /* a session finished today without enough tries: say what counts */
   var dl = dayLoad(), need = Math.min(3, plan.keys.length), note = '';
   if (dl.short && !dayCounts(dl)) note = need > 1 ? 'Try ' + need + ' positions to count today.' : 'Try it to count today.';
@@ -345,18 +350,20 @@ function heroHtml(plan) {
    (tier 1 "...cost you 15 games ›"), to the report; only while the set
    holds a position of that skill */
 function whyTheseHtml(plan) {
-  var f = currentFocus(), m = model();
+  var f = currentFocus();
   var agg = f && insightFamiliesQuick().filter(function (x) { return x.fam.key === f.fam; })[0];
-  if (!agg || agg.cost < 1 || !plan.keys.some(function (k) { var it = m.byKey[k]; return it && familyOf(patternOf(it.b)).key === f.fam; })) return '';
+  if (!agg || agg.cost < 1 || !plan.keys.some(function (k) { var it = itemOf(k); return it && !it.foil && familyOf(patternOf(it.b)).key === f.fam; })) return '';
   var n = Math.round(agg.cost);
   return '<p class="why-these"><a data-act="view" data-k="insights">Why these? ' + esc(agg.fam.name)
     + (playerTier() === 1 ? ' cost you ' + plur(n, 'game') : ' decided ' + (n === 1 ? 'one' : n) + ' of your games') + ' ›</a></p>';
 }
 function resumeHtml(s) {
-  var it = model().byKey[s.keys[s.idx]];
+  /* the card the set stopped at, in the mode it reopens in (F8.1); it
+     may be a foil (F8.2) */
+  var k = s.keys[s.idx], it = itemOf(k), kp = s.progress && s.progress[k];
   return '<div class="hero">'
     + '<h2>Pick up where you left off.</h2>'
-    + firstHtml(it, 'resume', countsWords(s) + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.'))
+    + firstHtml(it, 'resume', countsWords(s) + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.'), kp && kp.gm != null ? kp.gm : null)
     + '<div class="acts"><a class="btn-big" data-icon="play" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">End this set</a></div>'
     + weekHtml() + '</div>';
 }
@@ -453,7 +460,7 @@ function findingHtml(n) {
       ? stateCard('Only ' + plur(n.total, 'game') + ' so far.', 'Not enough to find much yet. Play a few more rated games and come back.', play)
       : stateCard('Clean games.', 'Stockfish found no big mistakes in your ' + n.total + ' games. That is rare. New games are checked when you come back.', play);
   }
-  var plan = n.ready ? todayPlan() : null, can = plan ? plan.keys.length : 0, first0 = can ? model().byKey[plan.keys[0]] : null;
+  var plan = n.ready ? todayPlan() : null, can = plan ? plan.keys.length : 0, first0 = can ? itemOf(plan.keys[0]) : null;
   if (done) {
     return stateCard(n.ready === 1 ? 'One mistake to learn from.' : n.ready + ' mistakes to learn from.', 'Play a few more rated games and more will turn up.',
       (can ? '<a class="btn-big" data-icon="play" data-act="startToday">Start with ' + can + '</a>' : '') + play.replace('btn-big', 'btn-quiet'),
@@ -523,7 +530,7 @@ function recapHabit(ss) {
   if (sp.type === 'family') fam = sp.fam;
   else if (sp.type === 'pattern') return lineOfStep(patternStep(sp.key), t);
   else if (sp.type === 'game' || sp.type === 'one') {
-    var m = model(), its = ss.keys.map(function (k) { return m.byKey[k]; }).filter(Boolean);
+    var its = ss.keys.map(function (k) { return itemOf(k); }).filter(function (it) { return it && !it.foil; });
     var d = its.filter(function (it) { return it.b.d; })[0] || its[0];
     if (d) fam = familyOf(patternOf(d.b)).key;
   }
@@ -562,13 +569,44 @@ function recapScore(ss, keys, tier) {
   var n = 0, first = 0, stars = 0, by = {};
   keys.forEach(function (k) {
     var e = sumOf(ss, k);
-    if (!e || e.c === 'skip') return;
+    /* a foil is counted apart (foilWords): it had nothing to find */
+    if (!e || e.c === 'skip' || e.foil) return;
     n++; stars += e.s || 0;
     if (e.c === 'first') first++; else by[e.c] = (by[e.c] || 0) + 1;
   });
   if (!n) return { head: 'Done.', then: '' };
   var parts = CAT_ORDER.filter(function (c) { return by[c]; }).map(function (c) { return by[c] + ' ' + CAT_THEN[c]; });
   return { head: tier === 1 ? stars + ' of ' + n * 3 + ' stars' : first + ' of ' + n + ' found first try.', then: parts.length ? 'Then ' + parts.join(', ') + '.' : '' };
+}
+/* the set's foils (F8.2), apart from the score: "2 had nothing to fix: 1
+   good move, 1 playable." (then with a hint, after a miss, missed, shown);
+   '' with none answered */
+function foilWords(ss, keys) {
+  var n = 0, by = { good: 0, playable: 0, hint: 0, miss: 0, left: 0, shown: 0 };
+  keys.forEach(function (k) {
+    var e = sumOf(ss, k);
+    if (!e || !e.foil || e.c === 'skip') return;
+    n++;
+    var c = e.c === 'first' ? (e.fk === 'playable' ? 'playable' : 'good') : e.c;
+    if (by[c] != null) by[c]++;
+  });
+  if (!n) return '';
+  var parts = [];
+  if (by.good) parts.push(plur(by.good, 'good move'));
+  ['playable', 'hint', 'miss', 'left', 'shown'].forEach(function (c) { if (by[c]) parts.push(by[c] + ' ' + FOIL_THEN[c]); });
+  return n + ' had nothing to fix: ' + parts.join(', ') + '.';
+}
+var FOIL_THEN = { playable: 'playable', hint: 'with a hint', miss: 'after a miss', left: 'missed', shown: 'shown' };
+/* a foil's tile (F8.2): its board with the game move's squares tinted as
+   a move played (never the red arrow: it was fine), "Nothing to fix", its
+   result as glyph and word ("Good move", "Playable", else the summary's
+   own); no ladder, and nothing to open */
+function foilTileHtml(it, e) {
+  var pre = stateAtPly(it.g.mv, it.b.p), pm = pre && uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
+  if (!pre) return '';
+  var c = e.c === 'first' ? (e.fk === 'playable' ? 'good' : 'first') : e.c, word = e.c === 'first' ? (e.fk === 'playable' ? 'Playable' : 'Good move') : CAT_WORD[e.c];
+  return '<div class="recap-item recap-foil">' + boardSvg(pre, { flip: it.g.color === 'black', mark: pm ? [pm.from, pm.to] : null, decor: true })
+    + '<span>Nothing to fix</span>' + resultGlyph(c) + '<span class="res' + (e.c === 'skip' || e.c === 'shown' || e.c === 'left' ? ' shown' : '') + '">' + word + '</span></div>';
 }
 /* what moved (F2.2): "2 moved up, 1 held, 1 back to the start.", the parts
    that are not zero, a position learned first */
@@ -606,7 +644,7 @@ function keepLines(ss, keys, tier) {
   if (fc) { add(fc.line); add(lineOfStep(fc.step, tier)); }
   keys.forEach(function (k) {
     var e = ss.sum && ss.sum[k];
-    if (e && e.c !== 'skip' && e.l && model().byKey[k]) add(e.f ? lineOfStep(e.st, tier) : e.l);
+    if (e && e.c !== 'skip' && e.l && itemOf(k)) add(e.f ? lineOfStep(e.st, tier) : e.l);
   });
   if (!out.length) add(recapHabit(ss));
   return out;
@@ -664,9 +702,11 @@ function doneHtml(ss) {
   var tier = playerTier(), uniq = [], fx = !ss.fxShown, row = '';
   ss.keys.forEach(function (k) { if (uniq.indexOf(k) === -1) uniq.push(k); });
   var learned = '', recap = uniq.map(function (k) {
-    var it = model().byKey[k], e = sumOf(ss, k);
+    var it = itemOf(k), e = sumOf(ss, k);
     /* a card taken out as not a real mistake has left the model: gone from the summary too */
     if (!it || !e || !ss.results[k]) return '';
+    /* a foil: its own glyph and tile (F8.2) */
+    if (it.foil) { row += resultGlyph(e.c === 'first' && e.fk === 'playable' ? 'good' : e.c); return foilTileHtml(it, e); }
     row += resultGlyph(e.c);
     if (e.m === 'learned' && !learned) { learned = learnedHtml(it, e, tier, fx); if (learned) return ''; }
     /* a card that came back for one more try says how that went too (a
@@ -683,17 +723,19 @@ function doneHtml(ss) {
       + (e.c === 'skip' ? '' : tier === 1 ? starsHtml(e.s || 0) : e.p != null ? rungHtml(e.p) : '')
       + (e.f && e.l ? '<span class="tile-check">' + esc(e.l) + '</span>' : '') + '</div>';
   }).join('');
-  var sc = recapScore(ss, uniq, tier), moved = movedWords(ss, uniq), back = ladderWords(ss, uniq), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
+  var sc = recapScore(ss, uniq, tier), fw = foilWords(ss, uniq), moved = movedWords(ss, uniq), back = ladderWords(ss, uniq), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
   var gm = ss.goalMet, week = gm ? weekHtml(fx && !learned, 'Goal met: ' + plur(gm.days, 'day') + ' this week.') : weekHtml();
-  /* the headline and its category line; what moved and when the positions
-     come back in one quiet paragraph under them (the design lead's review
-     of slice 4) */
+  /* the headline and its category line, then the foils' line (F8.2:
+     counted apart, they had nothing to find); what moved and when the
+     positions come back in one quiet paragraph under them (the design
+     lead's review of slice 4) */
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
     + diagHtml(ss, tier)
     + (row ? '<div class="result-row" aria-hidden="true">' + row + '</div>' : '')
     + '<h2 class="done-big" id="recap-h" tabindex="-1">' + sc.head + '</h2>'
     + (sc.then ? '<p class="recap-then">' + sc.then + '</p>' : '')
+    + (fw ? '<p class="recap-then recap-foils">' + fw + '</p>' : '')
     + (moved || back ? '<p class="recap-small">' + (moved ? '<span class="recap-moved">' + moved + '</span>' : '') + (moved && back ? ' ' : '')
       + (back ? '<span class="recap-ladder">' + back + '</span>' : '') + '</p>' : '')
     + '<div class="recap-week' + (gm ? ' met' : '') + '"><div class="kicker">This week</div>' + week + '</div>'
@@ -734,7 +776,7 @@ var NOTES_AFTER_DING = 450;
 function summaryMoments(ss) {
   if (!ss || ss.fxShown) return;
   ss.fxShown = true;
-  var learned = Object.keys(ss.sum || {}).some(function (k) { return ss.sum[k].m === 'learned' && !!model().byKey[k]; });
+  var learned = Object.keys(ss.sum || {}).some(function (k) { return ss.sum[k].m === 'learned' && !!itemOf(k); });
   if (learned) { reward('learned'); snd('learned'); }
   if (ss.goalMet) { reward('goal'); if (learned) setTimeout(function () { snd('goal'); }, NOTES_AFTER_DING); else snd('goal'); }
   if (!learned && !ss.goalMet) snd('set');
@@ -1028,6 +1070,9 @@ function boardOptsFor(a) {
       sl.badges = [{ sq: mm.to, kind: mm.kind, fx: sfx }];
     }
     if (sdue) sl.arrows = [{ from: sdue.from, to: sdue.to, kind: 'better', key: 'answer' }];
+    /* in game mode the answer shown brings the game move's faded piece too
+       (F8.1), until the card settles and S0 draws it */
+    if (a.view.mode === 'show' && ghostOn(a) && !(a.solIdx > 0)) sl.ghosts = gameGhosts(a, a.key + ':gm');
     if (sl.tints || sl.arrows) {
       if (opts.anim) land = true;
       else { opts.fx = sfx; for (var sk in sl) opts[sk] = sl[sk]; }
@@ -1069,7 +1114,12 @@ function boardOptsFor(a) {
     /* a piece tapped during the forcing reply is picked up as it lands */
     if ((a.phase === 'guess' || (a.phase === 'reply' && a.reply && a.reply.played)) && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
     opts.shapes = a.shapes;
-    if (a.phase === 'guess' && a.solIdx === 0 && !a.explore) opts.bad = [a.played.from, a.played.to];
+    /* the game move: its red arrow on a cued card; in game mode nothing
+       before the first graded try, then its faded piece (F8.1) */
+    if (a.phase === 'guess' && a.solIdx === 0 && !a.explore) {
+      if (!a.game) opts.bad = [a.played.from, a.played.to];
+      else if (ghostOn(a)) opts.ghosts = gameGhosts(a, a.key + ':gm');
+    }
     /* your move slides as you make it; their reply, once See it plays it,
        slides as a move the app shows */
     if (sameMove(a.animMove, view.last)) { opts.anim = a.animMove; slideMs = a.animSlow ? 400 : a.phase === 'tried' && a.tried.seen ? 320 : 220; }
@@ -1250,6 +1300,8 @@ function boardAria(a, st, o) {
     if (g.rook) return;
     /* castling: the rook that went with the king, where it is drawn */
     var rk = gs[i + 1] && gs[i + 1].rook && !b[gs[i + 1].sq] ? gs[i + 1] : null;
+    /* a foil's game move, fine (no cross; nothing drawn on a taken square) */
+    if (g.ok) { if (!b[g.sq]) out.push('Faded ' + PIECE_WORD[pType(g.p)] + ' on ' + sqName(g.sq) + (rk ? ' and faded rook on ' + sqName(rk.sq) : '') + ': your game move, fine here.'); return; }
     out.push((b[g.sq] ? 'Red cross on ' : 'Faded ' + PIECE_WORD[pType(g.p)] + ' on ') + sqName(g.sq) + (rk ? ' and faded rook on ' + sqName(rk.sq) : '') + ': where your game move went.');
   });
   (o.guards || []).forEach(function (g) { out.push('Green dots: the ' + pw(g.from) + ' on ' + sqName(g.from) + ' guards ' + sqName(g.to) + '.'); });
@@ -1543,6 +1595,9 @@ function s0Marks(a, st) {
   var out = { ghosts: [], rings: [], arrows: [], tokens: [] }, c = a.cls, pl = a.played, mm = a.markMove;
   var line = !!(a.sol && a.solIdx > 1);
   if (pl && !(mm && mm.to === pl.to) && (!line || !st.b[pl.to])) out.ghosts = gameGhosts(a, a.key + ':s0');
+  /* a foil's game move was fine (F8.2): its faded piece with no cross, and
+     no threat it ran into */
+  if (a.foil) { out.ghosts.forEach(function (g) { g.ok = true; }); return out; }
   var th = familyOf(patternOf(a.it.b)).key !== 'chances' ? threatOf(c.gameLine, 1) : null;
   if (th && st.b[th.from] && st.b[th.from] === c.gameLine.nodes[1].before.b[th.from] && s0ThreatHolds(a, st, th)) {
     out.rings.push({ sq: th.from, kind: 'threat' });
@@ -2065,9 +2120,10 @@ function bandHtml(a, d) {
 /* the tag row (F4.2): one 24 px pill at most, in a place of its own that
    never moves: the band's chip (the relearn chip "One more try" in honey,
    a wrong try's check step in slate) or the context line on a decisive
-   first sight ("Lost vs opponent1", neutral, never coral) */
+   first sight ("Lost vs opponent1", neutral, never coral), or a game-mode
+   card's "Review" (slate, F8.1) */
 function tagRowHtml(d) {
-  var t = d.chip || d.tag, cls = !t ? '' : d.chip ? (d.chip === CARD_COPY.T3() ? 'tag-honey' : 'tag-slate') : 'tag-ctx';
+  var t = d.chip || d.tag, cls = !t ? '' : d.chip ? (d.chip === CARD_COPY.T3() ? 'tag-honey' : 'tag-slate') : d.tag === CARD_COPY.G1() ? 'tag-slate' : 'tag-ctx';
   return '<div class="bd-tags">' + (t ? '<span class="tag ' + cls + '">' + esc(t) + '</span>' : '') + '</div>';
 }
 /* the forcing pips (2.0): a 7 px dot per move of yours, filled for each
@@ -2136,7 +2192,9 @@ function barSlots(a, ss) {
        while their reply plays, and once played until the card settles */
     if (a.view.mode === 'show' || (a.revealed && a.settle < 2))
       return [{ act: 'next', label: cont.label, cls: 'btn-line' }, replyButton(a) || { act: 'playIt', label: 'Play it', cls: 'btn-big', off: a.showWait || !showDue(a) }];
-    /* settled (S0): the story, and Continue in gold */
+    /* settled (S0): the story, and Continue in gold; a foil has no story
+       to tell (F8.2), so its place stays empty */
+    if (a.foil) return [{ label: '', cls: 'slot-empty', off: true, empty: true }, cont];
     return [{ act: 'seeWhy', label: 'See why', cls: 'btn-line' }, cont];
   }
   if (a.phase === 'tried') return triedSlots(a);
@@ -2269,10 +2327,11 @@ function menuHtml(a) {
     + '<a href="' + gameHref(g.id, g.color, a.it.b.p) + '">Open the game ↗</a>'
     + '<a href="' + analysisHref(a.explore ? xpCur(a.explore).fen : stateFen(a.pre), g.color) + '">Analyse on ' + (isCC() ? 'chess.com' : 'lichess') + ' ↗</a>'
     + '<span class="sep"></span>'
-    + '<a data-act="dispute" data-k="misclick">Not a real mistake: a misclick or premove</a>'
-    + '<a data-act="dispute" data-k="decided">Not a real mistake: the game was already decided</a>'
-    + '<a data-act="dispute" data-k="engine">Not a real mistake: I think ' + (a.tier === 1 ? 'the computer' : 'Stockfish') + ' is wrong</a>'
-    + '<span class="sep"></span>'
+    /* a foil claims no mistake (F8.2): nothing to dispute */
+    + (a.foil ? '' : '<a data-act="dispute" data-k="misclick">Not a real mistake: a misclick or premove</a>'
+      + '<a data-act="dispute" data-k="decided">Not a real mistake: the game was already decided</a>'
+      + '<a data-act="dispute" data-k="engine">Not a real mistake: I think ' + (a.tier === 1 ? 'the computer' : 'Stockfish') + ' is wrong</a>'
+      + '<span class="sep"></span>')
     + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '<a data-act="details">Details</a>')
     /* exploring, on an answered card while the engine works (S14, S11);
        not while a shown line's reply is on its way, when a tap is input to
@@ -2435,6 +2494,7 @@ function detailsHtml() {
   if (!a || a.phase !== 'done' || !a.lines) return '';
   var it = a.it, b = it.b, s = a.cls.sentences, best = a.lines.best.san[0] || '', t = patternOf(b), info = patternInfo(t);
   var row = function (cls, text) { return '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
+  if (a.foil) return foilDetailsHtml(a, row);
   /* the pattern is named once, by its chip (S13) */
   var h = '<div class="kicker">Details</div>' + ctxHtml(a);
   if (b.d) h += '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(it.g, b) + '.</p>';
@@ -2450,8 +2510,31 @@ function detailsHtml() {
   h += '</div>' + (th ? '<p class="dt-more">' + esc(th) + '</p>' : '') + (ck ? '<p class="dt-more dt-clock">' + esc(ck) + '</p>' : '')
     + '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
     + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>'
+    + (a.held === 'slow' ? '<p class="dt-more dt-held">' + esc(heldLine(a)) + '</p>' : '')
     + '<p class="habit">' + esc(cl) + '</p>';
   /* no engine, no exploring */
+  if (SF.state !== 'failed') h += '<div class="acts-row sheet-acts"><a class="btn-line" data-act="explore">Try your own moves with Stockfish ›</a></div>';
+  return h;
+}
+/* a clean find that would have made the position learned, held because it
+   took too long (F8.3, D14): "Found first try in 41 s. Under 30 s makes it
+   learned." (the time rounded up, so it never reads as under) */
+function heldLine(a) {
+  var x = Math.ceil((a.ms || 0) / 1000);
+  return 'Found first try in ' + (x < 60 ? x + ' s' : clockWords(x)) + '. Under ' + Math.round(learnMs(a.tier) / 1000) + ' s makes it learned.';
+}
+/* a foil's Details (F8.2): the game, with the clock the player had when the
+   position arose; what the game move kept against the best move, in the
+   foil's own search; and why it came: not every review hides a mistake */
+function foilDetailsHtml(a, row) {
+  var it = a.it, b = it.b, g = it.g, m = gameSan(a), clk = clockWhen(it);
+  var bits = ['vs <b>' + esc(g.opp) + '</b>' + (g.oppR ? ' (' + g.oppR + ')' : ''), gameDateLine(g), perfLabel(g.perf).toLowerCase(), 'move ' + (Math.floor(b.p / 2) + 1)];
+  if (clk != null) bits.push(clockRow(clk) + ' on your clock');
+  var said = a.bestUci === a.playedUci ? 'Your game move ' + m + ' was the best move here.'
+    : 'After your game move ' + m + ' your winning chances were ' + Math.round(b.wa) + '%; after ' + sanOf(a.pre, a.best) + ', ' + Math.round(b.wb) + '%.';
+  var h = '<div class="kicker">Details</div><p class="ctx">' + bits.join(' · ') + '</p>'
+    + '<div class="dt-lines">' + row('tl-good', esc(said)) + '</div>'
+    + '<p class="dt-more">Not every review hides a mistake: this one had none, so it does not come back on your schedule.</p>';
   if (SF.state !== 'failed') h += '<div class="acts-row sheet-acts"><a class="btn-line" data-act="explore">Try your own moves with Stockfish ›</a></div>';
   return h;
 }

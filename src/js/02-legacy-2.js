@@ -305,7 +305,7 @@ function boardSvg(st, opts) {
   /* where your game move went: the piece faded, with no data-sq so input
      never finds it, and a cross at its top-right; on an occupied square the
      cross alone. Neither takes a tap: a tap on the cross reaches the piece
-     under it */
+     under it. A game move that was fine (a foil's, ok) has no cross */
   var ghosts = '', crosses = '';
   (opts.ghosts || []).forEach(function (g) {
     var c = corner(g.sq);
@@ -313,7 +313,7 @@ function boardSvg(st, opts) {
       ghosts += fxOpen(g, 'mk-fade') + '<use class="ghost-piece" href="#pc-' + PIECE_ID[g.p] + '" x="' + c[0] + '" y="' + c[1]
         + '" width="' + SZ + '" height="' + SZ + '" opacity=".34"/></g>';
     /* a castled rook's ghost goes with the king's, under its one cross */
-    if (!g.rook) crosses += fxOpen(g, 'mk-fade') + markCross(c[0] + 37.5, c[1] + 7.5, 6) + '</g>';
+    if (!g.rook && !g.ok) crosses += fxOpen(g, 'mk-fade') + markCross(c[0] + 37.5, c[1] + 7.5, 6) + '</g>';
   });
   out += sqs + tints + (ghosts ? '<g style="pointer-events:none">' + ghosts + '</g>' : '') + pcs + slide + top
     + (crosses ? '<g style="pointer-events:none">' + crosses + '</g>' : '') + '</svg>';

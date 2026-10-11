@@ -5,8 +5,9 @@
    spread to a later day, F7.1), q (the time it went back to the queue) }.
    The ladder (days): 1, 3, 7, 16, 35, 90. A position is Learned after its
    third clean solve in a row, the last one 16 or more days after the one
-   before; it then returns once, 90 days later, as a spot check, and a clean
-   spot check retires it. Intervals of three days or more are spread by up to
+   before (at tiers 2 and 3 that one in game mode, under 30 s or 60 s at
+   tier 3: F8.3); it then returns once, 90 days later, as a spot check, and
+   a clean spot check retires it. Intervals of three days or more are spread by up to
    15% either way, fixed per position, so one busy day does not come back as
    one busy day. An answer before the due date never moves the date later
    (a clean find changes nothing; a hint or a miss may bring it sooner). */
@@ -63,15 +64,21 @@ function practiceWrite(k, v) {
 function srsRec(it) { return srsLoad()[it.key] || null; }
 function isLearned(rec) { return !!(rec && rec.learned); }
 
-/* result: 'first' (no miss, no hint), 'hint' (a hint, or good-then-best),
-   'retry' (solved after a miss), 'fail' (shown the answer), 'skip'.
-   info: { ms: solve time, gameMove: the game move was tried again } */
+/* the find that makes a position learned at tiers 2 and 3, at most this
+   long (F8.3: 30 s, 60 s at tier 3) */
+var LEARN_MS = 30000, LEARN_MS_T3 = 60000;
+function learnMs(tier) { return tier >= 3 ? LEARN_MS_T3 : LEARN_MS; }
 function spreadDays(days, key) {
   if (days < 3) return days;
   var h = 0, s = String(key);
   for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
   return days * (0.85 + (Math.abs(h) % 1000) / 1000 * 0.3);
 }
+/* result: 'first' (no miss, no hint), 'hint' (a hint, or good-then-best),
+   'retry' (solved after a miss), 'fail' (shown the answer), 'skip'.
+   info: { ms: solve time, gameMove: the game move was tried again, tier and
+   game: the card's tier and whether it showed in game mode (F8.3); held is
+   written back when a find that would make it learned holds instead } */
 function srsRecord(it, result, info) {
   info = info || {};
   var map = srsLoad(), now = Date.now();
@@ -96,6 +103,15 @@ function srsRecord(it, result, info) {
   } else if (result === 'first' && info.alt) {
     /* a move that works too is a pass, not the lesson: sooner, like a hint */
     rec.due = now + Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)) * DAY;
+    rec.ls = now;
+  } else if (result === 'first' && info.tier >= 2 && !anew && !rec.learned && prevGap >= 15.5 * DAY && (rec.streak || 0) >= 2
+             && !(info.game && info.ms != null && info.ms < learnMs(info.tier))) {
+    /* F8.3: at tiers 2 and 3 the find that would make a position learned
+       must be clean in game mode and quick (learnMs); a slower one, or one
+       shown with the arrow, holds its step: the same interval again, its run
+       as it was (info.held says why, for Details and what moved) */
+    info.held = info.game ? 'slow' : 'cued';
+    rec.due = now + spreadDays(SRS_DAYS[rec.box], it.key) * DAY;
     rec.ls = now;
   } else if (result === 'first') {
     /* a first sighting solved fast may still be a lucky guess: a week, not 16 days */

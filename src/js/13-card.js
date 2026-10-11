@@ -80,18 +80,24 @@ function cardFor(it) {
   if (!pre) return null;
   var playedUci = uciOfSan(g.mv, b.p);
   var best = b.bu ? uciToMove(pre, b.bu) : null;
-  if (!best || !playedUci || b.bu === playedUci) return null;
-  var rec = srsRec(it);
+  /* a foil's best move may be the game move itself (F8.2) */
+  if (!best || !playedUci || (b.bu === playedUci && !it.foil)) return null;
+  var rec = it.foil ? null : srsRec(it);
   var a = {
     it: it, key: it.key, pre: pre, st: cloneState(pre), phase: 'guess', best: best, bestUci: b.bu,
     playedUci: playedUci, played: uciToMove(pre, playedUci),
     attempts: 0, misses: 0, hints: 0, sel: -1, shapes: [], t0: Date.now(),
-    firstSight: !rec || !!rec.q, tier: playerTier(), view: null
+    firstSight: !rec || !!rec.q, tier: playerTier(), view: null, foil: !!it.foil
   };
+  /* game mode (F8.1): a review after a clean find at tiers 2 and 3, and
+     every foil; "One more try" asks cued */
+  a.game = a.foil || (gameModeRec(rec, a.tier) && !ss_relearn(a));
   var kept = ui.session && ui.session.progress && ui.session.progress[it.key];
   if (kept) {
     a.misses = kept.m || 0; a.hints = kept.h || 0; a.triedGameMove = !!kept.g; a.foundGood = kept.f || null; a.attempts = kept.a || 0; a.predraw = !!kept.p; a.autoH = kept.au || 0;
     a.fc = kept.fc || ''; a.tries = (kept.tr || []).map(function (x) { return { d: x[0], u: x[1], took: x[2] || '', mate: !!x[3], lost: !!x[4], san: x[5] || '' }; });
+    /* a showing keeps its mode across a reload, though its miss ended the run */
+    if (kept.gm != null) a.game = !!kept.gm || a.foil;
   }
   /* prior move, to show how the position arose */
   if (b.p > 0) {
@@ -111,7 +117,8 @@ function cardFor(it) {
   var lu = unpackUci(b.lu);
   var forcing = cls.bestLine && cls.bestLine.nodes[1]
     && (cls.bestLine.nodes[1].captured || checkersOf(cls.bestLine.nodes[1].after).length || cls.mateFor);
-  if (a.tier >= 2 && forcing && lu.length >= 3 && cls.bSettle >= 3) {
+  /* a foil asks for one move: nothing in it is a line to find */
+  if (a.tier >= 2 && forcing && lu.length >= 3 && cls.bSettle >= 3 && !a.foil) {
     /* my moves sit at even offsets of the best line; stop at the settle */
     var endAt = cls.mateFor ? lu.length : Math.min(lu.length, cls.bSettle + (cls.bSettle % 2 === 0 ? 1 : 0));
     a.sol = lu.slice(0, endAt % 2 === 0 ? endAt - 1 : endAt);
@@ -125,8 +132,7 @@ function cardFor(it) {
 function currentItem() {
   var ss = ui.session;
   if (!ss) return null;
-  var key = ss.keys[ss.idx];
-  return key ? model().byKey[key] || null : null;
+  return itemOf(ss.keys[ss.idx]);
 }
 function loadCard() {
   var ss = ui.session;
@@ -139,12 +145,13 @@ function loadCard() {
     finishSession(); return;
   }
   var it = currentItem();
-  if (!it || !trainable(it) || it.b.x) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
+  /* a foil goes too with the engine down: its game move cannot be checked */
+  if (!it || (it.foil ? SF.state === 'failed' : !trainable(it)) || it.b.x) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
   var myGen = gen, key = it.key;
   var go = function () {
     if (ss.loadingKey === key) ss.loadingKey = null;
     if (stale(myGen) || ui.session !== ss || ss.keys[ss.idx] !== key) return;
-    if (it.b.x) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
+    if (it.b.x || (it.foil && !foilReady(it))) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
     var a = cardFor(it);
     if (!a) { it.b.x = 'moves'; ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
     /* a first session's head card that the deeper look turned into a
@@ -156,14 +163,24 @@ function loadCard() {
     ss.active = a;
     if (workedExample(a)) keepProgress(a);
     a.shownAt = Date.now();
+    /* a foil shown is not shown again for 7 days (F8.2) */
+    if (a.foil) foilShown(a.key);
     renderCard();
     setTimeout(scrollTrainerTop, 60);
     prefetchCards(ss);
     /* tier 3's settled line has figures: the card's two-line search, when
        its record has none (F1.4) */
-    if (a.tier >= 3) ensureGap(it);
+    if (a.tier >= 3 && !a.foil) ensureGap(it);
+    /* the first game-mode card says what changed, once (F8.1) */
+    if (a.game && !store.get('nl:tip:gamemode', 0)) { store.set('nl:tip:gamemode', 1); notice(GAME_NOTE, null, 9000); }
     track('card_shown');
   };
+  /* a foil is looked at once (foilLook) in the loading frame */
+  if (it.foil) {
+    if (foilReady(it)) go();
+    else { ss.loadingKey = key; renderCard(); foilLook(it, true).then(go, go); }
+    return;
+  }
   /* a card looked at before still waits for its danger facts' one search
      while the engine is up (the loading frame); with the engine down or
      still loading it opens at once on the facts read without it, and asks
@@ -182,8 +199,9 @@ function loadCard() {
    one is solved */
 function prefetchCards(ss) {
   for (var i = ss.idx + 1; i < Math.min(ss.keys.length, ss.idx + 3); i++) {
-    var it = model().byKey[ss.keys[i]];
-    if (it && (it.b.v || 0) < 2) deepEnrich(it, false);
+    var it = itemOf(ss.keys[i]);
+    if (it && it.foil) { if (SF.state !== 'failed') foilLook(it, false); }
+    else if (it && (it.b.v || 0) < 2) deepEnrich(it, false);
     else if (it && !dangerReady(it.b) && SF.state !== 'failed') ensureDanger(it, false);
   }
 }
@@ -316,6 +334,15 @@ function gradeMove(m) {
   a.tapped = false;
   /* their reply's marks stay only until your next move */
   a.replyMark = null;
+  /* a foil (F8.2): its best move and its game move pass as they are (the
+     game move lost under 3 points on the foil's own look), any other move is
+     scored against the best */
+  if (a.foil) {
+    if (u === a.bestUci) foilPass(m, 0);
+    else if (u === a.playedUci) foilPass(m, a.it.b.fl || 0);
+    else checkMove(m, u, false);
+    return;
+  }
   /* inside a forcing line: later steps must follow it (or mate) */
   if (a.sol && a.solIdx > 0) {
     var want = a.sol[a.solIdx];
@@ -506,7 +533,7 @@ function keepProgress(a) {
   var ss = ui.session;
   if (!ss || !a) return;
   ss.progress = ss.progress || {};
-  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts, p: a.predraw ? 1 : 0, au: a.autoH || 0,
+  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts, p: a.predraw ? 1 : 0, au: a.autoH || 0, gm: a.game ? 1 : 0,
                          fc: a.fc || '', tr: (a.tries || []).slice(-2).map(function (x) { return [x.d, x.u, x.took, x.mate ? 1 : 0, x.lost ? 1 : 0, x.san]; }) };
   saveSession();
 }
@@ -796,6 +823,13 @@ function checkMove(m, u, inLine) {
     var wBest = theirs ? winPct(theirs.cp * sign) : winPct(b.eb);
     if (wMove > wBest) wBest = wMove;
     r = mine;
+    /* a foil passes any move short of the player's mistake threshold for
+       that game (D10); at or over it the try is a miss, said as any is */
+    if (a2.foil) {
+      if (wBest - wMove < mistakeMinFor(it.g)) foilPass(m, wBest - wMove);
+      else miss(m, u, { cp: myCp, mate: myMate, pv: r.pv || [], win: wMove }, false);
+      return;
+    }
     var mateCard = b.mb != null && b.mb > 0;
     var keepsMate = myMate != null && myMate > 0;
     /* a safe winning move passes, except on a missed chance, where the
@@ -871,6 +905,18 @@ function miss(m, u, info, inLine) {
   noteTry(a, why);
   escalate();
   showTry(a, m, 'miss', reply[0], why);
+}
+/* a foil passed (F8.2): the move stays on the board, its verdict by what it
+   lost against the best move: 4 points or less "Good, nothing to fix" (a
+   filled tick), more "Playable" (the ring with a tick, as a good move that
+   is not the best). Never scheduled: finishCard writes no record */
+function foilPass(m, loss) {
+  var a = ui.session.active;
+  applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = a.tapAnim || null; a.tapAnim = null;
+  a.foilKind = loss <= FOIL_GOOD ? 'good' : 'playable';
+  a.foilGame = moveUci(m) === a.playedUci;
+  a.cue = a.foilKind === 'good' ? 'good' : 'tap';
+  finishCard(a.misses ? 'retry' : a.hints ? 'hint' : 'first');
 }
 /* a capture of yours inside a forcing line, kept for the settled board's
    tokens (S6: green tokens on what you won) */
@@ -993,7 +1039,8 @@ function settleBeats(a) {
    G1. A revealed card offers it once settled */
 function seeWhy() {
   var a = ui.session && ui.session.active;
-  if (!a || a.phase !== 'done' || a.explore || !a.lines || !a.view || a.view.mode !== 's0' || a.settle < (a.revealed ? 2 : 0)) return;
+  /* a foil had nothing wrong: no story to tell (F8.2) */
+  if (!a || a.foil || a.phase !== 'done' || a.explore || !a.lines || !a.view || a.view.mode !== 's0' || a.settle < (a.revealed ? 2 : 0)) return;
   a.settle = 2;
   storyGo(a, 0, true);
 }
@@ -1104,6 +1151,22 @@ function hintMarks(a) {
   var out = { rings: [], arrows: [], prize: null, danger: null, dz: null, rep: null };
   if (!a || !(a.hints >= 1)) return out;
   var due = dueMove(a);
+  /* game mode (F8.1), on the card's first move: hint 1 is the check's
+     question, words only (both tries' danger, F1.3, takes its place, as it
+     names neither the answer nor the game move); hint 2 the danger on the
+     board as it stands (gameDanger), else the circled piece */
+  if (a.game && !(a.sol && a.solIdx > 0)) {
+    if (a.hints >= 2) {
+      var gd = gameDanger(a);
+      if (!gd) { out.rings.push({ sq: due.from, kind: 'hint' }); return out; }
+      out.dz = gd; out.rings = gd.rings.slice(); out.arrows = gd.arrows.slice();
+      if (gd.loose) out.prize = gd.loose;
+      return out;
+    }
+    var gr = repeatedDanger(a);
+    if (gr) { out.rep = gr; out.rings = gr.rings.slice(); out.arrows = gr.arrows.slice(); }
+    return out;
+  }
   if (a.hints >= 2) { out.rings.push({ sq: due.from, kind: 'hint' }); return out; }
   if (a.sol && a.solIdx > 0) return out;
   var rep = repeatedDanger(a), dz = rep ? null : dangerHint(a);
@@ -1144,10 +1207,14 @@ function hintMarks(a) {
    it standing; one it stopped gives what the game move allows instead
    (parried). Their threat is claimed only from a search that ran
    (searched): with the engine down, the attacked pieces alone. No mark on
-   the answer's to-square. {kind: check, mate, parried, attacked, mine,
-   loose, made, madeMate or lost, rings, arrows, ...} or null: none, and the
-   step's check line stays (F2.3) */
-function dangerHint(a) {
+   the answer's to-square. now (a game-mode card whose game move is not on
+   the board yet, F8.1): only what stands on the board, never the game move
+   or what it allows: their mate while they threaten it, the pieces in
+   danger, else in words the piece the better move keeps ("Watch your
+   queen.", the king for a mate the game move allows). {kind: check, mate,
+   parried, attacked, mine, loose, made, madeMate, lost or watch, rings,
+   arrows, ...} or null: none, and the step's check line stays (F2.3) */
+function dangerHint(a, now) {
   var v = a.sol && a.solIdx > 0 ? null : dangerView(a);
   if (!v) return null;
   var due = dueMove(a), c = a.cls, b = a.it.b, threat = function (x, key) { return { from: x.from, to: x.to, kind: 'threat', key: key }; };
@@ -1155,9 +1222,14 @@ function dangerHint(a) {
   /* in check, the check is the danger, and no capture elsewhere is legal:
      words only (the coach's review: never their loose rook then) */
   if (v.check) return { kind: 'check', rings: [], arrows: [] };
+  var attacked = function (list) {
+    var pk = dangerPick(list, v.saves, skip);
+    return pk ? { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return threat(x, 'danger'); }) } : null;
+  };
+  if (now && v.step === 3) return attacked(v.attacked) || (c.mateAgainst ? { kind: 'watch', piece: 'K', rings: [], arrows: [] } : v.saves.length ? { kind: 'watch', piece: v.saves[0], rings: [], arrows: [] } : null);
   if (v.step === 1) {
     var th = v.searched && v.threat && v.threat.mate === 1 ? v.threat : null;
-    if (th && th.stands) {
+    if (th && (th.stands || now)) {
       var nst = dzNullState(a.pre);
       return { kind: 'mate', mate: { from: th.from, to: th.to, san: capSan(nst, uciToMove(nst, th.uci)) },
                rings: skip(th.to, th.to) ? [] : [{ sq: th.to, kind: 'attacked', mate: true }], arrows: skip(th.from, th.to) ? [] : [threat(th, 'danger')] };
@@ -1167,8 +1239,7 @@ function dangerHint(a) {
     var hd = th ? hintDanger(a) : null;
     if (hd && !skip(hd.from, hd.to) && hd.from !== due.from && hd.to !== due.from)
       return { kind: 'parried', reply: hd, rings: [{ sq: hd.from, kind: 'threat' }], arrows: [threat(hd, 'hint')] };
-    var pk = dangerPick(v.attacked, v.saves, skip);
-    return pk ? { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return threat(x, 'danger'); }) } : null;
+    return attacked(v.attacked);
   }
   if (v.step === 2) {
     if (c.mateFor && b.mb === 1) return { kind: 'mine', rings: [], arrows: [] };
@@ -1190,6 +1261,10 @@ function dangerHint(a) {
   var pk3 = dangerPick(rel.concat(cr.filter(function (x) { return !plays(x); })), v.saves, skip);
   return { kind: 'made', named: pk3.named, second: pk3.second, rings: pk3.rings, arrows: pk3.arrows.map(function (x) { return threat(x, 'hint'); }) };
 }
+/* a game-mode card's hint 2 (F8.1): F1.1's danger, only what stands on the
+   board while its game move is not shown (dangerHint's now); a foil's own
+   (foilDanger, "No danger here." when none). null: nothing to draw */
+function gameDanger(a) { return a.foil ? foilDanger(a) : dangerHint(a, !ghostOn(a)); }
 /* F1.3: the last two wrong tries of this showing failed the same check
    (their digit) to the same capture (the same reply taking the same piece)
    or the same mate: hint 1 draws that danger instead, on the position the
@@ -1267,10 +1342,19 @@ function finishCard(result, beats) {
   a.phase = 'done';
   a.result = result;
   a.ms = Date.now() - a.t0;
-  var relearn = ss.relearnOf && ss.relearnOf[a.key], prev = logPrev(a), first = !relearn && !Object.keys(srsLoad()).length;
+  var relearn = ss.relearnOf && ss.relearnOf[a.key], prev = a.foil ? null : logPrev(a), first = !relearn && !a.foil && !Object.keys(srsLoad()).length;
   if (ss.progress) delete ss.progress[a.key];
-  if (!relearn) {
-    var rec = srsRecord(a.it, result, { ms: a.ms, gameMove: a.triedGameMove, attempted: a.attempts > 0, alt: !!a.alt, fc: a.fc });
+  if (a.foil) {
+    /* a foil (F8.2) is never scheduled and never comes back for one more
+       try; its try still counts toward the day */
+    if (a.attempts > 0) { ss.attempted = (ss.attempted || 0) + 1; countDay(ss, 0); }
+    a.rec = null;
+    ss.results[a.key] = result;
+  } else if (!relearn) {
+    var info = { ms: a.ms, gameMove: a.triedGameMove, attempted: a.attempts > 0, alt: !!a.alt, fc: a.fc, tier: a.tier, game: !!a.game };
+    var rec = srsRecord(a.it, result, info);
+    /* a find that would have made it learned, held by F8.3 */
+    a.held = info.held || null;
     if (a.attempts > 0) { ss.attempted = (ss.attempted || 0) + 1; countDay(ss, 0); }
     a.rec = rec;
     ss.results[a.key] = result;
@@ -1311,7 +1395,8 @@ function finishCard(result, beats) {
     a.answerWords = due ? { san: a.answerSan, w: moveWords(a.st, due) } : null;
   } else {
     a.view = { mode: 's0' };
-    if (a.lastMove) a.markMove = { from: a.lastMove[0], to: a.lastMove[1], kind: 'good' };
+    /* a foil's "Playable" lands as a good move that is not the best */
+    if (a.lastMove) a.markMove = { from: a.lastMove[0], to: a.lastMove[1], kind: a.foilKind === 'playable' ? 'close' : 'good' };
     a.settleFor = true;
   }
   saveSession();
@@ -1350,8 +1435,10 @@ function nextCard() {
 function settleLeft(a) {
   var ss = ui.session;
   if (!ss || !a || a.phase === 'done') return;
-  var again = ss_relearn(a), result = a.misses ? 'fail' : (a.hints ? 'hint' : 'skip'), prev = logPrev(a), first = !again && !Object.keys(srsLoad()).length;
-  if (!again) a.rec = srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove, fc: a.fc });
+  var again = ss_relearn(a), result = a.misses ? 'fail' : (a.hints ? 'hint' : 'skip'), prev = a.foil ? null : logPrev(a), first = !again && !a.foil && !Object.keys(srsLoad()).length;
+  /* a foil is never scheduled (F8.2) */
+  if (a.foil) a.rec = null;
+  else if (!again) a.rec = srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove, fc: a.fc });
   else srsNoteTries(a.it, a.fc);
   logCard(a, result, prev, again);
   if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
@@ -1408,12 +1495,13 @@ function cardStars(a, cat) {
 function rungsOf(rec) { return rec ? (rec.learned ? 3 : Math.min(2, rec.streak || 0)) : 0; }
 /* what one showing did on its ladder (F2.2): 'learned' (it became learned),
    'up' (a clean find that climbed), 'held' (works too, a good move first, a
-   hint or a first look), 'start' (a miss or the answer shown), '' (a find
-   before its due date, a spot check, a skip) */
-function ladderMove(cat, prev, rec) {
+   hint or a first look, a find that would have made it learned held by
+   F8.3: held), 'start' (a miss or the answer shown), '' (a find before its
+   due date, a spot check, a skip) */
+function ladderMove(cat, prev, rec, held) {
   if (cat === 'skip' || !rec) return '';
   if (rec.learned && !(prev && prev.learned)) return 'learned';
-  if (cat === 'first') return (rec.streak || 0) > ((prev && prev.streak) || 0) && !(prev && prev.learned) ? 'up' : '';
+  if (cat === 'first') return (rec.streak || 0) > ((prev && prev.streak) || 0) && !(prev && prev.learned) ? 'up' : held ? 'held' : '';
   if (cat === 'miss' || cat === 'shown' || cat === 'left') return 'start';
   return 'held';
 }
@@ -1425,6 +1513,14 @@ function ladderMove(cat, prev, rec) {
    they took */
 function noteResult(ss, a, result, again, prev, left) {
   var k = a.key + (again ? '#r' : ''), cat = resultCategory(a, result, left), e = { c: cat, s: cardStars(a, cat), fc: a.fc || '' };
+  /* a foil (F8.2): its verdict (fk: good or playable), no check line and no
+     ladder; the summary counts it apart */
+  if (a.foil) {
+    e.foil = 1;
+    if (a.foilKind) e.fk = a.foilKind;
+    (ss.sum = ss.sum || {})[k] = e;
+    return;
+  }
   if (cat !== 'skip') {
     a.lines = a.lines || cardLines(a);
     e.l = checkLine(a); e.st = cardStep(a);
@@ -1432,7 +1528,7 @@ function noteResult(ss, a, result, again, prev, left) {
   }
   if (!again) {
     var rec = a.rec || srsRec(a.it);
-    e.m = ladderMove(cat, prev, rec); e.p = rungsOf(rec);
+    e.m = ladderMove(cat, prev, rec, a.held); e.p = rungsOf(rec);
     if (e.m === 'learned') { e.n = rec.streak || 3; if (rec.rs) e.d = Math.round((Date.now() - rec.rs) / DAY); }
   }
   (ss.sum = ss.sum || {})[k] = e;
@@ -1446,12 +1542,18 @@ function logPrev(a) {
   return r ? { n: r.n, last: r.last, lf: r.lf, streak: r.q ? 0 : r.streak || 0, learned: !r.q && !!r.learned, sp: !!r.sp, q: !!r.q,
                pr: !r.sp && !r.q && r.due != null && r.due > Date.now() + 12 * 3600 * 1000 } : null;
 }
-/* one card answered, in the practice log (08-srs.js): mode is 'cued' for
-   every card for now; review number 0 at first sight (unknown, null, for a
-   record older than the count) */
+/* one card answered, in the practice log (08-srs.js): its mode, 'cued',
+   'game' (F8.1) or 'foil' (F8.2, with its verdict fv: good or playable);
+   review number 0 at first sight (unknown, null, for a record older than
+   the count, and for a foil, which is no review); tb: a find that would
+   have made it learned, held by F8.3. Measured as card_result_<tier>_
+   <mode>_<category> (F0.7), which names no player, rating or position */
 function logCard(a, result, prev, again) {
-  var now = Date.now(), e = { e: 'c', k: a.key, tr: a.tier, m: 'cued', c: cardCategory(a, result), r: result, a: a.attempts || 0, h: a.hints || 0 };
-  e.n = prev ? (prev.n != null ? prev.n : null) : 0;
+  var mode = a.foil ? 'foil' : a.game ? 'game' : 'cued', cat = cardCategory(a, result);
+  var now = Date.now(), e = { e: 'c', k: a.key, tr: a.tier, m: mode, c: cat, r: result, a: a.attempts || 0, h: a.hints || 0 };
+  e.n = a.foil ? null : prev ? (prev.n != null ? prev.n : null) : 0;
+  if (a.foil && a.foilKind) e.fv = a.foilKind;
+  if (a.held) e.tb = 1;
   e.d = prev && prev.last ? Math.round((now - prev.last) / DAY * 10) / 10 : null;
   e.f = a.firstAt ? a.firstAt - (a.shownAt || a.t0) : null;
   e.s = a.ms != null ? a.ms : now - a.t0;
@@ -1465,6 +1567,7 @@ function logCard(a, result, prev, again) {
   if (prev && prev.q) e.q = 1;
   if (prev && prev.pr) e.pr = 1;
   logAdd(e);
+  track('card_result_' + (a.tier || 2) + '_' + mode + '_' + cat);
 }
 function skipCard() {
   var ss = ui.session, a = ss && ss.active;
@@ -1479,7 +1582,8 @@ function skipCard() {
 var lastDispute = null;
 function disputeCard(reason) {
   var ss = ui.session, a = ss && ss.active;
-  if (!a) return;
+  /* a foil claims no mistake: nothing to dispute (F8.2) */
+  if (!a || a.foil) return;
   if (a.explore) exploreExit('silent');
   var key = a.key, rk = key + (ss_relearn(a) ? '#r' : ''), map = srsLoad(), copy = function (o) { return JSON.parse(JSON.stringify(o || {})); };
   var snap = { ss: ss, a: a, key: key, x: a.it.b.x || null, rec: map[key] ? copy(map[key]) : null, day: dayLoad(),

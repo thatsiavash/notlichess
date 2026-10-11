@@ -164,7 +164,8 @@ const SPOILER = `function spoilerFaults(a, f) {
      reply's own arrow and token, the move just played's badge, which names
      no square) */
   var lab = String(o.label || ''), gm = 'Red arrow: your game move, ', pw = function (sq) { var p = a.st.b[sq]; return p ? PIECE_WORD[pType(p)] : ''; };
-  var rest = lab.split(/(?<=[.]) /).filter(function (x) { return x.indexOf(gm) !== 0 && !(rm && (x.indexOf('Blue arrow: ') === 0 || (/ was taken on | won a /.test(x) && x.indexOf(' ' + sqName(rm[1]) + '.') >= 0))); }).join(' ');
+  /* (in game mode the game move's faded piece stands for its red arrow, F8.1, and is exempt as it is) */
+  var rest = lab.split(/(?<=[.]) /).filter(function (x) { return x.indexOf(gm) !== 0 && !/: where your game move went[.]$/.test(x) && !(rm && (x.indexOf('Blue arrow: ') === 0 || (/ was taken on | won a /.test(x) && x.indexOf(' ' + sqName(rm[1]) + '.') >= 0))); }).join(' ');
   if (rest.indexOf(pw(due.from) + ' ' + sqName(due.from) + ' to ' + sqName(due.to)) >= 0) out.push('the board name says the answer move: ' + lab);
   if (rest.split(/[^a-h1-8]+/).indexOf(sqName(due.to)) >= 0) out.push('the board name names the answer square ' + sqName(due.to) + ': ' + lab);
   if (/the answer|better move|Green arrow|Gold arrow/.test(lab)) out.push('the board name says ' + lab);
@@ -6183,10 +6184,13 @@ const BAR = `(function () {
       /* a word for a tap takes row 2: the context line yields first */
       a = openCard(it); a.note = { id: 'T4', key: cardStateKey(a) }; d = displayFor(a);
       out.note = { tag: d.tag, row2: d.row2 };
-      /* not on a hint's frame, nor on a review */
+      /* not on a hint's frame, nor on a review: a cued one (its run ended by a
+         miss) has no tag, a game-mode one (F8.1) its neutral "Review" */
       a = openCard(it); a.hints = 1; out.hint = displayFor(a).tag;
-      srs[it.key] = { box: 1, streak: 1, due: Date.now() - 3600e3, last: Date.now() - 3 * DAY, lapses: 0 }; srsSave(srs);
+      srs[it.key] = { box: 1, streak: 0, due: Date.now() - 3600e3, last: Date.now() - 3 * DAY, lapses: 1 }; srsSave(srs);
       out.review = displayFor(openCard(it)).tag;
+      srs[it.key] = { box: 1, streak: 1, due: Date.now() - 3600e3, last: Date.now() - 3 * DAY, lapses: 0 }; srsSave(srs);
+      out.gameReview = displayFor(openCard(it)).tag;
       return JSON.stringify(out); })()`));
     eq(JSON.stringify(r.first), JSON.stringify({ tag: '', label: 'Your game move' }), 'the first card: the teaching label, the context line yields to it');
     eq(r.fifth.tag, 'Lost vs opponent1', 'the fifth card names its game');
@@ -6199,6 +6203,7 @@ const BAR = `(function () {
     ok(/^You are (White|Black)\. Move a (white|black) piece\.$/.test(r.note.row2), 'and the word is whole: ' + r.note.row2);
     eq(r.hint, '', 'not on a hint');
     eq(r.review, '', 'not on a review');
+    eq(r.gameReview, 'Review', 'a game-mode review wears "Review", never the context line');
   });
 
   await test('F4.4: the found moment comes once, with the verdict\'s words, after the board is still; never during a hint, a wrong try, See it, See why or an answer shown', () => {
@@ -6244,6 +6249,541 @@ const BAR = `(function () {
     run(3000);
     eq(log().length, 0, 'none for an answer shown and played');
     ok(A.ev('ui.session.active.phase') === 'done' && A.ev('ui.session.active.revealed'), 'the answer was shown');
+  });
+
+  /* ── slice 8: game-mode reviews (F8.1 to F8.3) ──
+     asReview: a card as a game-mode review, its record a run of clean finds (streak), due; written as
+     it is (srsSave keeps a record answered later). gameFaults: game mode's own rule on a frame, beside
+     the spoiler rule: before the game move shows no red arrow, no faded game move, nothing that names it
+     or says "than"; after, a faded piece only of the game move; a foil's game move never before its card
+     ends; hint 1 on the first move names neither the answer nor the game move. frameWords: a still
+     frame's words (band, bar, strip, the board label as shown). foilOpen: a foil as its look leaves it
+     (look: best, bestCp and gameCp from the player's side, ru the line after the game move) */
+  const GAME = `var NO = function () { return false; }, YES = function () { return true; };
+  function asReview(it, streak, extra) {
+    var m = srsLoad();
+    m[it.key] = Object.assign({ box: 2, streak: streak == null ? 1 : streak, due: Date.now() - 3600e3, last: Date.now() - 7 * DAY, ls: Date.now() - 7 * DAY, lapses: 0 }, extra || {});
+    store.set(srsKey(), m); srsMem = null; srsRevision++;
+    return m[it.key];
+  }
+  function gameFaults(a, f) {
+    f = f || boardOptsFor(a);
+    var o = f.opts, out = [];
+    if (!a.game || ['guess', 'checking', 'tried', 'reply'].indexOf(a.phase) < 0) return out;
+    var shown = ghostOn(a), gs = [sanOf(a.pre, a.played), capSan(a.pre, a.played)], gw = moveWords(a.pre, a.played), d = displayFor(a);
+    var names = function (s, sans, w) { var ws = String(s || '').split(/[\\s.,:|]+/); return sans.some(function (x) { return ws.indexOf(x) >= 0; }) || (!!w && String(s || '').toLowerCase().indexOf(w) >= 0); };
+    if (o.bad) out.push('a red arrow');
+    (o.ghosts || []).forEach(function (g) {
+      if (!shown) out.push('the game move faded before it shows');
+      else if (!g.rook && g.sq !== a.played.to) out.push('a faded piece that is not the game move');
+    });
+    var rows = [d.row1, d.row2, d.cap, d.chip, d.tag].join(' | ');
+    if (!shown && names(rows, gs, gw)) out.push('the band names the game move: ' + rows);
+    if (!shown && / than /.test(rows)) out.push('"than": ' + rows);
+    if (!shown && /game move/.test(String(o.label || ''))) out.push('the board name: ' + o.label);
+    if (a.hints === 1 && !(a.sol && a.solIdx > 0) && d.row1 === CARD_COPY.H1()) {
+      var due = dueMove(a);
+      if (names(d.row2, [sanOf(a.st, due), capSan(a.st, due)], moveWords(a.st, due))) out.push('hint 1 names the answer: ' + d.row2);
+      if (names(d.row2, gs, gw)) out.push('hint 1 names the game move: ' + d.row2);
+    }
+    return out;
+  }
+  function frameWords(a, seen) {
+    var d = displayFor(a), lb = frameLabel(a, boardOptsFor(a), 384, false, seen);
+    return [d.row1, d.row2, d.chip, d.tag, d.cap].concat(d.buttons.map(function (b) { return b.label; })).reduce(function (n, s) { return n + wordsIn(s); }, 0) + stripWords(a) + (lb ? wordsIn(lb.text) : 0);
+  }
+  function foilOpen(key, look) {
+    var it = itemOf(key), b = it.b, gu = uciOfSan(it.g.mv, b.p);
+    look = look || {};
+    b.bu = look.best || gu; b.lu = packUci([b.bu]); b.ru = look.ru || ''; b.eb = look.bestCp != null ? look.bestCp : 20; b.ea = look.gameCp != null ? look.gameCp : b.eb;
+    b.wb = winPct(b.eb); b.wa = winPct(b.ea); b.fl = Math.round((b.wb - b.wa) * 10) / 10; b.ok = 1; delete b.x;
+    return openCard(it);
+  }`;
+
+  await test('F8.1: a tier-2 card found first try comes back after its week in game mode: no red arrow, no "than Rg1", "Your move" / "Move 35 · 20:35 on your clock" and the "Review" tag, 13 words; the faded game move, and the task naming it, only after the first graded try (the game move itself, a good move that is not the best) or the answer shown; first sight, tier 1, a run a miss ended, a position back from the queue and one more try stay cued; a showing keeps its mode across a reload', async () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME} ${SPOILER}
+      playerTier = function () { return 2; };
+      var it = model().byKey['184455333378:68'], out = {}, gh = function (f) { return (f.opts.ghosts || []).map(function (g) { return sqName(g.sq) + (g.ok ? ' ok' : ''); }); };
+      var a = openCard(it); out.first = { game: a.game, bad: !!boardOptsFor(a).opts.bad, row2: displayFor(a).row2 };
+      a.attempts = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+      out.days = Math.ceil((srsRec(it).due - Date.now()) / DAY);
+      shiftDays(out.days);
+      a = openCard(it); var d = displayFor(a), f = boardOptsFor(a);
+      out.open = { game: a.game, row1: d.row1, row2: d.row2, tag: d.tag, chip: d.chip, bad: !!f.opts.bad, ghosts: gh(f), words: frameWords(a, NO), seenWords: frameWords(a, YES), faults: gameFaults(a, f).concat(spoilerFaults(a, f)),
+                   pill: /<div class="bd-tags"><span class="tag tag-slate">Review<\\/span><\\/div>/.test(bandHtml(a, d)), buttons: d.buttons.map(function (b) { return b.label; }).join(' / ') };
+      /* the game move itself, its first graded try */
+      a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null; a.reason = 2;
+      d = displayFor(a); f = boardOptsFor(a);
+      out.tried = { phase: a.phase, row1: d.row1, ghosts: gh(f), faults: gameFaults(a, f) };
+      tryAgain(); a.triedHold = false; d = displayFor(a); f = boardOptsFor(a);
+      out.again = { row1: d.row1, row2: d.row2, tag: d.tag, ghosts: gh(f), bad: !!f.opts.bad, aria: /Faded rook on g1: where your game move went\\./.test(f.opts.label), faults: gameFaults(a, f).concat(spoilerFaults(a, f)) };
+      /* the miss ended its run; the showing in progress keeps its mode across a reload, the next one is cued */
+      keepProgress(a); out.streak = srsRec(it).streak;
+      out.reload = cardFor(it).game;
+      ui.session.progress = {};
+      out.next = cardFor(it).game;
+      /* the answer shown brings the faded game move with the green arrow */
+      asReview(it); a = openCard(it); reveal(); a.animMove = null; f = boardOptsFor(a);
+      out.shown = { ghosts: gh(f), green: (f.opts.arrows || []).filter(function (x) { return x.kind === 'better'; }).length };
+      /* cued: tier 1, a position back from the queue, one more try */
+      asReview(it); playerTier = function () { return 1; }; a = openCard(it); out.t1 = { game: a.game, bad: !!boardOptsFor(a).opts.bad };
+      playerTier = function () { return 2; };
+      asReview(it, 1, { q: Date.now() }); out.queued = cardFor(it).game;
+      asReview(it);
+      ui.session = { mode: 't', label: 't', keys: [it.key, it.key], idx: 1, results: {}, relearn: [], relearnOf: {} }; ui.session.relearnOf[it.key] = 1;
+      out.oneMore = { game: cardFor(it).game, chip: (ui.session.active = cardFor(it), displayFor(ui.session.active).chip) };
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.first), JSON.stringify({ game: false, bad: true, row2: 'Find a better move than Rg1.' }), 'first sight: cued, its red arrow and "than Rg1"');
+    ok(r.days >= 6 && r.days <= 9, 'back after about a week: ' + r.days);
+    eq(r.open.game, true, 'the review is in game mode');
+    eq([r.open.row1, r.open.row2, r.open.tag, r.open.chip].join(' | '), 'Your move | Move 35 · 20:35 on your clock | Review | ', 'its band');
+    ok(!r.open.bad && !r.open.ghosts.length, 'no red arrow, no faded game move');
+    ok(r.open.pill, 'the tag row: "Review" in slate');
+    eq(r.open.buttons, 'Hint / Show the answer', 'its bar');
+    eq(r.open.words, 13, 'the open frame holds 13 words');
+    ok(r.open.seenWords <= 15, 'within 15 words, a label included: ' + r.open.seenWords);
+    eq(r.open.faults.length, 0, 'nothing given away: ' + r.open.faults.join(' | '));
+    eq(r.tried.phase, 'tried', 'the game move tried');
+    eq(r.tried.row1, 'As in your game', 'said so, not "again": it was not shown');
+    eq(r.tried.ghosts.length, 0, 'the try on the board, no faded piece beside it');
+    eq(r.tried.faults.length, 0, r.tried.faults.join(' | '));
+    eq([r.again.row1, r.again.row2, r.again.tag].join(' | '), 'Your move | Find a better move than Rg1. | Review', 'after Try again the task names the game move');
+    eq(JSON.stringify(r.again.ghosts), '["g1"]', 'its faded piece, with its cross');
+    ok(!r.again.bad && r.again.aria, 'no red arrow; the board name says where the game move went');
+    eq(r.again.faults.length, 0, r.again.faults.join(' | '));
+    eq(r.streak, 0, 'the miss ended the run');
+    eq(r.reload, true, 'the showing keeps game mode across a reload');
+    eq(r.next, false, 'the next review is cued');
+    eq(JSON.stringify(r.shown), JSON.stringify({ ghosts: ['g1'], green: 1 }), 'the answer shown: the green arrow and the faded game move');
+    eq(JSON.stringify(r.t1), JSON.stringify({ game: false, bad: true }), 'tier 1 stays cued');
+    eq(r.queued, false, 'a position back from the queue is a first sight: cued');
+    eq(JSON.stringify(r.oneMore), JSON.stringify({ game: false, chip: 'One more try' }), 'one more try is cued');
+    /* a good move that is not the best is a graded try too */
+    A.ev(`(function () { ${OPEN} ${GAME} ${TRY} ${AFTER}
+      var it = model().byKey['184455333378:68']; asReview(it);
+      var a = openAt(it.key, 2); window.__a = a;
+      tryMove(a, moveUci(offBook(a)), null, it.b.eb - 80, null);
+      return 1; })()`);
+    await tick(); await tick();
+    const c = JSON.parse(A.ev(`(function () { ${GAME} var a = window.__a, out = { kind: a.tried && a.tried.kind, row1: displayFor(a).row1 };
+      tryAgain(); a.triedHold = false;
+      out.ghosts = (boardOptsFor(a).opts.ghosts || []).map(function (g) { return sqName(g.sq); }); out.row2 = displayFor(a).row2; out.faults = gameFaults(a);
+      return JSON.stringify(out); })()`));
+    eq(c.kind + ' / ' + c.row1, 'close / Good move', 'a good move that is not the best');
+    eq(JSON.stringify(c.ghosts) + ' ' + c.row2, '["g1"] Find a better move than Rg1.', 'after Keep looking the game move shows');
+    eq(c.faults.length, 0, c.faults.join(' | '));
+  });
+
+  await test('F8.1: game mode\'s hints: hint 1 is the step\'s row-2 question, never a computed fact, naming neither the answer nor the game move on any fixture card at tiers 2 and 3; hint 2 the danger on the board as it stands (card 1: "Your queen is attacked twice.", f5 and d3 ringed), never the game move or what it allows before it shows, F1.1\'s own form once it shows (card 7: "Bf3 lets them mate you."); every hint frame says something within 15 words; a hint grades "With a hint"', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME}
+      var out = { bad: [], n: 0, kinds: {} };
+      [2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          asReview(it);
+          var a = openCard(it);
+          if (!a || !a.game) return;
+          out.n++;
+          var at = tier + ' ' + it.key + ' ', check = function (what) {
+            var d = displayFor(a);
+            if (!d.row2) out.bad.push(at + what + ' says nothing');
+            gameFaults(a).forEach(function (x) { out.bad.push(at + what + ': ' + x); });
+            [NO, YES].forEach(function (s) { var w = frameWords(a, s); if (w > 15) out.bad.push(at + what + ': ' + w + ' words'); });
+            return d;
+          };
+          a.hints = 1;
+          var d1 = check('hint 1');
+          if (checkRow(a).indexOf(d1.row2) < 0) out.bad.push(at + 'hint 1 is not its question: ' + d1.row2);
+          if (hintMarks(a).rings.length + hintMarks(a).arrows.length) out.bad.push(at + 'hint 1 draws marks');
+          a.hints = 2;
+          check('hint 2');
+          var hm = hintMarks(a);
+          out.kinds[hm.dz ? hm.dz.kind : 'circled'] = 1;
+          if (hm.arrows.some(function (x) { return x.key === 'hint'; }) || (hm.dz && /^(made|madeMate|lost|parried)$/.test(hm.dz.kind))) out.bad.push(at + 'hint 2 draws what the game move allows');
+          a.misses = 1;
+          check('hint 2 once the game move shows');
+        });
+      });
+      playerTier = function () { return 2; };
+      var c1 = model().byKey['184455333378:68'], c7 = model().byKey['184435538450:67'], a;
+      asReview(c1); a = openCard(c1); a.hints = 2;
+      out.c1 = displayFor(a).row2 + ' / ' + hintMarks(a).rings.map(function (x) { return sqName(x.sq); }).join(' ');
+      asReview(c7); a = openCard(c7); a.hints = 2;
+      out.c7 = displayFor(a).row2; a.misses = 1; out.c7after = displayFor(a).row2;
+      /* a hint grades "With a hint" */
+      asReview(c1); a = openCard(c1); a.shownAt = 0; giveHint(); solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+      out.graded = [a.result, ui.session.sum[c1.key].c].join(' ');
+      return JSON.stringify(out); })()`));
+    ok(r.n >= 150, 'game-mode reviews read: ' + r.n);
+    eq(r.bad.length, 0, r.bad.length + ' faults, first: ' + r.bad.slice(0, 4).join(' || '));
+    eq(r.c1, 'Your queen is attacked twice. / f5 d3', 'card 1: the danger on the board, ringed');
+    ok(r.c7.indexOf('Bf3') < 0, 'card 7 before the game move shows: ' + r.c7);
+    eq(r.c7after, 'Bf3 lets them mate you.', 'card 7 once it shows: F1.1\'s form');
+    eq(r.graded, 'hint hint', 'with a hint');
+    ['attacked', 'watch', 'circled'].forEach((k) => ok(r.kinds[k], 'hint 2 kinds seen: ' + Object.keys(r.kinds).join(', ')));
+  });
+
+  await test('F8.1: no game-mode frame gives anything away: every fixture card at tiers 2 and 3 as a game-mode review, in every frame (open, a piece picked up, both hints, the game move tried with its reason, See it and Try again, the hints after it, a forcing line\'s steps, found and settled, the answer shown), keeps the spoiler rule and game mode\'s own, within 15 words', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME} ${SPOILER}
+      var out = [], n = 0, labelled = 0;
+      var walk = function (it, cb) {
+        asReview(it); var a = openCard(it);
+        if (!a || !a.game) return;
+        cb('open', a);
+        a.sel = legalMoves(a.st)[0].from; cb('selected', a); a.sel = -1;
+        a.hints = 1; cb('hint 1', a); a.hints = 2; cb('hint 2', a);
+        asReview(it); a = openCard(it); a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
+        if (a.phase === 'tried') {
+          cb('the game move', a); a.reason = 1; cb('its reason drawn', a); a.reason = 2; cb('its reason said', a);
+          if (a.tried.reply) { seeIt(); cb('See it, sliding', a); a.animMove = null; cb('See it, landed', a); }
+          tryAgain(); cb('Try again, crossfading', a); a.triedHold = false; cb('after Try again', a);
+          a.hints = 1; a.hintAt = a.misses; a.hintAfter = true; cb('hint 1 after it', a); a.hints = 2; cb('hint 2 after it', a);
+        }
+        if (a.sol) {
+          asReview(it); a = openCard(it);
+          for (var k = 0; k < a.sol.length - 1; k += 2) {
+            gradeMove(uciToMove(a.st, a.sol[k]));
+            var rp = a.reply;
+            if (!rp) break;
+            a.animMove = null; cb('forcing ' + k + ', right', a);
+            rp.tele = true; cb('forcing ' + k + ', the telegraph', a);
+            theirReply(a, false); a.animMove = null; a.animSlow = false; cb('forcing ' + k + ', landed', a);
+            replyDone(a, rp); cb('forcing ' + k + ', your move', a);
+          }
+        }
+        asReview(it); a = openCard(it);
+        if (!a.sol) solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+        else { while (a.solIdx < a.sol.length) { var lm = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, lm); a.lastMove = [lm.from, lm.to]; a.solIdx++; } finishCard('first'); }
+        a.animMove = null; cb('found', a); a.settle = 2; cb('settled', a);
+        asReview(it); a = openCard(it); reveal(); a.animMove = null; cb('shown', a);
+      };
+      [2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          walk(it, function (what, a) {
+            n++;
+            var f = boardOptsFor(a), at = tier + ' ' + it.key + ' ' + what + ': ';
+            spoilerFaults(a, f).concat(gameFaults(a, f)).forEach(function (x) { out.push(at + x); });
+            [NO, YES].forEach(function (s) { var w = frameWords(a, s); if (w > 15) out.push(at + w + ' words'); if (frameLabel(a, f, 384, false, s)) labelled++; });
+          });
+        });
+      });
+      return JSON.stringify({ out: out, n: n, labelled: labelled }); })()`));
+    ok(r.n > 2500, 'frames read: ' + r.n);
+    eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' || '));
+    ok(r.labelled > 100, 'labels shown in some: ' + r.labelled);
+  });
+
+  await test('F8.2: one game-mode position in four is a foil: 8 game-mode reviews in a set make 2 foils (from other games, in spread places, never the first, the set\'s size kept, the reviews they replace still due), each a move of the player\'s that lost under 3 points with its clock known; Today\'s set brings them; a foil shown is not picked within 7 days and may be after; none at tier 1, with the engine down or in a drill; the share left over carries to the next set', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${GAME}
+      window.readyEngine(); playerTier = function () { return 2; };
+      var out = {}, its = allMistakes().filter(trainable).slice(0, 8), keys = its.map(function (x) { return x.key; });
+      its.forEach(function (it) { asReview(it); });
+      var set = withFoils(keys, 'today'), foils = set.filter(isFoilKey);
+      out.n = set.length; out.foils = foils.length;
+      out.places = set.map(function (k, i) { return isFoilKey(k) ? i : -1; }).filter(function (i) { return i >= 0; });
+      out.otherGames = foils.every(function (k) { return keys.every(function (x) { return x.split(':')[0] !== k.split(':')[1]; }); }) && foils[0].split(':')[1] !== foils[1].split(':')[1];
+      out.dropped = keys.filter(function (k) { return set.indexOf(k) < 0; });
+      out.stillDue = out.dropped.every(function (k) { return srsLoad()[k].due <= Date.now(); });
+      out.gm = set.filter(function (k) { return isFoilKey(k) || gameModeRec(srsLoad()[k], 2); }).length;
+      out.pool = foilPool().length;
+      out.poolOk = foilPool().every(function (f) { return wpAt(f.g, f.q - 1) - wpAt(f.g, f.q) < 3 && f.q % 2 === (f.g.color === 'white' ? 0 : 1) && f.clock != null && f.clock === clockKnownAt(f.g, f.q) && !(f.g.bl || []).some(function (b) { return b.p === f.q; }); });
+      out.nearFirst = foilPool().filter(function (f) { return f.rank >= 2; }).length;
+      /* Today's own set */
+      startToday();
+      out.today = { n: ui.session.keys.length, foils: ui.session.keys.filter(isFoilKey).length, first: isFoilKey(ui.session.keys[0]) };
+      out.logged = (logLoad().filter(function (e) { return e.e === 's'; }).pop() || {}).fo;
+      ui.session = null;
+      /* shown: not within 7 days, then again */
+      var elig = function (k) { var st = foilStore(); return !st.s[k] || Date.now() - st.s[k] >= FOIL_DAYS * DAY; };
+      foilShown(foils[0]);
+      out.week = [elig(foils[0]), withFoils(keys, 'today').indexOf(foils[0]) < 0];
+      shiftDays(6); out.day6 = elig(foils[0]);
+      shiftDays(1); out.day7 = elig(foils[0]);
+      its.forEach(function (it) { asReview(it); });
+      /* none at tier 1, with the engine down, in a drill */
+      playerTier = function () { return 1; }; out.t1 = withFoils(keys, 'today').filter(isFoilKey).length;
+      playerTier = function () { return 2; }; SF.state = 'failed'; out.down = withFoils(keys, 'today').filter(isFoilKey).length; window.readyEngine();
+      out.drill = withFoils(keys, 'drill').filter(isFoilKey).length;
+      /* the share carries: three game-mode reviews make none and leave three quarters, three more make one */
+      store.del(foilStoreKey());
+      var three = keys.slice(0, 3);
+      out.carry = [withFoils(three, 'more').filter(isFoilKey).length, foilStore().acc, withFoils(three, 'more').filter(isFoilKey).length, foilStore().acc];
+      return JSON.stringify(out); })()`));
+    eq(r.n + ' ' + r.foils, '8 2', '8 game-mode reviews: the set keeps its 8 places, 2 of them foils');
+    eq(r.gm, 8, '8 game-mode positions in all');
+    eq(JSON.stringify(r.places), '[2,5]', 'in spread places, never the first');
+    ok(r.otherGames, 'each from another game');
+    eq(r.dropped.length, 2, 'two reviews give their places');
+    ok(r.stillDue, 'and stay due');
+    ok(r.pool >= 20 && r.poolOk, 'the pool: ' + r.pool + ' positions, each a move that lost under 3 points, its clock known');
+    ok(r.nearFirst >= 10, 'many a few moves before a mistake: ' + r.nearFirst);
+    eq(JSON.stringify(r.today), JSON.stringify({ n: 10, foils: 2, first: false }), 'Today\'s set of 10: two foils');
+    eq(r.logged, 2, 'the set log counts them');
+    eq(JSON.stringify(r.week), '[false,true]', 'a foil shown: not again within 7 days');
+    eq(r.day6 + ' ' + r.day7, 'false true', 'after 7 days it may come again');
+    eq([r.t1, r.down, r.drill].join(' '), '0 0 0', 'none at tier 1, with the engine down or in a drill');
+    eq(JSON.stringify(r.carry), '[0,0.75,1,0.5]', 'the share carries');
+  });
+
+  await test('F8.2: a foil opens after its look (one search; a second scores the game move beside the best when the first missed it) as any game-mode review; its game move passes "Good, nothing to fix" / "You played Rxg6+ in your game too."; a try 8 points down "Playable" / "Rxg6+ in your game kept more."; one at the threshold "Not this one" with its reason, and when the card ends "Your game move Rxg6+ was fine here."; the answer shown says the same; hint 2 on a board with nothing in danger "No danger here."; never scheduled, never one more try, logged as a foil; a look that finds the game move lost 3 points or more sets it aside for good', async () => {
+    const A = boot();
+    const KEY = 'foil:184455333378:66', KEY2 = 'foil:184435538450:49';
+    A.ev(`(function () { ${OPEN} ${GAME}
+      window.readyEngine(); playerTier = function () { return 2; };
+      var it = itemOf('${KEY}');
+      window.__gu = uciOfSan(it.g.mv, it.b.p);
+      window.__alt = legalMoves(stateAtPly(it.g.mv, it.b.p)).map(moveUci).filter(function (u) { return u !== window.__gu; });
+      ui.session = { mode: 'today', label: 'Today', keys: ['${KEY}', '${KEY2}', '184455333378:68'], idx: 0, results: {}, relearn: [], relearnOf: {} };
+      loadCard();
+      return 1; })()`);
+    const pending = (key) => JSON.parse(A.ev(`JSON.stringify(window.__evals.filter(function (j) { return j.opts.tag === '` + key + `' && !j.done; }).map(function (j) { return { mpv: j.opts.multipv || 1, sm: j.opts.searchmoves || null, nodes: j.nodes }; }))`));
+    const answer = (key, r) => A.ev(`(function () { var j = window.__evals.filter(function (x) { return x.opts.tag === '` + key + `' && !x.done; })[0]; j.done = 1; j.res(` + r + `); return 1; })()`);
+    const s0 = { loading: A.ev('ui.session.loadingKey'), jobs: pending(KEY) };
+    /* the best move is another (White +0.30); the three lines miss the game move */
+    answer(KEY, `{ cp: 30, mate: null, bestUci: window.__alt[0], pv: [window.__alt[0]], lines: [{ cp: 30, mate: null, pv: [window.__alt[0]] }, { cp: 20, mate: null, pv: [window.__alt[1]] }, { cp: 10, mate: null, pv: [window.__alt[2]] }], depth: 18, stopped: false }`);
+    await tick(); await tick();
+    const s1 = pending(KEY);
+    /* side by side: the game move at +0.20, a point under the best */
+    answer(KEY, `{ cp: 20, mate: null, bestUci: window.__gu, pv: [window.__gu, 'c4d3'], lines: [{ cp: 20, mate: null, pv: [window.__gu, 'c4d3'] }, { cp: 30, mate: null, pv: [window.__alt[0]] }], depth: 18, stopped: false }`);
+    await tick(); await tick(); await tick();
+    const open = JSON.parse(A.ev(`(function () { ${GAME} var a = ui.session.active, d = displayFor(a), f = boardOptsFor(a), b = a.it.b;
+      var out = { key: a.key, foil: a.foil, game: a.game, best: a.bestUci === window.__alt[0], b: [b.ok, b.fl, b.ru].join(' '), rows: [d.row1, d.row2, d.tag].join(' | '), bad: !!f.opts.bad, ghosts: (f.opts.ghosts || []).length, words: frameWords(a, NO), faults: gameFaults(a, f),
+        shown: !!foilStore().s['${KEY}'], menu: /dispute/.test(menuHtml(a)) };
+      a.hints = 1; out.h1 = displayFor(a).row2; a.hints = 2; out.h2 = displayFor(a).row2; a.hints = 0;
+      out.ruled = gameFaults(a).length;
+      return JSON.stringify(out); })()`));
+    eq(s0.loading, KEY, 'the loading frame covers its look');
+    eq(JSON.stringify(s0.jobs), JSON.stringify([{ mpv: 3, sm: null, nodes: 250000 }]), 'one search of three lines');
+    eq(JSON.stringify(s1.map((j) => j.sm && j.sm.length)), '[2]', 'then the game move and the best side by side');
+    eq(open.key + ' ' + open.foil + ' ' + open.game, KEY + ' true true', 'the foil opens in game mode');
+    ok(open.best, 'its best move from the look');
+    eq(open.b, '1 1 c4d3', 'what the game move lost, and the line after it');
+    eq(open.rows, 'Your move | Move 34 · 20:42 on your clock | Review', 'as any game-mode review, the clock it had when the position arose');
+    ok(!open.bad && !open.ghosts && open.words === 13 && !open.faults.length, 'no arrow, nothing given away, 13 words');
+    ok(open.shown && !open.menu, 'noted as shown; nothing to dispute');
+    eq(open.h1, 'Their move: what does it attack?', 'hint 1: the question (something stands in danger here)');
+    eq(open.h2, 'Their pawn attacks your bishop.', 'hint 2: what stands in danger');
+    /* a foil with nothing in danger on its board */
+    const calm = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME}
+      var keep = ui.session, f = foilPool().filter(function (x) { return x.key !== '${KEY}' && x.key !== '${KEY2}' && (function () { var a = foilOpen(x.key); return foilDanger(a).kind === 'none'; })(); })[0], a = foilOpen(f.key);
+      a.hints = 1; var h1 = displayFor(a).row2; a.hints = 2; var d = displayFor(a), out = { h1: h1, h2: d.row2, marks: hintMarks(a).rings.length + hintMarks(a).arrows.length, tag: d.tag };
+      /* the foils read here are forgotten, as unlooked-at */
+      Object.keys(foilItems).forEach(function (k) { if (k !== '${KEY}') delete foilItems[k]; });
+      ui.session = keep;
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(calm), JSON.stringify({ h1: 'What can they take?', h2: 'No danger here.', marks: 0, tag: 'Review' }), 'a foil with nothing in danger: the safety check\'s question, then "No danger here."');
+    /* the game move passes */
+    const good = JSON.parse(A.ev(`(function () { ${TRY} var a = ui.session.active; a.tapped = true; gradeMove(uciToMove(a.st, window.__gu)); a.settle = 2;
+      var d = displayFor(a); return JSON.stringify({ phase: a.phase, result: a.result, rows: [d.row1, d.row2].join(' | '), disc: d.disc, bar: d.buttons.map(function (b) { return b.label || '-'; }).join(' / '),
+        srs: !!srsLoad()['${KEY}'], relearn: (ui.session.relearn || []).length, log: logLoad().slice(-1)[0], sum: ui.session.sum['${KEY}'], details: detailsHtml().replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ') }); })()`));
+    eq(good.phase + ' ' + good.result, 'done first', 'passed first try');
+    eq(good.rows, 'Good, nothing to fix | You played Rxg6+ in your game too.', 'the game move again: good, and said so (with its check, as row 1 and the label write it)');
+    eq(good.disc, 'good', 'a filled tick');
+    eq(good.bar, '- / Continue', 'no story to tell: Continue alone');
+    ok(!good.srs && !good.relearn, 'never scheduled, never one more try');
+    eq([good.log.m, good.log.c, good.log.fv, good.log.n].join(' '), 'foil first good ', 'logged as a foil');
+    eq(JSON.stringify(good.sum), JSON.stringify({ c: 'first', s: 3, fc: '', foil: 1, fk: 'good' }), 'kept for the summary as a foil');
+    ok(/After your game move Rxg6\+ your winning chances were \d+%; after \S+, \d+%\./.test(good.details) && /Not every review hides a mistake/.test(good.details), 'Details: ' + good.details);
+    /* a try 8 points down, then one at the threshold */
+    const tries = [];
+    for (const [cp, what] of [[-68, 'playable'], [-200, 'miss']]) {
+      A.ev(`(function () { ${OPEN} ${GAME} ${TRY} var it = itemOf('${KEY}'); var a = openCard(it); window.__a = a; window.__bestCp = it.b.eb; tryMove(a, window.__alt[3], null, ` + cp + `, null); return 1; })()`);
+      await tick(); await tick();
+      tries.push(JSON.parse(A.ev(`(function () { var a = window.__a; a.reason = 2; a.settle = 2; var d = displayFor(a); return JSON.stringify({ what: '` + what + `', phase: a.phase, rows: [d.row1, d.row2].join(' | '), disc: d.disc, tag: d.tag }); })()`)));
+    }
+    eq(JSON.stringify(tries[0]), JSON.stringify({ what: 'playable', phase: 'done', rows: 'Playable | Rxg6+ in your game kept more.', disc: 'close', tag: '' }), 'a try 8 points down passes: Playable');
+    eq(tries[1].phase + ' ' + tries[1].rows.split(' | ')[0] + ' ' + tries[1].tag, 'tried Not this one Review', 'one at the threshold is a miss');
+    ok(tries[1].rows.split(' | ')[1].length > 0, 'with its reason: ' + tries[1].rows);
+    const after = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME} var a = window.__a; tryAgain(); a.triedHold = false;
+      var f = boardOptsFor(a), out = { again: displayFor(a).row2, ghosts: (f.opts.ghosts || []).length, faults: gameFaults(a, f) };
+      a.tapped = true; gradeMove(uciToMove(a.st, window.__gu)); a.settle = 2; out.end = [displayFor(a).row1, displayFor(a).row2].join(' | '); out.result = a.result;
+      var b = openCard(itemOf('${KEY}')); reveal(); out.shown = displayFor(b).row2; b.animMove = null; playIt(false); b.settle = 2; out.shownEnd = [displayFor(b).row1, displayFor(b).row2].join(' | ');
+      return JSON.stringify(out); })()`));
+    eq(after.again, 'Move 34 · 20:42 on your clock', 'after Try again the foil\'s game move stays hidden');
+    ok(!after.ghosts && !after.faults.length, 'no faded game move: it is a fine answer');
+    eq(after.end, 'Good, nothing to fix | Your game move Rxg6+ was fine here.', 'when the card ends after a miss');
+    eq(after.result, 'retry', 'graded after a miss');
+    eq(after.shown, 'Play the green arrow.', 'the answer shown');
+    ok(/^The answer: \S+ \| Your game move Rxg6\+ was fine here\.$/.test(after.shownEnd), 'and when it settles: ' + after.shownEnd);
+    /* the second foil's look finds its game move 5 points down: set aside, the next card comes */
+    A.ev(`(function () { ui.session.active = null; ui.session.idx = 1; ui.session.keys = ['${KEY}', '${KEY2}', '184455333378:68']; loadCard(); var it = itemOf('${KEY2}'); window.__gu2 = uciOfSan(it.g.mv, it.b.p); window.__alt2 = legalMoves(stateAtPly(it.g.mv, it.b.p)).map(moveUci).filter(function (u) { return u !== window.__gu2; }); window.__sign2 = it.g.color === 'white' ? 1 : -1; return 1; })()`);
+    answer(KEY2, `{ cp: 0, mate: null, bestUci: window.__alt2[0], pv: [window.__alt2[0]], lines: [{ cp: 0, mate: null, pv: [window.__alt2[0]] }, { cp: -60 * window.__sign2, mate: null, pv: [window.__gu2] }], depth: 18, stopped: false }`);
+    await tick(); await tick(); await tick();
+    const aside = JSON.parse(A.ev(`JSON.stringify({ x: itemOf('${KEY2}').b.x || null, kept: !!foilStore().x['${KEY2}'], keys: ui.session.keys, now: ui.session.active ? ui.session.active.key : ui.session.loadingKey })`));
+    eq(aside.x, 'foil', 'its game move lost 3 points or more: set aside');
+    ok(aside.kept, 'for good');
+    eq(aside.keys.indexOf(KEY2), -1, 'gone from the set');
+    eq(aside.now, '184455333378:68', 'the next card comes');
+  });
+
+  await test('F8.3: at tier 2 the third clean find 16 days on makes a position learned only in game mode and under 30 s: shown cued it holds; in game mode at 20 s it is learned; at 42 s it holds, Details says "Found first try in 42 s. Under 30 s makes it learned." and what moved "held"; at tier 3 the bar is 60 s; a game-mode miss makes the next review cued', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME}
+      var it = model().byKey['184455333378:68'], out = {};
+      var best = function (a, ms) { a.attempts = 1; a.t0 = Date.now() - ms; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); return a; };
+      var toLearnStep = function (tier) {
+        store.del(srsKey()); srsMem = null; playerTier = function () { return tier; };
+        best(openCard(it), 5000);
+        shiftDays(Math.ceil((srsRec(it).due - Date.now()) / DAY));
+        best(openCard(it), 5000);
+        shiftDays(Math.max(16, Math.ceil((srsRec(it).due - Date.now()) / DAY)));
+        return srsRec(it).streak;
+      };
+      out.step = toLearnStep(2);
+      /* shown cued (the scheduler told so): it holds */
+      var info = { ms: 9000, tier: 2, game: false }, rec = srsRecord(it, 'first', info);
+      out.cued = [!!rec.learned, info.held, rec.streak].join(' ');
+      toLearnStep(2);
+      var a = openCard(it); out.mode = a.game; best(a, 20000);
+      out.fast = [!!srsRec(it).learned, ui.session.sum[it.key].m].join(' ');
+      toLearnStep(2);
+      a = best(openCard(it), 42000);
+      out.slow = [!!srsRec(it).learned, a.held, ui.session.sum[it.key].m, srsRec(it).streak].join(' ');
+      out.details = (/<p class="dt-more dt-held">([^<]*)<\\/p>/.exec(detailsHtml()) || [])[1] || '';
+      out.when = (/<span class="when">([^<]*)</.exec(detailsHtml()) || [])[1] || '';
+      out.log = logLoad().slice(-1)[0].tb;
+      toLearnStep(3);
+      a = best(openCard(it), 42000);
+      out.t3 = !!srsRec(it).learned;
+      toLearnStep(3);
+      a = best(openCard(it), 65000);
+      out.t3slow = [!!srsRec(it).learned, (/<p class="dt-more dt-held">([^<]*)<\\/p>/.exec(detailsHtml()) || [])[1]].join(' | ');
+      /* a game-mode miss: the next review is cued */
+      toLearnStep(2);
+      a = openCard(it); out.before = a.game;
+      a.misses = 1; a.attempts = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+      out.after = [a.result, srsRec(it).streak, cardFor(it).game].join(' ');
+      return JSON.stringify(out); })()`));
+    eq(r.step, 2, 'two clean finds before the learned step');
+    eq(r.cued, 'false cued 2', 'shown cued at tier 2: not learned, held');
+    eq(r.mode, true, 'the learned step opens in game mode');
+    eq(r.fast, 'true learned', 'in game mode at 20 s: learned');
+    eq(r.slow, 'false slow held 2', 'at 42 s: not learned, held, the run kept');
+    eq(r.details, 'Found first try in 42 s. Under 30 s makes it learned.', 'and Details says why');
+    ok(/^Step 2 of 3 · back in \d+ days$/.test(r.when), 'the same step, back in about 16 days: ' + r.when);
+    eq(r.log, 1, 'the log notes it');
+    eq(r.t3, true, 'tier 3 at 42 s: learned');
+    eq(r.t3slow, 'false | Found first try in 1:05. Under 60 s makes it learned.', 'tier 3 at 65 s: held, said in minutes');
+    eq(r.before, true, 'a game-mode review');
+    eq(r.after, 'retry 0 false', 'a miss there: the next review is cued');
+  });
+
+  await test('F8.1, F8.2: the first game-mode card says once "Reviews now look like your game: no arrow, and not every position hides a mistake."; the practice log notes each card\'s mode (cued, game, foil) and Clarity counts card_result_<tier>_<mode>_<category>, naming no player, rating or position; the summary counts foils apart ("1 had nothing to fix: 1 good move.") with a tile of their own, no rungs, the game move tinted as a move played', async () => {
+    const A = boot();
+    /* the two cards' deeper look and danger facts read before, so each opens at once */
+    A.ev(`(function () { window.readyEngine(); ['184455333378:68', '184380745302:11'].forEach(function (k) { var it = model().byKey[k]; it.b.v = Math.max(it.b.v || 0, 2); ensureDanger(it, true); }); return 1; })()`);
+    await tick(); await tick();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME}
+      window.readyEngine(); playerTier = function () { return 2; };
+      var calls = [], notes = [];
+      window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
+      notice = function (m) { notes.push(m); };
+      var c1 = model().byKey['184455333378:68'], c2 = model().byKey['184380745302:11'], fk = 'foil:184455333378:66', out = {};
+      asReview(c1);
+      var f = itemOf(fk), b = f.b, gu = uciOfSan(f.g.mv, b.p);
+      b.bu = gu; b.lu = packUci([gu]); b.ru = ''; b.eb = b.ea = 20; b.wb = b.wa = winPct(20); b.fl = 0; b.ok = 1;
+      ui.session = { mode: 'today', label: 'Today', keys: [c2.key, c1.key, fk], idx: 0, results: {}, relearn: [], relearnOf: {} };
+      loadCard(); var a = ui.session.active; out.cued = a.game; a.attempts = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); nextCard();
+      a = ui.session.active; out.game = a.game; out.notes1 = notes.slice(); a.attempts = 1; a.hints = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); nextCard();
+      a = ui.session.active; out.foil = a.foil; a.attempts = 1; gradeMove(uciToMove(a.st, gu)); nextCard();
+      out.notes = notes;
+      out.modes = logLoad().filter(function (e) { return e.e === 'c'; }).map(function (e) { return e.m; });
+      out.events = calls.filter(function (c) { return c[0] === 'event' && /^card_result_/.test(c[1]); }).map(function (c) { return c[1]; });
+      out.flat = JSON.stringify(calls);
+      var ss = ui.session, h = doneHtml(ss);
+      out.head = (/<h2 class="done-big"[^>]*>([^<]*)</.exec(h) || [])[1];
+      out.then = (/<p class="recap-then">([^<]*)</.exec(h) || [])[1] || '';
+      out.foils = (/<p class="recap-then recap-foils">([^<]*)</.exec(h) || [])[1];
+      out.row = (/<div class="result-row"[^>]*>(.*?)<\\/div>/.exec(h) || [])[1].match(/rg-\\w+/g);
+      var tile = (/<div class="recap-item recap-foil">(.*?)<\\/span><\\/div>/.exec(h) || [])[0] || '';
+      out.tile = { name: /<span>Nothing to fix<\\/span>/.test(tile), glyph: /rg rg-first/.test(tile), word: /<span class="res">Good move/.test(tile), rungs: /rungs/.test(tile), act: /data-act/.test(tile), red: /bad-arrow|fill="#d04a3a"/.test(tile), played: (tile.match(/fill="rgba\\(155,199,0,[.]41\\)"/g) || []).length };
+      out.moved = (/<span class="recap-moved">([^<]*)</.exec(h) || [])[1] || '';
+      /* the summary's text stack (slice 5): the category line, the foils' line right after it, then
+         the quiet paragraph (what moved, when they come back), before the week */
+      out.stack = (h.slice(h.indexOf('id="recap-h"'), h.indexOf('<div class="recap-week')).match(/<p class="[^"]*"/g) || []).map(function (x) { return x.slice(10, -1); }).join(' / ');
+      return JSON.stringify(out); })()`));
+    eq(r.cued + ' ' + r.game + ' ' + r.foil, 'false true true', 'a first sight, a review in game mode, a foil');
+    eq(JSON.stringify(r.notes1), JSON.stringify(['Reviews now look like your game: no arrow, and not every position hides a mistake.']), 'the first game-mode card says what changed');
+    eq(r.notes.length, 1, 'once');
+    eq(JSON.stringify(r.modes), JSON.stringify(['cued', 'game', 'foil']), 'the log notes each card\'s mode');
+    eq(JSON.stringify(r.events), JSON.stringify(['card_result_2_cued_first', 'card_result_2_game_hint', 'card_result_2_foil_first']), 'Clarity: tier, mode and category');
+    ok(!/tester|135\d|\b\d{12}\b|[a-h][1-8][a-h][1-8]/.test(r.flat), 'no name, rating, key or position: ' + r.flat);
+    eq(r.head, '1 of 2 found first try.', 'the score counts the two mistakes');
+    eq(r.then, 'Then 1 with a hint.', 'and their second line');
+    eq(r.foils, '1 had nothing to fix: 1 good move.', 'the foil apart');
+    eq(JSON.stringify(r.row), JSON.stringify(['rg-first', 'rg-hint', 'rg-first']), 'a glyph for each, the foil\'s too');
+    eq(JSON.stringify(r.tile), JSON.stringify({ name: true, glyph: true, word: true, rungs: false, act: false, red: false, played: 2 }), 'the foil\'s tile: "Nothing to fix", "Good move", no rungs, nothing to open, its game move tinted as a move played, never red');
+    eq(r.moved, '1 moved up, 1 held.', 'what moved: the mistakes alone');
+    eq(r.stack, 'recap-then / recap-then recap-foils / recap-small', 'the foils\' line right after the category line, before the quiet paragraph');
+  });
+
+  /* ── slice 8 merged with Today (slice 5) and the installable app (slice 11) ── */
+  await test('F8 with F5: Today\'s board is card 1 as the card opens, a game-mode review with no red arrow (at tier 1 cued, its arrow), and Today\'s set starts with it, its foils after; Resume draws the card the set stopped at in the mode it reopens in: a game-mode card missed before the pause, a foil before its look (after a reload); a dropped set\'s foil left after a miss writes no record and its try counts toward the day; the foil store moves with shiftDays beside the reminder\'s times, rides in the progress file (never the reminder or the install note) and goes with Reset', () => {
+    const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1', 'nl:tip:gamemode': '1' }) });
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME}
+      window.readyEngine(); playerTier = function () { return 2; };
+      var norm = function (s) { return String(s).replace(/(checkglow|ah)b\\d+/g, '$1B'); };
+      var board = function (h, act) { var m = /<a class="hero-board" data-act="(\\w+)"[^>]*>(<svg[\\s\\S]*?<\\/svg>)<\\/a>/.exec(h); return m && m[1] === act ? m[2] : ''; };
+      var own = function (a) { var f = boardOptsFor(a); return boardSvg(f.st, Object.assign({}, f.opts, { decor: true, fx: null })); };
+      var reds = function (s) { return (String(s).match(/class="bad-arrow"/g) || []).length; };
+      var out = {}, its = allMistakes().filter(trainable);
+      /* eight reviews due after a clean find: the warm-up, card 1, is the most familiar */
+      its.slice(0, 8).forEach(function (it, i) { asReview(it, i === 3 ? 2 : 1); });
+      ui.session = null;
+      var plan = todayPlan(), it1 = itemOf(plan.keys[0]), h = heroHtml(plan), b1 = board(h, 'startToday');
+      out.today = { first: plan.keys[0] === its[3].key, game: cardFor(it1).game, reds: reds(b1), same: !!b1 && norm(b1) === norm(own(cardFor(it1))), ghost: /ghost-piece/.test(b1) };
+      playerTier = function () { return 1; };
+      out.t1 = reds(board(heroHtml(todayPlan()), 'startToday'));
+      playerTier = function () { return 2; };
+      startToday();
+      out.set = { first: ui.session.keys[0] === plan.keys[0], foils: ui.session.keys.filter(isFoilKey).length, n: ui.session.keys.length };
+      /* paused after a miss on card 1 in game mode: its run ended, its showing keeps the mode */
+      var ss = ui.session, k1 = ss.keys[0];
+      ss.progress = {}; ss.progress[k1] = { m: 1, h: 0, g: 0, f: null, a: 1, p: 0, au: 0, gm: 1, fc: '', tr: [] };
+      srsNoteMiss(it1); saveSession(); ui.session = null;
+      var hm = resumeHtml(savedSession()), bm = board(hm, 'resume');
+      out.missed = { streak: srsRec(it1).streak, reds: reds(bm), svg: !!bm, cued: reds(firstFrameHtml(it1)) };
+      /* stopped at a foil, after a reload (its look not read yet) */
+      var sv = store.get(sessKey(), null), fi = sv.keys.map(isFoilKey).indexOf(true), fk = sv.keys[fi];
+      sv.idx = fi; sv.progress = {}; store.set(sessKey(), sv);
+      foilItems = {};
+      var hf = resumeHtml(savedSession()), bf = board(hf, 'resume');
+      out.foil = { at: fi > 0, svg: !!bf, wait: /hero-board wait/.test(hf), reds: reds(bf), ghost: /ghost-piece/.test(bf), looked: !!itemOf(fk).b.bu };
+      out.foilSame = norm(bf) === norm(own(foilOpen(fk)));
+      ui.session = null;
+      /* the set dropped with the foil left after a miss */
+      sv = store.get(sessKey(), null); sv.progress = {}; sv.progress[fk] = { m: 1, h: 0, g: 0, f: null, a: 1, p: 0, au: 0, gm: 1, fc: '', tr: [] };
+      sv.attempted = 0; sv.carried = 0; store.set(sessKey(), sv);
+      var c0 = dayLoad().carry || 0;
+      settleSaved(savedSession());
+      out.dropped = { rec: !!srsLoad()[fk], carry: (dayLoad().carry || 0) - c0 };
+      /* the foil store beside slice 5's and 11's keys */
+      foilShown(fk);
+      var t0 = foilStore().s[fk], c = cueLoad(); c.q = Date.now(); cueSave(c); store.set('nl:install', { at: Date.now(), kind: 'prompt' });
+      shiftDays(3);
+      out.shift = [(t0 - foilStore().s[fk]) / DAY, (Date.now() - cueLoad().q) / DAY];
+      document.createElement = function () { return { click: function () {}, remove: function () {}, setAttribute: function () {}, style: {} }; };
+      var blob = ''; Blob = function (parts) { blob = parts[0]; };
+      exportProgress();
+      out.file = Object.keys(JSON.parse(blob).keys).filter(function (k) { return !/^nl:day:/.test(k); }).sort();
+      return JSON.stringify(out); })()`));
+    A.click('resetProgress'); A.click('resetProgress');
+    const gone = JSON.parse(A.ev(`JSON.stringify({ foil: store.get(foilStoreKey(), null), srs: store.get(srsKey(), null) })`));
+    eq(JSON.stringify(r.today), JSON.stringify({ first: true, game: true, reds: 0, same: true, ghost: false }), 'Today\'s board: card 1, a game-mode review, as the card opens: no red arrow, no faded game move');
+    eq(r.t1, 1, 'at tier 1 the same card is cued: its red arrow');
+    eq(JSON.stringify(r.set), JSON.stringify({ first: true, foils: 2, n: 10 }), 'Today\'s set starts with card 1, two foils among the rest, its size kept');
+    eq(JSON.stringify(r.missed), JSON.stringify({ streak: 0, reds: 0, svg: true, cued: 1 }), 'paused after a game-mode miss: Resume draws it in game mode, as it reopens (by its record alone it would be cued)');
+    eq(JSON.stringify(r.foil), JSON.stringify({ at: true, svg: true, wait: false, reds: 0, ghost: false, looked: false }), 'stopped at a foil after a reload: its board, before its look, no arrow');
+    ok(r.foilSame, 'the foil\'s own opening frame');
+    eq(JSON.stringify(r.dropped), JSON.stringify({ rec: false, carry: 1 }), 'a dropped foil: no record, its try counts toward the day');
+    eq(JSON.stringify(r.shift), '[3,3]', 'shiftDays moves when a foil was shown, as it moves the reminder\'s times');
+    eq(JSON.stringify(r.file), JSON.stringify(['nl:foil:cc:tester', 'nl:log:cc:tester', 'nl:srs:cc:tester']), 'the progress file carries the foil store, never the reminder or the install note');
+    eq(JSON.stringify(gone), JSON.stringify({ foil: null, srs: null }), 'Reset clears it with the practice history');
   });
 
   results.forEach((l) => console.log(l));

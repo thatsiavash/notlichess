@@ -27,12 +27,13 @@ function saveSession() {
    is graded a fail, and its tries still count toward the day */
 function settleSaved(s) {
   if (!s) return;
-  var m = model(), open = 0;
+  var open = 0;
   Object.keys(s.progress || {}).forEach(function (k) {
-    var p = s.progress[k], it = m.byKey[k];
+    var p = s.progress[k], it = itemOf(k);
     if (!it || !p || s.results[k] || (s.relearnOf && s.relearnOf[k])) return;
     if (p.a > 0) open++;
-    if (p.m) srsRecord(it, 'fail', { attempted: p.a > 0, gameMove: !!p.g });
+    /* a foil is never scheduled (F8.2): its tries count, nothing is graded */
+    if (p.m && !it.foil) srsRecord(it, 'fail', { attempted: p.a > 0, gameMove: !!p.g });
   });
   /* its tries wait for the next session the player finishes today */
   var d = dayLoad();
@@ -120,8 +121,7 @@ function firstThree(list, isF, from) {
    later card then moves up a place */
 function keepFirstThree(ss) {
   if (!ss || !ss.firstTime || ss.idx >= 3) return;
-  var m = model();
-  ss.keys = firstThree(ss.keys, function (k) { var it = m.byKey[k]; return !!it && asksForcing(it); }, ss.idx);
+  ss.keys = firstThree(ss.keys, function (k) { var it = itemOf(k); return !!it && !it.foil && asksForcing(it); }, ss.idx);
 }
 /* how much a card can teach: a named idea, not played in a scramble, in a
    position that was still alive, with a line that settles */
@@ -373,19 +373,20 @@ function startSession(mode, keys, label, spec, opts) {
 }
 /* one set started, in the practice log: what it holds (due; new, q of
    them back from the queue; spread, graded as due; practice, positions
-   not due, whose dates never move later: F7.1), how many positions are
-   overdue and whether the day's load is healthy */
+   not due, whose dates never move later: F7.1; fo, foils: F8.2), how many
+   positions are overdue and whether the day's load is healthy */
 function logSet(mode, keys) {
-  var srs = srsLoad(), end = Date.now() + 12 * 3600 * 1000, due = 0, fresh = 0, q = 0, sp = 0, seen = {}, n = 0;
+  var srs = srsLoad(), end = Date.now() + 12 * 3600 * 1000, due = 0, fresh = 0, q = 0, sp = 0, fo = 0, seen = {}, n = 0;
   keys.forEach(function (k) {
     if (seen[k]) return;
     seen[k] = 1; n++;
     var r = srs[k];
-    if (!r || r.q) { fresh++; if (r) q++; }
+    if (isFoilKey(k)) fo++;
+    else if (!r || r.q) { fresh++; if (r) q++; }
     else if (r.sp) sp++;
     else if (r.due != null && r.due <= end) due++;
   });
-  logAdd({ e: 's', mo: mode, n: n, due: due, new: fresh, q: q, sp: sp, pr: n - due - fresh - sp, od: overdueCount(), hl: healthyLoad() ? 1 : 0 });
+  logAdd({ e: 's', mo: mode, n: n, due: due, new: fresh, q: q, sp: sp, fo: fo, pr: n - due - fresh - sp - fo, od: overdueCount(), hl: healthyLoad() ? 1 : 0 });
 }
 /* the trainable positions whose day to come back was before today */
 function overdueCount() {
@@ -424,8 +425,8 @@ function startToday() {
   var plan = todayPlan();
   if (!plan.keys.length) { notice('Nothing to practise yet. Your mistakes are still being found.'); return; }
   /* its head rule is kept if a card drops out before it is shown, from the
-     first card on */
-  startSession('today', plan.keys, 'Today', null, { firstTime: !!plan.firstTime });
+     first card on; game-mode reviews bring their foils (F8.2) */
+  startSession('today', withFoils(plan.keys, 'today'), 'Today', null, { firstTime: !!plan.firstTime });
 }
 /* the next set: as big as the set just played (at least 5, at most the
    size chosen in Settings), as often as wanted (F7.1): positions due back
@@ -461,7 +462,7 @@ function keepGoing() {
   absorbOpen();
   var keys = morePracticeKeys();
   if (!keys.length) { notice('You have practised every position from your games so far.'); return; }
-  startSession('more', keys, 'Next set');
+  startSession('more', withFoils(keys, 'more'), 'Next set');
 }
 function resumeSession() {
   var s = savedSession();

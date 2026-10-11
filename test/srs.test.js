@@ -125,6 +125,42 @@ test('learned needs a third clean solve, the last after a gap of about 16 days',
   eq(r.learned, true, 'learned'); near(r.due - s.clock.now, 90);
   eq(s.isLearned(r), true, 'isLearned');
 });
+/* F8.3: at tiers 2 and 3 the find that makes it learned must be clean in game mode and quick */
+test('F8.3: at tier 2 the third clean find 16 days on is learned only in game mode under 30 s; cued or at 42 s it holds its step (the run, the box, the same interval again) and says why; at tier 3 the bar is 60 s; at tier 1, or with no tier said, as before', () => {
+  const at = (tier, game, ms) => {
+    const s = sandbox(T0);
+    s.srsRecord(card(), 'first', { ms: 8000 });          /* box 2, streak 1 */
+    s.advance(8);
+    s.srsRecord(card(), 'first', { ms: 8000, tier, game }); /* box 3, streak 2 */
+    s.advance(18);
+    const info = { ms, tier, game };
+    const r = s.srsRecord(card(), 'first', info);
+    return { r, held: info.held || null, days: Math.round((r.due - s.clock.now) / DAY * 10) / 10 };
+  };
+  let x = at(2, false, 9000);
+  eq(!!x.r.learned, false, 'cued: not learned'); eq(x.held, 'cued', 'held, cued'); eq(x.r.box, 3, 'the same step'); eq(x.r.streak, 2, 'the run as it was');
+  near(x.r.due - (T0 + 26 * DAY), 16, 'the same interval again');
+  x = at(2, true, 20000);
+  eq(x.r.learned, true, 'game mode at 20 s: learned'); eq(x.held, null, 'nothing held');
+  x = at(2, true, 42000);
+  eq(!!x.r.learned, false, 'game mode at 42 s: not learned'); eq(x.held, 'slow', 'held, too slow'); eq(x.r.streak, 2, 'run kept');
+  x = at(2, true, 30000);
+  eq(!!x.r.learned, false, '30 s is not under 30 s');
+  x = at(3, true, 42000);
+  eq(x.r.learned, true, 'tier 3 at 42 s: learned');
+  x = at(3, true, 65000);
+  eq(x.held, 'slow', 'tier 3 at 65 s: held');
+  x = at(1, false, 50000);
+  eq(x.r.learned, true, 'tier 1, cued: learned as before');
+  x = at(undefined, undefined, 50000);
+  eq(x.r.learned, true, 'no tier said: as before');
+  /* a learned position's clean spot check still retires it, cued or slow */
+  const s = sandbox(T0);
+  learn(s);
+  s.advance(100);
+  const r = s.srsRecord(card(), 'first', { ms: 90000, tier: 2, game: false });
+  eq(r.retired, 1, 'the spot check retires it');
+});
 test('two clean solves are not enough to be learned, even after a long gap', () => {
   const s = sandbox(T0);
   s.srsRecord(card(), 'first', { ms: 8000 });            /* streak 1 */

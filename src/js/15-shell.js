@@ -381,7 +381,7 @@ function exportProgress() {
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
       if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u)
+      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u || k === 'nl:foil:' + u)
         out.keys[k] = JSON.parse(localStorage.getItem(k));
     }
   } catch (e) {}
@@ -614,6 +614,7 @@ document.addEventListener('click', function (e) {
         store.del(logKey());
         store.del(absorbKey());
         store.del(startKey());
+        store.del(foilStoreKey());
       } catch (e2) {}
       srsMem = null; srsRevision++; ui.session = null; ui.resetArmed = false; modelDirty();
       notice('Practice history reset. Your games and analysis are kept.');
@@ -1043,7 +1044,7 @@ window.__nlTest = {
   card: function () {
     var ss = ui.session, a = ss && ss.active;
     if (!a) return { session: !!ss, finished: !!(ss && ss.finished), idx: ss ? ss.idx : null, n: ss ? ss.keys.length : null };
-    return { idx: ss.idx, n: ss.keys.length, key: a.key, phase: a.phase, best: a.bestUci, played: a.playedUci,
+    return { idx: ss.idx, n: ss.keys.length, key: a.key, mode: a.foil ? 'foil' : a.game ? 'game' : 'cued', phase: a.phase, best: a.bestUci, played: a.playedUci,
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
              hints: a.hints, predraw: !!a.predraw, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null, reason: a.reason || 0, settle: a.settle || 0, showWait: !!a.showWait,
              reply: a.reply ? { uci: a.reply.uci, tele: !!a.reply.tele, played: !!a.reply.played, show: !!a.reply.show } : null,
@@ -1096,8 +1097,8 @@ if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
    times, the day records, renamed to their date n days earlier, first and
    last seen, the return day, the day's first opening, the paused set's
    day, the weekly goal's history, the practice log, cue and backup
-   times, the start of practice), so whatever was due in n days is due
-   now. The games keep their dates: they come back from the chess site as
+   times, the start of practice, when each foil was shown), so whatever was
+   due in n days is due now. The games keep their dates: they come back from the chess site as
    they are */
 function shiftDays(n) {
   n = Math.round(+n || 0);
@@ -1139,6 +1140,9 @@ function shiftDays(n) {
   /* the start of practice (F6.2): the games after it are "since" */
   var sk = store.get(startKey(), null);
   if (sk && sk.t) { sk.t = back(sk.t); store.set(startKey(), sk); }
+  /* when each foil was shown (F8.2): 7 days on, it may come again */
+  var fo = store.get(foilStoreKey(), null);
+  if (fo && fo.s) { Object.keys(fo.s).forEach(function (k) { fo.s[k] = back(fo.s[k]); }); store.set(foilStoreKey(), fo); }
   srsMem = null;
   srsRevision++;
   modelDirty();

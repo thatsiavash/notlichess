@@ -922,6 +922,10 @@ body.in-session{padding-bottom:0}
    leads the tiles, across both columns, its seal a 32 px badge on its
    board's corner and no pips (the design lead's review of slice 4) */
 .recap-then{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600;color:var(--text-1);margin:-16px 0 6px}
+/* a set's foils (F8.2): their line right under the category line, and
+   their tiles, which open nothing */
+.recap-then + .recap-foils{margin-top:0}
+.recap-item.recap-foil{cursor:default}
 .recap-item .stars,.recap-item .rungs{display:flex;align-items:center;gap:6px;margin-top:6px}
 .stars i{font-style:normal;font-size:var(--fs-small);line-height:1;color:var(--border)}
 .stars i.on{color:var(--honey)}

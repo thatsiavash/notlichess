@@ -73,6 +73,66 @@ const FRAMES = `function eachFrame(it, cb) {
   for (var i = 0; i < S.steps.length; i++) { a.view = { mode: 'story', i: i }; a.animMove = null; cb('story ' + i, a); }
   a = openCard(it); reveal(); a.animMove = null; cb('shown', a);
   if (!a.sol) { playIt(false); a.animMove = null; cb('shown, played', a); }
+  /* game mode (F8.1): at tiers 2 and 3 the same card as a review after a clean find */
+  if (playerTier() >= 2) eachGameFrame(it, cb);
+}
+/* a card as a game-mode review (its record a run of one clean find, due):
+   the open frame, its hints, its game move tried (its reason, See it, Try
+   again with the faded game move, the hints after it) and the answer shown;
+   the record put back as it was after, so the walks that follow meet the
+   card as before */
+function eachGameFrame(it, cb) {
+  var was = srsLoad()[it.key] ? JSON.stringify(srsLoad()[it.key]) : null;
+  /* written as it is (srsSave would keep the record a walk before answered later) */
+  var mk = function () { var m = srsLoad(); m[it.key] = { box: 2, streak: 1, due: Date.now() - 3600e3, last: Date.now() - 7 * DAY, ls: Date.now() - 7 * DAY, lapses: 0 }; store.set(srsKey(), m); srsMem = null; return openCard(it); };
+  var a = mk();
+  if (a && a.game) {
+    cb('game open', a);
+    a.hints = 1; cb('game hint 1', a); a.hints = 2; cb('game hint 2', a);
+    a = mk(); a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
+    if (a.phase === 'tried') {
+      a.reason = 2; cb('game miss, its reason said', a);
+      if (a.tried.reply) { seeIt(); a.animMove = null; cb('game See it, landed', a); }
+      tryAgain(); a.triedHold = false; cb('game after Try again', a);
+      a.hints = 1; a.hintAt = a.misses; a.hintAfter = true; cb('game after a miss, hint 1', a); a.hints = 2; cb('game after a miss, hint 2', a);
+    }
+    a = mk(); reveal(); a.animMove = null; cb('game shown', a);
+  }
+  var m2 = srsLoad();
+  if (was) m2[it.key] = JSON.parse(was); else delete m2[it.key];
+  store.set(srsKey(), m2); srsMem = null; srsRevision++;
+}
+/* a foil (F8.2), read as its look would leave it (its best move the game
+   move itself, nothing lost), every frame: open, its hints, the game move
+   passed (S0 settling), a move that keeps less ("Playable"), a miss (its
+   reason, after Try again), the answer shown and settled */
+function eachFoilFrame(key, cb) {
+  var it = itemOf(key);
+  if (!it) return;
+  var pre = stateAtPly(it.g.mv, it.b.p), gu = uciOfSan(it.g.mv, it.b.p), next = realGameAfter(it, gu), b = it.b;
+  b.bu = gu; b.lu = packUci([gu].concat(next.slice(0, 3))); b.ru = packUci(next); b.eb = b.ea = 20; b.wb = b.wa = winPct(20); b.fl = 0; b.ok = 1; delete b.x;
+  var a = openCard(it);
+  cb('foil open', a);
+  a.sel = legalMoves(a.st)[0].from; cb('foil selected', a); a.sel = -1;
+  a.hints = 1; cb('foil hint 1', a); a.hints = 2; cb('foil hint 2', a);
+  a = openCard(it); a.tapped = true; gradeMove(uciToMove(a.st, gu)); a.animMove = null;
+  cb('foil good', a); a.settle = 1; cb('foil good, S0 marks', a); a.settle = 2; cb('foil settled', a);
+  var other = legalMoves(pre).filter(function (m) { return moveUci(m) !== gu; });
+  a = openCard(it); a.tapped = true; foilPass(other[0], 8); a.animMove = null; a.settle = 2; cb('foil playable, settled', a);
+  a = openCard(it); a.tapped = true;
+  var after = cloneState(pre); applyMove(after, other[1] || other[0]);
+  var rep = legalMoves(after)[0];
+  miss(other[1] || other[0], moveUci(other[1] || other[0]), { cp: -400, mate: null, pv: [moveUci(other[1] || other[0])].concat(rep ? [moveUci(rep)] : []), win: 18 }, false);
+  a.animMove = null; cb('foil miss', a); a.reason = 2; cb('foil miss, its reason said', a);
+  tryAgain(); a.triedHold = false; cb('foil after Try again', a);
+  a.tapped = true; gradeMove(uciToMove(a.st, gu)); a.animMove = null; a.settle = 2; cb('foil found after a miss, settled', a);
+  a = openCard(it); reveal(); a.animMove = null; cb('foil shown', a); playIt(false); a.animMove = null; a.settle = 2; cb('foil shown, settled', a);
+}
+/* the game's own moves after the move at the foil's ply (UCI, up to 4) */
+function realGameAfter(it, gu) {
+  var st = stateAtPly(it.g.mv, it.b.p + 1), toks = it.g.mv.split(' '), out = [];
+  for (var k = it.b.p + 1; st && k < Math.min(toks.length, it.b.p + 5); k++) { var m = sanToMove(st, toks[k]); if (!m) break; out.push(moveUci(m)); applyMove(st, m); }
+  return out;
 }`;
 
 /* the card's board as a recording stub: #bwrap takes the board's markup
@@ -412,7 +472,9 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
                 if (!(f.opts.rings || []).some(function (x) { return x.sq === mk.sq && x.kind === 'target'; }) || !p || colorW(p) === myPov(a.it) || t !== 'free ' + PIECE_WORD[pType(p)] || isDefended(f.st.b, mk.sq)) bad('not an unguarded prize ringed there');
               }
               else bad('a label the copy table does not have');
-              if (wordsIn(t) > 2 && !lb.tip) bad('a short label over two words');
+              /* the faded game move names itself in game mode and on a foil
+                 (F8.1, F8.2): "Rg1 in your game", within the 15 words */
+              if (wordsIn(t) > 2 && !lb.tip && !((a.game || a.foil) && mk.kind === 'ghost' && / in your game$/.test(t))) bad('a short label over two words');
             });
           });
         });

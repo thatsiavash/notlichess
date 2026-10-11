@@ -85,8 +85,46 @@ var CARD_COPY = {
   H3c: function () { return 'Find a safe square.'; },
   F1: function () { return 'Right'; },
   F2: function (a) { return sidesOf(a).opp + ' replies next.'; },
-  F3: function () { return 'Your move'; }
+  F3: function () { return 'Your move'; },
+  /* game mode (F8.1): the tag every game-mode card wears before its answer,
+     its row 2 (gameRow), and the game move tried before it was shown */
+  G1: function () { return 'Review'; },
+  G3: function () { return 'As in your game'; },
+  /* a foil (F8.2): its verdicts, its settled lines and its hint 2 with no
+     danger on the board; m is the game move in SAN */
+  O1: function () { return 'Good, nothing to fix'; },
+  O2: function () { return 'Playable'; },
+  O3: function (m) { return 'In your game, ' + m + ' was fine too.'; },
+  O4: function (m) { return m + ' in your game kept more.'; },
+  O5: function (m) { return 'Your game move ' + m + ' was fine here.'; },
+  O6: function (m) { return 'You played ' + m + ' in your game too.'; },
+  O7: function () { return 'No danger here.'; }
 };
+/* the first game-mode card's notice, once (F8.1) */
+var GAME_NOTE = 'Reviews now look like your game: no arrow, and not every position hides a mistake.';
+/* a game-mode card's row 2 before its game move shows (F8.1): the move and
+   the clock the player had when the position arose ("Move 35 · 20:35 on
+   your clock"), with no clock "Move 35 vs opponent1" ("Move 35 of your
+   game" when the name does not fit) */
+function gameRow(a) {
+  var g = a.it.g, mv = 'Move ' + (Math.floor(a.it.b.p / 2) + 1), clk = clockWhen(a.it);
+  if (clk != null) return mv + ' · ' + clockRow(clk) + ' on your clock';
+  return g.opp && fitsRow(mv + ' vs ' + g.opp, 'row2') ? mv + ' vs ' + g.opp : mv + ' of your game';
+}
+/* a clock as it reads: "20:35", "1:05:09" */
+function clockRow(s) {
+  s = Math.max(0, Math.round(s));
+  var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60, two = function (x) { return (x < 10 ? '0' : '') + x; };
+  return (h ? h + ':' + two(m) : m) + ':' + two(r);
+}
+/* the player's clock when the position arose, in seconds: a mistake's from
+   the clock after it and its time (b.c + b.tt, less the increment), a foil's
+   as its record keeps it; null with no clock */
+function clockWhen(it) {
+  var b = it.b;
+  if (it.foil) return b.fc != null ? b.fc : null;
+  return b.c != null && b.tt != null ? b.c + b.tt - incOf(it.g) : null;
+}
 /* F4: their reply in a forcing line, once it has landed, as row 2 says it:
    what it took, or the check it gives, or the move itself; st is the
    position before it, took what it captured. The ladder's next form drops
@@ -505,7 +543,10 @@ function triedVerdict(a, t, why, again) {
   if (t.kind === 'close') return verdictOf('close', CARD_COPY.C1(), again ? [] : [CARD_COPY.C2()], '');
   if (t.kind === 'unchecked') return verdictOf('unchecked', CARD_COPY.E1(), [CARD_COPY.E2()], '');
   why = why || { cands: [], fall: 'That helps ' + sidesOf(a).opp + '.' };
-  return verdictOf('bad', t.uci === a.playedUci ? CARD_COPY.M2() : CARD_COPY.M1(), why.cands, why.fall);
+  /* in game mode the game move, tried before it was shown (its first graded
+     try), is not "again" (F8.1) */
+  var g1 = a.game && a.misses <= 1 && !a.foundGood;
+  return verdictOf('bad', t.uci === a.playedUci ? (g1 ? CARD_COPY.G3() : CARD_COPY.M2()) : CARD_COPY.M1(), why.cands, why.fall);
 }
 /* a hint as the band says it (S8, H1 to H3), with the marks it draws
    (hintMarks): {row1, row2, cands, fall, marks}, row 2 fitted to its caps
@@ -528,9 +569,16 @@ function triedVerdict(a, t, why, again) {
 function hintText(a) {
   var marks = hintMarks(a), due = dueMove(a), dueSan = sanOf(a.st, due), cands, fall, row = null;
   var r = { row1: CARD_COPY[a.hints >= 2 ? 'H3' : 'H1'](), marks: marks };
+  /* game mode (F8.1), on the card's first move: hint 1 the step's row-2
+     form (F2.3), never a computed fact, which would name the answer or the
+     game move (both tries' danger in its place, F1.3); hint 2 the danger on
+     the board (hintMarks' dz, F1.1's words), else the circled piece */
+  var gm = a.game && !(a.sol && a.solIdx > 0);
+  if (gm && a.hints >= 2) { cands = marks.dz ? dangerWords(a, marks.dz) : (safeSquare(a, due) ? [CARD_COPY.H3c()] : []).concat([CARD_COPY.H3b()]); fall = ''; }
+  else if (gm) { row = checkRow(a); cands = marks.rep ? repeatedWords(a, marks.rep) : row.slice(0, 1); fall = row[0]; }
   /* hint 2 on a piece hint 1 rang as in danger: where to take it (content's
      review), when the answer takes it out of danger */
-  if (a.hints >= 2) { cands = (safeSquare(a, due) ? [CARD_COPY.H3c()] : []).concat([CARD_COPY.H3b()]); fall = ''; }
+  else if (a.hints >= 2) { cands = (safeSquare(a, due) ? [CARD_COPY.H3c()] : []).concat([CARD_COPY.H3b()]); fall = ''; }
   else if (a.sol && a.solIdx > 0) {
     var mine = kingSq(a.st.b, myPov(a.it));
     var inCheck = (a.phase === 'guess' || (a.phase === 'checking' && !a.checkSaid)) && !!a.st.w === myPov(a.it) && mine >= 0 && checkedKingSq(a.st) === mine;
@@ -562,9 +610,13 @@ function hintText(a) {
     else if (fam === 'conversion' || fam === 'quiet') cands = row;
     else cands = gets || row;
   }
-  /* the guard: no form names the answer due now, in SAN or in words */
-  var dueW = moveWords(a.st, due);
-  var names = function (x) { return String(x || '').split(/[\s.,]+/).indexOf(dueSan) >= 0 || (!!dueW && String(x || '').toLowerCase().indexOf(dueW) >= 0); };
+  /* the guard: no form names the answer due now, in SAN or in words; in
+     game mode, nor the game move before it shows (a foil's, never) */
+  var dueW = moveWords(a.st, due), hide = a.game && !ghostOn(a), gs = [sanOf(a.pre, a.played), capSan(a.pre, a.played)], gw = moveWords(a.pre, a.played);
+  var names = function (x) {
+    var ws = String(x || '').split(/[\s.,:]+/), low = String(x || '').toLowerCase();
+    return ws.indexOf(dueSan) >= 0 || (!!dueW && low.indexOf(dueW) >= 0) || (hide && (ws.indexOf(gs[0]) >= 0 || ws.indexOf(gs[1]) >= 0 || (!!gw && low.indexOf(gw) >= 0)));
+  };
   /* the check line's shorter rung last, for a frame with six words left */
   if (row) row.slice(1).forEach(function (x) { if (cands.indexOf(x) < 0) cands = cands.concat([x]); });
   r.cands = cands.filter(function (x) { return x && !names(x); });
@@ -579,8 +631,14 @@ function hintText(a) {
    the game move (in words at tier 1, "that move" where they do not fit) */
 function dangerWords(a, dz) {
   var P = function (p) { return PIECE_WORD[pType(p)]; }, t1 = inWords(a), gs = t1 ? [upFirst(moveWords(a.pre, a.played)), 'That move'] : [capSan(a.pre, a.played)];
-  if (dz.kind === 'check') return ['In check: move, block or take?'];
+  /* (each form's last rung fits five words: game mode's hint 2, beside "No
+     more hints", F8.1) */
+  if (dz.kind === 'check') return ['In check: move, block or take?', 'You are in check.'];
   if (dz.kind === 'mate') return [t1 ? 'They can mate you on ' + sqName(dz.mate.to) + '.' : 'They threaten mate: ' + dz.mate.san + '.'];
+  /* game mode, its game move not shown (F8.1): the piece the better move
+     keeps, in words; a foil with no danger on its board (F8.2) */
+  if (dz.kind === 'watch') return ['Watch your ' + PIECE_WORD[dz.piece] + '.'];
+  if (dz.kind === 'none') return [CARD_COPY.O7()];
   /* their mate the game move stopped, and what it allows (the coach's
      review): "O-O stops mate, allows Bxc3." (tier 1 "Castling stops mate.
      Watch your knight.") */
@@ -593,16 +651,17 @@ function dangerWords(a, dz) {
      (tier 1, where the move in words does not fit, "That lets them win
      your bishop.", then "Watch your bishop.") */
   if (dz.kind === 'lost') return gs.slice(0, 1).map(function (g) { return g + ' lets them win your ' + PIECE_WORD[dz.piece] + '.'; }).concat(['That lets them win your ' + PIECE_WORD[dz.piece] + '.', 'Watch your ' + PIECE_WORD[dz.piece] + '.']);
-  if (dz.kind === 'mine') return ['You have a mate in one.'];
+  if (dz.kind === 'mine') return ['You have a mate in one.', 'You can mate in one.'];
   /* the hint's bar and row 1 leave row 2 six words: the shorter form then */
-  if (dz.kind === 'loose') return ['Their ' + P(dz.loose.p) + ' on ' + sqName(dz.loose.sq) + ' has no guard.', 'Nothing guards their ' + P(dz.loose.p) + ' on ' + sqName(dz.loose.sq) + '.'];
+  if (dz.kind === 'loose') return ['Their ' + P(dz.loose.p) + ' on ' + sqName(dz.loose.sq) + ' has no guard.', 'Nothing guards their ' + P(dz.loose.p) + ' on ' + sqName(dz.loose.sq) + '.', 'Their ' + P(dz.loose.p) + ' has no guard.'];
   if (dz.kind === 'madeMate') return gs.map(function (g) { return g + ' lets them mate you.'; });
   /* (a hint's frame leaves row 2 six words: "That lets ..." then) */
   if (dz.kind === 'made') return gs.map(function (g) { return g + ' lets them take your ' + P(dz.named.p) + '.'; }).concat(['That lets them take your ' + P(dz.named.p) + '.', 'Watch your ' + P(dz.named.p) + '.']);
   var nm = dz.named, n = nm.by.length, by = a.pre.b[nm.by[0]], sec = dz.second;
   if (n >= 2) return ['Your ' + P(nm.p) + ' is attacked ' + timesWord(n) + '.'];
   if (MOTIF_VAL[pType(by)] < MOTIF_VAL[pType(nm.p)] || !sec) return ['Their ' + P(by) + ' attacks your ' + P(nm.p) + '.'];
-  return [pType(sec.p) === pType(nm.p) ? 'Two of your ' + P(nm.p) + 's are attacked.' : 'Your ' + P(nm.p) + ' and ' + P(sec.p) + ' are attacked.'];
+  return pType(sec.p) === pType(nm.p) ? ['Two of your ' + P(nm.p) + 's are attacked.', 'Your ' + P(nm.p) + 's are attacked.']
+    : ['Your ' + P(nm.p) + ' and ' + P(sec.p) + ' are attacked.', 'Your ' + P(nm.p) + ' is attacked.'];
 }
 /* hint 2's words on a piece hint 1 rang as in danger (the danger facts'
    attacked pieces), on the card's first move, when the answer takes it
@@ -649,8 +708,14 @@ function lineOfStep(s, t) { var r = CHECK_LINE[s] || CHECK_LINE[5]; return t >= 
 /* the step of a pattern or a family, for the places above one card */
 function patternStep(k) { return DZ_STEP[k] || (PATTERN[k] ? 3 : 5); }
 function familyStep(f) { return FAMILY_STEP[f] || 5; }
-/* the card's step: its danger facts', else its family's */
-function cardStep(a) { var v = dangerView(a); return (v && v.step) || familyStep(familyOf(patternOf(a.it.b)).key); }
+/* the card's step: its danger facts', else its family's; a foil's from its
+   board (F8.2): their move while something stands in danger, else the
+   safety check */
+function cardStep(a) {
+  if (a.foil) return foilDanger(a).kind === 'none' ? 3 : 1;
+  var v = dangerView(a);
+  return (v && v.step) || familyStep(familyOf(patternOf(a.it.b)).key);
+}
 function checkRow(a) { var s = cardStep(a), t = a.tier || 2; return [(CHECK_ROW[s] || CHECK_ROW[5])[t - 1]].concat(CHECK_SHORT[s] ? [CHECK_SHORT[s]] : []); }
 /* the card's line, read once its answer is in (a.check), so Details and
    the summary always say the same */
@@ -1412,6 +1477,9 @@ function cardStateKey(a) {
 }
 function bandOf(a) {
   var t = a.tried, v = a.verdict;
+  /* every game-mode card wears the neutral "Review" tag until its answer
+     (F8.1), where its frame has room: a step chip goes before it */
+  var tag = a.game ? CARD_COPY.G1() : '';
   /* exploring (S14): what it is, in two fixed rows; Stockfish's sentence
      is in the panel */
   if (a.phase === 'done' && a.explore) return { disc: 'king', kind: 'explore', row1: CARD_COPY.X1(), row2: CARD_COPY.X2(a) };
@@ -1428,7 +1496,18 @@ function bandOf(a) {
     /* row 2: R4 once the result has settled (S0 at V+850, and the story
        that follows it); before that the answer shown says how to play it
        (V2), and a solve says nothing more yet */
-    var mode = a.view && a.view.mode, said = !mode || (mode === 's0' && a.settle >= 2), r4 = said ? r4Of(a) : null;
+    var mode = a.view && a.view.mode, said = !mode || (mode === 's0' && a.settle >= 2);
+    /* a foil (F8.2): its verdict by what the move lost ("Good, nothing to
+       fix", "Playable"), then what its game move was: fine too, or it kept
+       more; after a miss or the answer shown "Your game move Nf3 was fine
+       here." (the move as row 1 and the label write it, its check too) */
+    if (a.foil) {
+      var fm = gameSan(a), fok = a.foilKind !== 'playable';
+      var fend = a.misses || a.revealed ? CARD_COPY.O5(fm) : !fok ? CARD_COPY.O4(fm) : a.foilGame ? CARD_COPY.O6(fm) : CARD_COPY.O3(fm);
+      if (a.revealed) return { disc: 'info', kind: 'info', row1: answerRow(a, said), cands: said ? [fend] : [CARD_COPY.V2()], fall: '' };
+      return { disc: fok ? 'good' : 'close', kind: fok ? 'good' : 'close', row1: fok ? CARD_COPY.O1() : CARD_COPY.O2(), cands: said ? [fend] : [], fall: '' };
+    }
+    var r4 = said ? r4Of(a) : null;
     /* settled, a reveal names the card's own answer, the move R4 is about
        (inside a forcing line the band named each move as it came) */
     if (a.revealed)
@@ -1449,17 +1528,17 @@ function answerRow(a, settled) {
 /* S3: the band keeps what it said for 300 ms, then says the move is
      being checked, and at 3 s that it still is */
   if (a.phase === 'checking' && a.checkSaid)
-    return { disc: 'checking', kind: 'neutral', sweep: true, row1: fitRow(inWords(a) ? [a.checkingW ? CARD_COPY.K1(a, true) : '', 'Checking your move…'] : [CARD_COPY.K1(a)], 'row1', 'Checking…'), cands: a.checkSaid >= 2 ? [CARD_COPY.K2()] : [], fall: '' };
+    return { disc: 'checking', kind: 'neutral', sweep: true, row1: fitRow(inWords(a) ? [a.checkingW ? CARD_COPY.K1(a, true) : '', 'Checking your move…'] : [CARD_COPY.K1(a)], 'row1', 'Checking…'), cands: a.checkSaid >= 2 ? [CARD_COPY.K2()] : [], fall: '', tag: tag };
   if (a.phase === 'tried' && t) {
     /* a miss's reason waits for its own beat (S4, a.reason 2): the verdict
        alone first */
     var tv = v || triedVerdict(a, t, null, false), wait = t.kind === 'miss' && (a.reason || 0) < 2;
     /* the check step it failed comes with the reason, at tiers 2 and 3 (F1.2) */
     return { disc: t.kind === 'miss' ? 'bad' : t.kind, kind: t.kind === 'miss' ? 'bad' : t.kind === 'unchecked' ? 'info' : 'close',
-             row1: tv.row1, cands: wait ? [] : tv.cands, fall: wait ? '' : tv.fall, chip: wait ? '' : t.chip || '', stepChip: !!t.chip };
+             row1: tv.row1, cands: wait ? [] : tv.cands, fall: wait ? '' : tv.fall, chip: wait ? '' : t.chip || '', stepChip: !!t.chip, tag: tag };
   }
   /* a move of the forcing line found (S10): right, and their reply comes */
-  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: CARD_COPY.F1(), cands: [CARD_COPY.F2(a)], fall: '', budget: LINE_BUDGET };
+  if (a.phase === 'reply') return { disc: 'good', kind: 'good', row1: CARD_COPY.F1(), cands: [CARD_COPY.F2(a)], fall: '', budget: LINE_BUDGET, tag: tag };
   /* a hint says itself on the showing it came with (pressed, or the
      automatic one this Try again brought: S4), and afterwards while its
      marks stand on the board, so band and board agree; a hint in words
@@ -1470,10 +1549,14 @@ function answerRow(a, settled) {
      1 of 2", what the game move runs into), from its first frame */
   if (a.hints >= 1 && (a.hintAfter || !mid) && (a.hintAt == null || a.hintAt === a.misses || hm.rings.length + hm.arrows.length > 0)) {
     var h = hintText(a);
-    return { disc: 'king', kind: 'hint', row1: h.row1, cands: h.cands, fall: h.fall };
+    return { disc: 'king', kind: 'hint', row1: h.row1, cands: h.cands, fall: h.fall, tag: tag };
   }
   /* their reply has landed: your move, and what it did (F4) */
-  if (mid) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: a.replySaid ? a.replySaid.slice() : [], fall: 'The next move is forcing too.', budget: LINE_BUDGET };
+  if (mid) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: a.replySaid ? a.replySaid.slice() : [], fall: 'The next move is forcing too.', budget: LINE_BUDGET, tag: tag };
+  /* game mode (F8.1): "Your move" with the move and the clock, nothing
+     that says a mistake is here; once its game move shows (a graded try),
+     the task names it beside its faded piece (a foil's never shows) */
+  if (a.game) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: [ghostOn(a) ? CARD_COPY.T2(a) : gameRow(a)], fall: '', tag: tag };
   /* tier 1 names the game move in words, else says no move (F1.6); a
      decisive first sight names the game it decided in the tag row (F4.2) */
   return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: inWords(a) ? [CARD_COPY.T2(a, true), 'Find a better move.'] : [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '', tag: ctxLine(a) };
@@ -1595,9 +1678,15 @@ function labelCands(a, f, seen) {
   });
   /* tier 1 names the game move in words where the label has room (alt:
      its SAN, tried next) */
+  /* in game mode the faded game move is what names it (F8.1): its words
+     wherever the frame has room, after its first sight too; a foil's (no
+     cross, ok) in green, never the ghost's first-sight words (F8.2) */
   (o.ghosts || []).forEach(function (g) {
-    if (seen('ghost') || first.ghost || g.rook) return;
-    first.ghost = cand(gameSan(a) + ' in your game', 'red', 'ghost', g.sq, null, { kind: 'ghost', sq: g.sq, p: g.p });
+    if (first.ghost || g.rook) return;
+    var gmk = { kind: 'ghost', sq: g.sq, p: g.p }, gtx = gameSan(a) + ' in your game';
+    if (g.ok) { short.push(cand(gtx, 'green', null, g.sq, null, gmk, 2)); return; }
+    if (seen('ghost')) { if (a.game) short.push(cand(gtx, 'red', null, g.sq, null, gmk, 2)); return; }
+    first.ghost = cand(gtx, 'red', 'ghost', g.sq, null, gmk);
     if (inWords(a)) { first.ghost.alt = first.ghost.text; first.ghost.text = upFirst(moveWords(a.pre, a.played)) + ' in your game'; }
   });
   /* a hint's prize (S8): "free {piece}" when nothing of theirs guards it */
