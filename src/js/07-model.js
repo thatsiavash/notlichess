@@ -37,6 +37,10 @@ function windowCut(perf) {
 }
 function inScope(g) { return trackedPerfs().indexOf(g.perf) !== -1 && g.ts >= windowCut(g.perf); }
 function scopedGames() { return data.games.filter(inScope); }
+/* the games Insights reports on: the tester's clones (seedAfterGames,
+   g.syn) count only in "since you started" (F6.2), never in the window,
+   the headline or the clock */
+function realGames() { return scopedGames().filter(function (g) { return !g.syn; }); }
 function model() {
   var tok = modelToken();
   if (modelCache.token === tok) return modelCache.m;
@@ -213,7 +217,7 @@ function patternStats() {
 }
 function coverage() {
   var n = 0, c = 0, lost = 0, decided = 0;
-  scopedGames().forEach(function (g) {
+  realGames().forEach(function (g) {
     n++;
     if (!covered(g)) return;
     c++;

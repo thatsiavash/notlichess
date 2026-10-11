@@ -42,6 +42,17 @@ function thinkTime(clocks, i, incSecs) {
   return t >= 0 ? Math.round(t * 10) / 10 : null;
 }
 
+/* the player's clock when the game ended (after their last move), in
+   percent of the starting time, one decimal: Insights' clock (F6.3) keeps
+   one per game. clocks: centiseconds after each ply */
+function endClockPct(clocks, meWhite, initial) {
+  if (!clocks || !initial) return null;
+  for (var i = clocks.length - 1; i >= 0; i--) {
+    if ((i % 2 === 0) === meWhite && clocks[i] != null) return Math.round(clocks[i] * 10 / initial) / 10;
+  }
+  return null;
+}
+
 /* lichess server analysis: analysis[i] is the evaluation after ply i, and
    a judged ply carries `best` (UCI) and `variation` (SAN, starting with the
    best move) for the position before it */
@@ -287,6 +298,7 @@ function scanGame(g) {
         g.wp = wpSeries(cps);
         g.bl = bl.length ? keepMistakes(bl, g, full.moves, g.wp) : null;
         g.mv = g.bl ? full.moves : null;   /* movetext stays only where cards live */
+        if (g.clockPct == null) { var ec = endClockPct(full.clocks, meWhite, tcInitialSecs(g.tc)); if (ec != null) g.clockPct = ec; }
         delete g.ck;                        /* the clocks did their job */
         g.scanned = 1;
         g.eng = SF.build || 'sf17.1';       /* which engine judged this game */

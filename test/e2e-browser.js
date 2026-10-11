@@ -792,6 +792,28 @@
     ok('Insights ranks the mistake families', !!$('#insightsbox .fam-row'));
     layoutCheck('Insights');
     ok('no NaN, undefined or em dash in Insights', !/NaN|undefined|—/.test(text('#insightsbox')));
+    /* F6.1: the headline and its lead on the first screen (phones too); every skill a bar of its own
+       positions whose words add up to them, no "0 learned"; the set just finished starts "since you
+       started" (F6.2), waiting for 10 games; how we count opens */
+    window.scrollTo(0, 0);
+    await sleep(100);
+    const ih = $('#insightsbox h2'), il = $('#insightsbox .lead');
+    ok('Insights: the headline and the lead fit the first screen', !!ih && !!il && shown(il) && rectOf(il).bottom <= vh() && rectOf(ih).top >= 0,
+      (ih ? Math.round(rectOf(ih).top) : '-') + ' to ' + (il ? Math.round(rectOf(il).bottom) : 'no lead') + ' of ' + vh());
+    const rows = [].map.call($$('#insightsbox .fam-row'), (r) => {
+      const n = +((/(\d+) positions?/.exec(r.querySelector('.fr-n').textContent) || [])[1] || 0);
+      const parts = (r.querySelector('.fr-prog').textContent.match(/\d+/g) || []).map(Number), segs = r.querySelectorAll('.fr-bar i');
+      return { name: r.querySelector('.fr-name').textContent, n, sum: parts.reduce((a, x) => a + x, 0), segs: segs.length, bar: r.querySelector('.fr-bar') ? rectOf(r.querySelector('.fr-bar')).width : 0 };
+    });
+    ok('Insights: every skill with positions has a bar of them, said in words that add up', rows.length >= 1 && rows.every((x) => x.n > 0 && x.segs >= 1 && x.bar > 40 && x.sum === x.n), JSON.stringify(rows));
+    ok('Insights: never "0 learned" (or any zero part)', !/(^|\D)0 (learned|climbing|to go)/.test(text('#insightsbox')));
+    ok('Insights: the set just finished starts "since you started", waiting for 10 games', /^Since you started, \d+ \w+/.test(text('#insightsbox .since-h')) && /Comparison from 10 games since you started: \d so far\./.test(text('#insightsbox .since')), text('#insightsbox .since'));
+    click('#insightsbox [data-act=sheet][data-k=count]');
+    await until(() => $('#overlay .sheet'), 3000);
+    ok('Insights: "How we count" opens', /How we count/.test(text('#overlay .sheet h3')) && $$('#overlay .sheet p').length >= 2, text('#overlay .sheet'));
+    layoutCheck('How we count');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(200);
     click('#insightsbox [data-act=sheet]');
     await until(() => $('#overlay .sheet'), 3000);
     ok('a family sheet opens with its drill under the habit', !!$('#overlay .sheet .sheet-acts'));

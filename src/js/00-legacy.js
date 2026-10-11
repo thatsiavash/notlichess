@@ -515,6 +515,8 @@ function compact(g, meId) {
     opening: (g.opening && g.opening.name) || null,
     plies: (g.moves ? g.moves.split(' ').length : (g.analysis ? g.analysis.length : 0)),
     tc: g.clock ? (Math.round(g.clock.initial / 60) + '+' + g.clock.increment) : null,
+    /* the player's clock when it ended, in percent of the start (F6.3) */
+    clockPct: g.clock ? endClockPct(g.clocks, meIsWhite, g.clock.initial) : null,
     analysed: !!(g.analysis && g.analysis.length),
     /* in-memory only: unanalysed games carry their movetext up to the
        retention step, so the first scan batch needs zero extra fetches */

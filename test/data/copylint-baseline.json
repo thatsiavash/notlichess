@@ -8,17 +8,13 @@
   "1|advantage|details|S keeps your advantage.",
   "1|balanced|details|M keeps the game balanced.",
   "1|balanced|details|S keeps the game balanced.",
-  "1|leak|insights|The biggest leak is giving away material. It decided N games.",
   "1|level|details|M lets the game slip back to level.",
   "1|level|details|M lets your winning position slip: after M it is roughly level.",
   "1|level|details|S lets your winning position slip: after S it is roughly level.",
   "1|material|details|Lost material to a tactic ›",
   "1|material|details|M lets White's P run through to promote. You could lose material.",
   "1|material|details|S lets White's P run through to promote. You could lose material.",
-  "1|material|insights|Giving away material",
-  "1|material|insights|The biggest leak is giving away material. It decided N games.",
   "1|material|summary|Lost material to a tactic",
-  "1|material|today|Giving away material",
   "1|slip|details|Let the win slip ›",
   "1|slip|details|M lets the game slip back to level.",
   "1|slip|details|M lets your winning position slip: after M it is roughly level.",
@@ -26,10 +22,6 @@
   "1|slip|details|S lets your winning position slip: after M Black is better.",
   "1|slip|details|S lets your winning position slip: after S it is roughly level.",
   "1|slip|details|This move let the win slip.",
-  "1|slip|insights|Endgame mistakes, Opening slips, Planless middlegame moves",
-  "1|slip|insights|Letting wins slip",
-  "1|slip|summary|Let the win slip",
-  "2|leak|insights|The biggest leak is giving away material. It decided N games.",
-  "3|leak|insights|The biggest leak is giving away material. It decided N games."
+  "1|slip|summary|Let the win slip"
  ]
 }

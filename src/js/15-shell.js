@@ -271,16 +271,20 @@ function greetingLine(lastSeen) {
   var l = fresh.filter(function (g) { return g.res === 'loss'; }).length;
   var ms = 0, lost = null;
   fresh.forEach(function (g) {
-    (g.bl || []).forEach(function (b) { if (!b.x) { ms++; if (b.d && !lost) lost = g; } });
+    /* positions only where the game keeps its moves (they can be practised) */
+    (g.bl || []).forEach(function (b) { if (!b.x && g.mv) { ms++; if (b.d && !lost) lost = g; } });
   });
-  var line = 'Since your last visit: ' + fresh.length + ' game' + (fresh.length === 1 ? '' : 's') + ' (' + w + ' won, ' + l + ' lost).';
+  /* from 10 games since the start, their big mistakes against the usual
+     (F6.2), once each of them is read */
+  var usual = sinceVisitWords(fresh);
+  var line = usual || 'Since your last visit: ' + fresh.length + ' game' + (fresh.length === 1 ? '' : 's') + ' (' + w + ' won, ' + l + ' lost).';
   /* the game that lost is the way back in */
   if (lost) {
     var dec = (lost.bl || []).filter(function (b) { return b.d && !b.x; })[0];
     line += ' You ' + (lost.res === 'draw' ? 'drew with ' : 'lost to ') + esc(lost.opp) + '. The move that ' + decisiveWords(lost, dec) + ' is ready. '
       + '<a data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'game', id: lost.id, label: 'Game vs ' + lost.opp })) + '">Go through it ›</a>';
   } else if (ms) line += ' ' + ms + ' new mistake' + (ms === 1 ? '' : 's') + ' to learn from.';
-  else line += ' Stockfish is reading them now.';
+  else if (!usual) line += ' Stockfish is reading them now.';
   return line;
 }
 /* the previous visit is read once per page load: a refresh or an hourly
@@ -374,7 +378,7 @@ function exportProgress() {
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
       if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u)
+      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u)
         out.keys[k] = JSON.parse(localStorage.getItem(k));
     }
   } catch (e) {}
@@ -587,6 +591,7 @@ document.addEventListener('click', function (e) {
         store.del('nl:srs:' + u);
         store.del(logKey());
         store.del(absorbKey());
+        store.del(startKey());
       } catch (e2) {}
       srsMem = null; srsRevision++; ui.session = null; ui.resetArmed = false; modelDirty();
       notice('Practice history reset. Your games and analysis are kept.');
@@ -1069,8 +1074,9 @@ if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
    times, the day records, renamed to their date n days earlier, first and
    last seen, the return day, the day's first opening, the paused set's
    day, the weekly goal's history, the practice log, cue and backup
-   times), so whatever was due in n days is due now. The games keep their
-   dates: they come back from the chess site as they are */
+   times, the start of practice), so whatever was due in n days is due
+   now. The games keep their dates: they come back from the chess site as
+   they are */
 function shiftDays(n) {
   n = Math.round(+n || 0);
   var ms = n * DAY, p = playerId(), keys = Object.keys(mem);
@@ -1108,6 +1114,9 @@ function shiftDays(n) {
   if (Array.isArray(lg)) store.set(logKey(), lg.map(function (e) { e.t = back(e.t); return e; }));
   var cue = store.get('nl:cue:' + p, null);
   if (cue && typeof cue === 'object') { Object.keys(cue).forEach(function (k) { cue[k] = back(cue[k]); }); store.set('nl:cue:' + p, cue); }
+  /* the start of practice (F6.2): the games after it are "since" */
+  var sk = store.get(startKey(), null);
+  if (sk && sk.t) { sk.t = back(sk.t); store.set(startKey(), sk); }
   srsMem = null;
   srsRevision++;
   modelDirty();
@@ -1115,37 +1124,37 @@ function shiftDays(n) {
   return { days: n, records: srs ? Object.keys(srs).length : 0, dayKeys: moved.length };
 }
 /* games played after the start, for testing what practice changed in real
-   games: spec.n clones of the tracked format's games
-   that carry a win-chance series, dated evenly from spec.from (the first
-   visit, else 30 days ago) to now; in each, every big mistake of the
-   player's is flattened under the threshold with chance spec.cut, and
-   spec.plus more big mistakes are added; spec.rating sets the player's
-   rating in them; spec.seed (7) fixes the draw. The clones carry no cards
-   and no moves, so they change only what is counted from the series */
+   games (F0.5, deterministic): spec.n clones of the tracked formats' games
+   that carry a win-chance series, taken in date order (the oldest first,
+   round again when there are fewer), dated evenly from spec.from (the
+   start of practice, else the first visit, else 30 days ago) to now. In
+   each, a share spec.cut of the player's big mistakes is flattened under
+   the threshold in order (spec.halved, or cut 0.5: the 1st, 3rd, 5th...;
+   cut 1: all), and spec.plus drops of 25 points are added from the
+   player's 10th move on (the first own moves there that are not big
+   mistakes already); spec.rating sets the player's rating in them. Big
+   means at the frozen threshold of "since you started" when there is one,
+   else the clone's own. The clones keep the cards of the mistakes left as
+   they were (for counting) but no moves, so nothing new is practised */
 function seedAfterGames(spec) {
   spec = spec || {};
-  var n = Math.max(0, Math.round(spec.n == null ? 10 : spec.n)), cut = +spec.cut || 0, plus = Math.max(0, Math.round(spec.plus || 0));
-  var seed = spec.seed == null ? 7 : +spec.seed, now = Date.now();
-  var from = spec.from || store.get('nl:firstSeen:' + playerId(), 0) || now - 30 * DAY, tp = trackedPerfs();
-  /* in a fixed order, so the seed alone decides the draw */
+  var n = Math.max(0, Math.round(spec.n == null ? 10 : spec.n)), cut = spec.halved ? 0.5 : Math.max(0, Math.min(1, +spec.cut || 0));
+  var plus = Math.max(0, Math.round(spec.plus || 0)), now = Date.now(), tp = trackedPerfs(), st = store.get(startKey(), null);
+  var from = spec.from || (st && st.t) || store.get('nl:firstSeen:' + playerId(), 0) || now - 30 * DAY;
   var pool = data.games.filter(function (g) { return g.wp && !g.syn && tp.indexOf(g.perf) >= 0; }).sort(function (x, y) { return x.ts - y.ts || (x.id < y.id ? -1 : 1); });
   if (!pool.length || !n) return { added: 0 };
-  var t = seed >>> 0, rnd = function () {
-    t = (t + 0x6D2B79F5) | 0;
-    var r = Math.imul(t ^ (t >>> 15), 1 | t);
-    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
-    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-  };
-  var out = [];
+  var out = [], base = data.games.filter(function (g) { return g.syn; }).length;
   for (var i = 0; i < n; i++) {
-    var g = JSON.parse(JSON.stringify(pool[Math.floor(rnd() * pool.length)]));
-    ['bl', 'mv', 'ck', 'mvTmp', 'ckTmp'].forEach(function (k) { delete g[k]; });
-    g.id = 'syn' + seed + '-' + i;
+    var g = JSON.parse(JSON.stringify(pool[i % pool.length]));
+    ['mv', 'ck', 'mvTmp', 'ckTmp'].forEach(function (k) { delete g[k]; });
+    g.id = 'syn' + (base + i);
     g.syn = 1;
     g.scanned = true;
     g.ts = Math.round(from + (now - from) * (i + 1) / (n + 1));
     if (spec.rating) g.myR = +spec.rating;
-    g.wp = seededSeries(g, cut, plus, rnd);
+    var flat = seededSeries(g, (st && st.thr && st.thr[g.perf]) || mistakeMinFor(g), cut, plus);
+    if (g.bl) g.bl = g.bl.filter(function (b) { return flat.indexOf(b.p) === -1; });
+    if (g.bl && !g.bl.length) g.bl = null;
     out.push(g);
   }
   data.games = data.games.concat(out).sort(function (x, y) { return y.ts - x.ts; });
@@ -1154,21 +1163,28 @@ function seedAfterGames(spec) {
   renderAll();
   return { added: out.length, from: from, to: now };
 }
-/* a clone's series with its big mistakes flattened (chance cut) and plus
-   more added, on the player's own plies, at the clone's threshold */
-function seededSeries(g, cut, plus, rnd) {
-  var min = mistakeMinFor(g), mine = g.color === 'white' ? 0 : 1, chars = g.wp.split(''), calm = [];
-  var put = function (i, w) { chars[i] = wpChar(g.color === 'white' ? w : 100 - w); };
+/* a clone's series, rewritten in place on the player's own plies at
+   threshold min: the k-th big mistake flattened (a drop of min / 2) where
+   ceil(k x cut) grows, then plus drops of 25 points; returns the plies
+   flattened */
+function seededSeries(g, min, cut, plus) {
+  var mine = g.color === 'white' ? 0 : 1, white = { wp: g.wp, color: 'white' }, chars = [], flat = [], k = 0;
+  /* in today's encoding whatever the stored one (White's view, as stored) */
+  for (var c = 0; c < g.wp.length; c++) { var v = wpAt(white, c); chars.push(v == null ? '.' : wpChar(v)); }
+  var put = function (i, x) { chars[i] = wpChar(g.color === 'white' ? x : 100 - x); };
+  var w = function (i) { var ch = chars[i]; if (ch == null || ch === '.') return null; var x = WP_ABC.indexOf(ch) / 0.63; return g.color === 'white' ? x : 100 - x; };
   for (var i = 1; i < chars.length; i++) {
-    if (i % 2 !== mine) continue;
-    var w0 = wpAt(g, i - 1), w1 = wpAt(g, i);
-    if (w0 == null || w1 == null) continue;
-    if (w0 - w1 >= min) { if (rnd() < cut) put(i, Math.max(0, w0 - min / 2)); }
-    else if (w0 >= min + 5) calm.push(i);
+    if (i % 2 !== mine || w(i - 1) == null || w(i) == null || w(i - 1) - w(i) < min) continue;
+    k++;
+    if (Math.ceil(k * cut - 1e-9) > Math.ceil((k - 1) * cut - 1e-9)) { put(i, Math.max(0, w(i - 1) - min / 2)); flat.push(i); }
   }
-  for (var k = 0; k < plus && calm.length; k++) {
-    var j = calm.splice(Math.floor(rnd() * calm.length), 1)[0];
-    put(j, wpAt(g, j - 1) - min - 5);
+  /* the player's 10th move is ply 18 as White, 19 as Black */
+  for (var j = 18 + mine; j < chars.length && plus > 0; j += 2) {
+    var a = w(j - 1), b = w(j);
+    if (a == null || b == null || a - b >= min || a < 26) continue;
+    put(j, a - 25);
+    plus--;
   }
-  return chars.join('');
+  g.wp = chars.join('');
+  return flat;
 }

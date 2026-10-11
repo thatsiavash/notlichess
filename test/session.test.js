@@ -77,6 +77,32 @@ function heroWords() {
   var h = heroHtml();
   return { title: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], more: (/class="why hero-more">([^<]*)</.exec(h) || [])[1] || '' };
 }`;
+/* Insights (F6.1 to F6.3): insAt(t) draws it at tier t into a stub box and returns its HTML; insText(h)
+   its words in order; insRows(h) each skill's row (name, glyph, the focus with "Start here", plain
+   line, games and positions, progress words, the bar's parts as l/c/g and their sizes, under "Also
+   seen"); sinceText(h) the "since you started" card's words; clockText(h) the clock's */
+const INS = `function insAt(tier) {
+  playerTier = function () { return tier; };
+  var box = { innerHTML: '' }, el0 = el;
+  el = function (id) { return id === 'insightsbox' ? box : el0(id); };
+  ui.view = 'insights'; renderInsights(); ui.view = 'train';
+  el = el0;
+  return box.innerHTML;
+}
+function insText(h) { return String(h).replace(/<[^>]+>/g, '\\n').split('\\n').map(function (x) { return x.replace(/\\s+/g, ' ').trim(); }).filter(Boolean); }
+function insRows(h) {
+  var also = false;
+  return String(h).split(/(?=<a class="fam-row)|(?=<h3 class="ins-h ins-also">)/).map(function (p) {
+    if (/^<h3 class="ins-h ins-also">/.test(p)) { also = true; return null; }
+    if (!/^<a class="fam-row/.test(p)) return null;
+    var g = function (re) { var m = re.exec(p); return m ? m[1] : ''; };
+    return { name: g(/class="fr-name">([^<]*)</), glyph: g(/data-icon="(\\w+)"/), focus: /^<a class="fam-row is-focus"/.test(p) && /Start here/.test(p), line: g(/class="fr-line">([^<]*)</),
+      n: g(/class="fr-n">([^<]*)</), prog: g(/class="fr-prog">([^<]*)</), also: also,
+      bar: (p.match(/<i class="sk-\\w" style="flex-grow:\\d+"/g) || []).map(function (x) { return /sk-(\\w)/.exec(x)[1] + /(\\d+)"$/.exec(x)[1]; }).join(' ') };
+  }).filter(Boolean);
+}
+function sinceText(h) { var m = /<section class="since"[\\s\\S]*?<\\/section>/.exec(h); return m ? insText(m[0]) : null; }
+function clockText(h) { var m = /<div class="clock-rows">[\\s\\S]*?<\\/div>/.exec(h); return m ? insText(m[0]) : null; }`;
 /* learning's simulator (absorb-sim.js, absorb-r3c.js) on the real
    schedule: a day is shiftDays(1) and the pool grows by 5 positions; the
    day opens (absorbOpen), then Today and extra sets; each position
@@ -2429,43 +2455,441 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(r.cap), '[500,10]', 'the last 500 kept');
   });
 
-  await test('tester helpers: seedAfterGames adds clones of the fixture after the start, with their big mistakes flattened by share or one added, at a rating, the same for the same seed', () => {
+  await test('tester helpers: seedAfterGames adds clones of the fixture after the start in date order (F0.5, deterministic): "halved" flattens the 1st, 3rd, 5th... big mistake of each game and drops their cards, cut 1 all of them, "plus one" adds a 25-point drop on the player\'s 10th move, at a rating; the same every time, round again past the last game', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       SF.state = 'failed';
       var res = {}, from = Date.now() - 20 * DAY, before = data.games.length;
-      var real = function () { return data.games.filter(function (g) { return !g.syn && g.wp; }); };
-      var byId = {}; real().forEach(function (g) { byId[g.id] = g; });
-      var src = function (g) { var o = null; real().forEach(function (x) { if (!o && x.opp === g.opp && x.plies === g.plies && x.ts !== g.ts && x.color === g.color && x.res === g.res) o = x; }); return o; };
-      res.a = window.__nlTest.seedAfterGames({ n: 24, cut: 0, from: from });
-      var syn = data.games.filter(function (g) { return g.syn; });
-      res.n = [before, data.games.length, syn.length];
-      res.dated = syn.every(function (g) { return g.ts > from && g.ts < Date.now(); });
-      res.bare = syn.every(function (g) { return !g.bl && !g.mv && g.scanned && /^syn7-\\d+$/.test(g.id); });
-      res.same = syn.every(function (g) { var o = src(g); return o && gameMistakeCount(g) === gameMistakeCount(o); });
-      res.ids = syn.map(function (g) { return g.opp + g.plies; }).join(',');
-      data.games = data.games.filter(function (g) { return !g.syn; });
-      window.__nlTest.seedAfterGames({ n: 24, cut: 0, from: from });
-      res.again = data.games.filter(function (g) { return g.syn; }).map(function (g) { return g.opp + g.plies; }).join(',') === res.ids;
-      data.games = data.games.filter(function (g) { return !g.syn; });
+      var real = data.games.filter(function (g) { return !g.syn && g.wp; }).sort(function (x, y) { return x.ts - y.ts || (x.id < y.id ? -1 : 1); });
+      var syn = function () { return data.games.filter(function (g) { return g.syn; }).sort(function (x, y) { return x.ts - y.ts; }); };
+      var drop = function () { data.games = data.games.filter(function (g) { return !g.syn; }); };
+      var at = function (g) { return bigMistakesAt(g, mistakeMinFor(g)); }, big = function (g) { return scoredPlies(g).mistakes; };
+      res.a = window.__nlTest.seedAfterGames({ n: 24, from: from });
+      var s = syn();
+      res.n = [before, data.games.length, s.length];
+      res.dated = s.every(function (g) { return g.ts > from && g.ts < Date.now(); });
+      res.order = s.every(function (g, i) { return g.opp === real[i].opp && g.plies === real[i].plies && g.color === real[i].color; });
+      res.bare = s.every(function (g) { return !g.mv && g.scanned && /^syn\\d+$/.test(g.id); }) && !allMistakes().some(function (it) { return it.g.syn; });
+      res.same = s.every(function (g, i) { return g.wp === real[i].wp && at(g) === at(real[i]); });
+      var wp1 = s.map(function (g) { return g.wp; }).join('|');
+      drop();
+      window.__nlTest.seedAfterGames({ n: 24, halved: true, from: from });
+      var h = syn();
+      res.halved = h.every(function (g, i) { return at(g) === Math.floor(at(real[i]) / 2); });
+      res.kept = h.every(function (g, i) { var gone = big(real[i]).filter(function (p, k) { return k % 2 === 0; }); return (g.bl || []).every(function (b) { return gone.indexOf(b.p) === -1; }) && (real[i].bl || []).filter(function (b) { return gone.indexOf(b.p) === -1; }).length === (g.bl || []).length; });
+      var wp2 = h.map(function (g) { return g.wp; }).join('|');
+      drop();
+      window.__nlTest.seedAfterGames({ n: 24, halved: true, from: from });
+      res.again = syn().map(function (g) { return g.wp; }).join('|') === wp2 && wp1 !== wp2;
+      drop();
       window.__nlTest.seedAfterGames({ n: 24, cut: 1, from: from });
-      res.flat = data.games.filter(function (g) { return g.syn; }).every(function (g) { return gameMistakeCount(g) === 0; });
-      data.games = data.games.filter(function (g) { return !g.syn; });
-      window.__nlTest.seedAfterGames({ n: 24, plus: 1, from: from, rating: 1210 });
-      var p = data.games.filter(function (g) { return g.syn; });
-      res.plus = p.filter(function (g) { var o = src(g); return o && gameMistakeCount(g) === gameMistakeCount(o) + 1; }).length;
-      res.rated = p.every(function (g) { return g.myR === 1210 && mistakeMinFor(g) === 15; });
+      res.flat = syn().every(function (g) { return at(g) === 0; });
+      drop();
+      window.__nlTest.seedAfterGames({ n: 24, plus: 1, from: from, rating: 1060 });
+      var p = syn();
+      res.plus = p.every(function (g, i) { return at(g) === at(real[i]) + 1; });
+      res.tenth = p.filter(function (g) { var j = 18 + (g.color === 'white' ? 0 : 1); return Math.abs(wpAt(g, j - 1) - wpAt(g, j) - 25) < 1.6; }).length;
+      res.rated = p.every(function (g) { return g.myR === 1060 && mistakeMinFor(g) === 15; });
       res.stored = JSON.parse(localStorage.getItem('nl:games:cc:tester')).games.filter(function (g) { return g.syn; }).length;
+      drop();
+      window.__nlTest.seedAfterGames({ n: 60, from: from });
+      res.round = syn()[50].wp === real[0].wp && syn().length === 60 && new Set(syn().map(function (g) { return g.id; })).size === 60;
       return JSON.stringify(res); })()`));
     eq(JSON.stringify(r.n), JSON.stringify([50, 74, 24]), '24 games added');
     eq(r.a.added, 24, 'it says so');
-    ok(r.dated && r.bare, 'dated after the start, no cards and no moves');
-    eq(r.same, true, 'with no share flattened, each counts the big mistakes of the game it copies');
-    eq(r.again, true, 'the same draw for the same seed');
-    eq(r.flat, true, 'every big mistake flattened: none counted');
-    ok(r.plus >= 20, 'one more big mistake in each where there is room: ' + r.plus);
-    eq(r.rated, true, 'at the rating asked');
+    ok(r.dated && r.order, 'dated after the start, the fixture\'s games in date order');
+    eq(r.bare, true, 'no moves, so no new position to practise');
+    eq(r.same, true, 'unchanged: each counts the big mistakes of the game it copies');
+    eq(r.halved, true, 'halved: the 1st, 3rd, 5th... big mistake flattened, so each game keeps half of them, rounded down');
+    eq(r.kept, true, 'the cards of the flattened mistakes go, the others stay');
+    eq(r.again, true, 'the same games every time');
+    eq(r.flat, true, 'cut 1: every big mistake flattened');
+    eq(r.plus, true, 'plus one: one more big mistake in each game');
+    ok(r.tenth >= 20, 'a 25-point drop on the 10th move where there is room: ' + r.tenth + ' of 24');
+    eq(r.rated, true, 'at the rating asked (chess.com 1060, a 1210 band: 15 points)');
     eq(r.stored, 24, 'saved with the games');
+    eq(r.round, true, 'past the last game, round again from the first');
+  });
+
+  await test('F6.1: Insights at three tiers on the fixture: the window, the headline and its lead, the skills by games decided (glyph, name, plain line, games and positions, a bar of their own positions in words), "Start here" on the focus, under 3 games "Also seen" with their bars; progress from the first clean find with zero parts dropped; how we count in each tier\'s words; under 5 losses and while reading', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS}
+      SF.state = 'failed';
+      var out = {};
+      [1, 2, 3].forEach(function (t) {
+        var h = insAt(t);
+        out[t] = { w: insText(h).slice(0, 4), rows: insRows(h), count: insText(sheetHtml('count')), routine: /class="routine"/.test(h), since: /class="since"/.test(h), link: /data-act="sheet" data-k="count"/.test(h) };
+      });
+      /* practice: Piece safety 3 learned, 12 climbing and one back in the queue; one clean find in Spotting chances */
+      var srs = srsLoad(), now = Date.now(), fam = function (k) { return allMistakes().filter(function (it) { return trainable(it) && familyOf(patternOf(it.b)).key === k; }); };
+      fam('safety').slice(0, 16).forEach(function (it, i) {
+        srs[it.key] = i < 3 ? { box: 5, streak: 3, due: now + 90 * DAY, last: now, learned: true, lapses: 0 } : { box: 2, streak: 1, due: now + 7 * DAY, last: now, lapses: 0 };
+        if (i === 15) srs[it.key].q = now;
+      });
+      srsSave(srs);
+      srsRecord(fam('chances')[0], 'first', { ms: 9000, attempted: true });
+      var h2 = insAt(2);
+      out.practised = insRows(h2);
+      out.zero = /(^|\\D)0 (learned|climbing|to go)/.test(insText(h2).join(' '));
+      /* under 5 losses: the fallback headline, the lead kept */
+      var k = 0;
+      data.games.forEach(function (g) { if (g.res === 'loss' && ++k > 4) g.res = 'win'; });
+      modelDirty();
+      var hf = insAt(2);
+      out.few = insText(hf).slice(1, 3);
+      out.fewFirst = insRows(hf)[0].also;
+      return JSON.stringify(out); })()`));
+    const B = boot();
+    const p = JSON.parse(B.ev(`(function () { ${INS}
+      SF.state = 'failed';
+      data.games.slice(0, 5).forEach(function (g) { delete g.scanned; delete g.bl; delete g.wp; delete g.mv; delete g.analysed; });
+      modelDirty();
+      return JSON.stringify(insText(insAt(2))[0]); })()`));
+    ok(/^Based on 50 rapid games, \d+ to \d+ Sept? 2026$/.test(r[2].w[0]), 'the window: ' + r[2].w[0]);
+    eq(JSON.stringify(r[2].w.slice(1, 3)), JSON.stringify(['In 19 of your 27 losses, one move turned the game for good.', 'Piece safety decided the most: 14 games lost or drawn.']), 'headline and lead, tier 2');
+    eq(JSON.stringify(r[3].w.slice(1, 3)), JSON.stringify(r[2].w.slice(1, 3)), 'tier 3 the same');
+    eq(JSON.stringify(r[1].w.slice(1, 3)), JSON.stringify(['In 19 of your 27 losses, one move cost you the game.', 'Piece safety cost you the most games: 14.']), 'tier 1 in its words');
+    const col = (t, k) => r[t].rows.map((x) => x[k]);
+    eq(JSON.stringify(col(2, 'name')), JSON.stringify(['Piece safety', 'Quiet moves', 'Spotting chances', 'King safety', 'Finishing wins']), 'the skills, by games decided');
+    eq(JSON.stringify(col(2, 'glyph')), JSON.stringify(['shield', 'compass', 'target', 'crown', 'flag']), 'their glyphs');
+    eq(JSON.stringify(col(2, 'focus')), JSON.stringify([true, false, false, false, false]), '"Start here" on the focus');
+    eq(JSON.stringify(col(2, 'also')), JSON.stringify([false, false, true, true, true]), 'under 3 games decided: "Also seen"');
+    eq(JSON.stringify(col(2, 'n')), JSON.stringify(['decided 14 games · 38 positions', 'decided 3 games · 27 positions', 'decided 2 games · 10 positions', 'decided one game · 7 positions', 'decided no games · 9 positions']), 'games decided and positions');
+    eq(JSON.stringify(col(1, 'n')), JSON.stringify(['cost you 14 games · 38 positions', 'cost you 3 games · 27 positions', 'cost you 2 games · 10 positions', 'cost you one game · 7 positions', 'cost you no games · 9 positions']), 'tier 1: what they cost you');
+    eq(JSON.stringify(col(2, 'line')), JSON.stringify(['Moves that let them win material.', 'Moves with no tactic that made your position worse.', 'Moves that missed a free piece, a tactic or a mate.', 'Moves that exposed your king or allowed mate.', 'Moves that let a winning position get away.']), 'plain lines, tier 2');
+    eq(JSON.stringify(col(3, 'line')), JSON.stringify(col(2, 'line')), 'tier 3 the same');
+    eq(JSON.stringify(col(1, 'line')), JSON.stringify(['Moves that let them take your pieces.', 'Slow moves that made things worse.', 'Free pieces and mates you missed.', 'Moves that put your king in danger.', 'Times you were winning and let it go.']), 'plain lines, tier 1');
+    eq(JSON.stringify(col(2, 'prog')), JSON.stringify(['38 to go', '27 to go', '10 to go', '7 to go', '9 to go']), 'nothing practised yet: all to go');
+    eq(JSON.stringify(col(2, 'bar')), JSON.stringify(['g38', 'g27', 'g10', 'g7', 'g9']), 'every skill a bar of its positions, "Also seen" too');
+    const pr = r.practised.filter((x) => /Piece safety|Spotting chances/.test(x.name)).map((x) => [x.name, x.prog, x.bar]);
+    eq(JSON.stringify(pr), JSON.stringify([['Piece safety', '3 learned · 12 climbing · 23 to go', 'l3 c12 g23'], ['Spotting chances', '1 climbing · 9 to go', 'c1 g9']]), 'learned, climbing (one back in the queue is to go again), and one clean find');
+    eq(r.zero, false, 'never "0 learned", nor any zero part');
+    eq(JSON.stringify([r[1].routine, r[2].routine, r[3].routine]), '[false,true,true]', 'the routine line from tier 2');
+    eq(JSON.stringify([r[1].since, r[2].since, r[3].since]), '[false,false,false]', 'no "since you started" before a set is finished');
+    ok(r[1].link && r[2].link && r[3].link, 'how we count, a sheet');
+    eq(JSON.stringify(r[1].count), JSON.stringify(['Insights', 'How we count', 'A big mistake: a move that made your position much worse.', 'A move cost you the game if you never came back from it. A drawn game counts as half a game.']), 'how we count, tier 1 (a big mistake, as the app says it everywhere)');
+    eq(JSON.stringify(r[2].count), JSON.stringify(['Insights', 'How we count', 'A big mistake cut your winning chances by 15 points or more (20 under 1200, 12 at 1800+).', 'A move decided a game if you never came back from it. A drawn game counts as half a game.', 'Each bar shows your practice on that skill\'s positions: learned, climbing, to go.']), 'how we count, tier 2');
+    eq(JSON.stringify(r[3].count), JSON.stringify(r[2].count), 'tier 3 names the threshold its games are counted at (15 for the fixture\'s 1350s)');
+    eq(r.few[0], 'Your mistakes, grouped by the skill that would prevent them.', 'under 5 losses: the fallback headline');
+    eq(r.fewFirst, false, 'the list always starts above "Also seen"');
+    ok(/^Based on 45 of 50 rapid games so far, /.test(p), 'while reading: the part read so far: ' + p);
+  });
+
+  await test('F6.2: "since you started" stays hidden until the first finished set, which notes the start and freezes the threshold per format; practice from before this build starts at the end of its first day with a finished set; shiftDays, Reset and the progress file carry the start; the before numbers are kept once their games leave the cache', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS}
+      SF.state = 'failed';
+      var res = {}, its = allMistakes().filter(trainable), now = Date.now();
+      res.none = [!!sinceText(insAt(2)), !!store.get(startKey(), null)];
+      ui.session = { mode: 'today', label: 'Today', keys: [its[0].key], idx: 1, results: {}, relearn: [], relearnOf: {}, attempted: 0 };
+      finishSession();
+      res.idle = !!store.get(startKey(), null);
+      ui.session = { mode: 'today', label: 'Today', keys: [its[1].key, its[2].key, its[3].key], idx: 3, results: {}, relearn: [], relearnOf: {}, attempted: 3 };
+      finishSession();
+      var s = store.get(startKey(), null);
+      res.start = [s.t === now, JSON.stringify(s.thr)];
+      res.panel = sinceText(insAt(2));
+      res.t1 = JSON.stringify(sinceText(insAt(1))) === JSON.stringify(res.panel);
+      /* the before games leave the cache: their numbers stay */
+      var b0 = sinceStats().before, keep = data.games;
+      data.games = keep.filter(function (g, i) { return i < 20; }); modelDirty();
+      var b1 = sinceStats().before;
+      res.copy = [b0.n, b1.n, b0.total === b1.total, b0.clean === b1.clean];
+      data.games = keep; modelDirty();
+      ui.session = { mode: 'more', label: 'Next set', keys: [its[4].key, its[5].key, its[6].key], idx: 3, results: {}, relearn: [], relearnOf: {}, attempted: 3 };
+      finishSession();
+      res.kept = store.get(startKey(), null).t === now;
+      window.__nlTest.shiftDays(2);
+      res.shifted = now - store.get(startKey(), null).t;
+      var sp = sinceStats();
+      res.split = [sp.before.n + sp.since.n, sp.since.n > 0];
+      /* the progress file carries it; Reset clears it */
+      document.createElement = function () { return { click: function () {}, remove: function () {}, setAttribute: function () {}, style: {} }; };
+      var blob = ''; Blob = function (parts) { blob = parts[0]; };
+      exportProgress();
+      res.file = !!JSON.parse(blob).keys['nl:start:cc:tester'];
+      return JSON.stringify(res); })()`));
+    A.click('resetProgress'); A.click('resetProgress');
+    const gone = A.ev(`JSON.stringify([store.get(startKey(), null), sinceStats()])`);
+    const B = boot();
+    const d = JSON.parse(B.ev(`(function () {
+      var now = Date.now(), d3 = new Date(now - 3 * DAY), d1 = new Date(now - DAY);
+      store.set(dayKeyFor(d3), { answered: 5, sessions: 1 }); store.set(dayKeyFor(d1), { answered: 3, sessions: 2 });
+      store.set(dayKeyFor(new Date(now - 5 * DAY)), { answered: 2, counted: 1 });
+      var s = startLoad();
+      return JSON.stringify({ t: s.t, want: new Date(d3.getFullYear(), d3.getMonth(), d3.getDate() + 1).getTime() - 1, stored: !!store.get(startKey(), null), thr: s.thr }); })()`));
+    eq(JSON.stringify(r.none), '[false,false]', 'hidden, nothing stored, before a finished set');
+    eq(r.idle, false, 'a set of reveals only starts nothing');
+    eq(JSON.stringify(r.start), JSON.stringify([true, '{"rapid":15}']), 'the first finished set notes the start and its threshold (the rapid band that day; no blitz game, no blitz threshold yet)');
+    eq(JSON.stringify(r.panel), JSON.stringify(['Since you started, 28 Sept', 'Big mistakes per game before: 1.9 (50 games).', 'Comparison from 10 games since you started: 0 so far.']), 'the waiting card');
+    eq(r.t1, true, 'the same words at tier 1');
+    eq(r.kept, true, 'a later set leaves the start where it was');
+    eq(r.shifted, 2 * 864e5, 'shiftDays moves the start back');
+    eq(JSON.stringify(r.split), '[50,true]', 'and the games after it count since, none twice');
+    eq(r.file, true, 'the progress file carries it');
+    eq(JSON.stringify(r.copy), JSON.stringify([50, 50, true, true]), 'the before numbers kept once the games have left');
+    eq(gone, '[null,null]', 'Reset clears it');
+    eq(d.t, d.want, 'practice from before this build: the end of the first day a set was finished (a day counted by a paused set is no finished set)');
+    ok(d.stored && d.thr.rapid === 15, 'and it is kept, with its threshold');
+  });
+
+  await test('F6.2: the verdict on F0.5\'s deterministic games, by learning\'s calibrated rule: 9 games the waiting line (even all flattened); 10 halved (1.20 a game) "No clear change yet."; 24 unchanged (2.17) the same; 20 halved (0.90) "Probably fewer. More games will tell."; 40 halved (0.70) "Fewer than before."; 24 plus one (3.17) "Probably more than before."; with games with no big mistake', () => {
+    const cases = [[{ n: 9 }, 'wait'], [{ n: 9, cut: 1 }, 'wait'], [{ n: 10, halved: true }, 'no_change'], [{ n: 24 }, 'no_change'], [{ n: 20, halved: true }, 'probably_fewer'], [{ n: 40, halved: true }, 'fewer'], [{ n: 24, plus: 1 }, 'probably_more']];
+    const got = cases.map(([spec]) => JSON.parse(boot().ev(`(function () { ${INS}
+      SF.state = 'failed';
+      noteStart(Date.now() - 3600e3);
+      window.__nlTest.seedAfterGames(${JSON.stringify(spec)});
+      var st = sinceStats();
+      return JSON.stringify({ v: st.verdict, b: st.before.mean.toFixed(2), s: st.since.mean.toFixed(2), card: sinceText(insAt(2)) }); })()`)));
+    eq(JSON.stringify(got.map((x) => x.v)), JSON.stringify(cases.map((c) => c[1])), 'the verdicts');
+    eq(JSON.stringify(got.map((x) => x.b)), JSON.stringify(cases.map(() => '1.94')), 'before: 1.94 a game over the fixture\'s 50');
+    eq(JSON.stringify(got.slice(2).map((x) => x.s)), JSON.stringify(['1.20', '2.17', '0.90', '0.70', '3.17']), 'since: learning\'s means');
+    eq(JSON.stringify(got[0].card), JSON.stringify(['Since you started, 28 Sept', 'Big mistakes per game before: 1.9 (50 games).', 'Comparison from 10 games since you started: 9 so far.']), '9 games: the waiting line');
+    eq(JSON.stringify(got[1].card.slice(1)), JSON.stringify(['Big mistakes per game before: 1.9 (50 games).', 'Comparison from 10 games since you started: 9 so far.']), 'no verdict before 10 games, however few the mistakes');
+    eq(JSON.stringify(got[2].card), JSON.stringify(['Since you started, 28 Sept', 'Big mistakes per game: 1.9 before, 1.2 since (10 games).', 'No clear change yet.', 'Games with no big mistake: 9 of 50 before, 4 of 10 since.']), '10 halved');
+    eq(JSON.stringify(got[4].card.slice(1, 4)), JSON.stringify(['Big mistakes per game: 1.9 before, 0.9 since (20 games).', 'Probably fewer. More games will tell.', 'Games with no big mistake: 9 of 50 before, 9 of 20 since.']), '20 halved');
+    eq(JSON.stringify(got[5].card.slice(1, 4)), JSON.stringify(['Big mistakes per game: 1.9 before, 0.7 since (40 games).', 'Fewer than before.', 'Games with no big mistake: 9 of 50 before, 22 of 40 since.']), '40 halved');
+    eq(JSON.stringify(got[6].card.slice(1, 4)), JSON.stringify(['Big mistakes per game: 1.9 before, 3.2 since (24 games).', 'Probably more than before.', 'Games with no big mistake: 9 of 50 before, 0 of 24 since.']), '24 plus one');
+  });
+
+  await test('F6.2: the threshold stays frozen at the start (games at 1210 against a 1190 baseline counted at 20 points, while Insights counts each game at its own); a practised skill\'s mistakes (counts only), opponents 100 points stronger or more; Today\'s line from 10 games since; the measure once per state', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS}
+      SF.state = 'failed';
+      var res = {};
+      /* chess.com rapid counts 150 more: 1040 is a 1190 band, 1060 a 1210 one */
+      data.games.forEach(function (g) { g.myR = 1040; }); modelDirty();
+      noteStart(Date.now() - 3600e3);
+      window.__nlTest.seedAfterGames({ n: 24, rating: 1060 });
+      var st = sinceStats(), syn = data.games.filter(function (g) { return g.syn; });
+      var sum = function (f) { return syn.reduce(function (a, g) { return a + f(g); }, 0); };
+      res.freeze = [st.thr.rapid, syn.every(function (g) { return mistakeMinFor(g) === 15; }), st.since.total, sum(function (g) { return bigMistakesAt(g, 20); }), sum(function (g) { return bigMistakesAt(g, 15); }), sum(function (g) { return scoredPlies(g).mistakes.length; })];
+      res.card = sinceText(insAt(2)).slice(1, 3);
+      return JSON.stringify(res); })()`));
+    const B = boot();
+    const q = JSON.parse(B.ev(`(function () { ${INS}
+      SF.state = 'failed';
+      var res = {}, calls = [], now = Date.now();
+      window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
+      var srs = srsLoad();
+      allMistakes().filter(function (it) { return trainable(it) && familyOf(patternOf(it.b)).key === 'safety'; }).slice(0, 5)
+        .forEach(function (it) { srs[it.key] = { box: 2, streak: 1, due: now + 7 * DAY, last: now, lapses: 0 }; });
+      srsSave(srs);
+      noteStart(now - 3600e3);
+      window.__nlTest.seedAfterGames({ n: 9 });
+      insAt(2); insAt(3);
+      /* Today's line waits for 10 games since: the old greeting */
+      var syn = function () { return data.games.filter(function (g) { return g.syn; }).sort(function (x, y) { return y.ts - x.ts; }); };
+      res.early = greetingLine(syn()[3].ts);
+      data.games = data.games.filter(function (g) { return !g.syn; });
+      window.__nlTest.seedAfterGames({ n: 24, halved: true });
+      data.games.forEach(function (g) { if (g.syn && g.oppR) g.oppR += 150; });
+      res.card = sinceText(insAt(2));
+      insAt(1);
+      var st = sinceStats(), last = syn().slice(0, 3);
+      res.moved = Math.round((st.since.opp / st.since.on - st.before.opp / st.before.on) / 10) * 10;
+      res.usual = [last.reduce(function (a, g) { return a + bigMistakesAt(g, 15); }, 0), Math.round(st.before.mean * 3)];
+      res.today = greetingLine(syn()[3].ts);
+      last[0].wp = null;
+      res.unread = greetingLine(syn()[3].ts);
+      res.calls = calls.filter(function (c) { return /^since_/.test(c[1]); }).map(function (c) { return c[1]; });
+      res.flat = JSON.stringify(calls);
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify(r.freeze.slice(0, 2)), '[20,true]', 'frozen at the 1190 band\'s 20 points, though the games since are at 1210 (15)');
+    eq(r.freeze[2], r.freeze[3], 'since: counted at 20');
+    ok(r.freeze[4] > r.freeze[3] && r.freeze[5] === r.freeze[4], 'at 15 they would count more, as Insights counts each game at its own rating: ' + r.freeze.join(', '));
+    eq(r.card[0], 'Big mistakes per game: ' + '1.3 before, ' + (Math.round(r.freeze[2] / 24 * 10) / 10).toFixed(1) + ' since (24 games).', 'the card at the frozen threshold');
+    ok(/^Since your last visit: \d+ games? \(\d+ won, \d+ lost\)\./.test(q.early), 'under 10 games since, Today keeps its greeting: ' + q.early);
+    eq(q.card.slice(4).join(' | '), 'Piece safety mistakes: 37 in 50 games before, 6 in 24 since. | Your opponents since are ' + q.moved + ' points stronger.', 'a practised skill (5 positions) counted; the opponents\' level');
+    ok(q.moved >= 100, 'opponents moved ' + q.moved);
+    eq(q.today, 'Since your last visit: 3 games, ' + (q.usual[0] ? q.usual[0] + ' big mistake' + (q.usual[0] === 1 ? '' : 's') : 'no big mistakes') + ' (before you started: about ' + q.usual[1] + ').', 'Today, from 10 games since: their big mistakes against as many games before the start, named as that');
+    ok(/^Since your last visit: 3 games \(/.test(q.unread), 'a game not read yet: the greeting as before');
+    eq(JSON.stringify(q.calls), JSON.stringify(['since_wait', 'since_fewer']), 'the measure: once per state a visit');
+    ok(!/tester|\b1[0-9]{3}\b|\b\d{12}\b/.test(q.flat), 'no name, rating or key: ' + q.flat);
+  });
+
+  await test('F6.3: your clock on the fixture: tier 2 "In your losses you used 10 of 30 minutes." and "The moves that lost took 18 s (your pace: 13 s a move), with 23 min left.", tier 3 adds "6 of 20 deciding moves took under 10 s (22 of your 71 other big mistakes did too).", tier 1 spells the units; a 30+0 game\'s time trouble is under 3 minutes (a quarter of the losing moves, with Practise these); mixed time controls in shares; under 5 losses with a clock, no row; the end clock stored at ingest', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS}
+      SF.state = 'failed';
+      var res = {};
+      [1, 2, 3].forEach(function (t) { res[t] = clockText(insAt(t)); });
+      var lost = allMistakes().filter(function (it) { return it.b.d === 1 && it.g.res === 'loss'; }).sort(function (x, y) { return x.b.c - y.b.c; });
+      lost.slice(0, 4).forEach(function (it) { it.b.c = 150; });
+      res.four = clockText(insAt(2)).length;
+      lost[4].b.c = 170;
+      var h = insAt(2);
+      res.trouble = clockText(h).slice(2).join(' ');
+      res.drill = /data-act="drill" data-spec="\\{&quot;type&quot;:&quot;clock&quot;,&quot;label&quot;:&quot;Time trouble&quot;\\}">Practise these ›</.test(h);
+      res.items = drillItems({ type: 'clock' }, 20).filter(function (it) { return it.b.d === 1; }).length;
+      /* mixed time controls: shares */
+      var k = 0;
+      data.games.forEach(function (g) { if (g.res === 'loss' && ++k <= 10) { g.tc = '15+0'; (g.bl || []).forEach(function (b) { if (b.c != null) b.c = b.c / 2; }); } });
+      res.mixed2 = clockText(insAt(2)).slice(0, 2);
+      res.mixed1 = clockText(insAt(1)).slice(0, 2);
+      /* under 5 losses with an end clock: no row */
+      k = 0;
+      data.games.forEach(function (g) { if (g.res === 'loss' && ++k > 4) delete g.clockPct; });
+      res.few = clockText(insAt(2));
+      /* the end clock at ingest: lichess and chess.com shapes */
+      var li = compact({ id: 'x1', createdAt: Date.now(), perf: 'rapid', speed: 'rapid', status: 'resign', winner: 'black', moves: 'e4 e5 Nf3 Nc6',
+        players: { white: { user: { id: 'tester', name: 'tester' }, rating: 1500 }, black: { user: { id: 'b', name: 'b' }, rating: 1500 } },
+        clocks: [60000, 60000, 59000, 58000], clock: { initial: 600, increment: 0 } }, 'tester');
+      var cc = ccShape({ rules: 'chess', rated: true, time_class: 'blitz', time_control: '300', url: 'https://www.chess.com/game/live/9', end_time: 1790000000,
+        white: { username: 'a', rating: 1400, result: 'win' }, black: { username: 'tester', rating: 1400, result: 'resigned' },
+        pgn: '[Event "x"]\\n\\n1. e4 {[%clk 0:05:00]} 1... e5 {[%clk 0:04:51.5]} 2. Nf3 {[%clk 0:04:58]} 1-0' });
+      res.ingest = [li.clockPct, compact(cc, 'tester').clockPct, endClockPct(null, true, 600)];
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify(r[2]), JSON.stringify(['In your losses you used 10 of 30 minutes.', 'The moves that lost took 18 s (your pace: 13 s a move), with 23 min left.']), 'tier 2');
+    eq(JSON.stringify(r[3]), JSON.stringify(['In your losses you used 10 of 30 minutes.', 'The moves that lost took 18 s (your pace: 13 s a move), with 23 min left.', '6 of 20 deciding moves took under 10 s (22 of your 71 other big mistakes did too).']), 'tier 3');
+    eq(JSON.stringify(r[1]), JSON.stringify(['In your losses you used 10 of 30 minutes.', 'The moves that lost took 18 seconds (you usually take 13), with 23 minutes left.']), 'tier 1');
+    eq(r.four, 2, '4 of 19 losing moves under 3 minutes: under a quarter, no row');
+    eq(r.trouble, '5 of 19 losing moves came with under 3 min left. Practise these ›', '5 of 19: the row, at 3 minutes for 30+0');
+    ok(r.drill && r.items >= 5, 'Practise these drills them (' + r.items + ')');
+    eq(JSON.stringify(r.mixed2), JSON.stringify(['In your losses you used 33% of your time.', 'The moves that lost took 18 s (your pace: 13 s a move), with 78% of your time left.']), 'mixed time controls: shares (the pace is seconds a move in any)');
+    eq(JSON.stringify(r.mixed1), JSON.stringify(['In your losses you used about a third of your time.', 'The moves that lost took 18 seconds (you usually take 13), with about three quarters of your time left.']), 'tier 1: shares in words');
+    eq(r.few, null, 'under 5 losses with an end clock: no clock row');
+    eq(JSON.stringify(r.ingest), JSON.stringify([98.3, 97.2, null]), 'the end clock kept at ingest, in percent of the start');
+  });
+
+  /* the learning scientist's review of slice 6 */
+  await test('slice 6 review: a skill\'s line counts only the games whose positions reach the frozen threshold (a baseline at 1210 counted at 15 against games since at 1190, whose positions start at 20: no line, never fewer mistakes that are not), with those games as its denominator', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS}
+      SF.state = 'failed';
+      var res = {}, now = Date.now(), srs = srsLoad();
+      /* chess.com rapid counts 150 more: 1060 is a 1210 band (15 points), 1040 a 1190 one (20) */
+      data.games.forEach(function (g) { g.myR = 1060; }); modelDirty();
+      allMistakes().filter(function (it) { return trainable(it) && familyOf(patternOf(it.b)).key === 'safety'; }).slice(0, 5)
+        .forEach(function (it) { srs[it.key] = { box: 2, streak: 1, due: now + 7 * DAY, last: now, lapses: 0 }; });
+      srsSave(srs);
+      noteStart(now - 3600e3);
+      window.__nlTest.seedAfterGames({ n: 24, rating: 1040 });
+      var st = sinceStats();
+      res.low = [st.thr.rapid, st.since.n, st.since.famN, st.before.famN, st.since.total > 0];
+      res.lowCard = sinceText(insAt(2));
+      /* 12 more since at 1210: their positions reach 15, so they are the line's games */
+      window.__nlTest.seedAfterGames({ n: 12, rating: 1060 });
+      st = sinceStats();
+      var mine = data.games.filter(function (g) { return g.syn && g.myR === 1060; }), safety = 0;
+      mine.forEach(function (g) { (g.bl || []).forEach(function (b) { if (!b.x && wpAt(g, b.p - 1) - wpAt(g, b.p) >= 15 && familyOf(patternOf(b)).key === 'safety') safety++; }); });
+      res.mixed = [st.since.n, st.since.famN, mine.length, safety];
+      res.mixedCard = sinceText(insAt(2));
+      return JSON.stringify(res); })()`));
+    eq(JSON.stringify(r.low.slice(0, 4)), '[15,24,0,50]', 'frozen at 15; the 24 games since at 1190 keep positions only from 20 points, so none counts for a skill; all 50 before do');
+    ok(r.low[4], 'their big mistakes still count in the totals, from the series');
+    ok(r.lowCard.length >= 4 && !r.lowCard.some((x) => / mistakes: \d+ in /.test(x)), 'no skill line: ' + r.lowCard.join(' | '));
+    eq(JSON.stringify(r.mixed.slice(0, 3)), '[36,12,12]', '12 more since at 1210: 36 games since, 12 of them for the skills');
+    ok(r.mixedCard.indexOf('Piece safety mistakes: 37 in 50 games before, ' + r.mixed[3] + ' in 12 since.') >= 0, 'the line over those 12 games: ' + r.mixedCard.join(' | '));
+  });
+
+  await test('slice 6 review: while fewer than 20 games before the start leave the next games to the before count, the card says how many ("Your next 3 games complete the before count; the comparison comes 10 games after.") instead of a count since that sits at 0; then the count since moves from the first game after', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS}
+      SF.state = 'failed';
+      var res = {}, old = data.games.slice().sort(function (x, y) { return x.ts - y.ts; });
+      var meter = function (h) { return /class="since-meter"/.test(h) ? (h.match(/<i class="on">/g) || []).length : null; };
+      /* 17 games before the start, none after yet */
+      data.games = old.slice(0, 17).reverse(); modelDirty();
+      noteStart(old[16].ts + 60e3);
+      var at = function (k) { var h = insAt(2); res[k] = sinceText(h); res[k + 'm'] = meter(h); res[k + 'n'] = sinceStats().before.n; };
+      at('c17');
+      window.__nlTest.seedAfterGames({ n: 2 }); at('c19');
+      window.__nlTest.seedAfterGames({ n: 1 }); at('c20');
+      window.__nlTest.seedAfterGames({ n: 3 }); at('c23');
+      return JSON.stringify(res); })()`));
+    const before = (n) => new RegExp('^Big mistakes per game before: \\d\\.\\d \\(' + n + ' games\\)\\.$');
+    ok(before(17).test(r.c17[1]), 'the before number over the 17: ' + r.c17[1]);
+    eq(r.c17[2], 'Your next 3 games complete the before count; the comparison comes 10 games after.', '17 before: 3 to go');
+    eq(r.c17m, null, 'no meter while the before count fills');
+    ok(before(19).test(r.c19[1]) && r.c19n === 19, 'two games after the start join the before count: ' + r.c19[1]);
+    eq(r.c19[2], 'Your next game completes the before count; the comparison comes 10 games after.', 'one to go');
+    eq(r.c19m, null, 'still no meter');
+    ok(before(20).test(r.c20[1]), 'the third completes it');
+    eq(r.c20[2], 'Comparison from 10 games since you started: 0 so far.', 'the count since starts');
+    eq(r.c20m, 0, 'its meter, empty');
+    eq(r.c23[2], 'Comparison from 10 games since you started: 3 so far.', 'and moves with each game after');
+    eq(r.c23m, 3, 'the meter with it');
+  });
+
+  await test('slice 6 review: the tester\'s clones (seedAfterGames) count in "since you started" only: the window, the headline, the clock, how we count and the part read so far stay the player\'s own games', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS}
+      SF.state = 'failed';
+      var look = function () { var h = insAt(3); playerTier = function () { return 2; }; return { top: insText(h).slice(0, 3), clock: clockText(h), count: insText(sheetHtml('count'))[2], since: sinceText(h) }; };
+      var res = { before: look() };
+      noteStart(Date.now() - 3600e3);
+      /* at 2100 (a 2250 band, 12 points), the clones would also move how we count */
+      window.__nlTest.seedAfterGames({ n: 24, halved: true, rating: 2100 });
+      res.after = look();
+      res.syn = data.games.filter(function (g) { return g.syn; }).length;
+      return JSON.stringify(res); })()`));
+    const B = boot();
+    const p = JSON.parse(B.ev(`(function () { ${INS}
+      SF.state = 'failed';
+      data.games.slice(0, 5).forEach(function (g) { delete g.scanned; delete g.bl; delete g.wp; delete g.mv; delete g.analysed; });
+      modelDirty();
+      window.__nlTest.seedAfterGames({ n: 24 });
+      return JSON.stringify(insText(insAt(2))[0]); })()`));
+    eq(r.syn, 24, '24 clones');
+    eq(JSON.stringify(r.after.top), JSON.stringify(r.before.top), 'the window and the headline as before: ' + r.after.top.join(' | '));
+    ok(/^Based on 50 rapid games, /.test(r.after.top[0]) && /^In 19 of your 27 losses, /.test(r.after.top[1]), 'the player\'s 50 games, 19 of 27 losses');
+    eq(JSON.stringify(r.after.clock), JSON.stringify(r.before.clock), 'the clock as before');
+    eq(r.after.count, r.before.count, 'how we count at the player\'s own band: ' + r.after.count);
+    eq(r.before.since, null, 'no start, no card');
+    ok(/ since \(24 games\)\.$/.test(r.after.since[1]), 'since you started counts the clones: ' + r.after.since[1]);
+    ok(/^Based on 45 of 50 rapid games so far, /.test(p), 'while reading, the part read so far leaves the clones out too: ' + p);
+  });
+
+  await test('slice 6 review: "big mistake" has one meaning: how we count names it at every tier and, once since you started shows, the line it counts at (the start day\'s, each format\'s where they differ); Today\'s loss with no position says "No single losing move"; the clock\'s pace is Details\' own, its tier 1 bracket keeps the unit, and none is said without one', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN} ${INS}
+      SF.state = 'failed';
+      var res = {};
+      noteStart(Date.now() - 3600e3);
+      [1, 2, 3].forEach(function (t) { playerTier = function () { return t; }; res[t] = insText(sheetHtml('count')); });
+      /* the pace in the bracket is Details' own (tier 3), over the moves that lost */
+      playerTier = function () { return 3; };
+      var lost = allMistakes().filter(function (it) { return it.b.d === 1 && it.g.res === 'loss' && it.b.c != null && it.b.tt != null && tcInitialSecs(it.g.tc); });
+      res.details = lost.map(function (it) { var m = /Your pace: (\\d+) s a move\\./.exec(clockLine(openCard(it))); return m ? +m[1] : null; });
+      res.paces = lost.map(paceOf);
+      ui.session = null;
+      res.bracket = (/\\(your pace: (\\d+) s a move\\)/.exec(clockText(insAt(2))[1]) || [])[1];
+      /* the base rate: three more of the other big mistakes made quick */
+      allMistakes().filter(function (it) { return !(it.b.d > 0) && it.b.tt >= 10; }).slice(0, 3).forEach(function (it) { it.b.tt = 5; });
+      res.quick = clockText(insAt(3))[2];
+      /* tier 1 says the unit where the time before it is in minutes */
+      lost.forEach(function (it) { it.b.tt = 75; });
+      res.t1 = clockText(insAt(1))[1];
+      /* no pace (each clock full before its move): no bracket */
+      lost.forEach(function (it) { it.b.c = 1800; });
+      res.none = clockText(insAt(2))[1];
+      /* two formats frozen at different lines, each said */
+      data.games[0].perf = 'blitz';
+      trackedPerfs = function () { return ['rapid', 'blitz']; };
+      res.two = sinceLine({ thr: { rapid: 15, blitz: 20 } }, 2);
+      res.alike = sinceLine({ thr: { rapid: 15, blitz: 15 } }, 3);
+      res.t1line = sinceLine({ thr: { rapid: 15, blitz: 20 } }, 1);
+      return JSON.stringify(res); })()`));
+    const B = boot();
+    const row = B.ev(`(function () { SF.state = 'failed';
+      var g = data.games.slice().sort(function (x, y) { return y.ts - x.ts; })[0];
+      g.res = 'loss'; g.bl = null; modelDirty();
+      return latestGamesHtml(); })()`);
+    eq(JSON.stringify(r[1].slice(2, 4)), JSON.stringify(['A big mistake: a move that made your position much worse.', 'Since you started, every game counts the same way.']), 'tier 1: a big mistake, and since you started counts every game the same way');
+    eq(JSON.stringify(r[2].slice(2, 4)), JSON.stringify(['A big mistake cut your winning chances by 15 points or more (20 under 1200, 12 at 1800+).', 'Since you started, every game counts at 15 points, the line on your start day.']), 'tier 2: the line since you started counts at');
+    eq(JSON.stringify(r[3]), JSON.stringify(r[2]), 'tier 3 the same');
+    eq(r.two, 'Since you started, rapid games count at 15 points and blitz games at 20, the lines on your start day.', 'two formats at different lines');
+    eq(r.alike, 'Since you started, every game counts at 15 points, the line on your start day.', 'two formats at one line');
+    eq(r.t1line, 'Since you started, every game counts the same way.', 'tier 1 names no number');
+    const said = r.details.filter((x) => x != null).sort((a, b) => a - b), h = Math.floor(said.length / 2);
+    ok(said.length >= 15 && JSON.stringify(r.details) === JSON.stringify(r.paces), 'Details says each losing move\'s pace as paceOf: ' + r.details.join(','));
+    eq(+r.bracket, Math.round(said.length % 2 ? said[h] : (said[h - 1] + said[h]) / 2), 'the bracket is the median of Details\' paces over the moves that lost');
+    eq(+r.bracket, 13, 'on the fixture, 13 s against the 18 s the moves that lost took');
+    eq(r.quick, '6 of 20 deciding moves took under 10 s (25 of your 71 other big mistakes did too).', 'the other big mistakes counted as the deciding moves are');
+    ok(/^The moves that lost took 1 minute 15 seconds \(you usually take \d+ seconds\), with 23 minutes left\.$/.test(r.t1), 'tier 1 keeps the unit beside minutes: ' + r.t1);
+    eq(r.none, 'The moves that lost took 1:15, with 30 min left.', 'no pace, no bracket');
+    ok(/No single losing move/.test(row) && !/big mistake/.test(row), 'Today: a loss with no position to practise has no single losing move');
   });
 
   await test('truth fixes off the card: the landing, the footer, Settings, the paused set, the ••• menu and the site picker say only true things', async () => {

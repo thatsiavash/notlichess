@@ -583,6 +583,8 @@ function finishSession() {
   if (triedEnough(ss, 0)) { countDay(ss, 0); day = dayLoad(); day.sessions = (day.sessions || 0) + 1; }
   else day.short = 1;
   daySave(day);
+  /* the first finished set starts "since you started" (F6.2) */
+  if (day.sessions) noteStart();
   /* the routine line, once, on a first summary at tiers 2 and 3 (F2.3) */
   if (playerTier() >= 2 && !store.get('nl:tip:routine', 0)) { ss.routine = true; store.set('nl:tip:routine', 1); }
   store.del(sessKey());

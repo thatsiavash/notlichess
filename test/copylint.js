@@ -17,8 +17,10 @@
 //   baseline); tier 1 never shows the routine line (`routine`).
 // A violation is kept as "tier|rule|where|template" (moves, pieces, squares, numbers and opponents made
 // generic), against the baseline in data/copylint-baseline.json: today's violations, so a new one fails
-// and one that went away must leave the baseline too (it only shrinks, until the card strings and
-// Insights are clear). NL_LINT_WRITE=1 node test/labels.test.js writes the baseline afresh.
+// and one that went away must leave the baseline too (it only shrinks; the card strings and Insights
+// are clear: `t1card`, `ins`). NL_LINT_WRITE=1 node test/labels.test.js writes the baseline afresh.
+// Insights is read with how we count and, after every frame, since you started in both its states (with
+// how we count's line on the start day's threshold).
 const fs = require('fs'), path = require('path');
 const BASE = path.join(__dirname, 'data', 'copylint-baseline.json');
 
@@ -98,8 +100,39 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
     ui.view = 'insights'; box.innerHTML = '';
     renderInsights();
     screen(tier, 'insights', box.innerHTML);
+    screen(tier, 'insights', sheetHtml('count'));
     ui.view = 'train';
   });
+  /* since you started (F6.2), after every frame is read (what it sets up is put back): its waiting
+     state, a verdict with a practised skill and stronger opponents, every verdict's words, and
+     Today's line from 10 games since */
+  var keep = data.games.slice(), srs0 = JSON.stringify(store.get(srsKey(), {})), start0 = store.get(startKey(), null);
+  store.del(startKey());
+  var srsNow = srsLoad(), now = Date.now();
+  allMistakes().filter(function (it) { return trainable(it) && familyOf(patternOf(it.b)).key === 'safety'; }).slice(0, 6)
+    .forEach(function (it) { srsNow[it.key] = { box: 2, streak: 1, due: now + 3 * DAY, last: now, lapses: 0 }; });
+  srsSave(srsNow);
+  noteStart(now - 3600e3);
+  var since = function (spec, then) {
+    data.games = keep.slice(); modelDirty();
+    window.__nlTest.seedAfterGames(spec);
+    if (then) then();
+    [1, 2, 3].forEach(function (tier) {
+      playerTier = function () { return tier; };
+      ui.view = 'insights'; box.innerHTML = '';
+      renderInsights();
+      screen(tier, 'insights', box.innerHTML);
+      screen(tier, 'insights', sheetHtml('count'));
+      screen(tier, 'insights', Object.keys(SINCE_SAY).map(function (k) { return '<p>' + SINCE_SAY[k] + '</p>'; }).join(''));
+      screen(tier, 'today', sinceVisitWords(data.games.filter(function (g) { return g.syn; }).slice(0, 3)));
+      ui.view = 'train';
+    });
+  };
+  since({ n: 4 });
+  since({ n: 24, halved: true }, function () { data.games.forEach(function (g) { if (g.syn && g.oppR) g.oppR += 150; }); });
+  data.games = keep; modelDirty();
+  if (start0) store.set(startKey(), start0); else store.del(startKey());
+  store.set(srsKey(), JSON.parse(srs0)); srsMem = null; srsRevision++;
   el = el0;
   return JSON.stringify({ frames: frames, screens: screens, habits: habits });
 })()`;
@@ -140,5 +173,7 @@ module.exports = function copyLint(A, OPEN, FRAMES) {
   /* F1.6: the card's own strings at tier 1 (its rows, chip, caption, strip, buttons and board label) */
   const CARD = { row1: 1, row2: 1, chip: 1, tag: 1, cap: 1, strip: 1, label: 1, button: 1 };
   const t1card = [...found].filter((v) => { const f = v.split('|'); return f[0] === '1' && f[1] !== 'caps' && f[1] !== 'over 15 words' && CARD[f[2]]; }).sort();
-  return { found: found.size, fresh, gone, t1card, habit: [...habit].sort(), routine: [...routine].sort(), habits: r.habits.length, strings, frames: r.frames.length };
+  /* F6.1: Insights (with how we count and since you started) at every tier */
+  const ins = [...found].filter((v) => v.split('|')[2] === 'insights').sort();
+  return { found: found.size, fresh, gone, t1card, ins, habit: [...habit].sort(), routine: [...routine].sort(), habits: r.habits.length, strings, frames: r.frames.length };
 };

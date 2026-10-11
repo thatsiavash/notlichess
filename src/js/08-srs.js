@@ -285,17 +285,18 @@ function weekDays() {
   return n;
 }
 
-/* ── families: the patterns' groups (their check line: F2.3's step) ──────── */
+/* ── families: the patterns' groups (their check line: F2.3's step), named
+   as the skills they train (F6.1) ─────────────────────────────────────── */
 var FAMILIES = [
-  { key: 'safety', name: 'Giving away material',
+  { key: 'safety', name: 'Piece safety',
     types: ['hung', 'threat', 'forkAllowed', 'pinAllowed', 'discoveredAllowed', 'badTrade', 'material', 'promotion'] },
-  { key: 'king', name: 'King danger',
+  { key: 'king', name: 'King safety',
     types: ['mateAllowed', 'kingSafety'] },
-  { key: 'chances', name: 'Missed chances',
+  { key: 'chances', name: 'Spotting chances',
     types: ['missedMaterial', 'missedTactic', 'mateMissed'] },
-  { key: 'conversion', name: 'Letting wins slip',
+  { key: 'conversion', name: 'Finishing wins',
     types: ['slipped'] },
-  { key: 'quiet', name: 'Quiet mistakes',
+  { key: 'quiet', name: 'Quiet moves',
     types: ['openingSlip', 'drift', 'endgame'] }
 ];
 var FAMILY_OF = {};

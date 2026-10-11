@@ -207,7 +207,9 @@ function latestGamesHtml() {
     var e = byGame[g.id], res = g.res === 'win' ? 'W' : (g.res === 'loss' ? 'L' : 'D');
     var right;
     if (!covered(g)) right = '<span class="lg-state dim">' + (scannableAny(g) ? 'Not checked yet' : (g.plies < 6 ? 'Too short to check' : 'Could not be read')) + '</span>';
-    else if (!e) right = g.res === 'loss' ? '<span class="lg-state dim">No single big mistake</span>' : '<span class="lg-state ok">✓ Clean game</span>';
+    /* a loss with no position: no single move lost it (it may still hold big
+       mistakes, as Insights counts them, e.g. a tester's clone) */
+    else if (!e) right = g.res === 'loss' ? '<span class="lg-state dim">No single losing move</span>' : '<span class="lg-state ok">✓ Clean game</span>';
     else right = '<span class="lg-state">' + e.n + (e.n === 1 ? ' mistake' : ' mistakes')
       + (e.lost ? '<i>' + (g.res === 'draw' ? 'one cost the win' : 'one cost the game') + '</i>' : '') + '</span>';
     /* a game with cards opens its drill; one without opens on its own site */
@@ -2216,19 +2218,15 @@ function opponentLine(a) {
 /* Details' clock (F2.5): time, never haste; no clocks, no line. Tier 1
    "You took 20 seconds. You had 20 minutes left."; tier 2 "Rg1 took 20 s,
    with 20:15 left."; tier 3 adds the pace before this move, "Your pace:
-   17 s a move.": (base + increment x (n - 1) - the clock before it) / (n -
-   1), from the stored clock after the move (b.c) and its time (b.tt) */
+   17 s a move." (paceOf, the pace Insights' clock compares with) */
 function clockLine(a) {
-  var b = a.it.b, g = a.it.g, tier = a.tier || 2;
+  var b = a.it.b, tier = a.tier || 2;
   if (b.c == null || b.tt == null) return '';
   var took = Math.round(b.tt), left = Math.round(b.c), secs = function (x) { return x < 60 ? x + ' s' : clockWords(x); };
   if (tier === 1) return 'You took ' + spanWords(took) + '. You had ' + leftWords(left) + ' left.';
   var s = capSan(a.pre, a.played) + ' took ' + secs(took) + ', with ' + clockWords(left) + ' left.';
-  var base = tcInitialSecs(g.tc), inc = parseFloat(String(g.tc || '').split('+')[1]) || 0, n = Math.floor(b.p / 2) + 1;
-  if (tier >= 3 && base && n >= 2) {
-    var pace = Math.round((base + inc * (n - 1) - (b.c + b.tt - inc)) / (n - 1));
-    if (pace >= 1) s += ' Your pace: ' + secs(pace) + ' a move.';
-  }
+  var pace = tier >= 3 ? paceOf(a.it) : null;
+  if (pace) s += ' Your pace: ' + secs(pace) + ' a move.';
   return s;
 }
 /* a span of time in words at tier 1: "20 seconds", "1 minute 35 seconds" */
@@ -2281,64 +2279,201 @@ function scrollTrainerTop() {
   try { window.scrollTo({ top: y, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, y); }
 }
 
-/* ── Insights ────────────────────────────────────────────────────────────── */
+/* ── Insights (F6.1 to F6.3) ─────────────────────────────────────────────
+   A screen a phone can read, in one unit per bar: the window, the headline
+   and the lead (on every screen), since you started, the skills ranked by
+   games decided, each with a bar of its own positions in practice (learned
+   leaf, climbing honey, to go grey) and its words, those that decided
+   fewer than 3 games under "Also seen", how we count, your clock, then
+   where it happens */
 function renderInsights() {
   var box = el('insightsbox');
   if (!box || !cfg.user) return;
   if (ui.view !== 'insights' && box.innerHTML) return;       /* rendered on demand */
-  var r = insightReport(), n = analysisNumbers();
+  var r = insightReport(), n = analysisNumbers(), tier = playerTier();
   if (!data.games.length) {
     box.innerHTML = '<div class="ins">' + (data.sections.games === 'loading' ? '<p class="loading">Reading your games…</p>'
       : '<p class="sec">Insights appear once there are rated games to read. See Today for what to do next.</p>') + '</div>';
     return;
   }
-  var partial = n.covered < n.total;
-  /* the window is named once, here */
-  /* the window's span, not the part read so far */
-  var cg = (partial ? scopedGames() : coveredGames()).map(function (g) { return g.ts; });
-  var mY = function (t) { return new Date(t).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }); };
-  var span = cg.length ? ', ' + mY(Math.min.apply(null, cg)) + ' to ' + mY(Math.max.apply(null, cg)) : '';
-  var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + n.total + ' games so far' : plur(r.games, 'game')) + span + '</div>';
+  /* the player's own games only: the tester's clones (realGames) are all
+     read, so they leave both counts alike */
+  var clones = scopedGames().length - realGames().length, total = n.total - clones, read = n.covered - clones;
+  var partial = read < total;
+  /* the window is named once, here: its formats, and its span, not the
+     part read so far ("Based on 50 rapid games, 21 to 27 Sept 2026") */
+  var win = partial ? realGames() : coveredGames(), cg = win.map(function (g) { return g.ts; });
+  var kinds = trackedPerfs().filter(function (p) { return win.some(function (g) { return g.perf === p; }); }).map(perfLabel).join(' and ');
+  var games = (kinds ? kinds + ' ' : '') + 'game' + ((partial ? total : r.games) === 1 ? '' : 's');
+  var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + total + ' ' + games + ' so far' : r.games + ' ' + games)
+    + (cg.length ? ', ' + dateSpan(Math.min.apply(null, cg), Math.max.apply(null, cg)) : '') + '</div>';
   if (!r.families.length) {
-    h += '<h2>Your report appears as Stockfish reads your games.</h2><p class="lead">' + n.covered + ' of ' + n.total + ' games checked. The first patterns show up after a handful of games; the full picture at about ' + INSIGHT_MIN_GAMES + '.</p></div>';
+    h += '<h2>Your report appears as ' + (tier === 1 ? 'the computer reads' : 'Stockfish reads') + ' your games.</h2><p class="lead">' + read + ' of ' + total + ' games checked. The first patterns show up after a handful of games; the full picture at about ' + INSIGHT_MIN_GAMES + '.</p></div>';
     box.innerHTML = h;
     return;
   }
-  var cov = r.coverage, top = r.families[0];
-  var head, lead = '';
-  if (cov.losses >= 5) {
-    head = cov.decided + ' of your ' + cov.losses + ' losses came down to one big mistake.';
-    if (top.cost >= 1) lead = 'The biggest leak is ' + esc(top.fam.name.toLowerCase()) + '. It decided ' + fmtGames(top.cost) + '.';
-  } else head = 'Your mistakes, grouped by the habit that would prevent them.';
+  var cov = r.coverage, top = r.families[0], next = r.families[1];
+  var head = cov.losses >= 5 ? 'In ' + cov.decided + ' of your ' + cov.losses + ' losses, one move ' + (tier === 1 ? 'cost you the game.' : 'turned the game for good.')
+    : 'Your mistakes, grouped by the skill that would prevent them.';
+  /* the lead: the skill that decided the most, and a tie said as one */
+  var lead = '';
+  if (top.cost >= 1) {
+    var tie = next && Math.round(next.cost) === Math.round(top.cost), who = esc(top.fam.name) + (tie ? ' and ' + esc(next.fam.name) : '');
+    lead = tier === 1 ? who + ' cost you the most games: ' + Math.round(top.cost) + (tie ? ' each.' : '.')
+      : who + ' decided the most: ' + fmtGames(top.cost) + (tie ? ' each, lost or drawn.' : ' lost or drawn.');
+  }
   h += '<h2>' + head + '</h2>' + (lead ? '<p class="lead">' + lead + '</p>' : '');
-  /* one ranked list: the bar is games decided, against the top family */
-  var focus = currentFocus(), maxCost = Math.max.apply(null, r.families.map(function (a) { return a.cost; }).concat([1]));
-  h += '<h3 class="ins-h">What decided your games</h3><div class="fam-list">';
-  r.families.forEach(function (a) {
-    var pats = a.patterns.slice().sort(function (x, y) { return y.cost - x.cost || y.count - x.count; });
-    var sub = pats.length > 1 ? pats.slice(0, 3).map(function (s) { return esc(s.info.plural); }).join(', ') : '';
-    var isFocus = focus && focus.fam === a.fam.key;
-    h += '<a class="fam-row' + (isFocus ? ' is-focus' : '') + '" data-act="sheet" data-k="family:' + a.fam.key + '">'
-      + '<span class="fr-name">' + esc(a.fam.name) + (isFocus ? ' <span class="pill">Focus</span>' : '')
-        + (sub ? '<small>' + sub + '</small>' : '') + (a.learned ? '<small>' + a.learned + ' learned so far</small>' : '') + '</span>'
-      + '<span class="fr-bar"><i style="width:' + Math.max(3, Math.round(a.cost * 100 / maxCost)) + '%"></i></span>'
-      + '<span class="fr-n">' + (a.cost >= 1 ? fmtGames(a.cost) : plur(a.count, 'position')) + '</span><span class="fr-go" aria-hidden="true">›</span></a>';
-  });
-  h += '</div>';
+  /* since you started (F6.2), once a set is finished */
+  var st = sinceStats();
+  if (st && st.before.n) {
+    h += startPanelHtml(st);
+    if (ui.view === 'insights') sinceMeasure(st.verdict);
+  }
+  /* the skills: a row each, by games decided; under 3 games, "Also seen"
+     (the focus stays on top) */
+  var focus = currentFocus(), main = r.families.filter(function (a) { return Math.round(a.cost) >= ALSO_SEEN || (focus && focus.fam === a.fam.key); });
+  var also = r.families.filter(function (a) { return main.indexOf(a) === -1; });
+  if (!main.length) { main = also; also = []; }
+  h += '<h3 class="ins-h">' + (tier === 1 ? 'What cost you games' : 'What decided your games') + '</h3>' + skillRowsHtml(main, focus, tier)
+    + (also.length ? '<h3 class="ins-h ins-also">Also seen</h3>' + skillRowsHtml(also, focus, tier) : '');
   /* the routine, at tiers 2 and 3 (F2.3) */
-  if (playerTier() >= 2) h += '<p class="routine">' + ROUTINE_LINE + '</p>';
+  if (tier >= 2) h += '<p class="routine">' + ROUTINE_LINE + '</p>';
+  h += '<p class="ins-count"><a class="btn-quiet" data-icon="info" data-act="sheet" data-k="count">How we count</a></p>';
+  h += clockHtml(clockReport(), tier);
   if (r.ready) {
     h += '<h3 class="ins-h">Where it happens</h3>';
     if (r.slices.length) {
       r.slices.forEach(function (s) {
         h += '<div class="slice"><p>' + esc(s.text) + '</p><a data-act="drill" data-spec="' + esc(JSON.stringify(s.spec)) + '">Drill these ›</a></div>';
       });
-    } else h += '<p class="sec">No clear pattern yet by colour or opening. This sharpens as more games are checked; for now the list above is where the points are.</p>';
+    } else h += '<p class="sec">No clear pattern yet by colour or opening. This sharpens as more games are checked; for now your skills above are where to start.</p>';
   } else {
     h += '<p class="sec" style="margin-top:20px">After ' + INSIGHT_MIN_GAMES + ' checked games you will also see where your mistakes happen: as White or Black, and in which openings.</p>';
   }
   h += '</div>';
   box.innerHTML = h;
+}
+/* a skill's row: its glyph, name ("Start here" on the focus), plain line,
+   games decided and positions, then the bar of those positions (one unit:
+   learned leaf, climbing honey, to go grey, its zero parts left out) and
+   the same in words. The row opens the skill's sheet */
+function skillRowsHtml(list, focus, tier) {
+  return '<div class="fam-list">' + list.map(function (a) {
+    var k = a.fam.key, on = !!(focus && focus.fam === k);
+    var bar = [[a.learned, 'sk-l'], [a.practising, 'sk-c'], [a.fresh, 'sk-g']].filter(function (x) { return x[0] > 0; })
+      .map(function (x) { return '<i class="' + x[1] + '" style="flex-grow:' + x[0] + '"></i>'; }).join('');
+    return '<a class="fam-row' + (on ? ' is-focus' : '') + '" data-act="sheet" data-k="family:' + k + '">'
+      + '<span class="sk-glyph" data-icon="' + ((SKILL[k] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
+      + '<span class="fr-main"><span class="fr-name">' + esc(a.fam.name) + (on ? '<span class="pill">Start here</span>' : '') + '</span>'
+        + '<span class="fr-line">' + esc(skillLine(k, tier)) + '</span>'
+        + '<span class="fr-n">' + decidedWords(a.cost, tier) + ' · ' + plur(a.count, 'position') + '</span>'
+        + '<span class="fr-bar" aria-hidden="true">' + bar + '</span>'
+        + '<span class="fr-prog">' + progressWords(a) + '</span></span>'
+      + '<span class="fr-go" aria-hidden="true">›</span></a>';
+  }).join('') + '</div>';
+}
+/* since you started (F6.2): under 10 games since, the before number and
+   the count toward 10 (with a meter), or, while fewer than 20 games before
+   the start leave the next games to complete the before count (so a count
+   of games since would sit at 0), how many that takes; from 10, before and
+   since, the verdict, games with no big mistake, each practised skill's
+   mistakes (5 or more of its positions practised; counts only, over the
+   games whose cards reach the frozen threshold, and only with such games
+   on both sides) and the opponents' level when it moved 100 points or more */
+function startPanelHtml(st) {
+  var B = st.before, S = st.since, d1 = function (x) { return (Math.round(x * 10) / 10).toFixed(1); };
+  var h = '<section class="since" aria-label="Since you started"><h3 class="since-h">Since you started, ' + gameDateLine({ ts: st.t }) + '</h3>';
+  if (st.verdict === 'wait') {
+    h += '<p>Big mistakes per game before: ' + d1(B.mean) + ' (' + plur(B.n, 'game') + ').</p>';
+    if (st.need) return h + '<p class="since-wait">Your next ' + (st.need === 1 ? 'game completes' : st.need + ' games complete') + ' the before count; the comparison comes '
+      + SINCE_MIN + ' games after.</p></section>';
+    var segs = '';
+    for (var i = 0; i < SINCE_MIN; i++) segs += '<i' + (i < S.n ? ' class="on"' : '') + '></i>';
+    return h + '<p class="since-wait">Comparison from ' + SINCE_MIN + ' games since you started: ' + S.n + ' so far.</p>'
+      + '<span class="since-meter" aria-hidden="true">' + segs + '</span></section>';
+  }
+  h += '<p class="since-num">Big mistakes per game: ' + d1(B.mean) + ' before, ' + d1(S.mean) + ' since (' + plur(S.n, 'game') + ').</p>'
+    + '<p class="since-say">' + SINCE_SAY[st.verdict] + '</p>'
+    + '<p>Games with no big mistake: ' + B.clean + ' of ' + B.n + ' before, ' + S.clean + ' of ' + S.n + ' since.</p>';
+  if (B.famN && S.famN) insightReport().families.forEach(function (a) {
+    if (a.learned + a.practising < 5) return;
+    var k = a.fam.key;
+    h += '<p>' + esc(a.fam.name) + ' mistakes: ' + (B.fam[k] || 0) + ' in ' + plur(B.famN, 'game') + ' before, ' + (S.fam[k] || 0) + ' in ' + S.famN + ' since.</p>';
+  });
+  var moved = B.on && S.on ? S.opp / S.on - B.opp / B.on : 0;
+  if (Math.abs(moved) >= 100) h += '<p>Your opponents since are ' + Math.round(Math.abs(moved) / 10) * 10 + ' points ' + (moved > 0 ? 'stronger' : 'weaker') + '.</p>';
+  return h + '</section>';
+}
+/* a measure (F0.7): the panel's state, once a visit per state, never a number */
+function sinceMeasure(v) {
+  data.sinceSent = data.sinceSent || {};
+  if (data.sinceSent[v]) return;
+  data.sinceSent[v] = 1;
+  track('since_' + v);
+}
+/* your clock (F6.3): the rows clockReport supports, in the tier's words
+   (tier 1 spells the units; mixed time controls in shares, tier 1's in
+   words); the time-trouble row drills those positions. A time is said
+   with the player's own norm beside it, never alone (a quick move reads
+   as "you rushed" when the player always moves at that pace): the moves
+   that lost beside the pace before them, "took 18 s (your pace: 13 s a
+   move)", tier 1 "18 seconds (you usually take 13)"; tier 3's quick
+   deciding moves beside the other big mistakes */
+function clockHtml(c, tier) {
+  if (!c) return '';
+  var t1 = tier === 1, rows = [];
+  var secs = function (x) { x = Math.round(x); return t1 ? spanWords(x) : x < 60 ? x + ' s' : x % 60 ? clockWords(x) : x / 60 + ' min'; };
+  var left = function (x) { x = Math.round(x); return t1 ? leftWords(x) : x < 60 ? x + ' s' : Math.round(x / 60) + ' min'; };
+  var share = function (x) {
+    if (!t1) return Math.round(x * 100) + '%';
+    return x < 0.15 ? 'very little' : x < 0.3 ? 'about a quarter' : x < 0.42 ? 'about a third' : x < 0.58 ? 'about half'
+      : x < 0.7 ? 'about two thirds' : x < 0.85 ? 'about three quarters' : 'nearly all';
+  };
+  if (c.one) rows.push('In your losses you used ' + (c.all >= 180 ? Math.round(c.used / 60) + ' of ' + Math.round(c.all / 60) + ' minutes.' : Math.round(c.used) + ' of ' + Math.round(c.all) + ' seconds.'));
+  else rows.push('In your losses you used ' + share(c.share) + ' of your time.');
+  /* tier 1's bracket keeps the unit of the time before it when both are seconds */
+  var pace = !c.pace ? '' : t1 ? ' (you usually take ' + (Math.round(c.took) < 60 && c.pace < 60 ? c.pace : spanWords(c.pace)) + ')' : ' (your pace: ' + secs(c.pace) + ' a move)';
+  if (c.lost) rows.push('The moves that lost took ' + secs(c.took) + pace + ', with ' + (c.one ? left(c.left) : share(c.leftShare) + ' of your time') + ' left.');
+  if (c.lost >= 3 && c.trouble && c.trouble * 4 >= c.lost) {
+    rows.push(c.trouble + ' of ' + c.lost + ' losing moves came ' + (c.one ? 'with under ' + secs(Math.max(20, c.base / 10)) + ' left.' : t1 ? 'when your clock was nearly out.' : 'in time trouble.')
+      + ' <a data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'clock', label: 'Time trouble' })) + '">Practise these ›</a>');
+  }
+  if (tier >= 3 && c.dec >= 3) {
+    var others = c.other ? ' (' + (c.otherFast ? c.otherFast + ' of your ' + plur(c.other, 'other big mistake') + ' did too' : 'none of your ' + plur(c.other, 'other big mistake') + ' did') + ')' : '';
+    rows.push(c.fast + ' of ' + c.dec + ' deciding moves took under 10 s' + others + '.');
+  }
+  return '<h3 class="ins-h">Your clock</h3><div class="clock-rows">' + rows.map(function (x) { return '<p>' + x + '</p>'; }).join('') + '</div>';
+}
+/* how we count (F6.1), a sheet: tier 1 in plain words; tiers 2 and 3 name
+   the threshold the player's games are counted at now (their newest game's
+   band), the other two after it. "Big mistake" means that everywhere; once
+   "since you started" shows, a line says it counts every game at the
+   threshold frozen on the start day (sinceLine) */
+function countHtml() {
+  var t = playerTier(), lines, st = sinceStats(), since = st && st.before.n ? sinceLine(st, t) : '';
+  if (t === 1) lines = ['A big mistake: a move that made your position much worse.', since, 'A move cost you the game if you never came back from it. A drawn game counts as half a game.'];
+  else {
+    var g = realGames().filter(function (x) { return x.myR; }).sort(function (x, y) { return y.ts - x.ts; })[0];
+    var thr = g ? mistakeMinFor(g) : (t >= 3 ? 12 : 15);
+    lines = ['A big mistake cut your winning chances by ' + thr + ' points or more (' + { 20: '15 from 1200, 12 at 1800+', 15: '20 under 1200, 12 at 1800+', 12: '15 under 1800, 20 under 1200' }[thr] + ').',
+      since,
+      'A move decided a game if you never came back from it. A drawn game counts as half a game.',
+      'Each bar shows your practice on that skill\'s positions: learned, climbing, to go.'];
+  }
+  return '<div class="kicker">Insights</div><h3>How we count</h3>' + lines.filter(Boolean).map(function (x) { return '<p>' + x + '</p>'; }).join('');
+}
+/* the threshold "since you started" counts at: "Since you started, every
+   game counts at 15 points, the line on your start day." (formats frozen
+   at different ones each said, "rapid games count at 15 points and blitz
+   games at 20, the lines on your start day."); tier 1 "Since you started,
+   every game counts the same way." */
+function sinceLine(st, tier) {
+  if (tier === 1) return 'Since you started, every game counts the same way.';
+  var ps = trackedPerfs().filter(function (p) { return st.thr[p] && data.games.some(function (g) { return g.perf === p && g.wp; }); });
+  if (!ps.length) return '';
+  if (ps.every(function (p) { return st.thr[p] === st.thr[ps[0]]; })) return 'Since you started, every game counts at ' + st.thr[ps[0]] + ' points, the line on your start day.';
+  var each = ps.map(function (p, i) { return perfLabel(p) + ' games ' + (i ? 'at ' + st.thr[p] : 'count at ' + st.thr[p] + ' points'); });
+  return 'Since you started, ' + each.slice(0, -1).join(', ') + ' and ' + each[each.length - 1] + ', the lines on your start day.';
 }
 /* ── sheets ──────────────────────────────────────────────────────────────── */
 /* back: where focus returns on closing, as a selector, when the control
@@ -2413,6 +2548,7 @@ function sheetHtml(kind) {
   var parts = String(kind).split(':'), k = parts[1];
   if (parts[0] === 'settings') return settingsHtml();
   if (parts[0] === 'details') return detailsHtml();
+  if (parts[0] === 'count') return countHtml();
   if (parts[0] === 'family') {
     var fam = FAMILIES.filter(function (f) { return f.key === k; })[0];
     var agg = insightReport().families.filter(function (a) { return a.fam.key === k; })[0];
@@ -2422,7 +2558,7 @@ function sheetHtml(kind) {
       return '<a class="pat-row" data-act="sheet" data-k="pattern:' + s.key + '"><span>' + esc(s.info.plural) + '</span><span class="dim">' + s.count
         + (s.cost >= 1 ? ' · decided ' + fmtGames(s.cost) : '') + '</span><span class="fr-go" aria-hidden="true">›</span></a>';
     }).join('');
-    return '<div class="kicker">Mistake family</div><h3>' + esc(fam.name) + '</h3>'
+    return '<div class="kicker">Skill</div><h3>' + esc(fam.name) + '</h3>'
       + '<p class="sheet-sum">' + (agg.cost >= 1 ? 'Decided ' + fmtGames(agg.cost) + ' of yours. ' : '') + plur(agg.count, 'position') + ' from your games.'
         + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
       + '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(familyStep(k), playerTier())) + '</div></div>'

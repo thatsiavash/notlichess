@@ -19,6 +19,7 @@ vm.createContext(ctx);
 let failed = 0, passed = 0;
 function test(name, fn) { try { fn(); passed++; } catch (e) { failed++; console.log('FAIL ' + name + ': ' + e.message); } }
 function eq(a, b, what) { if (a !== b) throw new Error((what || 'value') + ' expected ' + JSON.stringify(b) + ', got ' + JSON.stringify(a)); }
+function ok(c, what) { if (!c) throw new Error(what || 'condition failed'); }
 
 let seq = 0;
 function cpOf(w) { const x = Math.max(0.6, Math.min(99.4, w)) / 50 - 1; return Math.round(-Math.log(2 / (x + 1) - 1) / 0.00368208); }
@@ -147,6 +148,63 @@ test('the test is repeatable: same data, same answer', () => {
   const A = many(30, 'black', 1), B = many(30, 'white', 3);
   const c1 = ctx.compareRates(A, B, ctx.gameMistakeList, 5, ctx.scoredMoves), c2 = ctx.compareRates(A, B, ctx.gameMistakeList, 5, ctx.scoredMoves);
   eq(c1.lo, c2.lo, 'lower bound');
+});
+
+/* ── Insights you understand (F6.1 to F6.3) ─────────────────────────────── */
+test('progress words drop their zero parts: never "0 learned" (D17)', () => {
+  const w = (l, c, f) => ctx.progressWords({ learned: l, practising: c, fresh: f });
+  eq(w(3, 12, 29), '3 learned · 12 climbing · 29 to go', 'all three');
+  eq(w(0, 1, 43), '1 climbing · 43 to go', 'a first clean find');
+  eq(w(0, 0, 44), '44 to go', 'nothing practised');
+  eq(w(5, 0, 0), '5 learned', 'all learned');
+});
+test('games decided in words: draws half, whole games, tier 1 "cost you"', () => {
+  eq(ctx.decidedWords(15, 2), 'decided 15 games', 'tier 2');
+  eq(ctx.decidedWords(1, 1), 'cost you one game', 'tier 1, one');
+  eq(ctx.decidedWords(1.5, 3), 'decided 2 games', 'a draw rounds to whole games');
+  eq(ctx.decidedWords(0.5, 2), 'decided half a game', 'a draw alone');
+  eq(ctx.decidedWords(0, 1), 'cost you no games', 'none');
+});
+test('the window\'s dates: one month, two months, two years, one day', () => {
+  const d = (y, m, day) => new Date(y, m - 1, day, 12).getTime();
+  ok(/^21 to 27 Sept? 2026$/.test(ctx.dateSpan(d(2026, 9, 21), d(2026, 9, 27))), 'one month: ' + ctx.dateSpan(d(2026, 9, 21), d(2026, 9, 27)));
+  ok(/^28 Aug to 3 Sept? 2026$/.test(ctx.dateSpan(d(2026, 8, 28), d(2026, 9, 3))), 'two months');
+  ok(/^3 Nov 2025 to 27 Sept? 2026$/.test(ctx.dateSpan(d(2025, 11, 3), d(2026, 9, 27))), 'two years');
+  ok(/^27 Sept? 2026$/.test(ctx.dateSpan(d(2026, 9, 27), d(2026, 9, 27) + 3600e3)), 'one day');
+});
+test('big mistakes recounted from the series at a given threshold, the player\'s own moves only', () => {
+  /* White drops 17 at ply 2 and 25 at ply 6; Black's drop at ply 3 is not theirs */
+  const g = game('white', [50, 50, 33, 60, 60, 60, 35, 35]);
+  eq(ctx.bigMistakesAt(g, 15), 2, 'at 15');
+  eq(ctx.bigMistakesAt(g, 20), 1, 'at 20, frozen');
+  eq(ctx.bigMistakesAt(g, 12), ctx.bigMistakesAt(g, 15), 'at 12');
+});
+test('since you started: learning\'s verdict runs in order from "More" to "Fewer" as the games since get cleaner, never on a zero mean or no spread', () => {
+  /* before: 50 games, half with 1 big mistake and half with 3 (mean 2, sample variance 50/49) */
+  const B = { n: 50, mean: 2, v: 50 / 49 };
+  const ORDER = ['more', 'probably_more', 'no_change', 'probably_fewer', 'fewer'];
+  let last = 0;
+  const seen = [];
+  for (let total = 100; total >= 0; total -= 2) {
+    const v = ctx.sinceVerdict(B, { n: 30, total });
+    const i = ORDER.indexOf(v);
+    if (i < last) throw new Error('out of order at ' + total + ': ' + v);
+    last = i;
+    if (seen.indexOf(v) < 0) seen.push(v);
+  }
+  eq(seen.join(','), ORDER.join(','), 'every word on the way');
+  eq(ctx.sinceVerdict(B, { n: 30, total: 60 }), 'no_change', 'the same rate: no change');
+  eq(ctx.sinceVerdict({ n: 50, mean: 0, v: 0 }, { n: 20, total: 5 }), 'no_change', 'no mistakes before: no verdict word');
+  eq(ctx.sinceVerdict({ n: 50, mean: 2, v: 0 }, { n: 20, total: 10 }), 'no_change', 'no spread before: no verdict word');
+  ok(Math.abs(ctx.normCdf(0) - 0.5) < 1e-6 && Math.abs(ctx.normCdf(1.96) - 0.975) < 1e-3 && Math.abs(ctx.normCdf(-1.2816) - 0.1) < 1e-3, 'the normal distribution function');
+  eq(ctx.SINCE_SAY.probably_fewer, 'Probably fewer. More games will tell.', 'the words');
+});
+test('the end clock kept at ingest: the player\'s clock after their last move, in percent of the start', () => {
+  const ck = [60000, 60000, 59000, 54000, 30000];        /* centiseconds after each ply, a 10-minute game */
+  eq(ctx.endClockPct(ck, true, 600), 50, 'White moved last: 300 of 600 s');
+  eq(ctx.endClockPct(ck, false, 600), 90, 'Black\'s last move: 540 of 600 s');
+  eq(ctx.endClockPct([18000, 17000, 18200], true, 180), 101.1, 'increments can take it past the start');
+  eq(ctx.endClockPct(null, true, 600), null, 'no clocks, none');
 });
 
 console.log((failed ? 'FAIL ' : 'ok   ') + 'insight statistics: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));

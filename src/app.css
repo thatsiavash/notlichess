@@ -70,6 +70,12 @@
   --ic-back:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m15 18-6-6 6-6'/%3E%3C/svg%3E");
   --ic-fwd:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
   --ic-medal:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15'/%3E%3Cpath d='M11 12 5.12 2.2'/%3E%3Cpath d='m13 12 5.88-9.8'/%3E%3Cpath d='M8 7h8'/%3E%3Ccircle cx='12' cy='17' r='5'/%3E%3Cpath d='M12 18v-2h-.5'/%3E%3C/svg%3E");
+  /* the five skills' glyphs on Insights (Lucide: shield, crown, target, flag, compass), 2 px strokes */
+  --ic-shield:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3C/svg%3E");
+  --ic-crown:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z'/%3E%3Cpath d='M5 21h14'/%3E%3C/svg%3E");
+  --ic-target:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Ccircle cx='12' cy='12' r='6'/%3E%3Ccircle cx='12' cy='12' r='2'/%3E%3C/svg%3E");
+  --ic-flag:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528'/%3E%3C/svg%3E");
+  --ic-compass:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z'/%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3C/svg%3E");
   --ic-seal:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cmask id='m'%3E%3Crect width='24' height='24' fill='%23fff' stroke='none'/%3E%3Cpath d='m16 9-5.5 5.5L8 12' stroke='%23000'/%3E%3C/mask%3E%3Cpath d='M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z' fill='%23000' mask='url(%23m)'/%3E%3C/svg%3E");
 }
 @media (min-width:861px){
@@ -127,6 +133,11 @@ button{font-family:inherit}
 [data-icon=search]{--ic:var(--ic-search)}
 [data-icon=back]{--ic:var(--ic-back)}
 [data-icon=fwd]{--ic:var(--ic-fwd)}
+[data-icon=shield]{--ic:var(--ic-shield)}
+[data-icon=crown]{--ic:var(--ic-crown)}
+[data-icon=target]{--ic:var(--ic-target)}
+[data-icon=flag]{--ic:var(--ic-flag)}
+[data-icon=compass]{--ic:var(--ic-compass)}
 .icon{width:22px;height:22px;display:block;stroke-width:2}
 .icon-btn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;color:var(--text-2)}
 .icon-btn:hover{background:var(--surface-2);color:var(--text-1)}
@@ -855,37 +866,71 @@ body.in-session{padding-bottom:0}
   .recap-acts .btn-big[data-icon]::before{width:22px;height:22px}
 }
 
-/* insights: one ranked list ──────────────────────────────────────────── */
+/* insights (F6.1 to F6.3): the window, the headline and its lead (phones
+   too), since you started, the skills (glyph, name, plain line, games
+   decided, a bar of the skill's own positions: learned leaf, climbing
+   honey, to go grey, and the same in words), how we count, your clock ──── */
 .ins{max-width:788px;padding:32px 0 10px}
 .ins > .kicker{color:var(--text-3)}
 .ins h2{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);max-width:20em;margin:8px 0 10px;font-variant-numeric:lining-nums tabular-nums}
-.ins .lead{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-2);margin:0 0 40px;max-width:40em}
+.ins .lead{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-2);margin:0;max-width:40em}
 .ins-h{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:32px 0 12px}
+.ins-h.ins-also{margin-top:24px}
 .fam-list{background:var(--surface-1);border-radius:var(--r-card);overflow:hidden}
-.fam-row{display:flex;align-items:center;gap:16px;min-height:72px;padding:12px 20px;border-top:1px solid var(--divider);color:inherit}
+.fam-row{display:flex;align-items:flex-start;gap:16px;padding:16px 20px;border-top:1px solid var(--divider);color:inherit}
 .fam-row:first-child{border-top:0}
 .fam-row:hover{background:var(--surface-2);color:inherit}
 .fam-row:hover .fr-name{text-decoration:underline;text-underline-offset:3px}
-.fr-name{flex:1 1 auto;min-width:0;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1)}
-.fr-name small{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin-top:2px}
-.fr-bar{flex:0 0 220px;height:10px;border-radius:5px;background:var(--surface-2);overflow:hidden}
-.fr-bar i{display:block;height:100%;background:var(--border);border-radius:5px}
-.fam-row.is-focus .fr-bar i{background:var(--honey)}
-.fr-n{flex:0 0 80px;text-align:right;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1);font-variant-numeric:tabular-nums}
-.fr-go{color:var(--text-3);font-size:var(--fs-heading);font-weight:800}
+/* the focus: outlined in honey, its glyph honey, "Start here" */
+.fam-row.is-focus{box-shadow:inset 0 0 0 2px var(--honey);border-radius:var(--r-card);border-top-color:transparent}
+.fam-row.is-focus + .fam-row{border-top-color:transparent}
+.sk-glyph{flex:none;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:12px;background:var(--surface-2);color:var(--text-2)}
+.sk-glyph::before{width:22px;height:22px}
+.is-focus .sk-glyph{color:var(--honey)}
+.fr-main{flex:1 1 auto;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:16px}
+.fr-name{grid-column:1;grid-row:1;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1)}
+.fr-line{grid-column:1/-1;grid-row:2;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+.fr-n{grid-column:2;grid-row:1;align-self:center;text-align:right;white-space:nowrap;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1);font-variant-numeric:tabular-nums}
+/* the bar: an outlined grey track (to go), filled from the left in leaf
+   (learned) and honey (climbing), as the rung pips fill */
+.fr-bar{grid-column:1/-1;grid-row:3;display:flex;height:10px;margin:12px 0 6px;border-radius:5px;overflow:hidden;box-shadow:inset 0 0 0 1.5px var(--border)}
+.fr-bar i{display:block;min-width:6px;height:100%}
+.fr-bar .sk-l{background:var(--leaf)}
+.fr-bar .sk-c{background:var(--honey)}
+.fr-bar .sk-l + .sk-c{box-shadow:inset 2px 0 0 var(--surface-1)}
+.fr-bar .sk-g{min-width:0;background:none}
+.fr-prog{grid-column:1/-1;grid-row:4;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
+.fr-go{align-self:center;color:var(--text-3);font-size:var(--fs-heading);font-weight:800}
+/* since you started: a card under the lead (F6.2); scoped to Insights,
+   since Today's greeting is a p.since of its own */
+.ins .since{background:var(--surface-1);border-radius:var(--r-card);padding:20px;margin:24px 0 0}
+.since-h{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:0 0 8px}
+.ins .since p{margin:0 0 6px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
+.ins .since p.since-num{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600;color:var(--text-1)}
+.ins .since p.since-say{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:4px 0 10px}
+.since-meter{display:flex;gap:4px;max-width:320px;margin-top:12px}
+.since-meter i{flex:1 1 0;height:8px;border-radius:4px;box-shadow:inset 0 0 0 1.5px var(--border)}
+.since-meter i.on{background:var(--honey);box-shadow:none}
+/* how we count, a sheet; your clock (F6.3) */
+.ins-count{margin:8px 0 0}
+.clock-rows{background:var(--surface-1);border-radius:var(--r-card);padding:16px 20px}
+.clock-rows p{margin:0 0 8px;font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-1);font-variant-numeric:tabular-nums}
+.clock-rows p:last-child{margin-bottom:0}
+.clock-rows a{font-weight:700;white-space:nowrap}
 .slice{background:var(--surface-1);border-radius:var(--r-btn);padding:16px 20px;margin:0 0 12px}
 .slice p{margin:0 0 6px;font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-1)}
 .slice a{font-size:var(--fs-small);font-weight:700}
 .ins .sec{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600}
-/* the routine line under the families, at tiers 2 and 3 (F2.3) */
+/* the routine line under the skills, at tiers 2 and 3 (F2.3) */
 .ins .routine{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:12px 0 0}
 .loading{color:var(--text-3);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;padding:6px 0}
 @media (max-width:860px){
   .ins{padding-top:20px}
-  .ins .lead{display:none}
-  .fam-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:start;gap:8px 10px;min-height:56px;padding:12px 16px}
-  .fr-bar{grid-column:1/-1;grid-row:2}
-  .fr-n{padding-top:2px}
+  .fam-row{gap:12px;padding:14px 16px}
+  .fr-main{display:flex;flex-direction:column}
+  .fr-n{align-self:auto;text-align:left;white-space:normal;font-weight:600;color:var(--text-3);margin-top:2px}
+  .fr-bar{margin:10px 0 6px}
+  .ins .since{padding:16px}
 }
 
 /* sheets: Details, a family, a pattern, Settings ──────────────────────── */
