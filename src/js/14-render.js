@@ -36,7 +36,9 @@ function setView(v, fromPop) {
   /* a measure: Insights opened */
   if (v === 'insights' && ui.view !== 'insights') track('insights_open');
   ui.view = v;
+  /* the tab, and the day it was left on: a new day opens on Today (V4.4) */
   store.set('nl:view', v);
+  store.set('nl:viewDay', dayStamp());
   if (!fromPop && location.hash !== '#' + v) {
     try { history.pushState(null, '', location.pathname + '#' + v); } catch (e) {}
   }
@@ -182,7 +184,7 @@ function renderTrain() {
       + '</div>';
     return;
   }
-  var since = sinceHtml() + cleanLineHtml();
+  var since = welcomeHtml() + sinceHtml() + cleanLineHtml();
   if (n.ready < 3) { box.innerHTML = '<div class="today">' + since + findingHtml(n) + '</div>'; paintTitle(); return; }
   /* the day's first opening: the extra-set rule, once a day (F7.1) */
   absorbOpen();
@@ -242,7 +244,7 @@ function latestGamesHtml() {
   return '<aside class="latest" id="latest"><div class="latest-head"><div class="kicker">Your latest games</div>'
     + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>' + rows
     + (all.length > games.length ? '<a class="btn-quiet lg-all" data-act="allGames">All games</a>' : '')
-    + '<p class="lg-foot dim">' + tapWord() + ' a game to go through its mistakes in order.</p></aside>';
+    + '<p class="lg-foot dim">' + tapWord() + ' a game to see its mistakes in the order played.</p></aside>';
 }
 /* a game's day in its row: "today", "yesterday", else its date ("27 Sept") */
 function gameDayWord(ts) {
@@ -268,15 +270,35 @@ function cleanLineHtml() {
   }
   return data.cleanLine ? '<p class="clean-line">' + data.cleanLine + '</p>' : '';
 }
+/* back after a break (V4.4), on Today, once: "Welcome back. Your practice
+   waited where you left it." when the last practice day is 7 or more days
+   ago. nl:welcome:<player> keeps the day of the practice it greeted after,
+   so a reload says it no more; this page load keeps it until a day counts */
+var WELCOME = 'Welcome back. Your practice waited where you left it.';
+function welcomeHtml() {
+  var key = 'nl:welcome:' + playerId(), days = countedDays(), last = days[days.length - 1], now0 = new Date();
+  now0.setHours(0, 0, 0, 0);
+  var gap = last != null && last < now0.getTime() && daysFrom(last, Date.now()) >= 7 ? dayStamp(new Date(last)) : '';
+  if (data.welcomeFor !== key + '|' + gap) {
+    data.welcomeFor = key + '|' + gap;
+    data.welcome = !!gap && store.get(key, '') !== gap;
+    if (data.welcome) store.set(key, gap);
+  }
+  return data.welcome && gap ? '<p class="welcome-line">' + WELCOME + '</p>' : '';
+}
 /* the week (F5.1): Monday to Sunday, a day that counted filled with a
    tick, today ringed, and the medal glyph at the goal, honey once it is met;
    then "2 of 4 days this week · 3 weeks in a row" and the lifetime "27
-   practice days", their zero parts dropped. The first week's goal is the
-   days it has left (goalThisWeek). On the summary of the set that met the
-   goal (F4.4) its medal settles (fx) and line says so ("Goal met: 4 days
-   this week.", the run of weeks then beside the practice days) */
+   practice days", their zero parts dropped. A short week's goal is the days
+   it has left, and the line says why (V4.4): "1 of 2 days this week (your
+   first week)", "0 of 1 day this week (since you came back)". On the
+   summary of the set that met the goal (F4.4) its medal settles (fx: true,
+   or 'wait' while tier 1's stars fill first, V4.3) and line says so
+   ("Goal met: 4 days this week.", the run of weeks then beside the practice
+   days) */
+var WEEK_CUT = { first: ' (your first week)', back: ' (since you came back)' };
 function weekHtml(fx, line) {
-  var goal = goalThisWeek(), done = weekDays(), weeks = weeksAtGoal(), life = practiceDays();
+  var wg = weekGoalInfo(Date.now()), goal = wg.goal, done = weekDays(), weeks = weeksAtGoal(), life = practiceDays();
   var d = new Date(), dow = (d.getDay() + 6) % 7, row = '';
   d.setHours(12, 0, 0, 0);
   for (var i = 0; i < 7; i++) {
@@ -284,11 +306,19 @@ function weekHtml(fx, line) {
     var on = i <= dow && dayCounts(dayRecOf(x));
     row += '<span class="wk-b' + (on ? ' on' : '') + (i === dow ? ' now' : i > dow ? ' ahead' : '') + '">' + (on ? '' : 'MTWTFSS'.charAt(i)) + '</span>';
   }
-  row += done >= goal ? '<span class="medal"' + (fx ? ' data-fx="medal"' : '') + ' aria-hidden="true"></span>' : '<span class="wk-goal"></span>';
+  row += done >= goal ? '<span class="medal"' + (fx ? ' data-fx="' + (fx === 'wait' ? 'medal-wait' : 'medal') + '"' : '') + ' aria-hidden="true"></span>' : '<span class="wk-goal"></span>';
   var run = weeks ? plur(weeks, 'week') + ' in a row' : '', days = life ? plur(life, 'practice day') : '';
-  var say = line ? [line, [run, days].filter(Boolean).join(' · ')] : [Math.min(done, 7) + ' of ' + plur(goal, 'day') + ' this week' + (run ? ' · ' + run : ''), days];
+  var say = line ? [line, [run, days].filter(Boolean).join(' · ')] : [Math.min(done, 7) + ' of ' + plur(goal, 'day') + ' this week' + (WEEK_CUT[wg.cut] || '') + (run ? ' · ' + run : ''), days];
   return '<div class="week"><div class="wk-row" aria-hidden="true">' + row + '</div>'
     + '<p class="wk-say">' + say[0] + '</p>' + (say[1] ? '<p class="wk-life">' + say[1] + '</p>' : '') + '</div>';
+}
+/* the goal met, in words (F4.4, V4.4): "Goal met: 4 days this week.", a
+   short week's "Goal met: 2 of 2 days in your first week." and "Goal met:
+   1 of 1 day since you came back." */
+function goalMetWords(gm) {
+  if (gm.cut === 'first') return 'Goal met: ' + gm.days + ' of ' + plur(gm.goal, 'day') + ' in your first week.';
+  if (gm.cut === 'back') return 'Goal met: ' + gm.days + ' of ' + plur(gm.goal, 'day') + ' since you came back.';
+  return 'Goal met: ' + plur(gm.days, 'day') + ' this week.';
 }
 /* card 1's opening frame on Today (F5.1), drawn by the card's own frame
    code (boardOptsFor on the card as it opens): the red arrow on a cued
@@ -357,8 +387,8 @@ function heroHtml(plan) {
 function whyTheseHtml(plan) {
   var f = currentFocus();
   var agg = f && insightFamiliesQuick().filter(function (x) { return x.fam.key === f.fam; })[0];
-  if (!agg || agg.cost < 1 || !plan.keys.some(function (k) { var it = itemOf(k); return it && !it.foil && familyOf(patternOf(it.b)).key === f.fam; })) return '';
-  var n = Math.round(agg.cost);
+  if (!agg || agg.lost < 1 || !plan.keys.some(function (k) { var it = itemOf(k); return it && !it.foil && familyOf(patternOf(it.b)).key === f.fam; })) return '';
+  var n = agg.lost;
   return '<p class="why-these"><a data-act="view" data-k="insights">Why these? ' + esc(agg.fam.name)
     + (playerTier() === 1 ? ' cost you ' + plur(n, 'game') : ' decided ' + (n === 1 ? 'one' : n) + ' of your games') + ' ›</a></p>';
 }
@@ -384,40 +414,45 @@ function paintTitle() {
   var t = titleNow();
   if (document.title !== t) document.title = t;
 }
-/* the next time something is due back, as one set (F2.6, F7.2, calm):
-   "Tomorrow: a set of 10, about 8 minutes." (fewer: "Tomorrow: 3
-   positions, about 2 minutes."); when more than a set comes due by then,
-   what that day's first opening will do (absorbPlan): "... 13 more over
-   the next 3 weeks." where it spreads them, "... 23 due in all." where
-   there is no room. While more are due today: "13 more due today; any
-   left spread over the next 3 weeks." Counted: every position due by the
-   end of that day, those due now included */
+/* the next set, as the planner will deal it that day (V4.1: planOn, after
+   that day's first opening), so "Tomorrow" is the set Today will deal:
+   "Tomorrow: a set of 10, about 8 minutes (4 back, 6 new)." (the parts in
+   brackets only when the set holds both), fewer "Tomorrow: 3 positions,
+   about 2 minutes."; when that opening spreads positions, "... 13 more over
+   the next 3 weeks.", and where it finds no room "... 23 due in all."
+   (F7.2). Positions still due today come first: "1 more is ready in the
+   next set." ("13 more are ready for your next sets. Each set takes the
+   most important first." when tomorrow's opening would leave some due,
+   "...; any left spread over the next 3 weeks." when it would spread all
+   it cannot deal), never
+   "due today" under "Today's set is done". With no set tomorrow (nothing
+   new left), the first day that has one */
 var SPREAD_SAY = 'over the next 3 weeks';
 function nextDueHtml() {
-  var srs = srsLoad(), m = model(), now = Date.now(), next = null, size = sessionSize();
+  var srs = srsLoad(), m = model(), now = Date.now(), size = sessionSize(), left = dueCards().length, lead = '';
   var mins = function (x) { return plur(Math.max(1, Math.round(x * 0.8)), 'minute'); };
-  var setOf = function (n) { return n >= size ? 'a set of ' + size + ', about ' + mins(size) : plur(n, 'position') + ', about ' + mins(n); };
   var dayWord = function (d) { return d <= 0 ? 'Later today' : d === 1 ? 'Tomorrow' : 'In ' + d + ' days'; };
-  /* the first opening d days on (as at noon): what it keeps due, spreads
-     and leaves due for want of room */
-  var opening = function (d) { return absorbPlan(dayStart(now, d) + 12 * 3600 * 1000); };
-  var plan = function (d, p) {
-    var kept = p.keep.length + p.left.length;
-    return dayWord(d) + ': ' + setOf(kept) + '.' + (p.spread.length ? ' ' + p.spread.length + ' more ' + SPREAD_SAY + '.' : '') + (p.left.length ? ' ' + kept + ' due in all.' : '');
+  var says = function (d, p) {
+    var n = p.keys.length, ab = p.absorb, kept = ab.keep.length + ab.left.length;
+    return dayWord(d) + ': ' + (n >= size ? 'a set of ' + size + ', about ' + mins(size) : plur(n, 'position') + ', about ' + mins(n))
+      + (p.dueTaken && p.fresh ? ' (' + p.dueTaken + ' back, ' + p.fresh + ' new)' : '') + '.'
+      + (ab.spread.length ? ' ' + ab.spread.length + ' more ' + SPREAD_SAY + '.' : '') + (ab.left.length ? ' ' + kept + ' due in all.' : '');
   };
-  var left = dueCards().length;
+  var p1 = planOn(1);
   if (left) {
-    var pt = opening(1);
-    if (pt.spread.length) return left + ' more due today; any left spread ' + SPREAD_SAY + '.';
-    return left + ' more due today. ' + (pt.left.length ? 'Each set takes the most important first.' : plan(1, pt));
+    lead = left <= size ? plur(left, 'more is', 'more are') + ' ready in the next set.' : left + ' more are ready for your next sets.';
+    if (p1.absorb.left.length) return lead + ' Each set takes the most important first.';
+    if (p1.absorb.spread.length) return lead.slice(0, -1) + '; any left spread ' + SPREAD_SAY + '.';
   }
-  var live = function (k) { var r = srs[k], it = m.byKey[k]; return r && r.due && !r.hidden && it && trainable(it); };
-  Object.keys(srs).forEach(function (k) { if (live(k) && srs[k].due > now && (!next || srs[k].due < next)) next = srs[k].due; });
-  if (!next) return 'Nothing is due back yet.';
-  var d = daysFrom(now, next), end = dayStart(next, 1);
-  var n = Object.keys(srs).filter(function (k) { return live(k) && srs[k].due < end; }).length;
-  if (n <= size) return dayWord(d) + ': ' + setOf(n) + '.';
-  return d >= 1 ? plan(d, opening(d)) : dayWord(d) + ': ' + setOf(n) + '. ' + n + ' due in all.';
+  if (p1.keys.length) return (lead ? lead + ' ' : '') + says(1, p1);
+  var next = null;
+  Object.keys(srs).forEach(function (k) {
+    var r = srs[k], it = m.byKey[k];
+    if (r && r.due && !r.hidden && it && trainable(it) && r.due > now && (!next || r.due < next)) next = r.due;
+  });
+  var d = next ? Math.max(2, daysFrom(now, next)) : 0, pd = d ? planOn(d) : null;
+  if (pd && pd.keys.length) return (lead ? lead + ' ' : '') + says(d, pd);
+  return lead || 'Nothing is due back yet.';
 }
 /* the button for the next set, its size in words */
 function nextSetWords(n) { return n === 1 ? 'One more position' : 'Next set of ' + n; }
@@ -482,31 +517,26 @@ function findingHtml(n) {
   return stateCard('Reading your games', '',
     '', firstHtml(null, '', 'Stockfish checks your moves on your device, newest games first. Your first positions show up here as they are found.') + readBar(n));
 }
-/* the focus card (F5.1), above the games: the skill's glyph and name, its
-   check line, a meter of its positions in practice (learned leaf, climbing
-   honey, to go grey, one unit as on Insights) with "3 learned · 12
-   climbing · 29 to go" (zero parts dropped: a beginner reads "12 climbing ·
-   32 to go"), and Practise 8, a drill of the skill */
+/* the focus card (F5.1), above the games, one tap target (V4.7: Today has
+   one job, Start) that opens the skill's sheet, with its chevron: the
+   skill's glyph and name, its check line, and one meter, its own positions
+   (by steps, "3 learned · 12 in practice · 29 not started", zero parts
+   dropped: V4.8) */
 function focusHtml() {
   var f = currentFocus();
   if (!f) return '';
   var fam = FAMILIES.filter(function (x) { return x.key === f.fam; })[0];
   if (!fam) return '';
-  var agg = { learned: 0, practising: 0, fresh: 0, count: 0 };
-  patternStats().forEach(function (s) { if (fam.types.indexOf(s.key) !== -1) { agg.learned += s.fixed; agg.practising += s.practising; agg.fresh += s.fresh; agg.count += s.count; } });
+  var agg = { learned: 0, practising: 0, fresh: 0, count: 0 }, pats = [];
+  patternStats().forEach(function (s) { if (fam.types.indexOf(s.key) !== -1) { pats.push(s); agg.learned += s.fixed; agg.practising += s.practising; agg.fresh += s.fresh; agg.count += s.count; } });
   if (!agg.count) return '';
-  var bar = [[agg.learned, 'sk-l'], [agg.practising, 'sk-c'], [agg.fresh, 'sk-g']].filter(function (x) { return x[0] > 0; })
-    .map(function (x) { return '<i class="' + x[1] + '" style="flex-grow:' + x[0] + '"></i>'; }).join('');
-  var spec = { type: 'family', fam: fam.key, label: fam.name }, nDrill = drillItems(spec, 8).length;
-  return '<div class="focus"><a class="focus-more" data-act="sheet" data-k="family:' + fam.key + '">Details ›</a>'
+  return '<a class="focus focus-go" data-act="sheet" data-k="family:' + fam.key + '" role="button">'
     + '<div class="kicker">Your focus</div>'
     + '<div class="focus-head"><span class="sk-glyph" data-icon="' + ((SKILL[fam.key] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
     + '<div class="focus-name">' + esc(fam.name) + '</div></div>'
     + '<div class="plan">' + esc(lineOfStep(familyStep(fam.key), playerTier())) + '</div>'
-    + '<span class="fr-bar focus-bar" aria-hidden="true">' + bar + '</span><p class="focus-prog">' + progressWords(agg) + '</p>'
-    + (nDrill ? '<a class="btn-line" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify(spec)) + '">Practise ' + nDrill + '</a>' : '')
-    /* at More help, the meter of the skill this focus trains (F9.5) */
-    + focusSkillHtml(fam.key) + '</div>';
+    + stepBarHtml(skillSteps(pats), 'focus-bar') + '<p class="focus-prog">' + progressWords(agg) + '</p>'
+    + '<span class="focus-chev" aria-hidden="true"></span></a>';
 }
 /* a date outside the current year carries its year */
 function gameDateLine(g) {
@@ -515,19 +545,6 @@ function gameDateLine(g) {
     if (d.getFullYear() !== new Date().getFullYear()) o.year = 'numeric';
     return d.toLocaleDateString('en-GB', o);
   } catch (e) { return ''; }
-}
-/* the ladder moving, in plain words: the positions found first try wait
-   longer before they come back, and when that is */
-function ladderWords(ss, keys) {
-  var srs = srsLoad(), now = Date.now(), days = [];
-  keys.forEach(function (k) {
-    var r = srs[k], e = sumOf(ss, k);
-    if (e && e.c === 'first' && r && r.due) days.push(Math.max(1, Math.round((r.due - now) / DAY)));
-  });
-  if (!days.length) return '';
-  var lo = Math.min.apply(null, days), hi = Math.max.apply(null, days);
-  return (days.length === 1 ? 'The position you found comes' : 'The ' + days.length + ' positions you found come') + ' back in '
-    + (lo === hi ? plur(lo, 'day') : lo + ' to ' + hi + ' days') + '.';
 }
 /* the check line above one card (F2.3): a drill's family or pattern, the
    family of the move that decided a drilled game, or the focus after a
@@ -569,22 +586,43 @@ function sumOf(ss, k) {
     : ({ first: 'first', hint: 'hint', retry: 'miss', fail: 'shown' })[r] || 'skip';
   return { c: c, s: { first: 3, look: 3, hint: 2, miss: 1 }[c] || 0 };
 }
-/* the headline and its second line: "2 of 5 found first try." / "Then 2
-   after a miss, 1 after a good move." (tier 1 "11 of 15 stars"); counted:
-   every position answered (a skip is not) */
+/* the headline and its second line (V4.3): tiers 2 and 3 "2 of 5 found
+   first try." / "2 after a miss · 1 shown"; tier 1 "You found 4 of 5."
+   ("You found all 5." when nothing was shown, missed or skipped; "You
+   found it.", "You found both." for one or two) / "4 took
+   more than one try, 1 was shown.", never "of 15". Counted: every position
+   answered, a skip too at tier 1 (one of the set it did not find); a foil
+   and a practice position apart */
+var FOUND = { first: 1, alt: 1, good: 1, hint: 1, look: 1, miss: 1 };
 function recapScore(ss, keys, tier) {
-  var n = 0, first = 0, stars = 0, by = {};
+  var n = 0, first = 0, found = 0, skipped = 0, by = {};
   keys.forEach(function (k) {
     var e = sumOf(ss, k);
     /* a foil is counted apart (foilWords): it had nothing to find; a
        practice position too (pracWords, F9.4) */
-    if (!e || e.c === 'skip' || e.foil || e.prac) return;
-    n++; stars += e.s || 0;
+    if (!e || e.foil || e.prac) return;
+    if (e.c === 'skip') { skipped++; return; }
+    n++;
+    if (FOUND[e.c]) found++;
     if (e.c === 'first') first++; else by[e.c] = (by[e.c] || 0) + 1;
   });
   if (!n) return { head: 'Done.', then: '' };
-  var parts = CAT_ORDER.filter(function (c) { return by[c]; }).map(function (c) { return by[c] + ' ' + CAT_THEN[c]; });
-  return { head: tier === 1 ? stars + ' of ' + n * 3 + ' stars' : first + ' of ' + n + ' found first try.', then: parts.length ? 'Then ' + parts.join(', ') + '.' : '' };
+  if (tier === 1) return { head: found === n + skipped ? (found === 1 ? 'You found it.' : found === 2 ? 'You found both.' : 'You found all ' + found + '.') : 'You found ' + found + ' of ' + (n + skipped) + '.', then: foundWords(by, skipped) };
+  return { head: first + ' of ' + n + ' found first try.', then: thenWords(by) };
+}
+/* the second line at tiers 2 and 3, by category in CAT_ORDER: "2 after a
+   miss · 1 shown" (a pack's end too, F9.4) */
+function thenWords(by) { return CAT_ORDER.filter(function (c) { return by[c]; }).map(function (c) { return by[c] + ' ' + CAT_THEN[c]; }).join(' · '); }
+/* tier 1's: "4 took more than one try, 1 was shown." (a close move or a
+   miss first; a hint asked for; shown; missed; skipped) */
+function foundWords(by, skipped) {
+  var was = function (n, w) { return n + (n === 1 ? ' was ' : ' were ') + w; }, parts = [], more = (by.miss || 0) + (by.good || 0);
+  if (more) parts.push(more + ' took more than one try');
+  if (by.hint) parts.push(by.hint + ' needed a hint');
+  if (by.shown) parts.push(was(by.shown, 'shown'));
+  if (by.left) parts.push(was(by.left, 'missed'));
+  if (skipped) parts.push(was(skipped, 'skipped'));
+  return parts.length ? parts.join(', ') + '.' : '';
 }
 /* the set's foils (F8.2), apart from the score: "2 had nothing to fix: 1
    good move, 1 playable." (then with a hint, after a miss, missed, shown);
@@ -616,17 +654,26 @@ function foilTileHtml(it, e) {
   return '<div class="recap-item recap-foil">' + boardSvg(pre, { flip: it.g.color === 'black', mark: pm ? [pm.from, pm.to] : null, decor: true })
     + '<span>Nothing to fix</span>' + resultGlyph(c) + '<span class="res' + (e.c === 'skip' || e.c === 'shown' || e.c === 'left' ? ' shown' : '') + '">' + word + '</span></div>';
 }
-/* what moved (F2.2): "2 moved up, 1 held, 1 back to the start.", the parts
-   that are not zero, a position learned first */
+/* what moved (V4.3), every tier: when the set's positions come back,
+   "Back in 3 days: 2. Back tomorrow: 3." (the longest wait first), a
+   position learned first ("1 learned."), in place of "moved up", "held"
+   and "back to the start"; a foil and a practice position never come back
+   on the schedule */
 function movedWords(ss, keys) {
-  var n = { learned: 0, up: 0, held: 0, start: 0 };
-  keys.forEach(function (k) { var e = ss.sum && ss.sum[k]; if (e && n[e.m] != null) n[e.m]++; });
-  var parts = [];
-  if (n.learned) parts.push(n.learned + ' learned');
-  if (n.up) parts.push(n.up + ' moved up');
-  if (n.held) parts.push(n.held + ' held');
-  if (n.start) parts.push(n.start + ' back to the start');
-  return parts.length ? parts.join(', ') + '.' : '';
+  var srs = srsLoad(), now = Date.now(), by = {}, learned = 0, parts = [];
+  keys.forEach(function (k) {
+    var e = ss.results[k] ? sumOf(ss, k) : null, r = srs[k], it = itemOf(k);
+    if (!e || e.foil || e.prac || !it || it.foil || it.prac || it.lesson) return;
+    if (e.m === 'learned') { learned++; return; }
+    if (!r || r.due == null || r.hidden) return;
+    var d = Math.max(0, daysFrom(now, r.due));
+    by[d] = (by[d] || 0) + 1;
+  });
+  if (learned) parts.push(learned + ' learned.');
+  Object.keys(by).map(Number).sort(function (x, y) { return y - x; }).forEach(function (d) {
+    parts.push((d === 0 ? 'Back later today' : d === 1 ? 'Back tomorrow' : 'Back in ' + d + ' days') + ': ' + by[d] + '.');
+  });
+  return parts.join(' ');
 }
 /* the step most wrong tries of the set failed, two or more (F2.4): "3 of
    your 4 wrong tries failed the safety check." (step 1 "...missed their
@@ -666,8 +713,43 @@ function rungHtml(p) {
 }
 function starsHtml(n) {
   var h = '';
-  for (var i = 0; i < 3; i++) h += '<i' + (i < n ? ' class="on"' : '') + '>★</i>';
+  for (var i = 0; i < 3; i++) h += '<i class="st' + (i < n ? ' on' : '') + '"></i>';
   return '<span class="stars" role="img" aria-label="' + n + ' of 3 stars">' + h + '</span>';
+}
+/* tier 1's result row (V4.3): each position's three 16 px stars in place
+   of its glyph, the earned ones honey, the rest outlined, 12 px between
+   positions. With fx (its first paint) the earned stars fill in order, 0.6
+   to 1.08 to 1, at most 80 ms apart and 1.2 s in all; lag: when they are
+   done, for the seal or the medal after them */
+var STAR_MS = 200, STARS_IN = 1200;
+function starRowHtml(counts, fx) {
+  var total = counts.reduce(function (a, n) { return a + n; }, 0), i = 0;
+  var step = total > 1 ? Math.min(80, (STARS_IN - STAR_MS) / (total - 1)) : 0;
+  var html = counts.map(function (n) {
+    var g = '';
+    for (var j = 0; j < 3; j++) g += '<i class="st' + (j < n ? ' on' : '') + '"' + (j < n && fx ? ' style="--d:' + Math.round(step * i++) + 'ms"' : '') + '></i>';
+    return '<span class="star-grp">' + g + '</span>';
+  }).join('');
+  return { html: html, lag: fx && total ? Math.round(step * (total - 1)) + STAR_MS : 0 };
+}
+/* what was remembered after a break (V4.4), above the headline of the
+   day's first summary after 7 or more days away (ss.away): "After 14 days
+   away, you found 7 of 9 reviews first try." (tier 1 "After 14 days away,
+   you found 7 of 9.", found as its headline counts it); under half, "They
+   come back sooner now." Reviews only: positions answered before the set
+   began (ss.rev), each first showing once */
+function recallHtml(ss, keys, tier) {
+  if (!ss.away || !ss.rev) return '';
+  var n = 0, f = 0;
+  keys.forEach(function (k) {
+    var e = ss.sum && ss.sum[k];
+    if (!ss.rev[k] || !e || e.c === 'skip' || e.foil || e.prac) return;
+    n++;
+    if (tier === 1 ? FOUND[e.c] : e.c === 'first') f++;
+  });
+  if (!n) return '';
+  return '<p class="recall">After ' + plur(ss.away, 'day') + ' away, you found ' + f + ' of ' + n + (tier === 1 ? '' : ' reviews first try') + '.'
+    + (f * 2 < n ? ' They come back sooner now.' : '') + '</p>';
 }
 /* a position just learned leads the tiles (F2.2): "Learned: Rg1, from
    your loss to opponent1. Found 3 times over 23 days." (tier 1 the move in
@@ -677,11 +759,11 @@ function learnedHtml(it, e, tier, fx) {
   if (!pre || !pm) return '';
   var g = it.g, mv = tier === 1 ? moveWords(pre, pm) : sanOf(pre, pm).replace(/[+#]$/, '');
   var from = g.res === 'loss' ? 'loss to ' : g.res === 'draw' ? 'draw with ' : 'win against ';
-  /* fx: its seal stamps once, as the summary first paints (F4.4). The seal
-     says it: a 32 px badge on the board's top-right corner, no pips (the
-     design lead's review of slice 4: three pips at the far right read as a
-     ••• menu) */
-  return '<div class="recap-item recap-learned"' + (fx ? ' data-fx="seal"' : '') + ' data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'One position' })) + '">'
+  /* fx: its seal stamps once, as the summary first paints (F4.4), or once
+     tier 1's stars have filled ('wait', V4.3). The seal says it: a 32 px
+     badge on the board's top-right corner, no pips (the design lead's
+     review of slice 4: three pips at the far right read as a ••• menu) */
+  return '<div class="recap-item recap-learned"' + (fx ? ' data-fx="' + (fx === 'wait' ? 'seal-wait' : 'seal') + '"' : '') + ' data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'One position' })) + '">'
     + '<span class="learned-board">' + boardSvg(pre, { flip: g.color === 'black', bad: [pm.from, pm.to], decor: true }) + resultGlyph('learned') + '</span>'
     + '<span class="learned-say"><b>Learned: ' + esc(mv) + ', from your ' + from + esc(g.opp) + '.</b> '
     + (e.d != null ? 'Found ' + plur(e.n, 'time') + ' over ' + plur(e.d, 'day') + '.' : 'Found ' + plur(e.n, 'time') + ' in a row.') + '</span></div>';
@@ -697,31 +779,37 @@ function resultGlyph(c) {
   return g ? '<span class="rg rg-' + g + '" aria-hidden="true"></span>' : '';
 }
 /* the summary (F4.5): the result row (one glyph per position, in the
-   set's order), the headline and its second line, what moved, the week
-   (once the goal is met, its medal and "Goal met: 4 days this week."), when
-   positions come back, the tiles (two columns on a phone, 160 px tiles in an
-   880 px column on a wide screen, a position just learned leading them
-   across both), the habit card, and a sticky bar with the next set. Its
-   moments (F4.4) run on its first paint only (ss.fxShown, set by
-   summaryMoments): a position learned stamps its seal, else a goal met
-   settles its medal; with both, the seal moves and the medal shows as it
-   ends */
+   set's order; at tier 1 each position's three stars, V4.3), after a break
+   what was remembered (V4.4), the headline and its second line, what moved
+   (when the positions come back), the week (once the goal is met, its medal
+   and "Goal met: 4 days this week."), the tiles (two columns on a phone,
+   160 px tiles in an 880 px column on a wide screen, a position just
+   learned leading them across both), the habit card, and a sticky bar with
+   the next set. Its moments (F4.4) run on its first paint only (ss.fxShown,
+   set by summaryMoments): a position learned stamps its seal, else a goal
+   met settles its medal; with both, the seal moves and the medal shows as
+   it ends. At tier 1 the earned stars fill first, then the seal or the
+   medal, never together (ss.starLag: when the stars are done) */
 function doneHtml(ss) {
   /* a pack's end (F9.4) is a page of its own */
   if (ss.spec && ss.spec.type === 'pack') return packDoneHtml(ss);
-  var tier = playerTier(), uniq = [], fx = !ss.fxShown, row = '';
+  var tier = playerTier(), uniq = [], fx = !ss.fxShown, row = '', stars = [];
   ss.keys.forEach(function (k) { if (uniq.indexOf(k) === -1) uniq.push(k); });
+  /* tier 1's stars fill on the first paint (not under reduced motion): the
+     seal and the medal wait for them */
+  var t1fx = tier === 1 && fx && !reducedMotion(), lag = t1fx && uniq.some(function (k) { var it = itemOf(k), e = sumOf(ss, k); return it && !it.lesson && e && ss.results[k] && e.s > 0; });
+  var mark = function (c, s) { row += resultGlyph(c); stars.push(s || 0); };
   var learned = '', recap = uniq.map(function (k) {
     var it = itemOf(k), e = sumOf(ss, k);
     /* a card taken out as not a real mistake has left the model: gone from the summary too */
     if (!it || !e || !ss.results[k]) return '';
     /* a foil: its own glyph and tile (F8.2); a practice position its own
        tile, scored apart (F9.4); a lesson none (F9.3) */
-    if (it.foil) { row += resultGlyph(e.c === 'first' && e.fk === 'playable' ? 'good' : e.c); return foilTileHtml(it, e); }
+    if (it.foil) { mark(e.c === 'first' && e.fk === 'playable' ? 'good' : e.c, e.s); return foilTileHtml(it, e); }
     if (it.lesson) return '';
-    if (it.prac) { row += resultGlyph(e.c); return pracTileHtml(it, e); }
-    row += resultGlyph(e.c);
-    if (e.m === 'learned' && !learned) { learned = learnedHtml(it, e, tier, fx); if (learned) return ''; }
+    if (it.prac) { mark(e.c, e.s); return pracTileHtml(it, e); }
+    mark(e.c, e.s);
+    if (e.m === 'learned' && !learned) { learned = learnedHtml(it, e, tier, fx ? (lag ? 'wait' : true) : false); if (learned) return ''; }
     /* a card that came back for one more try says how that went too (a
        try left untouched adds nothing) */
     var e2 = ss.results[k + '#r'] ? sumOf(ss, k + '#r') : null, word = CAT_WORD[e.c] + (e2 && CAT_AGAIN[e2.c] ? ', ' + CAT_AGAIN[e2.c] : '');
@@ -736,22 +824,24 @@ function doneHtml(ss) {
       + (e.c === 'skip' ? '' : tier === 1 ? starsHtml(e.s || 0) : e.p != null ? rungHtml(e.p) : '')
       + (e.f && e.l ? '<span class="tile-check">' + esc(e.l) + '</span>' : '') + '</div>';
   }).join('');
-  var sc = recapScore(ss, uniq, tier), fw = foilWords(ss, uniq), pw = pracWords(ss, uniq), moved = movedWords(ss, uniq), back = ladderWords(ss, uniq), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
-  var gm = ss.goalMet, week = gm ? weekHtml(fx && !learned, 'Goal met: ' + plur(gm.days, 'day') + ' this week.') : weekHtml();
+  var sr = tier === 1 && stars.length ? starRowHtml(stars, lag) : null;
+  if (fx) ss.starLag = sr ? sr.lag : 0;
+  var sc = recapScore(ss, uniq, tier), fw = foilWords(ss, uniq), pw = pracWords(ss, uniq), moved = movedWords(ss, uniq), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
+  var gm = ss.goalMet, week = gm ? weekHtml(fx && !learned ? (lag ? 'wait' : true) : false, goalMetWords(gm)) : weekHtml();
   /* the headline and its category line, then the foils' line (F8.2:
-     counted apart, they had nothing to find); what moved and when the
-     positions come back in one quiet paragraph under them (the design
-     lead's review of slice 4) */
+     counted apart, they had nothing to find); when the positions come back
+     in one quiet paragraph under them (the design lead's review of slice
+     4) */
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
     + diagHtml(ss, tier)
-    + (row ? '<div class="result-row" aria-hidden="true">' + row + '</div>' : '')
+    + recallHtml(ss, uniq, tier)
+    + (sr ? '<div class="result-row star-row' + (lag ? ' fx' : '') + '" aria-hidden="true">' + sr.html + '</div>' : row ? '<div class="result-row" aria-hidden="true">' + row + '</div>' : '')
     + '<h2 class="done-big" id="recap-h" tabindex="-1">' + sc.head + '</h2>'
     + (sc.then ? '<p class="recap-then">' + sc.then + '</p>' : '')
     + (fw ? '<p class="recap-then recap-foils">' + fw + '</p>' : '')
     + (pw ? '<p class="recap-then recap-foils">' + pw + '</p>' : '')
-    + (moved || back ? '<p class="recap-small">' + (moved ? '<span class="recap-moved">' + moved + '</span>' : '') + (moved && back ? ' ' : '')
-      + (back ? '<span class="recap-ladder">' + back + '</span>' : '') + '</p>' : '')
+    + (moved ? '<p class="recap-small"><span class="recap-moved">' + moved + '</span></p>' : '')
     + '<div class="recap-week' + (gm ? ' met' : '') + '"><div class="kicker">This week</div>' + week + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
     + (learned || recap ? '<div class="recap">' + learned + recap + '</div>' : '')
@@ -793,11 +883,22 @@ function summaryMoments(ss) {
   if (!ss || ss.fxShown) return;
   ss.fxShown = true;
   var learned = Object.keys(ss.sum || {}).some(function (k) { return ss.sum[k].m === 'learned' && !!itemOf(k); });
-  if (learned) { reward('learned'); snd('learned'); }
-  /* a skill mastered in a pack (F9.4) dings as a position learned does */
-  else if (ss.packMastered) { reward('mastered'); snd('learned'); learned = true; }
-  if (ss.goalMet) { reward('goal'); if (learned) setTimeout(function () { snd('goal'); }, NOTES_AFTER_DING); else snd('goal'); }
-  if (!learned && !ss.goalMet) snd('set');
+  var moments = function () {
+    var on = learned;
+    if (on) { reward('learned'); snd('learned'); }
+    /* a skill mastered in a pack (F9.4) dings as a position learned does */
+    else if (ss.packMastered) { reward('mastered'); snd('learned'); on = true; }
+    if (ss.goalMet) { reward('goal'); if (on) setTimeout(function () { snd('goal'); }, NOTES_AFTER_DING); else snd('goal'); }
+  };
+  /* at tier 1 the stars fill first (V4.3): the seal or the medal, and their
+     sounds, once they are done */
+  if (ss.starLag && (learned || ss.goalMet)) {
+    setTimeout(function () {
+      ['seal', 'medal'].forEach(function (x) { var w = document.querySelector('[data-fx="' + x + '-wait"]'); if (w) w.setAttribute('data-fx', x); });
+      moments();
+    }, ss.starLag);
+  } else moments();
+  if (!learned && !ss.packMastered && !ss.goalMet) snd('set');
   var c = cueLoad(), put = false;
   if (ss.dx && ss.dx.full && !c.rv) { c.rv = Date.now(); put = true; track('reveal_seen'); }
   if (ss.cue === 'ask' && !c.q) { c.q = Date.now(); put = true; }
@@ -823,7 +924,7 @@ function cueSave(c) { store.set(cueKey(), c); }
    losses, one move turned the game for good." (5 losses read) or "Your
    report builds as you practise: 12 of 40 games read.". Once it has shown
    in full, one line on the focus skill (else the biggest): "Piece safety: 3
-   learned · 12 climbing · 29 to go.". Decided once a summary (ss.dx), so
+   learned · 12 in practice · 29 not started.". Decided once a summary (ss.dx), so
    drawing it again says the same */
 function diagHtml(ss, tier) {
   if (!ss.dx) {
@@ -844,14 +945,14 @@ function diagHtml(ss, tier) {
       + (cv.losses >= 5 ? 'So far: in ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your report builds as you practise: ' + cv.covered + ' of ' + plur(cv.total, 'game') + ' read.')
       + '</p>' + link + '</section>';
   }
-  var big = fams2[0], tie = fams2[1] && Math.round(fams2[1].cost) === Math.round(big.cost);
-  var rows = fams2.filter(function (a) { return a.cost > 0; }).slice(0, 3).map(function (a) {
+  var big = fams2[0], tie = fams2[1] && fams2[1].lost === big.lost;
+  var rows = fams2.filter(function (a) { return a.lost > 0; }).slice(0, 3).map(function (a) {
     return '<div class="dg-row"><span class="sk-glyph" data-icon="' + ((SKILL[a.fam.key] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
-      + '<span class="dg-name">' + esc(a.fam.name) + '</span><span class="dg-n">' + decidedWords(a.cost, tier) + '</span></div>';
+      + '<span class="dg-name">' + esc(a.fam.name) + '</span><span class="dg-n">' + decidedWords(a.lost, tier) + '</span></div>';
   }).join('');
   /* "you started on" only once a position of it has been practised, and
      "the biggest" only where no other skill decided as many */
-  var started = !tie && big.cost > 0 && big.learned + big.practising > 0;
+  var started = !tie && big.lost > 0 && big.learned + big.practising > 0;
   return '<section class="diag" aria-label="Your games, read"><div class="kicker">Your games, read</div>'
     + '<h3 class="diag-h">' + (cv.losses >= 5 ? 'In ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your mistakes, grouped by the skill that would prevent them.') + '</h3>'
     + (rows ? '<div class="dg-rows">' + rows + '</div>' : '')
@@ -874,7 +975,7 @@ function cueAsk() {
 /* what the card's place holds on this summary: 'ask', 'backup' or ''; the
    install offer (F11.1) waits for a summary where it holds nothing */
 function cueOf(ss) {
-  if (ss.cue == null) ss.cue = cueAsk() ? 'ask' : backupDue() ? 'backup' : '';
+  if (ss.cue == null) ss.cue = cueAsk() ? 'ask' : backupDue(ss) ? 'backup' : '';
   return ss.cue;
 }
 function cueCardHtml(ss) {
@@ -882,34 +983,66 @@ function cueCardHtml(ss) {
   if (ss.cue === 'ask') return '<section class="cue" id="cue" aria-label="Reminders">' + cueBody('summary') + '</section>';
   if (ss.cue === 'backup') {
     return '<section class="cue" id="cue" aria-label="Your progress"><p class="cue-q">Your progress lives only in this browser. Save a copy?</p>'
+      + (safariTab() ? '<p class="cue-when">Or add notlichess to your home screen.</p>' : '')
       + '<div class="cue-acts"><a class="btn-line" data-act="backupSave">Save a file</a><a class="btn-quiet" data-act="backupLater">Later</a></div></section>';
   }
   return '';
 }
 /* the reminder's question and its steps, on the summary or in Settings:
-   the three times (the one picked lit), then what the reminder will be
-   ("At 19:30 on Mon, Tue, Thu and Sat, your goal's days.") with Add to
-   calendar and Google Calendar; once a file is made, how to finish */
+   the three times (the one picked lit), then the seven days (V4.6: M T W T
+   F S S, preset from the goal and the player's to change), what the
+   reminder will be ("At 7:30 pm on Mon, Tue, Thu and Sat.", in the
+   device's time format) with Add to calendar and Google Calendar; once a
+   file is made, how to finish */
+var CUE_WEEK = [1, 2, 3, 4, 5, 6, 0], CUE_DAY_LETTER = ['S', 'M', 'T', 'W', 'T', 'F', 'S'], CUE_DAY_NAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 function cueBody(where) {
   var c = cueLoad(), slot = ui.cueSlot || (where === 'settings' ? c.slot : null), made = where === 'summary' && !!c.cal, g = ui.cueHow === 'google';
-  if (made) return '<p class="cue-q">' + (g ? 'Save it in the Google Calendar tab.' : 'Open the file to add it to your calendar.') + '</p><p class="cue-when">' + cueWhen(c.slot) + '</p>'
+  if (made) return '<p class="cue-q">' + (g ? 'Save it in the Google Calendar tab.' : 'Open the file to add it to your calendar.') + '</p><p class="cue-when">' + cueWhen(c.slot, c.days) + '</p>'
     + '<div class="cue-acts"><a class="btn-quiet" data-act="' + (g ? 'cueAdd' : 'cueGcal') + '" data-k="' + c.slot + '">' + (g ? 'Or a calendar file ›' : 'Or Google Calendar ›') + '</a></div>';
+  var days = cueDayList();
   return (where === 'summary' ? '<p class="cue-q">When will you practise?</p>' : '')
     + '<div class="chips">' + ['morning', 'midday', 'evening'].map(function (s) {
       return '<a class="chip' + (slot === s ? ' chip-on' : '') + '" data-act="cueSlot" data-k="' + s + '" aria-pressed="' + (slot === s) + '">' + CUE_WORD[s] + '</a>';
     }).join('') + '</div>'
-    + (slot ? '<p class="cue-when">' + cueWhen(slot) + '</p>' : '')
+    + (slot ? '<div class="chips cue-days" role="group" aria-label="Days">' + CUE_WEEK.map(function (d) {
+      var on = days.indexOf(d) >= 0;
+      return '<a class="chip day-chip' + (on ? ' chip-on' : '') + '" data-act="cueDay" data-k="' + d + '" aria-pressed="' + on + '" aria-label="' + CUE_DAY_NAME[d] + '">' + CUE_DAY_LETTER[d] + '</a>';
+    }).join('') + '</div><p class="cue-when">' + cueWhen(slot, days) + '</p>' : '')
     + (slot || where === 'summary' ? '<div class="cue-acts">' + (slot ? '<a class="btn-line" data-icon="calendar" data-act="cueAdd" data-k="' + slot + '">Add to calendar</a>'
       + '<a class="btn-quiet" data-act="cueGcal" data-k="' + slot + '">Google Calendar ›</a>' : '')
     + (where === 'summary' ? '<a class="btn-quiet" data-act="cueNo">Not now</a>' : '') + '</div>' : '');
 }
-/* "At 19:30 on Mon, Tue, Thu and Sat, your goal's days." ("At 19:30
-   Monday to Friday, ...", "At 19:30 every day.") */
-function cueWhen(slot) {
-  var at = CUE_AT[slot] || CUE_AT.evening, days = cueDays(weekGoal()), N = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var on = days.length === 7 ? 'every day' : days.length === 5 ? 'Monday to Friday, your goal\'s days'
-    : 'on ' + days.slice(0, -1).map(function (x) { return N[x]; }).join(', ') + ' and ' + N[days[days.length - 1]] + ', your goal\'s days';
-  return 'At ' + pad2(at[0]) + ':' + pad2(at[1]) + ' ' + on + '.';
+/* the reminder's days (JS days): as changed here, else as added, else the
+   goal's (3: Mon Wed Fri; 4: Mon Tue Thu Sat; 5: Mon to Fri; 6 and 7:
+   every day), Monday first */
+function cueDayList() {
+  var c = cueLoad(), d = ui.cueDays || (Array.isArray(c.days) && c.days.length ? c.days : cueDays(weekGoal()));
+  return d.slice().sort(function (x, y) { return (x + 6) % 7 - (y + 6) % 7; });
+}
+/* a day chip pressed: on or off, never the last one off */
+function cueDayToggle(d) {
+  var days = cueDayList(), at = days.indexOf(d);
+  if (at >= 0 && days.length > 1) days.splice(at, 1); else if (at < 0 && d >= 0 && d <= 6) days.push(d);
+  ui.cueDays = days;
+  cuePaint();
+}
+/* "At 7:30 pm on Mon, Tue, Thu and Sat." ("At 19:30 Monday to Friday.",
+   "At 7:30 pm every day.", "At 8:00 am on Sun."), the time in the device's
+   format (V4.6) */
+function cueWhen(slot, days) {
+  var at = CUE_AT[slot] || CUE_AT.evening, N = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  days = (days && days.length ? days : cueDays(weekGoal())).slice().sort(function (x, y) { return (x + 6) % 7 - (y + 6) % 7; });
+  var weekdays = days.length === 5 && days.every(function (d) { return d >= 1 && d <= 5; });
+  var on = days.length === 7 ? 'every day' : weekdays ? 'Monday to Friday'
+    : 'on ' + (days.length === 1 ? N[days[0]] : days.slice(0, -1).map(function (x) { return N[x]; }).join(', ') + ' and ' + N[days[days.length - 1]]);
+  return 'At ' + clockTime(at[0], at[1]) + ' ' + on + '.';
+}
+/* a time in the device's own format (V4.6): "7:30 pm" where its clock has
+   12 hours (en-US), "19:30" where it has 24 (en-GB) */
+function clockTime(h, m, loc) {
+  var h12 = false;
+  try { h12 = !!new Intl.DateTimeFormat(loc || undefined, { hour: 'numeric' }).resolvedOptions().hour12; } catch (e) { h12 = false; }
+  return h12 ? (h % 12 || 12) + ':' + pad2(m) + ' ' + (h < 12 ? 'am' : 'pm') : pad2(h) + ':' + pad2(m);
 }
 function pad2(n) { return (n < 10 ? '0' : '') + n; }
 /* the goal's days (JS days, Monday first): 3 Mon Wed Fri, 4 Mon Tue Thu
@@ -918,56 +1051,58 @@ var CUE_DAYS = { 3: [1, 3, 5], 4: [1, 2, 4, 6], 5: [1, 2, 3, 4, 5], 7: [1, 2, 3,
 function cueDays(g) { return g >= 6 ? CUE_DAYS[7] : CUE_DAYS[g] || CUE_DAYS[3]; }
 /* the event (D12): "notlichess: your practice", "A few minutes on positions
    from your own games." and the link, never a count of minutes; 10 minutes
-   long, an alarm at its start, weekly on the goal's days at the time
-   picked, in local time wherever the player is (a floating time), from the
-   first of those days after today */
+   long, an alarm at its start, weekly on the days picked (V4.6) at the
+   time picked, in local time wherever the player is (a floating time),
+   from the first of those days after today */
 var CUE_TITLE = 'notlichess: your practice', CUE_NOTE = 'A few minutes on positions from your own games.', CUE_URL = 'https://notlichess.org/#train';
 var ICS_DAY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
-function cueStart(slot, g, now) {
-  var at = CUE_AT[slot] || CUE_AT.evening, days = cueDays(g), d = new Date(now);
+function cueStart(slot, days, now) {
+  var at = CUE_AT[slot] || CUE_AT.evening, d = new Date(now);
   for (var i = 1; i <= 7; i++) {
     var x = new Date(d.getFullYear(), d.getMonth(), d.getDate() + i, at[0], at[1]);
     if (days.indexOf(x.getDay()) >= 0) return x;
   }
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, at[0], at[1]);
 }
+function icsDays(days) { return days.slice().sort(function (x, y) { return (x + 6) % 7 - (y + 6) % 7; }).map(function (x) { return ICS_DAY[x]; }).join(','); }
 function icsLocal(d) { return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + 'T' + pad2(d.getHours()) + pad2(d.getMinutes()) + '00'; }
-function icsText(slot, g, now) {
-  var s = cueStart(slot, g, now), e = new Date(s.getTime() + 10 * 60 * 1000);
-  var esc1 = function (x) { return String(x).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); };
+function icsText(slot, days, now) {
+  var s = cueStart(slot, days, now), e = new Date(s.getTime() + 10 * 60 * 1000);
+  var esc1 = function (x) { return String(x).replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); };
   /* lines over 75 characters fold, the rest of each on a line of its own that starts with a space */
   var fold = function (l) { var out = l.slice(0, 75); for (var i = 75; i < l.length; i += 74) out += '\r\n ' + l.slice(i, i + 74); return out; };
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//notlichess.org//practice reminder//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     'BEGIN:VEVENT', 'UID:practice-' + now + '@notlichess.org', 'DTSTAMP:' + new Date(now).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, ''),
-    'DTSTART:' + icsLocal(s), 'DTEND:' + icsLocal(e), 'RRULE:FREQ=WEEKLY;BYDAY=' + cueDays(g).map(function (x) { return ICS_DAY[x]; }).join(','),
+    'DTSTART:' + icsLocal(s), 'DTEND:' + icsLocal(e), 'RRULE:FREQ=WEEKLY;BYDAY=' + icsDays(days),
     'SUMMARY:' + esc1(CUE_TITLE), 'DESCRIPTION:' + esc1(CUE_NOTE + '\n' + CUE_URL), 'URL:' + CUE_URL,
     'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + esc1(CUE_TITLE), 'TRIGGER:PT0S', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].map(fold).join('\r\n') + '\r\n';
 }
 /* the same event as a Google Calendar link, in the player's time zone */
-function gcalUrl(slot, g, now) {
-  var s = cueStart(slot, g, now), e = new Date(s.getTime() + 10 * 60 * 1000), tz = '';
+function gcalUrl(slot, days, now) {
+  var s = cueStart(slot, days, now), e = new Date(s.getTime() + 10 * 60 * 1000), tz = '';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (x) { tz = ''; }
   return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(CUE_TITLE) + '&dates=' + icsLocal(s) + '/' + icsLocal(e)
-    + '&details=' + encodeURIComponent(CUE_NOTE + '\n' + CUE_URL) + '&recur=' + encodeURIComponent('RRULE:FREQ=WEEKLY;BYDAY=' + cueDays(g).map(function (x) { return ICS_DAY[x]; }).join(','))
+    + '&details=' + encodeURIComponent(CUE_NOTE + '\n' + CUE_URL) + '&recur=' + encodeURIComponent('RRULE:FREQ=WEEKLY;BYDAY=' + icsDays(days))
     + (tz ? '&ctz=' + encodeURIComponent(tz) : '');
 }
-/* the reminder added, as a file or a Google Calendar link: kept, measured
-   (cue_calendar, the cue tag), and the card says how to finish */
+/* the reminder added, as a file or a Google Calendar link: kept with its
+   time and days, measured (cue_calendar, the cue tag), and the card says
+   how to finish */
 function cueAdd(slot, google) {
   slot = CUE_AT[slot] ? slot : 'evening';
-  var now = Date.now(), c = cueLoad();
-  if (google) { try { window.open(gcalUrl(slot, weekGoal(), now), '_blank', 'noopener'); } catch (e) {} }
+  var now = Date.now(), c = cueLoad(), days = cueDayList();
+  if (google) { try { window.open(gcalUrl(slot, days, now), '_blank', 'noopener'); } catch (e) {} }
   else {
     try {
       var a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([icsText(slot, weekGoal(), now)], { type: 'text/calendar;charset=utf-8' }));
+      a.href = URL.createObjectURL(new Blob([icsText(slot, days, now)], { type: 'text/calendar;charset=utf-8' }));
       a.download = 'notlichess-practice.ics';
       document.body.appendChild(a);
       if (a.click) a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     } catch (e) {}
   }
-  c.cal = now; c.slot = slot; delete c.no;
+  c.cal = now; c.slot = slot; c.days = days; delete c.no;
   cueSave(c);
   ui.cueHow = google ? 'google' : 'file';
   track('cue_calendar');
@@ -987,17 +1122,31 @@ function cueNotNow() {
 }
 /* the cue tag (F0.7), coarse words only: the time added, notnow, none */
 function cueTag() { var c = cueLoad(); return c.cal ? c.slot || 'calendar' : c.no ? 'notnow' : 'none'; }
-/* the backup prompt (F5.4): once at the first learned position or the 14th
-   practice day, then 30 practice days after the last backup (a file
-   saved, or the prompt answered: Later waits as long) */
-function backupDue() {
-  var c = cueLoad(), days = practiceDays(), srs = srsLoad();
-  if (c.bk == null) return days >= 14 || Object.keys(srs).some(function (k) { return srs[k] && srs[k].learned && !srs[k].hidden; });
-  return days - Math.min(+c.bk || 0, days) >= 30;
+/* the backup prompt (V4.5, F5.4's words): on the summary of the 3rd
+   practice day, and on the day's first summary after 7 or more days away
+   (ss.away) when nothing was saved in the last 14 days; then 30 practice
+   days after the last backup (a file saved, or the prompt answered: Later
+   waits as long), 7 in Safari on an iPhone or iPad outside the home-screen
+   app, which can erase a site's storage after 7 days away */
+function backupDue(ss) {
+  var c = cueLoad(), days = practiceDays();
+  if (ss && ss.away && !(c.sv && Date.now() - c.sv < 14 * DAY)) return true;
+  if (c.bk == null) return days >= 3;
+  return days - Math.min(+c.bk || 0, days) >= (safariTab() ? 7 : 30);
 }
+/* Safari on an iPhone or iPad, in a tab: not the home-screen app */
+function safariTab() { return iosDevice() && !installedApp(); }
 function backupNoted() {
   var c = cueLoad();
   c.bk = practiceDays(); c.bt = Date.now();
+  cueSave(c);
+}
+/* a progress file saved (V4.5): when, for "Last saved: 11 Oct" in
+   Settings and for the prompt after a break */
+function backupSaved() {
+  backupNoted();
+  var c = cueLoad();
+  c.sv = Date.now();
   cueSave(c);
 }
 function backupAnswer(save) {
@@ -2109,8 +2258,9 @@ function paintBand(a, d) {
   if (co && co.className !== cls) co.className = cls;
   if (fresh && foundMoment(a, d)) {
     a.rewarded = true;
-    var disc = band.querySelector && band.querySelector('.bd-disc');
+    var disc = band.querySelector && band.querySelector('.bd-disc'), stars = band.querySelector && band.querySelector('.bd-stars');
     if (disc && disc.classList) disc.classList.add(a.tier >= 3 ? 'fx-found3' : 'fx-found');
+    if (stars && stars.classList) stars.classList.add('fx');
     reward('found', a);
   }
 }
@@ -2164,10 +2314,19 @@ function bandHtml(a, d) {
   /* a trade in the board's own pieces (ledgerHtml), its words for a screen reader */
   if (d.cap) return '<div class="card-task k-' + d.kind + ' cap"' + (d.disc ? '' : ' aria-hidden="true"') + '>' + discHtml(a, d.disc)
     + '<div class="bd-rows"><p class="bd-cap">' + ledgerHtml(d.cap) + '</p>' + tagRowHtml(d) + '</div></div>';
-  return '<div class="card-task k-' + d.kind + (d.sweep ? ' sweep' : '') + '">' + discHtml(a, d.disc)
+  return '<div class="card-task k-' + d.kind + (d.sweep ? ' sweep' : '') + '">' + discHtml(a, d.disc) + foundStarsHtml(a, d)
     + '<div class="bd-rows"><div class="bd-top"><h2 class="bd-r1" id="' + (a.phase === 'done' ? 'result-h' : 'task-h') + '" tabindex="-1">' + esc(d.row1) + '</h2>'
     + (d.pips ? pipsHtml(d.pips) : '') + '</div>'
     + '<p class="bd-r2">' + ledgerHtml(d.row2) + '</p>' + tagRowHtml(d) + '</div></div>';
+}
+/* tier 1 (V4.3): a card found on its first showing adds its stars under
+   its verdict's glyph, off the board; with the found moment they fill one
+   by one, 80 ms apart (paintBand). Glyphs, so no words of the frame's 15 */
+function foundStarsHtml(a, d) {
+  if (a.tier !== 1 || d.disc !== 'good' || a.phase !== 'done' || a.revealed || a.prac || a.lesson || a.foil || !a.view || a.view.mode !== 's0' || ss_relearn(a)) return '';
+  var n = cardStars(a, resultCategory(a, a.result)), h = '';
+  for (var i = 0; i < 3; i++) h += '<i class="st' + (i < n ? ' on' : '') + '"></i>';
+  return '<span class="bd-stars" aria-hidden="true">' + h + '</span>';
 }
 /* the tag row (F4.2): one 24 px pill at most, in a place of its own that
    never moves: the band's chip (the relearn chip "One more try" in honey,
@@ -2357,23 +2516,29 @@ function altNames(a) {
   var mine = a.lines.yours && a.lines.yours.san[at], theirs = a.lines.best.san[at] || a.lines.best.san[0];
   return { mine: mine || 'Your move', theirs: theirs || '' };
 }
-/* the session bar: end, progress, more */
+/* the session bar: end, progress, more. The count is the set's own (V4.2:
+   a set of 5 stays "of 5"); a one more try says its place among the
+   retries */
 function sessionBarHtml(ss, a) {
   /* a lesson is no position (F9.3): the count leaves it out */
-  var pos = function (k) { return !isLessonKey(k); }, n = ss.keys.slice(0, Math.min(ss.idx + 1, ss.keys.length)).filter(pos).length, all = ss.keys.filter(pos).length;
-  var where = isLessonKey(ss.keys[ss.idx]) && !ss.finished ? 'A lesson, before position ' + Math.min(n + 1, all) + ' of ' + all : 'Position ' + n + ' of ' + all;
+  var sp = setPlace(ss);
+  var where = sp.retry ? 'One more try, ' + sp.retry + ' of ' + sp.retries
+    : isLessonKey(ss.keys[ss.idx]) && !ss.finished ? 'A lesson, before position ' + Math.min(sp.n + 1, sp.all) + ' of ' + sp.all : 'Position ' + sp.n + ' of ' + sp.all + relearnWords(ss);
   return '<a class="sb-end" data-act="endSession" aria-label="End the session">×</a>' + dotsHtml(ss)
-    + '<span class="sr-only">' + where + relearnWords(ss) + '</span>'
+    + '<span class="sr-only">' + where + '</span>'
     + (a ? '<span class="card-menu"><a data-act="menu" aria-label="More" aria-expanded="' + !!a.menuOpen + '">•••</a>' + (a.menuOpen ? menuHtml(a) : '') + '</span>' : '');
 }
 /* the cards queued to come back, for the screen reader (once they come,
-   they are counted in the positions) */
+   they are counted apart, as retries) */
 function relearnWords(ss) {
   var back = (ss.relearn || []).length;
   return back ? ', and ' + (back === 1 ? 'one position' : back + ' positions') + ' to try again' : '';
 }
+/* the set's segments, then, after a gap, its retries' (V4.2): a card queued
+   to come back joins the bar marked as a card coming back (S16, U7), so
+   the bar growing says why, and never as one more of the set */
 function dotsHtml(ss) {
-  var seen = {}, out = '';
+  var seen = {}, out = '', gap = ' gap';
   ss.keys.forEach(function (k, i) {
     var relearn = ss.relearnOf && ss.relearnOf[k] && seen[k];
     seen[k] = 1;
@@ -2381,12 +2546,10 @@ function dotsHtml(ss) {
     /* progress only: results are said in words on the recap */
     var cls = i === ss.idx && !ss.finished ? 'on' : (r ? 'done' : '');
     /* a practice position's segment is hollow, a lesson's a short one (F9.3, F9.4) */
-    out += '<span class="dot ' + cls + (relearn ? ' relearn' : '') + (isPracKey(k) ? ' prac' : isLessonKey(k) ? ' lesson' : '') + '"></span>';
+    out += '<span class="dot ' + cls + (relearn ? ' relearn' + gap : '') + (isPracKey(k) ? ' prac' : isLessonKey(k) ? ' lesson' : '') + '"></span>';
+    if (relearn) gap = '';
   });
-  /* one more try still to come: its segment joins the bar as the card is
-     queued, marked as a card coming back (S16, U7), so the bar growing
-     says why */
-  (ss.relearn || []).forEach(function () { out += '<span class="dot relearn"></span>'; });
+  (ss.relearn || []).forEach(function () { out += '<span class="dot relearn' + gap + '"></span>'; gap = ''; });
   return '<div class="dots" aria-hidden="true">' + out + '</div>';
 }
 function menuHtml(a) {
@@ -2454,23 +2617,8 @@ function stripHtml(a, ss) {
   }
   if (a.explore) return xpHtml(a);
   if (a.view.mode === 'story') return storyStripHtml(a);
-  /* the first card ever queued to come back says so, once (C1) */
-  var tip = retryTipOn(a) ? '<p class="story-note retry-tip">' + RETRY_TIP + '</p>' : '';
   /* settled (S0): one link to everything else (S13), a 40 px chip */
-  return tip + (a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="strip-chip details-link" data-icon="info" data-act="details">Details</a></p>' : '');
-}
-/* the bar grows by a segment when a card is queued to come back (S16):
-   on the first card ever queued (nl:tip:retry, on this device) the strip
-   says why, on its answer shown and its settled result, where the words on
-   screen leave it room (read on the settled frame, so it never comes and
-   goes within one); it gives way to the band's own words, and is not said
-   again on a later card */
-var RETRY_TIP = 'This one comes back later.';
-function retryTipOn(a) {
-  if (!a.retryTip || a.phase !== 'done' || a.explore || !a.view || (a.view.mode !== 's0' && a.view.mode !== 'show')) return false;
-  var v = Object.create(a), ss = ui.session;
-  if (a.view.mode === 's0') v.settle = 2;
-  return bandWords(bandFor(v), ss ? barSlots(v, ss) : []) + stripWords(v) + wordsIn(RETRY_TIP) <= WORD_BUDGET;
+  return a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="strip-chip details-link" data-icon="info" data-act="details">Details</a></p>' : '';
 }
 /* an example for the typed-move field (I5): a legal move of the position
    in both forms ("Nc3 or b1c3"), never one in avoid (the answer due, the
@@ -2799,8 +2947,9 @@ function scrollTrainerTop() {
 /* ── Insights (F6.1 to F6.3) ─────────────────────────────────────────────
    A screen a phone can read, in one unit per bar: the window, the headline
    and the lead (on every screen), since you started, the skills ranked by
-   games decided, each with a bar of its own positions in practice (learned
-   leaf, climbing honey, to go grey) and its words, those that decided
+   games decided (losses, each once: V4.8), each with a bar of its own
+   positions' steps (learned leaf, in practice honey, the steps not yet
+   climbed outlined) and its words, those that decided
    fewer than 3 games under "Also seen", how we count, your clock, then
    where it happens */
 function renderInsights() {
@@ -2808,12 +2957,14 @@ function renderInsights() {
   if (!box || !cfg.user) return;
   if (ui.view !== 'insights' && box.innerHTML) return;       /* rendered on demand */
   var r = insightReport(), n = analysisNumbers(), tier = playerTier();
-  /* at More help Insights opens with the ten skill tiles (F9.5), from the
-     first day: practice packs need no games read */
+  /* at More help the ten skill tiles (F9.5) come right under the report's
+     first lines (the headline and its lead, or what is being read), from
+     the first day: practice packs need no games read. The headline stays
+     on the first screen at every tier (F6.1), the tiles' first row too */
   var tiles = tier === 1 ? skillTilesHtml() : '';
   if (!data.games.length) {
-    box.innerHTML = '<div class="ins">' + tiles + (data.sections.games === 'loading' ? '<p class="loading">Reading your games…</p>'
-      : '<p class="sec">Insights appear once there are rated games to read. See Today for what to do next.</p>') + '</div>';
+    box.innerHTML = '<div class="ins">' + (data.sections.games === 'loading' ? '<p class="loading">Reading your games…</p>'
+      : '<p class="sec">Insights appear once there are rated games to read. See Today for what to do next.</p>') + tiles + '</div>';
     return;
   }
   /* the player's own games only: the tester's clones (realGames) are all
@@ -2825,24 +2976,27 @@ function renderInsights() {
   var win = partial ? realGames() : coveredGames(), cg = win.map(function (g) { return g.ts; });
   var kinds = trackedPerfs().filter(function (p) { return win.some(function (g) { return g.perf === p; }); }).map(perfLabel).join(' and ');
   var games = (kinds ? kinds + ' ' : '') + 'game' + ((partial ? total : r.games) === 1 ? '' : 's');
-  var h = '<div class="ins">' + tiles + '<div class="kicker">Based on ' + (partial ? r.games + ' of ' + total + ' ' + games + ' so far' : r.games + ' ' + games)
+  var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + total + ' ' + games + ' so far' : r.games + ' ' + games)
     + (cg.length ? ', ' + dateSpan(Math.min.apply(null, cg), Math.max.apply(null, cg)) : '') + '</div>';
   if (!r.families.length) {
-    h += '<h2>Your report appears as ' + (tier === 1 ? 'the computer reads' : 'Stockfish reads') + ' your games.</h2><p class="lead">' + read + ' of ' + total + ' games checked. The first patterns show up after a handful of games; the full picture at about ' + INSIGHT_MIN_GAMES + '.</p></div>';
+    h += '<h2>Your report appears as ' + (tier === 1 ? 'the computer reads' : 'Stockfish reads') + ' your games.</h2><p class="lead">' + read + ' of ' + total + ' games checked. The first patterns show up after a handful of games; the full picture at about ' + INSIGHT_MIN_GAMES + '.</p>' + tiles + '</div>';
     box.innerHTML = h;
     return;
   }
   var cov = r.coverage, top = r.families[0], next = r.families[1];
   var head = cov.losses >= 5 ? 'In ' + cov.decided + ' of your ' + cov.losses + ' losses, one move ' + (tier === 1 ? 'cost you the game.' : 'turned the game for good.')
     : 'Your mistakes, grouped by the skill that would prevent them.';
-  /* the lead: the skill that decided the most, and a tie said as one */
+  /* the lead: the skill that decided the most losses (V4.8: each counted
+     once, as the headline counts them), and a tie said as one */
   var lead = '';
-  if (top.cost >= 1) {
-    var tie = next && Math.round(next.cost) === Math.round(top.cost), who = esc(top.fam.name) + (tie ? ' and ' + esc(next.fam.name) : '');
-    lead = tier === 1 ? who + ' cost you the most games: ' + Math.round(top.cost) + (tie ? ' each.' : '.')
-      : who + ' decided the most: ' + fmtGames(top.cost) + (tie ? ' each, lost or drawn.' : ' lost or drawn.');
+  if (top.lost >= 1) {
+    var tie = next && next.lost === top.lost, who = esc(top.fam.name) + (tie ? ' and ' + esc(next.fam.name) : '');
+    lead = tier === 1 ? who + ' cost you the most games: ' + top.lost + (tie ? ' each.' : '.')
+      : who + ' decided the most: ' + fmtGames(top.lost) + (tie ? ' each.' : '.');
   }
-  h += '<h2>' + head + '</h2>' + (lead ? '<p class="lead">' + lead + '</p>' : '');
+  /* while the background check runs, counts may still shrink: it says so */
+  var ck = checkingLeft();
+  h += '<h2>' + head + '</h2>' + (lead ? '<p class="lead">' + lead + '</p>' : '') + (ck ? '<p class="ins-checking">Checking ' + plur(ck, 'more position') + '…</p>' : '') + tiles;
   /* how your games are decided (F10.3), at tier 3 under the headline */
   if (tier >= 3) h += decidedHtml(decidedReport());
   /* since you started (F6.2), once a set is finished */
@@ -2853,7 +3007,7 @@ function renderInsights() {
   }
   /* the skills: a row each, by games decided; under 3 games, "Also seen"
      (the focus stays on top) */
-  var focus = currentFocus(), main = r.families.filter(function (a) { return Math.round(a.cost) >= ALSO_SEEN || (focus && focus.fam === a.fam.key); });
+  var focus = currentFocus(), main = r.families.filter(function (a) { return a.lost >= ALSO_SEEN || (focus && focus.fam === a.fam.key); });
   var also = r.families.filter(function (a) { return main.indexOf(a) === -1; });
   if (!main.length) { main = also; also = []; }
   h += '<h3 class="ins-h">' + (tier === 1 ? 'What cost you games' : 'What decided your games') + '</h3>' + skillRowsHtml(main, focus, tier)
@@ -2875,21 +3029,20 @@ function renderInsights() {
   h += '</div>';
   box.innerHTML = h;
 }
-/* a skill's row: its glyph, name ("Start here" on the focus), plain line,
-   games decided and positions, then the bar of those positions (one unit:
-   learned leaf, climbing honey, to go grey, its zero parts left out) and
-   the same in words. The row opens the skill's sheet */
+/* a skill's row: its glyph, name ("Start here" on the focus, at tiers 2
+   and 3: at tier 1 the skill tiles' "Next" is the one next step, V4.7),
+   plain line, losses decided and positions, then the bar of those
+   positions by steps (V4.8: learned leaf, in practice honey) and the
+   positions in words. The row opens the skill's sheet */
 function skillRowsHtml(list, focus, tier) {
   return '<div class="fam-list">' + list.map(function (a) {
-    var k = a.fam.key, on = !!(focus && focus.fam === k);
-    var bar = [[a.learned, 'sk-l'], [a.practising, 'sk-c'], [a.fresh, 'sk-g']].filter(function (x) { return x[0] > 0; })
-      .map(function (x) { return '<i class="' + x[1] + '" style="flex-grow:' + x[0] + '"></i>'; }).join('');
+    var k = a.fam.key, on = tier >= 2 && !!(focus && focus.fam === k);
     return '<a class="fam-row' + (on ? ' is-focus' : '') + '" data-act="sheet" data-k="family:' + k + '">'
       + '<span class="sk-glyph" data-icon="' + ((SKILL[k] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
       + '<span class="fr-main"><span class="fr-name">' + esc(a.fam.name) + (on ? '<span class="pill">Start here</span>' : '') + '</span>'
         + '<span class="fr-line">' + esc(skillLine(k, tier)) + '</span>'
-        + '<span class="fr-n">' + decidedWords(a.cost, tier) + ' · ' + plur(a.count, 'position') + '</span>'
-        + '<span class="fr-bar" aria-hidden="true">' + bar + '</span>'
+        + '<span class="fr-n">' + decidedWords(a.lost, tier) + ' · ' + plur(a.count, 'position') + '</span>'
+        + stepBarHtml(a.steps)
         + '<span class="fr-prog">' + progressWords(a) + '</span></span>'
       + '<span class="fr-go" aria-hidden="true">›</span></a>';
   }).join('') + '</div>';
@@ -2911,16 +3064,17 @@ function startPanelHtml(st) {
       + SINCE_MIN + ' games after.</p></section>';
     var segs = '';
     for (var i = 0; i < SINCE_MIN; i++) segs += '<i' + (i < S.n ? ' class="on"' : '') + '></i>';
-    return h + '<p class="since-wait">Comparison from ' + SINCE_MIN + ' games since you started: ' + S.n + ' so far.</p>'
+    return h + '<p class="since-wait">Comparison from ' + SINCE_MIN + ' games since you started: ' + S.n + ' of ' + SINCE_MIN + ' new games so far.</p>'
       + '<span class="since-meter" aria-hidden="true">' + segs + '</span></section>';
   }
   h += '<p class="since-num">Big mistakes per game: ' + d1(B.mean) + ' before, ' + d1(S.mean) + ' since (' + plur(S.n, 'game') + ').</p>'
     + '<p class="since-say">' + SINCE_SAY[st.verdict] + '</p>'
     + '<p>Games with no big mistake: ' + B.clean + ' of ' + B.n + ' before, ' + S.clean + ' of ' + S.n + ' since.</p>';
-  if (B.famN && S.famN) insightReport().families.forEach(function (a) {
-    if (a.learned + a.practising < 5) return;
-    var k = a.fam.key;
-    h += '<p>' + esc(a.fam.name) + ' mistakes: ' + (B.fam[k] || 0) + ' in ' + plur(B.famN, 'game') + ' before, ' + (S.fam[k] || 0) + ' in ' + S.famN + ' since.</p>';
+  /* a practised skill's line only with its calibrated word (V4.8: from 20
+     games since and 10 of its mistakes before), counts never read alone */
+  insightReport().families.forEach(function (a) {
+    var k = a.fam.key, v = a.learned + a.practising >= 5 ? skillVerdict(B, S, k) : null;
+    if (v) h += '<p class="since-skill">' + esc(a.fam.name) + ' mistakes: ' + (B.fam[k] || 0) + ' in ' + plur(B.famN, 'game') + ' before, ' + (S.fam[k] || 0) + ' in ' + S.famN + ' since. ' + SINCE_SAY[v] + '</p>';
   });
   var moved = B.on && S.on ? S.opp / S.on - B.opp / B.on : 0;
   if (Math.abs(moved) >= 100) h += '<p>Your opponents since are ' + Math.round(Math.abs(moved) / 10) * 10 + ' points ' + (moved > 0 ? 'stronger' : 'weaker') + '.</p>';
@@ -2990,14 +3144,17 @@ function decidedHtml(d) {
    threshold frozen on the start day (sinceLine) */
 function countHtml() {
   var t = playerTier(), lines, st = sinceStats(), since = st && st.before.n ? sinceLine(st, t) : '';
-  if (t === 1) lines = ['A big mistake: a move that made your position much worse.', since, 'A move cost you the game if you never came back from it. A drawn game counts as half a game.'];
+  /* (V4.8) a position learned, in words the player can check; a decided
+     game is a loss, each counted once, as the headline and the rows count
+     them */
+  if (t === 1) lines = ['A big mistake: a move that made your position much worse.', since, 'A move cost you the game if you never came back from it.', 'Find a position on 3 different days and it is learned.'];
   else {
     var g = realGames().filter(function (x) { return x.myR; }).sort(function (x, y) { return y.ts - x.ts; })[0];
     var thr = g ? mistakeMinFor(g) : (t >= 3 ? 12 : 15);
     lines = ['A big mistake cut your winning chances by ' + thr + ' points or more (' + { 20: '15 from 1200, 12 at 1800+', 15: '20 under 1200, 12 at 1800+', 12: '15 under 1800, 20 under 1200' }[thr] + ').',
       since,
-      'A move decided a game if you never came back from it. A drawn game counts as half a game.',
-      'Each bar shows your practice on that skill\'s positions: learned, climbing, to go.'];
+      'A move decided a game if it lost a game you could still play and you never came back.',
+      'Each find on a later day climbs a step; three steps and it is learned. A miss sends it back.'];
     /* tier 3's rows on how games are decided (F10.3): what +2 means, and
        where the peer figures come from */
     var dr = t >= 3 ? decidedReport() : null;
@@ -3006,18 +3163,19 @@ function countHtml() {
   }
   return '<div class="kicker">Insights</div><h3>How we count</h3>' + lines.filter(Boolean).map(function (x) { return '<p>' + x + '</p>'; }).join('');
 }
-/* the threshold "since you started" counts at: "Since you started, every
-   game counts at 15 points, the line on your start day." (formats frozen
-   at different ones each said, "rapid games count at 15 points and blitz
-   games at 20, the lines on your start day."); tier 1 "Since you started,
-   every game counts the same way." */
+/* the threshold "since you started" counts at (V4.8, the player's own
+   number): "To compare fairly, every game since you started counts at 15
+   points, your line when you started, even if your rating changes."
+   (formats frozen at different ones each said: "... rapid games count at
+   15 points and blitz games at 20, your lines when you started, ...");
+   tier 1 "Since you started, every game counts the same way." */
 function sinceLine(st, tier) {
   if (tier === 1) return 'Since you started, every game counts the same way.';
   var ps = trackedPerfs().filter(function (p) { return st.thr[p] && data.games.some(function (g) { return g.perf === p && g.wp; }); });
   if (!ps.length) return '';
-  if (ps.every(function (p) { return st.thr[p] === st.thr[ps[0]]; })) return 'Since you started, every game counts at ' + st.thr[ps[0]] + ' points, the line on your start day.';
+  if (ps.every(function (p) { return st.thr[p] === st.thr[ps[0]]; })) return 'To compare fairly, every game since you started counts at ' + st.thr[ps[0]] + ' points, your line when you started, even if your rating changes.';
   var each = ps.map(function (p, i) { return perfLabel(p) + ' games ' + (i ? 'at ' + st.thr[p] : 'count at ' + st.thr[p] + ' points'); });
-  return 'Since you started, ' + each.slice(0, -1).join(', ') + ' and ' + each[each.length - 1] + ', the lines on your start day.';
+  return 'To compare fairly, since you started ' + each.slice(0, -1).join(', ') + ' and ' + each[each.length - 1] + ', your lines when you started, even if your rating changes.';
 }
 /* ── sheets ──────────────────────────────────────────────────────────────── */
 /* back: where focus returns on closing, as a selector, when the control
@@ -3110,29 +3268,34 @@ function sheetHtml(kind) {
     var agg = insightReport().families.filter(function (a) { return a.fam.key === k; })[0];
     if (!fam || !agg) return '';
     var focus = currentFocus(), nDrill = drillItems({ type: 'family', fam: k }, 8).length;
-    var rows = agg.patterns.slice().sort(function (x, y) { return y.cost - x.cost || y.count - x.count; }).map(function (s) {
+    /* its patterns, whose counts add up to its own (V4.8), each with the
+       losses it decided */
+    var rows = agg.patterns.slice().sort(function (x, y) { return lostOf(y.items) - lostOf(x.items) || y.cost - x.cost || y.count - x.count; }).map(function (s) {
+      var lost = lostOf(s.items);
       return '<a class="pat-row" data-act="sheet" data-k="pattern:' + s.key + '"><span>' + esc(s.info.plural) + '</span><span class="dim">' + s.count
-        + (s.cost >= 1 ? ' · decided ' + fmtGames(s.cost) : '') + '</span><span class="fr-go" aria-hidden="true">›</span></a>';
+        + (lost ? ' · decided ' + fmtGames(lost) : '') + '</span><span class="fr-go" aria-hidden="true">›</span></a>';
     }).join('');
     return '<div class="kicker">Skill</div><h3>' + esc(fam.name) + '</h3>'
-      + '<p class="sheet-sum">' + (agg.cost >= 1 ? 'Decided ' + fmtGames(agg.cost) + ' of yours. ' : '') + plur(agg.count, 'position') + ' from your games.'
+      + '<p class="sheet-sum">' + (agg.lost ? 'Decided ' + fmtGames(agg.lost) + ' of yours. ' : '') + plur(agg.count, 'position') + ' from your games.'
         + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
       + '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(familyStep(k), playerTier())) + '</div></div>'
       + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'family', fam: k, label: fam.name })) + '">Drill ' + plur(nDrill, 'position') + '</a>' : '')
       + (focus && focus.fam === k ? '<span class="pill">Focus</span>' : '') + '</div>'
       + (rows ? '<div class="pat-list">' + rows + '</div>' : '')
-      + examplesHtml({ type: 'family', fam: k });
+      + examplesHtml({ type: 'family', fam: k }, 4, 'Examples from your games');
   }
   if (parts[0] === 'pattern') {
     var info = PATTERN[k];
     var s = patternStats().filter(function (x) { return x.key === k; })[0];
     if (!info) return '';
-    var fk = familyOf(k);
+    var fk = familyOf(k), plost = s ? lostOf(s.items) : 0;
+    /* its count is the positions it lists (V4.8: Forks "5 positions" shows
+       all 5) */
     return '<a class="sheet-back" data-act="sheet" data-k="family:' + fk.key + '">‹ ' + esc(fk.name) + '</a><h3>' + esc(info.plural) + '</h3>'
-      + '<p class="sheet-sum">' + (s ? plur(s.count, 'position') + ' from your games' + (s.cost >= 1 ? ', which decided ' + fmtGames(s.cost) : '') + '.' + (s.fixed ? ' ' + s.fixed + ' learned.' : '') : 'None in your games yet.') + '</p>'
+      + '<p class="sheet-sum">' + (s ? plur(s.count, 'position') + ' from your games' + (plost ? ', which decided ' + fmtGames(plost) : '') + '.' + (s.fixed ? ' ' + s.fixed + ' learned.' : '') : 'None in your games yet.') + '</p>'
       + '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(patternStep(k), playerTier())) + '</div></div>'
       + (s ? '<div class="acts-row sheet-acts"><a class="btn-big" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'pattern', key: k, label: info.plural })) + '">Drill ' + plur(Math.min(8, s.count), 'position') + '</a></div>' : '')
-      + examplesHtml({ type: 'pattern', key: k });
+      + (s ? examplesHtml({ type: 'pattern', key: k }, s.count) : '');
   }
   return '';
 }
@@ -3143,10 +3306,13 @@ function decisiveWords(g, b) {
   if (b && b.dw === 'turn') return 'was where the game turned';
   return g.res === 'draw' ? 'cost you the win' : 'lost the game';
 }
-function examplesHtml(spec) {
-  var items = drillItems(spec, 4);
+/* positions of a sheet's skill or pattern as small boards: n of them, under
+   the kicker (a pattern's sheet lists every one it counts, V4.8; a skill's
+   shows a few, as examples) */
+function examplesHtml(spec, n, kicker) {
+  var items = drillItems(spec, n || 4);
   if (!items.length) return '';
-  return '<div class="kicker" style="margin-top:24px">From your games</div><div class="ex-list">' + items.map(function (it) {
+  return '<div class="kicker" style="margin-top:24px">' + (kicker || 'From your games') + '</div><div class="ex-list">' + items.map(function (it) {
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
     return '<div class="ex" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'One position' })) + '">'
@@ -3188,17 +3354,17 @@ function settingsHtml() {
     + '<div class="set-block"><span class="kicker">Games to learn from</span><p>Which of your rated games to read. Most players pick the one or two they play most.</p><div class="chips">'
       + ['rapid', 'blitz', 'bullet', 'classical'].filter(function (p) { return !isCC() || p !== 'classical'; }).map(function (p) {
         /* one text: a chip is a flex box, and the space before a span would go */
-        return chip('perf', p, upFirst(perfLabel(p)) + ' · ' + PERF_HINT[p], perfs.indexOf(p) !== -1);
+        return chip('perf', p, upFirst(perfLabel(p)) + ' · ' + perfHint(p), perfs.indexOf(p) !== -1);
       }).join('') + '</div></div>'
     + '<div class="set-block"><span class="kicker">Practice</span><p>Positions in a day\'s session. New positions join a few at a time.</p><div class="chips">'
       + [[5, 'Short · 5'], [10, 'Normal · 10'], [20, 'Long · 20']].map(function (o) { return chip('size', o[0], o[1], sessionSize() === o[0]); }).join('')
       + '</div><p>Weekly goal, in days:</p><div class="chips">'
       + [3, 4, 5, 7].map(function (n) { return chip('weekGoal', n, n, weekGoal() === n); }).join('')
-      + '</div>' + (weekGoalAt(Date.now()) !== weekGoal() ? '<p>The new goal starts on Monday. This week stays at ' + weekGoalAt(Date.now()) + '.</p>'
-        : goalThisWeek() < weekGoal() ? '<p>Your first week counts from your first practice day: ' + plur(goalThisWeek(), 'day') + ' this week.</p>' : '')
+      + '</div>' + weekGoalLine()
       + '<p>' + DAY_RULE + '</p></div>'
-    /* the reminder lives here once the summary has asked (F5.4) */
-    + '<div class="set-block cue-set"><span class="kicker">Reminders</span><p>Add to calendar: a reminder on your goal\'s days, at the time you pick. Nothing is sent to us.</p>'
+    /* the reminder lives here once the summary has asked (F5.4): the time
+       and the days it was added with (V4.6) */
+    + '<div class="set-block cue-set"><span class="kicker">Reminders</span><p>Add to calendar: a reminder on the days and at the time you pick. Nothing is sent to us.</p>'
       + cueBody('settings') + '</div>'
     + '<div class="set-block"><span class="kicker">Board</span>'
       + sw('sound', 'Sounds', cfg.sound) + '</div>'
@@ -3210,14 +3376,33 @@ function settingsHtml() {
     + installSettingsHtml()
     + '<div class="set-block"><span class="kicker">Your data</span>'
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
+      + '<p class="last-saved">' + lastSavedWords() + '</p>'
       + '<p>' + gamesLine() + '</p>'
       /* usage recording, the player's own choice (V5.5) */
       + '<p>None of it is kept on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</p>'
       + sw('consent', 'Usage recording (Microsoft Clarity)', consentYes()) + '</div>'
+    /* each armed row takes its second tap only 1 to 6 s after the first
+       (V4.5: a double tap does nothing) */
     + '<div class="set-block"><span class="kicker">Reset</span>'
       + '<a data-act="resetProgress" class="danger-row' + (ui.resetArmed ? ' armed' : '') + '">' + (ui.resetArmed ? 'Tap again to reset your practice history' : 'Reset practice history') + '</a>'
-      + '<a data-act="wipe" class="danger-row' + (ui.wipeArmed ? ' armed' : '') + '">' + (ui.wipeArmed ? 'Tap again to erase everything' : 'Erase everything') + '</a></div>';
+      + '<a data-act="wipe" class="danger-row' + (ui.wipeArmed ? ' armed' : '') + '">' + (ui.wipeArmed ? 'Tap again to erase ' + plur(data.games.length, 'game') + ' and your practice' : 'Erase everything') + '</a></div>';
 }
+/* the week's goal in Settings, as Today counts it (V4.4): a short week
+   "This week has 2 days. From Monday: 4.", a goal changed "The new goal
+   starts on Monday. This week stays at 4." */
+function weekGoalLine() {
+  var wg = weekGoalInfo(Date.now()), now = weekGoalAt(Date.now());
+  if (wg.cut) return '<p>This week has ' + plur(wg.goal, 'day') + '. From Monday: ' + weekGoal() + '.</p>';
+  return now !== weekGoal() ? '<p>The new goal starts on Monday. This week stays at ' + now + '.</p>' : '';
+}
+/* the formats as each site names them (V4.8): chess.com "Rapid · 10 min or
+   more", lichess "Rapid · 8 to 25 min" (its estimate, the start time plus 40
+   moves' increments) */
+var PERF_SITE = { cc: { bullet: 'under 3 min', blitz: '3 to 10 min', rapid: '10 min or more' },
+  li: { bullet: 'under 3 min', blitz: '3 to 8 min', rapid: '8 to 25 min', classical: '25 min or more' } };
+function perfHint(p) { return PERF_SITE[isCC() ? 'cc' : 'li'][p] || ''; }
+/* "Last saved: 11 Oct" (a progress file, V4.5), else "Never saved" */
+function lastSavedWords() { var sv = cueLoad().sv; return sv ? 'Last saved: ' + gameDateLine({ ts: sv }) : 'Never saved'; }
 /* what this browser holds, and what clearing it costs */
 function gamesLine() {
   if (data.sections.games === 'loading') return 'Reading games…';

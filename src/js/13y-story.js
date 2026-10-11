@@ -1778,5 +1778,5 @@ function labelRoom(a) {
   if (a.phase === 'tried' && a.tried && a.tried.kind === 'miss') v.reason = 2;
   if (a.phase === 'done' && a.view && a.view.mode === 's0' && a.settle >= 1) v.settle = 2;
   var b = bandFor(v);
-  return WORD_BUDGET - bandWords(b, ss ? barSlots(v, ss) : []) - stripWords(v) - (retryTipOn(a) ? wordsIn(RETRY_TIP) : 0);
+  return WORD_BUDGET - bandWords(b, ss ? barSlots(v, ss) : []) - stripWords(v);
 }

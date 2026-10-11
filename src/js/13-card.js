@@ -1626,8 +1626,8 @@ function finishCard(result, beats) {
       ss.relearn = ss.relearn || [];
       ss.relearn.push(a.key);
       a.relearnQueued = true;
-      /* the first card ever queued says so, in the strip (C1) */
-      if (!store.get('nl:tip:retry', 0)) { a.retryTip = true; store.set('nl:tip:retry', 1); }
+      /* each card queued says so, once (V4.2) */
+      retryNote(a);
     }
   } else {
     srsNoteTries(a.it, a.fc);
@@ -1673,6 +1673,26 @@ function finishCard(result, beats) {
   paintTitle();
   track(result === 'first' ? 'solve_first' : 'solve_' + result);
 }
+/* a card queued to come back says so, once (V4.2: the set keeps its size,
+   its retries after it): "This one comes back at the end.", in a notice
+   once its verdict has landed, while it is still on screen. The words
+   would not fit the card's own frame (15 at most, and its answered frames
+   hold 10 to 14). It goes with its card: on the next one "this one" would
+   name the wrong position */
+var RETRY_NOTE = 'This one comes back at the end.', RETRY_NOTE_AT = 700;
+function retryNote(a) {
+  setTimeout(function () {
+    var ss = ui.session;
+    if (!ss || ss.active !== a) return;
+    notice(RETRY_NOTE, null, 4000);
+    var n = el('overlay') && el('overlay').querySelector('.notice');
+    if (n && n.classList) n.classList.add('retry-note');
+  }, RETRY_NOTE_AT);
+}
+function retryNoteGone() {
+  var n = el('overlay') && el('overlay').querySelector('.notice.retry-note');
+  if (n) n.remove();
+}
 /* missed cards come back once at the end, for the widest spacing */
 function queueRelearn(ss) {
   if (!ss.relearn || !ss.relearn.length) return false;
@@ -1684,6 +1704,7 @@ function queueRelearn(ss) {
 function nextCard() {
   var ss = ui.session;
   if (!ss) return;
+  retryNoteGone();
   if (ss.active && ss.active.explore) exploreExit('silent');
   engineStop('check');
   /* what was staged for this card dies with it */

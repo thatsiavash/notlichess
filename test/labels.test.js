@@ -1052,6 +1052,18 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     eq(r.routine.length, 0, r.routine.length + ' tier 1 screens with the routine line (first: ' + r.routine.slice(0, 4).join(' || ') + ')');
   });
 
+  /* V4.3 and V4.8: the rules themselves, on the lines the testers misread */
+  await test('copy lint rules (V4.3, V4.8): it fails on a summary line that starts with "Then" or holds "held", and on "climbing", "held" or "to go" anywhere; the new words pass', () => {
+    const { rulesOf } = require('./copylint');
+    eq(rulesOf(2, 'summary', 'Then 4 after a miss, 1 shown.').join(), 'then', 'a summary line starting "Then"');
+    eq(rulesOf(1, 'summary', '5 back to the start, 1 held.').join(), 'held', '"held" on the summary');
+    eq(rulesOf(3, 'insights', '3 learned · 12 climbing · 29 to go').join(), 'climbing,to go', 'the old progress words, at any tier');
+    eq(rulesOf(2, 'today', 'Your next 3 games complete the before count; 3 to go.').join(), 'to go', '"to go" anywhere');
+    eq(rulesOf(2, 'today', 'Then pick a time.').join(), '', '"Then" is the summary\'s rule only');
+    eq(rulesOf(1, 'summary', 'You found 4 of 5.').concat(rulesOf(1, 'summary', '4 took more than one try, 1 was shown.'), rulesOf(2, 'summary', '2 after a miss · 1 shown'),
+      rulesOf(2, 'summary', 'Back in 3 days: 2. Back tomorrow: 3.'), rulesOf(2, 'insights', '3 learned · 12 in practice · 29 not started')).join(), '', 'the new words pass');
+  });
+
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'labels: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));
   process.exit(failed ? 1 : 0);

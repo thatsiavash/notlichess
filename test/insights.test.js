@@ -151,18 +151,18 @@ test('the test is repeatable: same data, same answer', () => {
 });
 
 /* ── Insights you understand (F6.1 to F6.3) ─────────────────────────────── */
-test('progress words drop their zero parts: never "0 learned" (D17)', () => {
+test('progress words drop their zero parts: never "0 learned" (D17); V4.8\'s words "learned · in practice · not started"', () => {
   const w = (l, c, f) => ctx.progressWords({ learned: l, practising: c, fresh: f });
-  eq(w(3, 12, 29), '3 learned · 12 climbing · 29 to go', 'all three');
-  eq(w(0, 1, 43), '1 climbing · 43 to go', 'a first clean find');
-  eq(w(0, 0, 44), '44 to go', 'nothing practised');
+  eq(w(3, 12, 29), '3 learned · 12 in practice · 29 not started', 'all three');
+  eq(w(0, 1, 43), '1 in practice · 43 not started', 'a first clean find');
+  eq(w(0, 0, 44), '44 not started', 'nothing practised');
   eq(w(5, 0, 0), '5 learned', 'all learned');
 });
-test('games decided in words: draws half, whole games, tier 1 "cost you"', () => {
+test('games decided in words: losses, each counted once (V4.8: a move decided a game it lost), tier 1 "cost you"', () => {
   eq(ctx.decidedWords(15, 2), 'decided 15 games', 'tier 2');
   eq(ctx.decidedWords(1, 1), 'cost you one game', 'tier 1, one');
-  eq(ctx.decidedWords(1.5, 3), 'decided 2 games', 'a draw rounds to whole games');
-  eq(ctx.decidedWords(0.5, 2), 'decided half a game', 'a draw alone');
+  eq(ctx.decidedWords(2, 3), 'decided 2 games', 'tier 3');
+  eq(ctx.decidedWords(0, 2), 'decided no games', 'none, tier 2');
   eq(ctx.decidedWords(0, 1), 'cost you no games', 'none');
 });
 test('the window\'s dates: one month, two months, two years, one day', () => {

@@ -4,8 +4,9 @@
 // checked against each tier's banned words, the card's caps and one check line per card. Run from
 // labels.test.js on its realm: copyLint(A, OPEN, FRAMES) walks every frame of every card (labels.test.js's
 // eachFrame) and returns { found, fresh, gone, t1card, habit, routine, habits, strings, frames }.
-//   Banned at every tier: session, solved, leak, engine, on top (content's review of slice 1), "!" and
-//   the em dash.
+//   Banned at every tier: session, solved, leak, engine, on top (content's review of slice 1), "!",
+//   the em dash, and climbing, held and "to go" (V4.8: progress words nobody misreads). A summary line
+//   never starts with "Then" (V4.3: the headline's second line says what happened, not "Then ...").
 //   Banned at tier 1: material, balanced, level, advantage, slip, percentages; and in band rows
 //   and captions only (names such as "Other tactics" elsewhere stay): tactic, decided and notation
 //   (a SAN move; a square alone, "on f2", is no notation).
@@ -23,12 +24,17 @@
 // how we count's line on the start day's threshold).
 // Beginner teaching (slice 9), at tiers 1 and 2: every lesson's three frames and its own position, every
 // practice position's frames (open, hints, a miss and its reason, a close move, found and settled, the
-// answer shown), their Details and menu; the pack's end, the skill tiles, each skill's card, the focus
-// card's meter, the pack offer, a Today summary with practice and Settings' Help.
+// answer shown), their Details and menu; the pack's end, the skill tiles, each skill's card, the pack
+// offer, a Today summary with practice and Settings' Help.
+// V4.2 to V4.5 (at every tier): the retry note, the welcome back and the recall line after a break, a
+// short week on Today, in the goal met and in Settings, the backup prompt in Safari on an iPhone, the
+// last save and the Reset block's second taps. V5.5 and V5.8 (at every tier): the consent card and its
+// thanks, Settings' Your data block, the landing, the footer and the empty name's words.
 const fs = require('fs'), path = require('path');
 const BASE = path.join(__dirname, 'data', 'copylint-baseline.json');
 
-const EVERY = [['session', /\bsessions?\b/i], ['solved', /\bsolved\b/i], ['leak', /\bleaks?\b/i], ['engine', /\bengines?\b/i], ['on top', /\bon top\b/i], ['exclamation', /!/], ['em dash', /\u2014/]];
+const EVERY = [['session', /\bsessions?\b/i], ['solved', /\bsolved\b/i], ['leak', /\bleaks?\b/i], ['engine', /\bengines?\b/i], ['on top', /\bon top\b/i], ['exclamation', /!/], ['em dash', /\u2014/],
+  ['climbing', /\bclimbing\b/i], ['held', /\bheld\b/i], ['to go', /\bto go\b/i]];
 const T1 = [['material', /\bmaterial\b/i], ['balanced', /\bbalanced\b/i], ['level', /\blevel\b/i],
   ['advantage', /\badvantages?\b/i], ['slip', /\bslip(s|ped|ping)?\b/i], ['percentage', /\d\s?%/]];
 /* SAN with a piece letter, a pawn's capture, a promotion or castling */
@@ -164,7 +170,7 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
       screen(tier, 'summary', doneHtml({ mode: 'pack', label: 'Free pieces', keys: ['ls:free', 'pk:free-1'], idx: 2, results: { 'ls:free': 'lesson' }, notes: {}, sum: {}, relearn: [], relearnOf: {}, finished: true, spec: { type: 'pack', k: 'free', lesson: 1 } }));
       screen(tier, 'insights', skillTilesHtml());
       PSKILL.forEach(function (sk) { screen(tier, 'insights', skillSheetHtml(sk.k)); });
-      screen(tier, 'today', focusSkillHtml('safety') + focusSkillHtml('king') + focusSkillHtml('chances') + packOfferHtml());
+      screen(tier, 'today', packOfferHtml());
       var hb = /<div class="set-block"><span class="kicker">Help<\\/span>[\\s\\S]*?<\\/div><div class="set-block">/.exec(settingsHtml());
       screen(tier, 'settings', hb ? hb[0] : 'no Help block');
       if (sk0) store.set(skillKey(), sk0); else store.del(skillKey());
@@ -181,6 +187,46 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
     screen(tier, 'summary', diagHtml({ dx: { k: 'line' } }, tier) + diagHtml({ dx: { k: 'card', full: false, cov: { losses: 9, decided: 7, covered: 12, total: 40 } } }, tier)
       + diagHtml({ dx: { k: 'card', full: false, cov: { losses: 2, decided: 1, covered: 12, total: 40 } } }, tier) + cueCardHtml({ cue: 'backup' }));
     ui.cueSlot = 'evening'; screen(tier, 'settings', cueBody('settings')); ui.cueSlot = null;
+    /* V4.2 to V4.5: the retry note, the welcome back, the recall line after a break (most found, then
+       under half), a short week (Today, the goal met, Settings), the backup prompt in Safari on an
+       iPhone, the last save and the Reset block armed */
+    screen(tier, 'card', '<p>' + RETRY_NOTE + '</p>');
+    screen(tier, 'today', '<p>' + WELCOME + '</p>');
+    var rs = { away: 14, rev: {}, sum: {} };
+    ks.forEach(function (k, i) { rs.rev[k] = 1; rs.sum[k] = { c: i < 3 ? 'first' : 'miss' }; });
+    screen(tier, 'summary', recallHtml(rs, ks, tier));
+    ks.forEach(function (k) { rs.sum[k] = { c: 'shown' }; });
+    screen(tier, 'summary', recallHtml(rs, ks, tier));
+    var wgi = weekGoalInfo;
+    ['first', 'back'].forEach(function (cut) {
+      weekGoalInfo = function () { return { goal: 2, cut: cut }; };
+      screen(tier, 'today', weekHtml());
+      screen(tier, 'summary', '<p>' + goalMetWords({ days: 2, goal: 2, cut: cut }) + '</p>');
+      screen(tier, 'settings', weekGoalLine());
+    });
+    weekGoalInfo = wgi;
+    var ua0 = navigator.userAgent;
+    navigator.userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)'; screen(tier, 'summary', cueCardHtml({ cue: 'backup' })); navigator.userAgent = ua0;
+    screen(tier, 'settings', '<p>' + lastSavedWords() + '</p>');
+    ui.wipeArmed = ui.resetArmed = true;
+    var dz = /<div class="set-block"><span class="kicker">Reset<\\/span>[\\s\\S]*$/.exec(settingsHtml());
+    screen(tier, 'settings', dz ? dz[0] : 'no Reset block');
+    ui.wipeArmed = ui.resetArmed = false;
+    /* V5.5 and V5.8: the consent card and its thanks, Settings' Your data block with the usage
+       recording switch, the landing (its line under the form, the card at its foot), the footer and
+       the empty name's words (the card's watch and the answer's effects stubbed: nothing is stored) */
+    screen(tier, 'today', consentCardHtml());
+    var yd = /<div class="set-block"><span class="kicker">Your data<\\/span>[\\s\\S]*?(?=<div class="set-block"><span class="kicker">Reset)/.exec(settingsHtml());
+    screen(tier, 'settings', yd ? yd[0] : 'no Your data block');
+    var cw0 = consentWatch, cs0 = consentSet, nt0 = notice;
+    consentWatch = consentSet = function () {};
+    notice = function (s) { screen(tier, 'landing', '<p>' + s + '</p>'); };
+    el = function (id) { return id === 'insightsbox' || id === 'main' || id === 'foot' ? box : el0(id); };
+    box.innerHTML = ''; renderFirstVisit(); screen(tier, 'landing', box.innerHTML);
+    box.innerHTML = ''; renderFoot(); screen(tier, 'foot', box.innerHTML);
+    findUser(''); consentAnswer(true);
+    el = function (id) { return id === 'insightsbox' ? box : el0(id); };
+    consentWatch = cw0; consentSet = cs0; notice = nt0;
     /* a set with foils: their line and tiles (F8.2) */
     if (fk.length >= 3) {
       var fs = { mode: 'today', label: 'Today', keys: ks.concat(fk.slice(0, 3)), idx: ks.length + 3, results: {}, notes: { }, sum: {}, relearn: [], relearnOf: {}, finished: true };
@@ -229,6 +275,18 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
   return JSON.stringify({ frames: frames, screens: screens, habits: habits });
 })()`;
 
+/* the banned-word rules one string breaks, by tier and where it shows (V4.3's and V4.8's acceptance
+   reads them too): every tier's, a summary line starting "Then", tier 1's, and tier 1's in the band */
+function rulesOf(tier, where, s) {
+  const out = [];
+  EVERY.forEach(([n, re]) => { if (re.test(s)) out.push(n); });
+  if (where === 'summary' && /^Then\b/.test(s)) out.push('then');
+  if (tier !== 1) return out;
+  T1.forEach(([n, re]) => { if (re.test(s)) out.push(n); });
+  if (BAND[where]) T1_BAND.forEach(([n, re]) => { if (re.test(s)) out.push(n); });
+  return out;
+}
+
 module.exports = function copyLint(A, OPEN, FRAMES) {
   const r = JSON.parse(A.ev(COLLECT(OPEN, FRAMES)));
   const found = new Set(), habit = new Set(), routine = new Set();
@@ -236,10 +294,7 @@ module.exports = function copyLint(A, OPEN, FRAMES) {
   const check = (tier, where, s) => {
     if (OLD_HABITS.some((h) => s.indexOf(h) >= 0) || OLD_ASK.test(s)) habit.add(tier + '|' + where + '|' + s);
     if (tier === 1 && s.indexOf(ROUTINE) >= 0) routine.add(where + '|' + s);
-    EVERY.forEach(([n, re]) => { if (re.test(s)) add(tier, n, where, s); });
-    if (tier !== 1) return;
-    T1.forEach(([n, re]) => { if (re.test(s)) add(tier, n, where, s); });
-    if (BAND[where]) T1_BAND.forEach(([n, re]) => { if (re.test(s)) add(tier, n, where, s); });
+    rulesOf(tier, where, s).forEach((n) => add(tier, n, where, s));
   };
   let strings = 0;
   r.frames.forEach(([tier, key, what, row1, row2, cap, chip, buttons, strip, label, tag]) => {
@@ -269,3 +324,4 @@ module.exports = function copyLint(A, OPEN, FRAMES) {
   const ins = [...found].filter((v) => v.split('|')[2] === 'insights').sort();
   return { found: found.size, fresh, gone, t1card, ins, habit: [...habit].sort(), routine: [...routine].sort(), habits: r.habits.length, strings, frames: r.frames.length };
 };
+module.exports.rulesOf = rulesOf;

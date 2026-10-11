@@ -319,7 +319,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       [1, 2].forEach(function (w) { for (var i = 0; i < 4; i++) { var d = new Date(mon - w * 7 * DAY + (i * 2) * DAY + 12 * 3600e3); store.set('nl:day:' + playerId() + ':' + dayStamp(d), { sessions: 1 }); } });
       var before = weeksAtGoal();
       setWeekGoal(5);
-      return JSON.stringify({ before: before, after: weeksAtGoal(), now: goalThisWeek(), chosen: weekGoal() }); })()`));
+      return JSON.stringify({ before: before, after: weeksAtGoal(), now: weekGoalInfo(Date.now()).goal, chosen: weekGoal() }); })()`));
     eq(r.before, 2, 'weeks before'); eq(r.after, 2, 'weeks after the change'); eq(r.now, 4, 'this week'); eq(r.chosen, 5, 'chosen');
   });
 
@@ -388,8 +388,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         habits: habits, want: want, odd: !!odd, oddLine: oddLine && want.indexOf(oddLine) < 0 ? oddLine : null, skip: ss.sum[pick[4].key] }); })()`));
     eq(r.words.join(' | '), 'Shown, then found | After a miss, then shown again | Shown | After a miss | Skipped', 'the words: ' + JSON.stringify(r.notes));
     eq(r.note3, null, 'a worked example missed first is no first look');
-    eq(r.head, '4 of 12 stars', 'tier 1: the first showings in stars (shown 0, a miss with its automatic hint 2), the skip not counted');
-    eq(r.then, 'Then 2 after a miss, 2 shown.', 'the others in one line');
+    eq(r.head, 'You found 2 of 5.', 'tier 1 (V4.3): the first showings found, of the set (the skip one it did not find), never "of 15"');
+    eq(r.then, '2 took more than one try, 2 were shown, 1 was skipped.', 'the others in one line, never starting "Then"');
     ok(r.odd, 'a card of another family');
     eq(JSON.stringify(r.habits), JSON.stringify(r.want), 'the check lines of the cards played only');
     ok(r.skip && r.skip.c === 'skip' && !r.skip.l, 'a card skipped untouched has no check line');
@@ -406,10 +406,10 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       morePracticeKeys = function () { return its.slice(0, 8).map(function (x) { return x.key; }); };
       res.eight = (/data-act="keepGoing">([^<]*)</.exec(doneHtml(ui.session)) || [])[1];
       morePracticeKeys = real;
-      res.touch = /Tap a game to go through/.test(latestGamesHtml());
+      res.touch = /Tap a game to see its mistakes in the order played\\./.test(latestGamesHtml());
       var mm = window.matchMedia;
       window.matchMedia = function (q) { return { matches: q === '(pointer: fine)' }; };
-      res.mouse = latestGamesHtml().indexOf('Click a game to go through') >= 0;
+      res.mouse = latestGamesHtml().indexOf('Click a game to see its mistakes') >= 0;
       res.word = tapWord();
       window.matchMedia = mm;
       /* the live region: emptied as a session ends and as it finishes */
@@ -459,7 +459,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(r.todayNext, 'Today offers the next set too');
   });
 
-  await test('the summary and Today in plain words: positions found come back in N days, "Tomorrow: N positions, about M minutes", "back for another look" (never "reviews")', () => {
+  await test('the summary and Today in plain words: when the positions come back ("Back in 7 days: 1. Back in 3 days: 1. Back tomorrow: 1.", V4.3), "Tomorrow: 5 positions, about 4 minutes (1 back, 4 new)." (the set the next day deals, V4.1), "back for another look" (never "reviews")', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       var its = allMistakes().filter(trainable).filter(function (it) { return !it.b.d; }), res = {}, srs = srsLoad(), now = Date.now();
@@ -468,9 +468,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       srsSave(srs);
       var ss = { mode: 'today', label: 't', keys: keys, idx: 3, results: {}, relearn: [], relearnOf: {}, notes: {}, finished: true };
       ss.results[keys[0]] = 'first'; ss.results[keys[1]] = 'first'; ss.results[keys[2]] = 'hint';
-      res.two = (/class="recap-ladder">([^<]*)</.exec(doneHtml(ss)) || [])[1];
-      ss.results[keys[1]] = 'retry';
-      res.one = (/class="recap-ladder">([^<]*)</.exec(doneHtml(ss)) || [])[1];
+      res.two = (/class="recap-moved">([^<]*)</.exec(doneHtml(ss)) || [])[1];
+      res.one = /recap-ladder/.test(doneHtml(ss));
       res.next = nextDueHtml();
       var tp = todayPlan;
       todayPlan = function () { return { keys: keys, fresh: 1, firstTime: false }; };
@@ -478,9 +477,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       res.opp = model().byKey[keys[0]].g.opp;
       todayPlan = tp;
       return JSON.stringify(res); })()`));
-    eq(r.two, 'The 2 positions you found come back in 3 to 7 days.', 'the ladder, two');
-    eq(r.one, 'The position you found comes back in 3 days.', 'the ladder, one');
-    eq(r.next, 'Tomorrow: 1 position, about 1 minute.', 'what comes next (F2.6: one set, calm)');
+    eq(r.two, 'Back in 7 days: 1. Back in 3 days: 1. Back tomorrow: 1.', 'when each comes back, the longest wait first (V4.3)');
+    ok(!r.one, 'no second sentence on the same thing');
+    eq(r.next, 'Tomorrow: 5 positions, about 4 minutes (1 back, 4 new).', 'what comes next: the set the next day deals, the one due and the new ones (V4.1)');
     eq(r.why, 'First: back for another look, from your game vs ' + r.opp + '.', 'card 1, a position met before, beside its board (F5.1)');
   });
 
@@ -525,9 +524,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         habits: habits, heads: (h.match(/>Keep in mind</g) || []).length, want: want, spotted: /spotted/i.test(h), glyphs: /[✓◐]/.test(h) }); })()`));
     eq(r.words.join(' | '), 'First look | First try | With a hint | After a miss | Shown | Missed | Skipped', 'the words, in session order, the removed card gone');
     eq(r.notes.join(' | '), 'firstlook | shown | leftMiss | left', 'the notes');
-    eq(r.head, '10 of 18 stars', 'tier 1 in stars: a first look and a first try 3, a hint and a miss with its automatic hint 2, shown and missed 0; a skip not counted');
+    eq(r.head, 'You found 4 of 7.', 'tier 1 (V4.3): a first look, a first try, a hint and a miss found, of the seven met (shown, missed and skipped not found)');
     eq(r.stars, '332200', 'the tiles\' stars, the skip none');
-    eq(r.then, 'Then 1 after a miss, 1 with a hint, 1 first look, 1 shown, 1 missed.', 'the others in one line, in the spec\'s order');
+    eq(r.then, '1 took more than one try, 1 needed a hint, 1 was shown, 1 was missed, 1 was skipped.', 'the others in one line, in plain words');
     eq(JSON.stringify(r.habits), JSON.stringify(r.want), 'each check line met once, in the order met');
     eq(r.heads, 1, '"Keep in mind" once, the lines under it (C9)');
     ok(!r.spotted && !r.glyphs, 'no "spotted" recap line, no glyphs: words only');
@@ -548,6 +547,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       act(2, function (a) { a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain(); best(a); });
       ss.active = null; ss.finished = true;
       var h = doneHtml(ss), res = { moved: (/class="recap-moved">([^<]*)</.exec(h) || [])[1], rungs: (h.match(/class="rungs" role="img" aria-label="[^"]*"/g) || []).map(function (x) { return /label="([^"]*)"/.exec(x)[1]; }) };
+      /* the days each comes back in, from its record: the clean find climbs (a week), the hint holds (sooner), the miss starts again (tomorrow) */
+      res.days = its.map(function (x) { return daysFrom(Date.now(), srsRec(x).due); });
       /* card 1 found clean three times: fast at first sight (a week), again when due, then 16 days on */
       var it = model().byKey['184455333378:68'], a = openCard(it);
       best(a);
@@ -562,7 +563,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       res.learned = { rec: srsRec(it).learned, moved: (/class="recap-moved">([^<]*)</.exec(h2) || [])[1], lead: /^<div class="recap-item recap-learned"/.test(first), say: ((/class="learned-say">([\\s\\S]*?)<\\/span>/.exec(h2) || [])[1] || '').replace(/<[^>]+>/g, ''), days: d1 + d2,
         seal: /^<div class="recap-item recap-learned"[^>]*><span class="learned-board"><svg class="board"[\\s\\S]*<\\/svg><span class="rg rg-learned" aria-hidden="true"><\\/span><\\/span><span class="learned-say">/.test(first), pips: /class="rungs"/.test(first) };
       return JSON.stringify(res); })()`));
-    eq(r.moved, '1 moved up, 1 held, 1 back to the start.', 'what moved');
+    ok(r.days[0] > r.days[1] && r.days[1] > r.days[2] && r.days[2] === 1, 'the clean find waits longest, the hint less, the miss is back tomorrow: ' + r.days.join(' '));
+    eq(r.moved, 'Back in ' + r.days[0] + ' days: 1. Back in ' + r.days[1] + ' days: 1. Back tomorrow: 1.', 'what moved, as when each comes back (V4.3: never "moved up", "held" or "back to the start")');
     eq(JSON.stringify(r.rungs), JSON.stringify(['2 of 3 steps to learned', '1 of 3 steps to learned', '0 of 3 steps to learned']), 'the rungs: a clean find on a due day climbs, a hint holds, a miss empties them');
     ok(r.learned.rec, 'card 1 is learned');
     eq(r.learned.moved, '1 learned.', 'what moved says it');
@@ -593,7 +595,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.mine[0], 'Both your wrong tries missed your chance.', 'step 2\'s words');
   });
 
-  await test('F2.6: a calm Tomorrow: 23 due read "Tomorrow: a set of 10, about 8 minutes. 13 more over the next 3 weeks." (F7.2\'s words), 10 "Tomorrow: a set of 10, about 8 minutes.", 3 "Tomorrow: 3 positions, about 2 minutes."; a day counts once 3 positions are tried, the set paused (2 tried do not); Settings says the rule', () => {
+  await test('F2.6, V4.1: a calm Tomorrow, the set the next day deals: 23 due read "Tomorrow: a set of 10, about 8 minutes. 13 more over the next 3 weeks." (F7.2\'s words), 10 "Tomorrow: a set of 10, about 8 minutes.", 3 with new positions left "Tomorrow: 7 positions, about 6 minutes (3 back, 4 new)."; a day counts once 3 positions are tried, the set paused (2 tried do not); Settings says the rule', () => {
     const run = (n) => {
       const A = boot();
       return A.ev(`(function () {
@@ -604,7 +606,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     };
     eq(run(23), 'Tomorrow: a set of 10, about 8 minutes. 13 more over the next 3 weeks.', 'more than a set');
     eq(run(10), 'Tomorrow: a set of 10, about 8 minutes.', 'a set');
-    eq(run(3), 'Tomorrow: 3 positions, about 2 minutes.', 'fewer');
+    eq(run(3), 'Tomorrow: 7 positions, about 6 minutes (3 back, 4 new).', 'fewer due: the new ones the day adds are in it (V4.1)');
     const day = (tried) => {
       const A = boot();
       return JSON.parse(A.ev(`(function () {
@@ -762,7 +764,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       window.__nlTest.shiftDays(1);
       absorbOpen();
       res.hero = heroWords(); res.notes = notes.slice();
-      /* after Today's set (9 due, 1 new), the summary and Today say what is left */
+      /* after Today's set (the 10 due, no new one pushing a due one out: V4.1), nothing due is left today */
+      res.taken = todayPlan(); res.taken = [res.taken.keys.length, res.taken.dueTaken, res.taken.fresh];
       todayPlan().keys.forEach(function (k) { srsRecord(model().byKey[k], 'first', { ms: 30000, attempted: true }); });
       res.after = nextDueHtml();
       /* no room: the next 21 days already hold 10 each */
@@ -781,14 +784,15 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.summary, 'Tomorrow: a set of 10, about 8 minutes. 13 more over the next 3 weeks.', 'the summary\'s Tomorrow');
     eq(JSON.stringify(r.hero), JSON.stringify({ title: '10 positions, about 8 minutes', more: '13 more spread over the next 3 weeks.' }), 'the next day agrees: a set of 10, 13 spread');
     eq(JSON.stringify(r.notes), JSON.stringify(['13 reviews spread over the next 3 weeks, so today stays at one set.']), 'the notice, once');
-    eq(r.after, '1 more due today; any left spread over the next 3 weeks.', 'after Today\'s set: the one left, and tomorrow\'s 11 would spread');
+    eq(JSON.stringify(r.taken), '[10,10,0]', 'Today\'s set holds the 10 due, none left out for a new one (V4.1)');
+    ok(/^Tomorrow: /.test(r.after) && !/due today/.test(r.after), 'after Today\'s set: nothing due is left today, so the summary goes on to tomorrow: ' + r.after);
     eq(JSON.stringify([r.full.sp, r.full.q, r.full.left]), '[0,0,13]', 'no room: nothing spread, 13 left due');
     eq(JSON.stringify(r.fullHero), JSON.stringify({ title: '10 positions, about 8 minutes', more: '23 due in all. Each set takes the most important first.' }), 'the title names one set, the total in line 2');
     eq(JSON.stringify(r.fullNotes), '[]', 'nothing spread or queued: no notice');
-    ok(/^23 more due today[;.] /.test(r.fullLeft), 'the summary says what is left today: ' + r.fullLeft);
+    eq(r.fullLeft, '23 more are ready for your next sets. Each set takes the most important first.', 'the summary says what is left today, never "due today" (V4.1)');
   });
 
-  await test('F7.1 simulated (shiftDays, learning\'s learner and scenario): a keen fortnight of 4 sets a day, then Today only, 90 days: every opening leads with one set, about one position overdue on an average day from day 21 (Appendix A: 1.0), reviews less than 3.5 days late, low-value overdue positions go back to the queue, practice only once no new position is left; without the opening\'s rule the overdue pile passes 50', () => {
+  await test('F7.1 simulated (shiftDays, learning\'s learner and scenario): a keen fortnight of 4 sets a day, then Today only, 90 days: every opening leads with one set, about one position overdue on an average day from day 21 (Appendix A: 1.0), reviews less than 3.5 days late, low-value overdue positions go back to the queue, practice only once no new position is left; without the opening\'s rule the overdue pile passes 10 (V4.1: with a set\'s worth due, Today takes no new one, so the pile grows less than the 77 it did)', () => {
     const run = (noRule) => {
       const A = boot();
       return JSON.parse(A.ev(`(function () { ${POOL} ${SIM}
@@ -804,10 +808,10 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(rule.queuedEver >= 5, 'positions back to the queue: ' + rule.queuedEver);
     eq(rule.starved, 0, 'no practice while a new own position was left');
     ok(rule.days[89].learned >= 80, 'learned by day 90: ' + rule.days[89].learned);
-    ok(mean(none) >= 50, 'without the rule, overdue on an average day: ' + mean(none).toFixed(1));
+    ok(mean(none) >= 10 && mean(none) >= 5 * Math.max(1, mean(rule)), 'without the rule, overdue on an average day: ' + mean(none).toFixed(1));
   });
 
-  await test('the relearn segment joins the session bar as the card is queued, marked and named for a screen reader, and stays marked when the card comes back', () => {
+  await test('the relearn segment joins the session bar as the card is queued, marked, after a gap (V4.2) and named for a screen reader, and stays marked when the card comes back, counted apart: "One more try, 1 of 1"', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       var its = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol; }).slice(0, 3);
@@ -816,18 +820,49 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       ss.active = cardFor(its[0]);
       res.before = [n(bar(), /<span class="dot/g), n(bar(), /relearn/g), /try again/.test(bar())];
       reveal();
-      res.queued = [n(bar(), /<span class="dot/g), n(bar(), /class="dot relearn"/g), (/<span class="sr-only">([^<]*)</.exec(bar()) || [])[1]];
+      res.queued = [n(bar(), /<span class="dot/g), n(bar(), /class="dot relearn gap"/g), (/<span class="sr-only">([^<]*)</.exec(bar()) || [])[1]];
       ss.idx = 1; ss.active = cardFor(its[1]); solved(uciToMove(ss.active.st, ss.active.bestUci), ss.active.bestUci, null);
       ss.idx = 2; ss.active = cardFor(its[2]); solved(uciToMove(ss.active.st, ss.active.bestUci), ss.active.bestUci, null);
       queueRelearn(ss); ss.idx = 3; ss.active = cardFor(its[0]);
-      res.back = [n(bar(), /<span class="dot/g), n(bar(), /class="dot on relearn"/g), n(bar(), /class="dot done"/g), /try again/.test(bar())];
+      res.back = [n(bar(), /<span class="dot/g), n(bar(), /class="dot on relearn gap"/g), n(bar(), /class="dot done"/g), /try again/.test(bar()), (/<span class="sr-only">([^<]*)</.exec(bar()) || [])[1]];
       return JSON.stringify(res); })()`));
     eq(JSON.stringify(r.before), JSON.stringify([3, 0, false]), 'nothing queued: three plain segments');
-    eq(JSON.stringify(r.queued.slice(0, 2)), JSON.stringify([4, 1]), 'a shown answer queues it: a fourth segment, marked');
+    eq(JSON.stringify(r.queued.slice(0, 2)), JSON.stringify([4, 1]), 'a shown answer queues it: a fourth segment, marked, after a gap');
     eq(r.queued[2], 'Position 1 of 3, and one position to try again', 'named for a screen reader');
-    eq(JSON.stringify(r.back), JSON.stringify([4, 1, 3, false]), 'back again: its segment current and still marked, counted in the positions');
+    eq(JSON.stringify(r.back.slice(0, 4)), JSON.stringify([4, 1, 3, false]), 'back again: its segment current and still marked, after the gap');
+    eq(r.back[4], 'One more try, 1 of 1', 'counted apart from the set: never "Position 4 of 4"');
   });
-
+  await test('V4.2: a set keeps its size: a set of 5 with 3 misses never reads "of 8"; each miss says "This one comes back at the end." once, in a notice once its verdict has landed; the bar draws 5 segments, a gap, then 3', () => {
+    const A = boot();
+    A.ev(`(function () {
+      playerTier = function () { return 2; };
+      window.__notes = []; notice = function (m) { window.__notes.push(m); };
+      var its = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol; }).slice(0, 5);
+      window.__keys = its.map(function (x) { return x.key; });
+      ui.session = { mode: 'today', label: 'Today', keys: window.__keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} };
+      return 1; })()`);
+    const says = [], notes = [];
+    for (let i = 0; i < 5; i++) {
+      says.push(A.ev(`(function () {
+        var ss = ui.session, a = cardFor(model().byKey[window.__keys[${i}]]);
+        ss.idx = ${i}; ss.active = a;
+        if (${i} < 3) { a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain(); }
+        a.attempts = (a.attempts || 0) + 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+        return (/<span class="sr-only">([^<]*)</.exec(sessionBarHtml(ss, a)) || [])[1]; })()`));
+      A.advance(800);
+      notes.push(A.ev('window.__notes.length'));
+    }
+    const r = JSON.parse(A.ev(`(function () { var ss = ui.session;
+      var dots = (sessionBarHtml(ss, null).match(/<span class="dot[^"]*"/g) || []).map(function (x) { return /gap/.test(x) ? 'gap+r' : /relearn/.test(x) ? 'r' : 's'; }).join(' ');
+      ss.idx = 5; ss.active = null; queueRelearn(ss); ss.active = cardFor(model().byKey[window.__keys[0]]);
+      return JSON.stringify({ queued: ss.keys.length - 5, dots: dots, retry: (/<span class="sr-only">([^<]*)</.exec(sessionBarHtml(ss, ss.active)) || [])[1], words: window.__notes.slice(0, 1) }); })()`));
+    ok(says.every((x) => /^Position \d of 5\b/.test(x)), 'the counter stays at the set\'s size: ' + says.join(' | '));
+    eq(JSON.stringify(notes), '[1,2,3,3,3]', 'each miss says it once, the clean finds nothing');
+    eq(JSON.stringify(r.words), JSON.stringify(['This one comes back at the end.']), 'the words');
+    eq(r.dots, 's s s s s gap+r r r', 'the set\'s 5 segments, a gap, then the 3 retries');
+    eq(r.queued, 3, 'the three come back after the set');
+    eq(r.retry, 'One more try, 1 of 3', 'a retry counts among the retries, never "Position 6 of 8"');
+  });
   await test('the page title never names the player', () => {
     const A = boot();
     ok(A.ev('document.title').indexOf('tester') === -1, A.ev('document.title'));
@@ -2368,7 +2403,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(r.today), '[false,null]', 'from Today, back to Today');
   });
 
-  await test('round D, C1: the count never seems to grow ("3 of 5 done, 2 to try again."), and the first card ever queued says "This one comes back later." once, within the word budget', () => {
+  await test('round D, C1: the count never seems to grow ("3 of 5 done, 2 to try again."); a card queued says it comes back in a notice (V4.2), never in its own frame, which stays within 15 words', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       var its = allMistakes().filter(trainable), k = its.slice(0, 5).map(function (x) { return x.key; }), res = {};
@@ -2380,29 +2415,27 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       res.queued = countsWords({ keys: k, idx: 3, results: { a: 1, b: 1, c: 1 }, relearn: [k[0], k[1]], relearnOf: {} });
       res.none = countsWords({ keys: k, idx: 3, results: { a: 1, b: 1, c: 1 }, relearn: [], relearnOf: {} });
       res.resume = (/<p class="why hero-cap">([^<]*)</.exec(resumeHtml(s)) || [])[1];
-      /* the strip's word: on the first card queued, where it fits; never again */
+      /* a card queued: no line in its strip (it would pass 15 words), its frame within them */
       playerTier = function () { return 2; };
-      var seen = 0, again = 0, over = 0, fit = 0;
+      var queued = 0, inStrip = 0, over = 0;
       its.forEach(function (it) {
         var a = openCard(it);
         if (!a) return;
         reveal();
+        if (a.relearnQueued) queued++;
         var d = displayFor(a), strip = String(d.strip || '').replace(/<[^>]*>/g, ' ');
-        var has = strip.indexOf('This one comes back later.') >= 0;
-        if (has && seen) again++;
-        if (has) seen++;
+        if (/comes back/.test(strip)) inStrip++;
         var words = [d.row1, d.row2, d.chip, d.cap, strip].concat(d.buttons.map(function (b) { return b.label; })).reduce(function (n, x) { return n + wordsIn(x); }, 0);
         if (words > 15) over++;
-        if (a.retryTip) fit = has ? 1 : -1;
       });
-      res.tip = [seen, again, over, fit, store.get('nl:tip:retry', 0)];
+      res.tip = [queued === its.length, inStrip, over];
       return JSON.stringify(res); })()`));
     eq(r.mid, '3 of 5 done, 2 to try again.', 'two coming back');
     eq(r.one, '3 of 5 done, 1 to try again.', 'one of them done');
     eq(r.queued, '3 of 5 done, 2 to try again.', 'two queued, not yet in the bar\'s keys');
     eq(r.none, '3 of 5 done.', 'none coming back');
     eq(r.resume, '3 of 5 done, 1 to try again. The rest are waiting where you stopped.', 'the resume line');
-    eq(JSON.stringify(r.tip), '[1,0,0,1,1]', 'said once, on the first card queued, within 15 words');
+    eq(JSON.stringify(r.tip), '[true,0,0]', 'every card shown is queued; none says it in its strip; every frame within 15 words');
   });
 
   /* ── groundwork ─────────────────────────────────────────────────── */
@@ -2511,6 +2544,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       window.__nlTest.seedAfterGames({ n: 24, plus: 1, from: from, rating: 1060 });
       var p = syn();
       res.plus = p.every(function (g, i) { return at(g) === at(real[i]) + 1; });
+      /* the added drop is a position, as Insights counts them (V4.8) */
+      res.plusCard = p.every(function (g, i) { return (g.bl || []).filter(function (b) { return b.t === 'drift' && !b.bu && b.wb - b.wa === 25; }).length === 1 && bigCardsAt(g, 15).n === bigCardsAt(real[i], 15).n + 1; });
       res.tenth = p.filter(function (g) { var j = 18 + (g.color === 'white' ? 0 : 1); return Math.abs(wpAt(g, j - 1) - wpAt(g, j) - 25) < 1.6; }).length;
       res.rated = p.every(function (g) { return g.myR === 1060 && mistakeMinFor(g) === 15; });
       res.stored = JSON.parse(localStorage.getItem('nl:games:cc:tester')).games.filter(function (g) { return g.syn; }).length;
@@ -2528,13 +2563,14 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.again, true, 'the same games every time');
     eq(r.flat, true, 'cut 1: every big mistake flattened');
     eq(r.plus, true, 'plus one: one more big mistake in each game');
+    eq(r.plusCard, true, 'and one more position, which "since you started" counts (V4.8)');
     ok(r.tenth >= 20, 'a 25-point drop on the 10th move where there is room: ' + r.tenth + ' of 24');
     eq(r.rated, true, 'at the rating asked (chess.com 1060, a 1210 band: 15 points)');
     eq(r.stored, 24, 'saved with the games');
     eq(r.round, true, 'past the last game, round again from the first');
   });
 
-  await test('F6.1: Insights at three tiers on the fixture: the window, the headline and its lead, the skills by games decided (glyph, name, plain line, games and positions, a bar of their own positions in words), "Start here" on the focus, under 3 games "Also seen" with their bars; progress from the first clean find with zero parts dropped; how we count in each tier\'s words; under 5 losses and while reading', () => {
+  await test('F6.1, V4.7, V4.8: Insights at three tiers on the fixture: the window, the headline and its lead, the skills by losses decided, each once, adding up to the headline\'s games (glyph, name, plain line, games and positions, a bar of their positions by steps, the positions in words: learned, in practice, not started), "Start here" on the focus at tiers 2 and 3 only, under 3 games "Also seen" with their bars; progress from the first clean find with zero parts dropped; how we count in each tier\'s words; under 5 losses and while reading', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${INS}
       SF.state = 'failed';
@@ -2553,7 +2589,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       srsRecord(fam('chances')[0], 'first', { ms: 9000, attempted: true });
       var h2 = insAt(2);
       out.practised = insRows(h2);
-      out.zero = /(^|\\D)0 (learned|climbing|to go)/.test(insText(h2).join(' '));
+      out.zero = /(^|\\D)0 (learned|in practice|not started)/.test(insText(h2).join(' '));
       /* under 5 losses: the fallback headline, the lead kept */
       var k = 0;
       data.games.forEach(function (g) { if (g.res === 'loss' && ++k > 4) g.res = 'win'; });
@@ -2569,29 +2605,31 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       modelDirty();
       return JSON.stringify(insText(insAt(2))[0]); })()`));
     ok(/^Based on 50 rapid games, \d+ to \d+ Sept? 2026$/.test(r[2].w[0]), 'the window: ' + r[2].w[0]);
-    eq(JSON.stringify(r[2].w.slice(1, 3)), JSON.stringify(['In 19 of your 27 losses, one move turned the game for good.', 'Piece safety decided the most: 14 games lost or drawn.']), 'headline and lead, tier 2');
+    eq(JSON.stringify(r[2].w.slice(1, 3)), JSON.stringify(['In 19 of your 27 losses, one move turned the game for good.', 'Piece safety decided the most: 14 games.']), 'headline and lead, tier 2 (losses, each once: no draws to explain)');
     eq(JSON.stringify(r[3].w.slice(1, 3)), JSON.stringify(r[2].w.slice(1, 3)), 'tier 3 the same');
     eq(JSON.stringify(r[1].w.slice(1, 3)), JSON.stringify(['In 19 of your 27 losses, one move cost you the game.', 'Piece safety cost you the most games: 14.']), 'tier 1 in its words');
     const col = (t, k) => r[t].rows.map((x) => x[k]);
     eq(JSON.stringify(col(2, 'name')), JSON.stringify(['Piece safety', 'Quiet moves', 'Spotting chances', 'King safety', 'Finishing wins']), 'the skills, by games decided');
     eq(JSON.stringify(col(2, 'glyph')), JSON.stringify(['shield', 'compass', 'target', 'crown', 'flag']), 'their glyphs');
     eq(JSON.stringify(col(2, 'focus')), JSON.stringify([true, false, false, false, false]), '"Start here" on the focus');
+    eq(JSON.stringify(col(1, 'focus')), JSON.stringify([false, false, false, false, false]), 'tier 1: no "Start here", the skill tiles\' "Next" the one next step (V4.7)');
+    eq(col(2, 'n').reduce((a, x) => a + (+((/decided (\d+)/.exec(x) || [])[1]) || (/decided one/.test(x) ? 1 : 0)), 0), 19, 'the rows add up to the headline\'s 19 games (V4.8)');
     eq(JSON.stringify(col(2, 'also')), JSON.stringify([false, false, true, true, true]), 'under 3 games decided: "Also seen"');
-    eq(JSON.stringify(col(2, 'n')), JSON.stringify(['decided 14 games · 38 positions', 'decided 3 games · 27 positions', 'decided 2 games · 10 positions', 'decided one game · 7 positions', 'decided no games · 9 positions']), 'games decided and positions');
-    eq(JSON.stringify(col(1, 'n')), JSON.stringify(['cost you 14 games · 38 positions', 'cost you 3 games · 27 positions', 'cost you 2 games · 10 positions', 'cost you one game · 7 positions', 'cost you no games · 9 positions']), 'tier 1: what they cost you');
+    eq(JSON.stringify(col(2, 'n')), JSON.stringify(['decided 14 games · 38 positions', 'decided 3 games · 27 positions', 'decided one game · 10 positions', 'decided one game · 7 positions', 'decided no games · 9 positions']), 'games decided and positions');
+    eq(JSON.stringify(col(1, 'n')), JSON.stringify(['cost you 14 games · 38 positions', 'cost you 3 games · 27 positions', 'cost you one game · 10 positions', 'cost you one game · 7 positions', 'cost you no games · 9 positions']), 'tier 1: what they cost you');
     eq(JSON.stringify(col(2, 'line')), JSON.stringify(['Moves that let them win material.', 'Moves with no tactic that made your position worse.', 'Moves that missed a free piece, a tactic or a mate.', 'Moves that exposed your king or allowed mate.', 'Moves that let a winning position get away.']), 'plain lines, tier 2');
     eq(JSON.stringify(col(3, 'line')), JSON.stringify(col(2, 'line')), 'tier 3 the same');
-    eq(JSON.stringify(col(1, 'line')), JSON.stringify(['Moves that let them take your pieces.', 'Slow moves that made things worse.', 'Free pieces and mates you missed.', 'Moves that put your king in danger.', 'Times you were winning and let it go.']), 'plain lines, tier 1');
-    eq(JSON.stringify(col(2, 'prog')), JSON.stringify(['38 to go', '27 to go', '10 to go', '7 to go', '9 to go']), 'nothing practised yet: all to go');
-    eq(JSON.stringify(col(2, 'bar')), JSON.stringify(['g38', 'g27', 'g10', 'g7', 'g9']), 'every skill a bar of its positions, "Also seen" too');
+    eq(JSON.stringify(col(1, 'line')), JSON.stringify(['Moves that let them take your pieces.', 'Moves with no trick that made things worse.', 'Free pieces and mates you missed.', 'Moves that put your king in danger.', 'Times you were winning and let it go.']), 'plain lines, tier 1');
+    eq(JSON.stringify(col(2, 'prog')), JSON.stringify(['38 not started', '27 not started', '10 not started', '7 not started', '9 not started']), 'nothing practised yet: all not started');
+    eq(JSON.stringify(col(2, 'bar')), JSON.stringify(['g114', 'g81', 'g30', 'g21', 'g27']), 'every skill a bar of its positions\' steps, 3 each, "Also seen" too');
     const pr = r.practised.filter((x) => /Piece safety|Spotting chances/.test(x.name)).map((x) => [x.name, x.prog, x.bar]);
-    eq(JSON.stringify(pr), JSON.stringify([['Piece safety', '3 learned · 12 climbing · 23 to go', 'l3 c12 g23'], ['Spotting chances', '1 climbing · 9 to go', 'c1 g9']]), 'learned, climbing (one back in the queue is to go again), and one clean find');
+    eq(JSON.stringify(pr), JSON.stringify([['Piece safety', '3 learned · 12 in practice · 23 not started', 'l9 c12 g93'], ['Spotting chances', '1 in practice · 9 not started', 'c1 g29']]), 'learned (3 steps each), in practice (its rungs: one back in the queue starts again at 0), and one clean find (a step)');
     eq(r.zero, false, 'never "0 learned", nor any zero part');
     eq(JSON.stringify([r[1].routine, r[2].routine, r[3].routine]), '[false,true,true]', 'the routine line from tier 2');
     eq(JSON.stringify([r[1].since, r[2].since, r[3].since]), '[false,false,false]', 'no "since you started" before a set is finished');
     ok(r[1].link && r[2].link && r[3].link, 'how we count, a sheet');
-    eq(JSON.stringify(r[1].count), JSON.stringify(['Insights', 'How we count', 'A big mistake: a move that made your position much worse.', 'A move cost you the game if you never came back from it. A drawn game counts as half a game.']), 'how we count, tier 1 (a big mistake, as the app says it everywhere)');
-    eq(JSON.stringify(r[2].count), JSON.stringify(['Insights', 'How we count', 'A big mistake cut your winning chances by 15 points or more (20 under 1200, 12 at 1800+).', 'A move decided a game if you never came back from it. A drawn game counts as half a game.', 'Each bar shows your practice on that skill\'s positions: learned, climbing, to go.']), 'how we count, tier 2');
+    eq(JSON.stringify(r[1].count), JSON.stringify(['Insights', 'How we count', 'A big mistake: a move that made your position much worse.', 'A move cost you the game if you never came back from it.', 'Find a position on 3 different days and it is learned.']), 'how we count, tier 1 (a big mistake, as the app says it everywhere; learned in plain words, V4.8)');
+    eq(JSON.stringify(r[2].count), JSON.stringify(['Insights', 'How we count', 'A big mistake cut your winning chances by 15 points or more (20 under 1200, 12 at 1800+).', 'A move decided a game if it lost a game you could still play and you never came back.', 'Each find on a later day climbs a step; three steps and it is learned. A miss sends it back.']), 'how we count, tier 2 (V4.8)');
     /* tier 3 adds what its rows on how games are decided count (F10.3): +2, and the peer figures' source */
     eq(JSON.stringify(r[3].count), JSON.stringify(r[2].count.concat(DECIDED_COUNT)), 'tier 3 names the threshold its games are counted at (15 for the fixture\'s 1350s)');
     eq(r.few[0], 'Your mistakes, grouped by the skill that would prevent them.', 'under 5 losses: the fallback headline');
@@ -2633,7 +2671,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       exportProgress();
       res.file = !!JSON.parse(blob).keys['nl:start:cc:tester'];
       return JSON.stringify(res); })()`));
-    A.click('resetProgress'); A.click('resetProgress');
+    A.click('resetProgress'); A.advance(1500); A.click('resetProgress');
     const gone = A.ev(`JSON.stringify([store.get(startKey(), null), sinceStats()])`);
     const B = boot();
     const d = JSON.parse(B.ev(`(function () {
@@ -2645,7 +2683,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(r.none), '[false,false]', 'hidden, nothing stored, before a finished set');
     eq(r.idle, false, 'a set of reveals only starts nothing');
     eq(JSON.stringify(r.start), JSON.stringify([true, '{"rapid":15}']), 'the first finished set notes the start and its threshold (the rapid band that day; no blitz game, no blitz threshold yet)');
-    eq(JSON.stringify(r.panel), JSON.stringify(['Since you started, 28 Sept', 'Big mistakes per game before: 1.9 (50 games).', 'Comparison from 10 games since you started: 0 so far.']), 'the waiting card');
+    eq(JSON.stringify(r.panel), JSON.stringify(['Since you started, 28 Sept', 'Big mistakes per game before: 1.8 (50 games).', 'Comparison from 10 games since you started: 0 of 10 new games so far.']), 'the waiting card (V4.8: one count, the positions at the frozen line)');
     eq(r.t1, true, 'the same words at tier 1');
     eq(r.kept, true, 'a later set leaves the start where it was');
     eq(r.shifted, 2 * 864e5, 'shiftDays moves the start back');
@@ -2657,7 +2695,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(d.stored && d.thr.rapid === 15, 'and it is kept, with its threshold');
   });
 
-  await test('F6.2: the verdict on F0.5\'s deterministic games, by learning\'s calibrated rule: 9 games the waiting line (even all flattened); 10 halved (1.20 a game) "No clear change yet."; 24 unchanged (2.17) the same; 20 halved (0.90) "Probably fewer. More games will tell."; 40 halved (0.70) "Fewer than before."; 24 plus one (3.17) "Probably more than before."; with games with no big mistake', () => {
+  await test('F6.2: the verdict on F0.5\'s deterministic games, by learning\'s calibrated rule: 9 games the waiting line (even all flattened); 10 halved (1.20 a game) "No clear change yet."; 24 unchanged (2.00) the same; 20 halved (0.90) "Probably fewer. More games will tell."; 40 halved (0.68) "Fewer than before."; 24 plus one (3.00) "Probably more than before."; with games with no big mistake (V4.8: one count, the positions at the frozen line)', () => {
     const cases = [[{ n: 9 }, 'wait'], [{ n: 9, cut: 1 }, 'wait'], [{ n: 10, halved: true }, 'no_change'], [{ n: 24 }, 'no_change'], [{ n: 20, halved: true }, 'probably_fewer'], [{ n: 40, halved: true }, 'fewer'], [{ n: 24, plus: 1 }, 'probably_more']];
     const got = cases.map(([spec]) => JSON.parse(boot().ev(`(function () { ${INS}
       SF.state = 'failed';
@@ -2666,17 +2704,17 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       var st = sinceStats();
       return JSON.stringify({ v: st.verdict, b: st.before.mean.toFixed(2), s: st.since.mean.toFixed(2), card: sinceText(insAt(2)) }); })()`)));
     eq(JSON.stringify(got.map((x) => x.v)), JSON.stringify(cases.map((c) => c[1])), 'the verdicts');
-    eq(JSON.stringify(got.map((x) => x.b)), JSON.stringify(cases.map(() => '1.94')), 'before: 1.94 a game over the fixture\'s 50');
-    eq(JSON.stringify(got.slice(2).map((x) => x.s)), JSON.stringify(['1.20', '2.17', '0.90', '0.70', '3.17']), 'since: learning\'s means');
-    eq(JSON.stringify(got[0].card), JSON.stringify(['Since you started, 28 Sept', 'Big mistakes per game before: 1.9 (50 games).', 'Comparison from 10 games since you started: 9 so far.']), '9 games: the waiting line');
-    eq(JSON.stringify(got[1].card.slice(1)), JSON.stringify(['Big mistakes per game before: 1.9 (50 games).', 'Comparison from 10 games since you started: 9 so far.']), 'no verdict before 10 games, however few the mistakes');
-    eq(JSON.stringify(got[2].card), JSON.stringify(['Since you started, 28 Sept', 'Big mistakes per game: 1.9 before, 1.2 since (10 games).', 'No clear change yet.', 'Games with no big mistake: 9 of 50 before, 4 of 10 since.']), '10 halved');
-    eq(JSON.stringify(got[4].card.slice(1, 4)), JSON.stringify(['Big mistakes per game: 1.9 before, 0.9 since (20 games).', 'Probably fewer. More games will tell.', 'Games with no big mistake: 9 of 50 before, 9 of 20 since.']), '20 halved');
-    eq(JSON.stringify(got[5].card.slice(1, 4)), JSON.stringify(['Big mistakes per game: 1.9 before, 0.7 since (40 games).', 'Fewer than before.', 'Games with no big mistake: 9 of 50 before, 22 of 40 since.']), '40 halved');
-    eq(JSON.stringify(got[6].card.slice(1, 4)), JSON.stringify(['Big mistakes per game: 1.9 before, 3.2 since (24 games).', 'Probably more than before.', 'Games with no big mistake: 9 of 50 before, 0 of 24 since.']), '24 plus one');
+    eq(JSON.stringify(got.map((x) => x.b)), JSON.stringify(cases.map(() => '1.82')), 'before: 1.82 a game over the fixture\'s 50 ((20 deciding + 71 other) / 50, V4.8)');
+    eq(JSON.stringify(got.slice(2).map((x) => x.s)), JSON.stringify(['1.20', '2.00', '0.90', '0.68', '3.00']), 'since: learning\'s means, counted as positions');
+    eq(JSON.stringify(got[0].card), JSON.stringify(['Since you started, 28 Sept', 'Big mistakes per game before: 1.8 (50 games).', 'Comparison from 10 games since you started: 9 of 10 new games so far.']), '9 games: the waiting line');
+    eq(JSON.stringify(got[1].card.slice(1)), JSON.stringify(['Big mistakes per game before: 1.8 (50 games).', 'Comparison from 10 games since you started: 9 of 10 new games so far.']), 'no verdict before 10 games, however few the mistakes');
+    eq(JSON.stringify(got[2].card), JSON.stringify(['Since you started, 28 Sept', 'Big mistakes per game: 1.8 before, 1.2 since (10 games).', 'No clear change yet.', 'Games with no big mistake: 10 of 50 before, 4 of 10 since.']), '10 halved');
+    eq(JSON.stringify(got[4].card.slice(1, 4)), JSON.stringify(['Big mistakes per game: 1.8 before, 0.9 since (20 games).', 'Probably fewer. More games will tell.', 'Games with no big mistake: 10 of 50 before, 9 of 20 since.']), '20 halved');
+    eq(JSON.stringify(got[5].card.slice(1, 4)), JSON.stringify(['Big mistakes per game: 1.8 before, 0.7 since (40 games).', 'Fewer than before.', 'Games with no big mistake: 10 of 50 before, 22 of 40 since.']), '40 halved');
+    eq(JSON.stringify(got[6].card.slice(1, 4)), JSON.stringify(['Big mistakes per game: 1.8 before, 3.0 since (24 games).', 'Probably more than before.', 'Games with no big mistake: 10 of 50 before, 0 of 24 since.']), '24 plus one');
   });
 
-  await test('F6.2: the threshold stays frozen at the start (games at 1210 against a 1190 baseline counted at 20 points, while Insights counts each game at its own); a practised skill\'s mistakes (counts only), opponents 100 points stronger or more; Today\'s line from 10 games since; the measure once per state', () => {
+  await test('F6.2: the threshold stays frozen at the start (games at 1210 against a 1190 baseline counted at 20 points, while Insights counts each game at its own); a practised skill\'s mistakes with its calibrated word (V4.8), opponents 100 points stronger or more; Today\'s line from 10 games since; the measure once per state', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${INS}
       SF.state = 'failed';
@@ -2687,7 +2725,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       window.__nlTest.seedAfterGames({ n: 24, rating: 1060 });
       var st = sinceStats(), syn = data.games.filter(function (g) { return g.syn; });
       var sum = function (f) { return syn.reduce(function (a, g) { return a + f(g); }, 0); };
-      res.freeze = [st.thr.rapid, syn.every(function (g) { return mistakeMinFor(g) === 15; }), st.since.total, sum(function (g) { return bigMistakesAt(g, 20); }), sum(function (g) { return bigMistakesAt(g, 15); }), sum(function (g) { return scoredPlies(g).mistakes.length; })];
+      /* V4.8: one count, the positions; at 15 each clone counts every position it keeps, as Insights would */
+      res.freeze = [st.thr.rapid, syn.every(function (g) { return mistakeMinFor(g) === 15; }), st.since.total, sum(function (g) { return bigCardsAt(g, 20).n; }), sum(function (g) { return bigCardsAt(g, 15).n; }), sum(function (g) { return (g.bl || []).filter(function (b) { return !b.x; }).length; })];
       res.card = sinceText(insAt(2)).slice(1, 3);
       return JSON.stringify(res); })()`));
     const B = boot();
@@ -2712,7 +2751,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       insAt(1);
       var st = sinceStats(), last = syn().slice(0, 3);
       res.moved = Math.round((st.since.opp / st.since.on - st.before.opp / st.before.on) / 10) * 10;
-      res.usual = [last.reduce(function (a, g) { return a + bigMistakesAt(g, 15); }, 0), Math.round(st.before.mean * 3)];
+      res.usual = [last.reduce(function (a, g) { return a + bigCardsAt(g, 15).n; }, 0), Math.round(st.before.mean * 3)];
       res.today = greetingLine(syn()[3].ts);
       last[0].wp = null;
       res.unread = greetingLine(syn()[3].ts);
@@ -2722,13 +2761,13 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(r.freeze.slice(0, 2)), '[20,true]', 'frozen at the 1190 band\'s 20 points, though the games since are at 1210 (15)');
     eq(r.freeze[2], r.freeze[3], 'since: counted at 20');
     ok(r.freeze[4] > r.freeze[3] && r.freeze[5] === r.freeze[4], 'at 15 they would count more, as Insights counts each game at its own rating: ' + r.freeze.join(', '));
-    eq(r.card[0], 'Big mistakes per game: ' + '1.3 before, ' + (Math.round(r.freeze[2] / 24 * 10) / 10).toFixed(1) + ' since (24 games).', 'the card at the frozen threshold');
+    eq(r.card[0], 'Big mistakes per game: ' + '1.8 before, ' + (Math.round(r.freeze[2] / 24 * 10) / 10).toFixed(1) + ' since (24 games).', 'the card at the frozen threshold (the fixture\'s positions, read at 15, all reach the 20 its games now claim)');
     ok(/^Since your last visit: \d+ games? \(\d+ won, \d+ lost\)\./.test(q.early), 'under 10 games since, Today keeps its greeting: ' + q.early);
-    eq(q.card.slice(4).join(' | '), 'Piece safety mistakes: 37 in 50 games before, 6 in 24 since. | Your opponents since are ' + q.moved + ' points stronger.', 'a practised skill (5 positions) counted; the opponents\' level');
+    eq(q.card.slice(4).join(' | '), 'Piece safety mistakes: 38 in 50 games before, 6 in 24 since. Probably fewer. More games will tell. | Your opponents since are ' + q.moved + ' points stronger.', 'a practised skill (5 positions) counted, with its calibrated word (V4.8: 24 games since, 38 before); the opponents\' level');
     ok(q.moved >= 100, 'opponents moved ' + q.moved);
     eq(q.today, 'Since your last visit: 3 games, ' + (q.usual[0] ? q.usual[0] + ' big mistake' + (q.usual[0] === 1 ? '' : 's') : 'no big mistakes') + ' (before you started: about ' + q.usual[1] + ').', 'Today, from 10 games since: their big mistakes against as many games before the start, named as that');
     ok(/^Since your last visit: 3 games \(/.test(q.unread), 'a game not read yet: the greeting as before');
-    eq(JSON.stringify(q.calls), JSON.stringify(['since_wait', 'since_fewer']), 'the measure: once per state a visit');
+    eq(JSON.stringify(q.calls), JSON.stringify(['since_wait', 'since_probably_fewer']), 'the measure: once per state a visit');
     ok(!/tester|\b1[0-9]{3}\b|\b\d{12}\b/.test(q.flat), 'no name, rating or key: ' + q.flat);
   });
 
@@ -2777,7 +2816,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
   });
 
   /* the learning scientist's review of slice 6 */
-  await test('slice 6 review: a skill\'s line counts only the games whose positions reach the frozen threshold (a baseline at 1210 counted at 15 against games since at 1190, whose positions start at 20: no line, never fewer mistakes that are not), with those games as its denominator', () => {
+  await test('slice 6 review: a skill\'s line counts only the games whose positions reach the frozen threshold (a baseline at 1210 counted at 15 against games since at 1190, whose positions start at 20: no line, never fewer mistakes that are not), with those games as its denominator; V4.8: the line shows only with its calibrated word, from 20 such games (19: none; 21: one ending in the rule\'s word)', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${INS}
       SF.state = 'failed';
@@ -2792,19 +2831,26 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       var st = sinceStats();
       res.low = [st.thr.rapid, st.since.n, st.since.famN, st.before.famN, st.since.total > 0];
       res.lowCard = sinceText(insAt(2));
-      /* 12 more since at 1210: their positions reach 15, so they are the line's games */
-      window.__nlTest.seedAfterGames({ n: 12, rating: 1060 });
+      /* 19 more since at 1210: their positions reach 15, so they are the line's games; under 20 of them, no line yet (V4.8) */
+      window.__nlTest.seedAfterGames({ n: 19, rating: 1060 });
+      st = sinceStats();
+      res.n19 = [st.since.n, st.since.famN];
+      res.card19 = sinceText(insAt(2));
+      window.__nlTest.seedAfterGames({ n: 2, rating: 1060 });
       st = sinceStats();
       var mine = data.games.filter(function (g) { return g.syn && g.myR === 1060; }), safety = 0;
-      mine.forEach(function (g) { (g.bl || []).forEach(function (b) { if (!b.x && wpAt(g, b.p - 1) - wpAt(g, b.p) >= 15 && familyOf(patternOf(b)).key === 'safety') safety++; }); });
+      mine.forEach(function (g) { (g.bl || []).forEach(function (b) { if (!b.x && familyOf(patternOf(b)).key === 'safety') safety++; }); });
       res.mixed = [st.since.n, st.since.famN, mine.length, safety];
       res.mixedCard = sinceText(insAt(2));
       return JSON.stringify(res); })()`));
     eq(JSON.stringify(r.low.slice(0, 4)), '[15,24,0,50]', 'frozen at 15; the 24 games since at 1190 keep positions only from 20 points, so none counts for a skill; all 50 before do');
     ok(r.low[4], 'their big mistakes still count in the totals, from the series');
     ok(r.lowCard.length >= 4 && !r.lowCard.some((x) => / mistakes: \d+ in /.test(x)), 'no skill line: ' + r.lowCard.join(' | '));
-    eq(JSON.stringify(r.mixed.slice(0, 3)), '[36,12,12]', '12 more since at 1210: 36 games since, 12 of them for the skills');
-    ok(r.mixedCard.indexOf('Piece safety mistakes: 37 in 50 games before, ' + r.mixed[3] + ' in 12 since.') >= 0, 'the line over those 12 games: ' + r.mixedCard.join(' | '));
+    eq(JSON.stringify(r.n19), '[43,19]', '19 more since at 1210: 43 games since, 19 of them for the skills');
+    ok(!r.card19.some((x) => / mistakes: \d+ in /.test(x)), '19 games for the skills: no skill line yet (V4.8): ' + r.card19.join(' | '));
+    eq(JSON.stringify(r.mixed.slice(0, 3)), '[45,21,21]', '2 more: 45 games since, 21 of them for the skills');
+    const line = r.mixedCard.find((x) => / mistakes: \d+ in /.test(x)) || '';
+    ok(new RegExp('^Piece safety mistakes: 38 in 50 games before, ' + r.mixed[3] + ' in 21 since\\. (Fewer than before|Probably fewer\\. More games will tell|No clear change yet|Probably more than before|More than before)\\.$').test(line), 'the line over those 21 games, ending in the rule\'s word (V4.8): ' + r.mixedCard.join(' | '));
   });
 
   await test('slice 6 review: while fewer than 20 games before the start leave the next games to the before count, the card says how many ("Your next 3 games complete the before count; the comparison comes 10 games after.") instead of a count since that sits at 0; then the count since moves from the first game after', () => {
@@ -2830,9 +2876,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.c19[2], 'Your next game completes the before count; the comparison comes 10 games after.', 'one to go');
     eq(r.c19m, null, 'still no meter');
     ok(before(20).test(r.c20[1]), 'the third completes it');
-    eq(r.c20[2], 'Comparison from 10 games since you started: 0 so far.', 'the count since starts');
+    eq(r.c20[2], 'Comparison from 10 games since you started: 0 of 10 new games so far.', 'the count since starts');
     eq(r.c20m, 0, 'its meter, empty');
-    eq(r.c23[2], 'Comparison from 10 games since you started: 3 so far.', 'and moves with each game after');
+    eq(r.c23[2], 'Comparison from 10 games since you started: 3 of 10 new games so far.', 'and moves with each game after');
     eq(r.c23m, 3, 'the meter with it');
   });
 
@@ -2901,10 +2947,10 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       g.res = 'loss'; g.bl = null; modelDirty();
       return latestGamesHtml(); })()`);
     eq(JSON.stringify(r[1].slice(2, 4)), JSON.stringify(['A big mistake: a move that made your position much worse.', 'Since you started, every game counts the same way.']), 'tier 1: a big mistake, and since you started counts every game the same way');
-    eq(JSON.stringify(r[2].slice(2, 4)), JSON.stringify(['A big mistake cut your winning chances by 15 points or more (20 under 1200, 12 at 1800+).', 'Since you started, every game counts at 15 points, the line on your start day.']), 'tier 2: the line since you started counts at');
+    eq(JSON.stringify(r[2].slice(2, 4)), JSON.stringify(['A big mistake cut your winning chances by 15 points or more (20 under 1200, 12 at 1800+).', 'To compare fairly, every game since you started counts at 15 points, your line when you started, even if your rating changes.']), 'tier 2: the line since you started counts at (V4.8\'s words)');
     eq(JSON.stringify(r[3]), JSON.stringify(r[2].concat(DECIDED_COUNT)), 'tier 3 the same, with what its rows on how games are decided count (F10.3)');
-    eq(r.two, 'Since you started, rapid games count at 15 points and blitz games at 20, the lines on your start day.', 'two formats at different lines');
-    eq(r.alike, 'Since you started, every game counts at 15 points, the line on your start day.', 'two formats at one line');
+    eq(r.two, 'To compare fairly, since you started rapid games count at 15 points and blitz games at 20, your lines when you started, even if your rating changes.', 'two formats at different lines');
+    eq(r.alike, 'To compare fairly, every game since you started counts at 15 points, your line when you started, even if your rating changes.', 'two formats at one line');
     eq(r.t1line, 'Since you started, every game counts the same way.', 'tier 1 names no number');
     const said = r.details.filter((x) => x != null).sort((a, b) => a - b), h = Math.floor(said.length / 2);
     ok(said.length >= 15 && JSON.stringify(r.details) === JSON.stringify(r.paces), 'Details says each losing move\'s pace as paceOf: ' + r.details.join(','));
@@ -2950,7 +2996,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify([/Donate to lichess/.test(r.footNone), /Donate to lichess/.test(r.footLi), /Donate to lichess/.test(r.footCc)]), '[false,true,false]', 'Donate to lichess for a lichess player only');
     ok(r.settings.indexOf('Saved in this browser: 50 games and your practice. Clearing browser data erases them.') >= 0, 'what this browser holds');
     ok(/>Reset</.test(r.settings) && !/>Start over</.test(r.settings), 'the data section is Reset');
-    ok(r.settings.indexOf('Rapid · 10 to 15 min') >= 0 && r.settings.indexOf('Blitz · 3 to 5 min') >= 0 && !/–/.test(r.settings), 'the format chips read whole');
+    ok(r.settings.indexOf('Rapid · 10 min or more') >= 0 && r.settings.indexOf('Blitz · 3 to 10 min') >= 0 && !/–/.test(r.settings), 'the format chips read whole, in the site\'s own categories (V4.8)');
     ok(/>End this set</.test(r.resume) && !/Start over/.test(r.resume), 'the paused set ends with End this set');
     ok(/I think Stockfish is wrong/.test(r.menu2) && /I think the computer is wrong/.test(r.menu1) && !/engine/.test((r.menu1 + r.menu2).replace(/<[^>]+>/g, ' ')), 'the menu says who is wrong, never "engine"');
     eq(JSON.stringify([/menu-keys/.test(r.menuTouch), /menu-keys/.test(r.menuMouse), /menu-keys/.test(r.menu2)]), '[false,true,true]', 'the keys never on a touch screen, kept where a mouse or no pointer is reported');
@@ -3153,27 +3199,27 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(/<span class="hero-board wait" aria-hidden="true"><\/span><p class="why hero-cap">Stockfish checks your moves/.test(r.reading) && !/<svg/.test(r.reading), 'while reading: a still square in the board\'s place');
   });
 
-  await test('F5.1: the week: Monday to Sunday, the first week\'s goal cut to the days it has left: a first practice on a Saturday with goal 4 reads "1 of 2 days this week", a Sunday set meets it once, Monday reads "0 of 4 days this week · 1 week in a row" and "2 practice days"; no zero part anywhere on Today', () => {
+  await test('F5.1: the week: Monday to Sunday, the first week\'s goal cut to the days it has left: a first practice on a Saturday with goal 4 reads "1 of 2 days this week (your first week)" (V4.4), a Sunday set meets it once, Monday reads "0 of 4 days this week · 1 week in a row" and "2 practice days"; no zero part anywhere on Today', () => {
     const A = boot({ now: T0 + 5 * 864e5 });
     const at = (d, code) => { A.setNow(T0 + d * 864e5); return JSON.parse(A.ev(code)); };
     const SAY = `(function () { var h = weekHtml(); return { say: (/class="wk-say">([^<]*)</.exec(h) || [])[1], life: (/class="wk-life">([^<]*)</.exec(h) || [])[1] || '',
-      on: (h.match(/class="wk-b on/g) || []).length, now: (/<span class="wk-b( on)? now">/.exec(h) || [])[0] || '', medal: /<span class="medal"/.test(h), goal: goalThisWeek() }; })()`;
+      on: (h.match(/class="wk-b on/g) || []).length, now: (/<span class="wk-b( on)? now">/.exec(h) || [])[0] || '', medal: /<span class="medal"/.test(h), goal: weekGoalInfo(Date.now()).goal }; })()`;
     A.ev(`(function () { store.set('nl:consent', 'yes'), window.clarity = function () { window.__calls = (window.__calls || []).concat([Array.prototype.slice.call(arguments).map(String)]); }; store.set('nl:weekGoal', 4); return 1; })()`);
     const sat0 = at(5, 'JSON.stringify(' + SAY + ')');
     const sat = at(5, `(function () { var d = dayLoad(); d.counted = 1; daySave(d); var ss = {}; goalCheck(ss); return JSON.stringify({ w: ${SAY}, met: !!ss.goalMet }); })()`);
     const sun = at(6, `(function () { var d = dayLoad(); d.counted = 1; daySave(d); var ss = {}, ss2 = {}; goalCheck(ss); goalCheck(ss2);
       return JSON.stringify({ w: ${SAY}, met: ss.goalMet, again: !!ss2.goalMet, sent: (window.__calls || []).filter(function (c) { return c[1] === 'week_goal_met'; }).length }); })()`);
-    const mon = at(7, `(function () { var today = heroHtml() + focusHtml() + whyTheseHtml(todayPlan()) + latestGamesHtml(); return JSON.stringify({ w: ${SAY}, weeks: weeksAtGoal(), zero: /(^|\\D)0 (learned|climbing|to go|weeks?|practice days?)/.test(today.replace(/<[^>]+>/g, ' ')) }); })()`);
-    eq(sat0.say, '0 of 2 days this week', 'a Saturday start, before practice: the days left');
+    const mon = at(7, `(function () { var today = heroHtml() + focusHtml() + whyTheseHtml(todayPlan()) + latestGamesHtml(); return JSON.stringify({ w: ${SAY}, weeks: weeksAtGoal(), zero: /(^|\\D)0 (learned|in practice|not started|weeks?|practice days?)/.test(today.replace(/<[^>]+>/g, ' ')) }); })()`);
+    eq(sat0.say, '0 of 2 days this week (your first week)', 'a Saturday start, before practice: the days left, said as a short week (V4.4)');
     eq(sat0.life, '', 'no "0 practice days"');
-    eq(sat.w.say, '1 of 2 days this week', 'first practice on a Saturday with goal 4');
+    eq(sat.w.say, '1 of 2 days this week (your first week)', 'first practice on a Saturday with goal 4');
     eq(sat.w.life, '1 practice day', 'the lifetime count');
     eq(sat.w.on + '|' + sat.w.now, '1|<span class="wk-b on now">', 'Saturday filled with its tick and ringed as today');
     ok(!sat.met && !sat.w.medal, 'not met yet: the medal glyph waits at the goal');
-    eq(JSON.stringify(sun.met), JSON.stringify({ days: 2, goal: 2 }), 'a Sunday set meets it');
+    eq(JSON.stringify(sun.met), JSON.stringify({ days: 2, goal: 2, cut: 'first' }), 'a Sunday set meets it');
     eq(sun.again, false, 'once');
     eq(sun.sent, 1, 'its measure once');
-    eq(sun.w.say, '2 of 2 days this week · 1 week in a row', 'Sunday');
+    eq(sun.w.say, '2 of 2 days this week (your first week) · 1 week in a row', 'Sunday');
     ok(sun.w.medal, 'the medal at the goal, met');
     eq(mon.w.say, '0 of 4 days this week · 1 week in a row', 'Monday: the full goal again, the first week counted');
     eq(mon.w.life, '2 practice days', 'two practice days in all');
@@ -3181,12 +3227,14 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(!mon.zero, 'no zero part on Today');
   });
 
-  await test('F5.1: the focus card above the games: the skill\'s glyph and name, its check line, a meter of its positions in words with zero parts dropped ("38 to go", then "1 climbing · 37 to go"), Practise 8; four game rows ("Rapid · 27 Sept · White", "4 mistakes" then "1 cost the game") and All games', () => {
+  await test('F5.1: the focus card above the games: the skill\'s glyph and name, its check line, a meter of its positions in words with zero parts dropped ("38 not started", then "1 in practice · 37 not started"); V4.7: one tap target with a chevron that opens the skill\'s sheet, no Practise 8 or Details; four game rows ("Rapid · 27 Sept · White", "4 mistakes" then "1 cost the game") and All games', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       playerTier = function () { return 2; };
       var words = function (h) { return { name: (/class="focus-name">([^<]*)</.exec(h) || [])[1], glyph: (/class="sk-glyph" data-icon="(\\w+)"/.exec(h) || [])[1], line: (/<div class="plan">([^<]*)</.exec(h) || [])[1],
-        prog: (/class="focus-prog">([^<]*)</.exec(h) || [])[1], bar: (h.match(/<i class="sk-\\w"/g) || []).join(''), go: (/data-act="drill" data-spec="[^"]*">([^<]*)</.exec(h) || [])[1] }; };
+        prog: (/class="focus-prog">([^<]*)</.exec(h) || [])[1], bar: (h.match(/<i class="sk-\\w"/g) || []).join(''),
+        tap: (/^<a class="focus focus-go" data-act="sheet" data-k="([^"]*)" role="button"/.exec(h) || [])[1] || '', chev: /class="focus-chev"/.test(h),
+        rest: (h.match(/data-act=/g) || []).length + '|' + /btn|Practise|Details/.test(h) + '|' + (h.match(/class="fr-bar/g) || []).length }; };
       var f0 = words(focusHtml());
       var it = allMistakes().filter(function (x) { return trainable(x) && familyOf(patternOf(x.b)).key === 'safety'; })[0];
       srsRecord(it, 'first', { ms: 30000, attempted: true });
@@ -3196,18 +3244,18 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       ui.allGames = true; var all = (latestGamesHtml().match(/class="lg-row/g) || []).length; ui.allGames = false;
       return JSON.stringify({ f0: f0, f1: f1, rows: rows, all: all, games: scopedGames().length, metas: metas, st: st, more: /data-act="allGames">All games</.test(lg) }); })()`));
     eq(JSON.stringify([r.f0.name, r.f0.glyph, r.f0.line]), JSON.stringify(['Piece safety', 'shield', 'Before you move: their checks, captures, threats?']), 'its glyph, name and check line');
-    eq(r.f0.prog, '38 to go', 'a fresh player: no "0 learned"');
-    eq(r.f0.bar, '<i class="sk-g"', 'its meter all to go');
-    eq(r.f0.go, 'Practise 8', 'Practise 8');
-    eq(r.f1.prog, '1 climbing · 37 to go', 'after a first clean find: progress from day one');
-    eq(r.f1.bar, '<i class="sk-c"<i class="sk-g"', 'the meter climbs');
+    eq(r.f0.prog, '38 not started', 'a fresh player: no "0 learned"');
+    eq(r.f0.bar, '<i class="sk-g"', 'its meter all not started');
+    eq(JSON.stringify([r.f0.tap, r.f0.chev, r.f0.rest]), JSON.stringify(['family:safety', true, '1|false|1']), 'one tap target, its chevron, opening the skill\'s sheet; one meter; no Practise 8 or Details (V4.7)');
+    eq(r.f1.prog, '1 in practice · 37 not started', 'after a first clean find: progress from day one');
+    eq(r.f1.bar, '<i class="sk-c"<i class="sk-g"', 'the meter fills by a step');
     eq(r.rows, 4, 'four game rows');
     ok(r.more && r.all === r.games && r.all > 4, 'All games shows them all: ' + r.all);
     ok(r.metas.every((m) => /^(Rapid|Blitz|Bullet|Classical) · (today|yesterday|\d{1,2} \w+( \d{4})?) · (White|Black)$/.test(m)), 'each row "Rapid · 27 Sept · White": ' + r.metas.join(' | '));
     eq(JSON.stringify(r.st), JSON.stringify(['4 mistakes', '1 cost the game']), 'the state on two lines');
   });
 
-  await test('F5.2: the diagnosis shows on each summary until it has shown in full once: the first summary "Your report builds as you practise: 12 of 40 games read.", then "So far: ...", then with the read done the full card ("In 19 of your 27 losses, one move turned the game for good.", the top three skills, "You started on the biggest: Piece safety.", See your report ›, reveal_seen once), then one line ("Piece safety: 1 climbing · 37 to go."); tier 1\'s words; Today\'s "Why these?"', () => {
+  await test('F5.2: the diagnosis shows on each summary until it has shown in full once: the first summary "Your report builds as you practise: 12 of 40 games read.", then "So far: ...", then with the read done the full card ("In 19 of your 27 losses, one move turned the game for good.", the top three skills, "You started on the biggest: Piece safety.", See your report ›, reveal_seen once), then one line ("Piece safety: 1 in practice · 37 not started."); tier 1\'s words; Today\'s "Why these?"', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       playerTier = function () { return 2; };
@@ -3245,13 +3293,13 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.first.seen, 0, 'not yet seen in full');
     eq(r.sofar[1], 'So far: in 7 of your 9 losses, one move turned the game for good.', '5 losses read, the read under way');
     eq(r.full.card[0] + ' | ' + r.full.card[1], 'Your games, read | In 19 of your 27 losses, one move turned the game for good.', 'the read done: the full card');
-    eq(JSON.stringify(r.full.card.slice(2, 8)), JSON.stringify(['Piece safety', 'decided 14 games', 'Quiet moves', 'decided 3 games', 'Spotting chances', 'decided 2 games']), 'the top three skills with the games they decided');
+    eq(JSON.stringify(r.full.card.slice(2, 8)), JSON.stringify(['Piece safety', 'decided 14 games', 'Quiet moves', 'decided 3 games', 'Spotting chances', 'decided one game']), 'the top three skills with the games they decided (V4.8: losses, each once)');
     eq(r.full.card[8], 'You started on the biggest: Piece safety.', 'the skill practised first');
     ok(r.full.link, 'See your report ›');
     eq(r.full.seen, 1, 'reveal_seen once');
     eq(JSON.stringify(r.full.again), JSON.stringify(r.full.card), 'drawn again, the same card');
     eq(r.later.card, null, 'after it has shown in full: no card');
-    eq(r.later.line, 'Piece safety: 1 climbing · 37 to go.', 'one line, zero parts dropped');
+    eq(r.later.line, 'Piece safety: 1 in practice · 37 not started.', 'one line, zero parts dropped');
     eq(r.later.seen, 1, 'seen once only');
     eq(r.t1[1], 'In 19 of your 27 losses, one move cost you the game.', 'tier 1\'s headline');
     eq(r.t1[8], 'Your first skill: Piece safety.', 'tier 1\'s skill line');
@@ -3277,8 +3325,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
 
   await test('F5.4: the calendar file: Evening and goal 4 repeat Mon, Tue, Thu and Sat at 19:30 for 10 minutes from the next of those days, with an alarm at the start and the link, and name no minutes; the goal\'s other days and times; the Google Calendar link carries the same', () => {
     const A = boot();
-    const r = JSON.parse(A.ev(`JSON.stringify({ ics: icsText('evening', 4, Date.now()), g3: icsText('morning', 3, Date.now()), g5: icsText('midday', 5, Date.now()), g7: icsText('evening', 7, Date.now()),
-      gcal: gcalUrl('evening', 4, Date.now()), when: [cueWhen('evening'), (store.set('nl:weekGoal', 5), cueWhen('morning')), (store.set('nl:weekGoal', 7), cueWhen('midday'))] })`));
+    const r = JSON.parse(A.ev(`JSON.stringify({ ics: icsText('evening', cueDays(4), Date.now()), g3: icsText('morning', cueDays(3), Date.now()), g5: icsText('midday', cueDays(5), Date.now()), g7: icsText('evening', cueDays(7), Date.now()),
+      gcal: gcalUrl('evening', cueDays(4), Date.now()), when: [cueWhen('evening'), (store.set('nl:weekGoal', 5), cueWhen('morning')), (store.set('nl:weekGoal', 7), cueWhen('midday'))] })`));
     const lines = r.ics.split('\r\n'), unfolded = r.ics.replace(/\r\n /g, '');
     ok(/\r\n$/.test(r.ics) && !/[^\r]\n/.test(r.ics), 'CRLF line ends');
     ok(lines.every((l) => l.length <= 75), 'no line over 75 octets');
@@ -3295,7 +3343,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(/BYDAY=MO,TU,WE,TH,FR,SA,SU\r\n/.test(r.g7), 'goal 7: every day');
     ok(r.gcal.indexOf('https://calendar.google.com/calendar/render?action=TEMPLATE&text=notlichess%3A%20your%20practice&dates=20260929T193000/20260929T194000') === 0
       && r.gcal.indexOf('&recur=RRULE%3AFREQ%3DWEEKLY%3BBYDAY%3DMO%2CTU%2CTH%2CSA') > 0 && r.gcal.indexOf(encodeURIComponent('https://notlichess.org/#train')) > 0, 'the Google Calendar link: ' + r.gcal);
-    eq(JSON.stringify(r.when), JSON.stringify(['At 19:30 on Mon, Tue, Thu and Sat, your goal\'s days.', 'At 08:00 Monday to Friday, your goal\'s days.', 'At 12:30 every day.']), 'the reminder in words');
+    eq(JSON.stringify(r.when), JSON.stringify(['At 7:30 pm on Mon, Tue, Thu and Sat.', 'At 8:00 am Monday to Friday.', 'At 12:30 pm every day.']), 'the reminder in words, in the device\'s time format (V4.6; Node\'s default locale has a 12-hour clock)');
   });
 
   await test('F5.4: the reminder asks once, on the first summary after the habit card (that day\'s others until answered): Not now hides it (cue_notnow, the cue tag); Evening then Add to calendar makes the file (cue_calendar, the tag "evening") and Settings keeps it; the tab title "(3) notlichess.org" with 3 due, "notlichess.org" with none', () => {
@@ -3334,7 +3382,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.later, true, 'that day\'s next summary asks again while unanswered');
     eq(JSON.stringify(r.no), JSON.stringify({ again: false, ev: 1, tag: ['notnow'], stored: true }), 'Not now: hidden, measured, tagged');
     eq(r.nextDay, false, 'not asked on a later day');
-    ok(/At 19:30 on Mon, Tue, Thu and Sat, your goal's days\./.test(r.picked.card) && /data-act="cueAdd" data-k="evening">Add to calendar</.test(r.picked.card) && /data-act="cueGcal" data-k="evening">Google Calendar ›</.test(r.picked.card)
+    ok(/At 7:30 pm on Mon, Tue, Thu and Sat\./.test(r.picked.card) && /data-act="cueAdd" data-k="evening">Add to calendar</.test(r.picked.card) && /data-act="cueGcal" data-k="evening">Google Calendar ›</.test(r.picked.card)
       && /data-k="evening" aria-pressed="true"/.test(r.picked.card), 'Evening picked: what the reminder will be, Add to calendar and Google Calendar');
     eq(JSON.stringify([r.added.ev, r.added.tag, r.added.file, r.added.type, r.added.rrule, r.added.stored]), JSON.stringify([1, ['evening'], 'notlichess-practice.ics', 'text/calendar;charset=utf-8', true, 'evening']), 'the file made, measured and tagged');
     ok(/Open the file to add it to your calendar\./.test(r.added.card) && /data-act="cueGcal"/.test(r.added.card), 'the card says how to finish');
@@ -3345,43 +3393,55 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.title0, 'notlichess.org', 'none due');
   });
 
-  await test('F5.4: the backup prompt: not on a first summary; at the first learned position "Your progress lives only in this browser. Save a copy?" (Save a file, Later); Later waits 30 practice days; from the 14th practice day without a learned position; a file saved waits 30 practice days from then', () => {
+  await test('F5.4 with V4.5: the backup prompt: not before the 3rd practice day; on its summary "Your progress lives only in this browser. Save a copy?" (Save a file, Later); Later waits 30 practice days; a file saved waits 30 practice days from then, says where it went ("Saved to notlichess-tester-2026-09-28.json.") and Settings says when ("Last saved: 28 Sept", before that "Never saved"); the first summary after 7 or more days away asks when nothing was saved in 14 days; Safari on an iPhone outside the home-screen app every 7 practice days, with "Or add notlichess to your home screen."', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
-      var k = allMistakes().filter(trainable)[0].key, out = {};
-      var mk = function () { var ss = { mode: 'today', label: 'Today', keys: [k], idx: 1, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true }; ss.results[k] = 'first'; return ss; };
+      var k = allMistakes().filter(trainable)[0].key, out = {}, notes = [], n0 = notice;
+      notice = function (m) { notes.push(m); };
+      var mk = function (o) { var ss = { mode: 'today', label: 'Today', keys: [k], idx: 1, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true }; Object.keys(o || {}).forEach(function (x) { ss[x] = o[x]; }); ss.results[k] = 'first'; return ss; };
       var c = cueLoad(); c.q = Date.now() - 2 * DAY; cueSave(c);
-      var prompt = function () { return /Your progress lives only in this browser\\. Save a copy\\?/.test(doneHtml(mk())); };
+      var Q = /Your progress lives only in this browser\\. Save a copy\\?/, HOME = /<p class="cue-when">Or add notlichess to your home screen\\.<\\/p>/;
+      var prompt = function (o) { return Q.test(doneHtml(mk(o))); };
       var off = 40, days = function (n) { for (var i = 0; i < n; i++) store.set('nl:day:' + playerId() + ':' + dayStamp(new Date(Date.now() - (off++) * DAY)), { counted: 1 }); };
       out.fresh = prompt();
-      var srs = srsLoad(); srs[k] = { box: 4, streak: 3, due: Date.now() + 90 * DAY, last: Date.now(), lapses: 0, learned: true }; srsSave(srs);
+      days(2); out.d2 = prompt();
+      days(1);
       var h = doneHtml(mk());
-      out.learned = { prompt: /Your progress lives only in this browser\\. Save a copy\\?/.test(h), acts: /data-act="backupSave">Save a file<\\/a><a class="btn-quiet" data-act="backupLater">Later</.test(h), after: h.indexOf('id="cue"') > h.indexOf('recap-habit') };
+      out.d3 = { prompt: Q.test(h), acts: /data-act="backupSave">Save a file<\\/a><a class="btn-quiet" data-act="backupLater">Later</.test(h), after: h.indexOf('id="cue"') > h.indexOf('recap-habit'), home: HOME.test(h) };
+      out.never = (/<p class="last-saved">([^<]*)<\\/p>/.exec(settingsHtml()) || [])[1];
       var s = mk(); ui.session = s; doneHtml(s); window.__realmClick('backupLater'); ui.session = null;
       out.later = { prompt: prompt(), bk: cueLoad().bk };
-      days(29); out.d29 = prompt();
-      days(1); out.d30 = prompt();
-      /* a new player: no learned position, 13 then 14 practice days */
-      delete srs[k].learned; srsSave(srs); var c2 = cueLoad(); delete c2.bk; delete c2.bt; cueSave(c2);
-      var dk = Object.keys(mem); for (var j = 0; j < localStorage.length; j++) dk.push(localStorage.key(j));
-      dk.forEach(function (x) { if (/^nl:day:/.test(x)) store.del(x); });
-      days(13); out.d13 = prompt();
-      days(1); out.d14 = prompt();
+      days(29); out.d32 = prompt();
+      days(1); out.d33 = prompt();
       document.createElement = function () { return { click: function () {}, remove: function () {}, setAttribute: function () {}, style: {} }; };
       exportProgress();
-      out.saved = { prompt: prompt(), bk: cueLoad().bk };
+      out.saved = { prompt: prompt(), bk: cueLoad().bk, note: notes.filter(function (m) { return /^Saved to /.test(m); }), last: (/<p class="last-saved">([^<]*)<\\/p>/.exec(settingsHtml()) || [])[1] };
+      /* after a break: the day's first summary (ss.away), when nothing was saved in 14 days */
+      out.away = [prompt({ away: 14 })];
+      c = cueLoad(); c.sv = Date.now() - 15 * DAY; cueSave(c);
+      out.away.push(prompt({ away: 14 }), prompt());
+      /* Safari on an iPhone, in a tab: every 7 practice days, and the home screen named */
+      navigator.userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+      days(6); out.ios6 = prompt();
+      days(1); h = doneHtml(mk()); out.ios7 = [Q.test(h), HOME.test(h)];
+      navigator.standalone = true; out.app = prompt();
+      notice = n0;
       return JSON.stringify(out); })()`));
     eq(r.fresh, false, 'not on a fresh profile');
-    ok(r.learned.prompt && r.learned.acts && r.learned.after, 'at the first learned position, after the habit card, with Save a file and Later');
-    eq(JSON.stringify(r.later), JSON.stringify({ prompt: false, bk: 0 }), 'Later: gone, noted at 0 practice days');
-    eq(r.d29, false, '29 practice days on: not yet');
-    eq(r.d30, true, '30 practice days on: again');
-    eq(r.d13, false, '13 practice days: not yet');
-    eq(r.d14, true, 'the 14th practice day');
-    eq(JSON.stringify(r.saved), JSON.stringify({ prompt: false, bk: 14 }), 'a file saved: not again for 30 practice days');
+    eq(r.d2, false, 'not on the 2nd practice day');
+    eq(JSON.stringify(r.d3), JSON.stringify({ prompt: true, acts: true, after: true, home: false }), 'the 3rd practice day\'s summary, after the habit card, with Save a file and Later');
+    eq(r.never, 'Never saved', 'Settings, before a file is saved');
+    eq(JSON.stringify(r.later), JSON.stringify({ prompt: false, bk: 3 }), 'Later: gone, noted at 3 practice days');
+    eq(r.d32, false, '29 practice days on: not yet');
+    eq(r.d33, true, '30 practice days on: again');
+    eq(JSON.stringify(r.saved), JSON.stringify({ prompt: false, bk: 33, note: ['Saved to notlichess-tester-2026-09-28.json.'], last: 'Last saved: 28 Sept' }), 'a file saved: where it went, Settings says when, and not again for 30 practice days');
+    eq(JSON.stringify(r.away), '[false,true,false]', 'after 7 or more days away: not with a file saved today; with none in 14 days, on that first summary only');
+    eq(r.ios6, false, 'Safari on an iPhone: not 6 practice days on');
+    eq(JSON.stringify(r.ios7), '[true,true]', '7 practice days on, with "Or add notlichess to your home screen."');
+    eq(r.app, false, 'the home-screen app waits the 30');
   });
 
-  await test('the design lead\'s review of slice 4 on the summary: the headline and its category line, then what moved and when the found ones come back in one quiet paragraph before the week; the habit card\'s kicker "Keep in mind", its check lines under one bulb, the routine after them in small words', () => {
+  await test('the design lead\'s review of slice 4 on the summary: the headline and its category line, then when they come back (V4.3: "Back in 7 days: 1.") in one quiet paragraph before the week; the habit card\'s kicker "Keep in mind", its check lines under one bulb, the routine after them in small words', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       playerTier = function () { return 2; };
@@ -3394,7 +3454,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       var h = doneHtml(ss), habit = (/<div class="focus recap-habit">([\\s\\S]*?)<\\/div><section|<div class="focus recap-habit">([\\s\\S]*?)<\\/div><div class="acts-row/.exec(h) || []);
       habit = habit[1] || habit[2] || '';
       return JSON.stringify({ stack: (/<h2 class="done-big"[^>]*>[^<]*<\\/h2>(<p class="recap-then">[^<]*<\\/p>)?(<p class="recap-small">[\\s\\S]*?<\\/p>)<div class="recap-week/.exec(h) || [])[2] || '', habit: habit }); })()`));
-    ok(/^<p class="recap-small"><span class="recap-moved">1 moved up, 1 back to the start\.<\/span> <span class="recap-ladder">The position you found comes back in \d+ days\.<\/span><\/p>$/.test(r.stack), 'one quiet paragraph, then the week: ' + r.stack);
+    ok(/^<p class="recap-small"><span class="recap-moved">Back in 7 days: 1\.<\/span><\/p>$/.test(r.stack), 'one quiet paragraph, then the week: ' + r.stack);
     ok(/^<div class="kicker">Keep in mind<\/div><div class="plan"><ul class="plans"><li class="keep-line">[^<]+<\/li><li class="keep-line">[^<]+<\/li><\/ul><\/div><p class="routine-line">Every move: their move, your chances, safety check\.<\/p>$/.test(r.habit),
       'the kicker, two lines under one bulb (one .plan), the routine after them: ' + r.habit);
   });
@@ -3559,7 +3619,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
 
   /* merged with slice 5 (F5.4): the place after the habit card holds one ask a summary */
   await test('F11.1 with F5.4: the offer never shares a summary with the reminder\'s question or the backup prompt: it waits, nothing noted or measured, nor once the question is answered there, and comes on the next summary with the goal met; Settings has Reminders, then App right above Your data', () => {
-    const LEARNED = `(function () { var k = allMistakes().filter(trainable)[0].key, srs = srsLoad(); srs[k] = { box: 4, streak: 3, due: Date.now() + 90 * DAY, last: Date.now(), lapses: 0, learned: true }; srsSave(srs); return 1; })()`;
+    /* the backup prompt is due on the 3rd practice day (V4.5) */
+    const THIRD = `(function () { for (var i = 1; i <= 3; i++) store.set('nl:day:' + playerId() + ':' + dayStamp(new Date(Date.now() - i * DAY)), { counted: 1 }); return 1; })()`;
     const A = boot();
     A.ev(SW); A.ev(PHONE); A.ev(PROMPT);
     /* a player here for days, on the first summary since the reminder came (never asked): the question, no offer */
@@ -3579,9 +3640,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.card, '|Add notlichess to your home screen?|Add|Not now|', 'the offer, a summary later');
     ok(!/id="cue"/.test(h) && r.at[0] > 0 && r.at[1] > r.at[0] && r.at[2] > r.at[1], 'alone after the habit card, before the bar: ' + r.at);
     eq(A.ev(EVENTS), JSON.stringify(['cue_notnow', 'install_offer']), 'measured then');
-    /* the backup prompt due (a first learned position) takes the place; after Later, the next summary offers */
+    /* the backup prompt due (the 3rd practice day) takes the place; after Later, the next summary offers */
     const B = boot();
-    B.ev(SW); B.ev(PHONE); B.ev(PROMPT); B.ev(LEARNED);
+    B.ev(SW); B.ev(PHONE); B.ev(PROMPT); B.ev(THIRD);
     B.ev(SUMMARY(3, true));
     ok(/Your progress lives only in this browser\. Save a copy\?/.test(B.ev('doneHtml(ui.session)')), 'the backup prompt');
     r = JSON.parse(B.ev(CARD));
@@ -3591,7 +3652,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.parse(B.ev(CARD)).card, '|Add notlichess to your home screen?|Add|Not now|', 'then the offer');
     /* an iPhone: no how-to beside the backup prompt either */
     const I = boot();
-    I.ev(SW); I.ev(`navigator.userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'; 1`); I.ev(LEARNED);
+    I.ev(SW); I.ev(`navigator.userAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'; 1`); I.ev(THIRD);
     I.ev(SUMMARY(3, true));
     r = JSON.parse(I.ev(CARD));
     eq(r.card, null, 'no how-to beside it'); eq(r.kept, null, 'nothing noted'); eq(I.ev(EVENTS), '[]', 'nothing measured');
@@ -3614,6 +3675,298 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     /* Settings opens the offer at any time, the first day too, and it is not the summary's once */
     A.ev(`store.set('nl:firstSeen:' + playerId(), Date.now()); 1`);
     ok(/installApp/.test(A.ev('installSettingsHtml()')), 'the first day too');
+  });
+
+  /* ── v2 slice 4: sets, the summary and the way back (V4.1 to V4.8) ──
+     playSet(miss) answers a whole set on the page: each card found (its best move, or its line played
+     out); miss(a, i) true makes the i-th card's first showing a miss first (the game's move, then Try
+     again) */
+  const PLAYSET = `function playSet(miss) {
+  for (var i = 0; i < 80 && ui.session && !ui.session.finished; i++) {
+    var a = ui.session.active;
+    if (!a) { loadCard(); a = ui.session.active; if (!a) break; }
+    if (a.phase === 'lesson') { lessonStep(1); continue; }
+    if (miss && !a.sol && !a.prac && !a.foil && a.playedUci && !ss_relearn(a) && miss(a, i)) { a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain(); }
+    if (a.sol) { while (a.solIdx < a.sol.length) { var lm = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, lm); a.lastMove = [lm.from, lm.to]; a.solIdx++; } finishCard('first'); }
+    else if (a.phase !== 'done') { a.attempts = (a.attempts || 0) + 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); }
+    if (a.phase !== 'done') finishCard('first');
+    nextCard();
+  }
+}`;
+  await test('V4.1: "Tomorrow" is the set Today will deal: after Today and one more set (a third of the cards missed first), at sizes 10 and 5, the summary\'s Tomorrow count is the set the next day deals; 9 due at size 10: all 9 in the set (the new slot is kept for a new position only while fewer than a set\'s worth are due), and nothing "more due today" after it; one left reads "1 more is ready in the next set."', () => {
+    const run = (size) => JSON.parse(boot().ev(`(function () { ${PLAYSET}
+      playerTier = function () { return 2; }; SF.state = 'failed'; store.set('nl:sessionSize', ${size});
+      var out = {}, miss = function (a, i) { return i % 3 === 1; };
+      startToday(); out.first = ui.session.keys.length; playSet(miss);
+      keepGoing(); out.more = ui.session.keys.length; playSet(miss);
+      out.said = (/class="recap-next">([^<]*)</.exec(doneHtml(ui.session)) || [])[1];
+      ui.session = null;
+      window.__nlTest.shiftDays(1);
+      absorbOpen();
+      startToday();
+      out.dealt = ui.session.keys.length;
+      return JSON.stringify(out); })()`));
+    const count = (s) => { const m = /Tomorrow: (?:a set of (\d+)|(\d+) positions?), about \d+ minutes?/.exec(s || ''); return m ? +(m[1] || m[2]) : null; };
+    [10, 5].forEach((size) => {
+      const r = run(size);
+      ok(r.first > 0 && r.more > 0, size + ': Today and one more set played: ' + r.first + ', ' + r.more);
+      eq(count(r.said), r.dealt, size + ': the summary\'s Tomorrow ("' + r.said + '") is the set dealt the next day');
+    });
+    const q = JSON.parse(boot().ev(`(function () { ${PLAYSET}
+      playerTier = function () { return 2; }; SF.state = 'failed'; store.set('nl:sessionSize', 10);
+      var its = allMistakes().filter(trainable), now = Date.now(), srs = {};
+      its.slice(0, 9).forEach(function (x) { srs[x.key] = { box: 2, streak: 1, due: now - 3600e3, last: now - 3 * DAY, ls: now - 3 * DAY, lapses: 0, n: 1 }; });
+      srsSave(srs); absorbOpen();
+      var p = todayPlan(), nine = its.slice(0, 9).map(function (x) { return x.key; });
+      var out = { plan: [nine.every(function (k) { return p.keys.indexOf(k) >= 0; }), p.dueTaken, p.fresh, p.keys.length] };
+      startToday(); out.dealt = nine.every(function (k) { return ui.session.keys.indexOf(k) >= 0; }); playSet();
+      out.left = dueCards().length; out.after = nextDueHtml();
+      var s2 = srsLoad(), x = its.filter(function (it) { return !s2[it.key]; })[0];
+      s2[x.key] = { box: 2, streak: 1, due: Date.now() - 3600e3, last: Date.now() - 3 * DAY, ls: Date.now() - 3 * DAY, lapses: 0, n: 1 }; srsSave(s2);
+      out.one = nextDueHtml();
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(q.plan), '[true,9,1,10]', '9 due at size 10: all 9 in the plan, and one new position');
+    eq(q.dealt, true, 'and in the set dealt');
+    ok(q.left === 0 && /^Tomorrow: /.test(q.after) && !/due today|more (is|are) ready/.test(q.after), 'after it nothing is left due today, so the summary goes on to tomorrow: ' + q.after);
+    ok(/^1 more is ready in the next set\. Tomorrow: /.test(q.one), 'one due left: ' + q.one);
+  });
+
+  await test('V4.3: tier 1\'s summary: the kid\'s day 1 at 700 (four found after misses, one shown) reads "You found 4 of 5." then "4 took more than one try, 1 was shown.", 5 filled stars across 5 groups leading the page; the earned stars fill in order, at most 80 ms apart and 1.2 s in all, then the seal (a position learned) or the medal (the goal met), never with them; under reduced motion the end state at once; tiers 2 and 3 "2 of 5 found first try." then "2 after a miss · 1 shown"', () => {
+    const A = boot();
+    const SET = `var its = allMistakes().filter(trainable);
+      var mk = function (cats, stars, o) { var ks = its.slice(0, cats.length).map(function (x) { return x.key; }), ss = { mode: 'today', label: 'Today', keys: ks, idx: ks.length, results: {}, notes: {}, sum: {}, relearn: [], relearnOf: {}, finished: true };
+        ks.forEach(function (k, i) { ss.results[k] = cats[i] === 'shown' ? 'fail' : cats[i] === 'first' ? 'first' : 'retry'; ss.sum[k] = { c: cats[i], s: stars[i], fc: '' }; });
+        Object.keys(o || {}).forEach(function (x) { ss[x] = o[x]; }); return ss; };
+      var row = function (h) { var m = /<div class="result-row star-row( fx)?" aria-hidden="true">([\\s\\S]*?)<\\/div>/.exec(h) || [], x = m[2] || '';
+        return { fx: !!m[1], groups: (x.match(/class="star-grp"/g) || []).length, on: (x.match(/class="st on"/g) || []).length, all: (x.match(/class="st[ "]/g) || []).length,
+          d: (x.match(/--d:\\d+ms/g) || []).map(function (y) { return +/\\d+/.exec(y)[0]; }), lead: h.indexOf('star-row') > 0 && h.indexOf('star-row') < h.indexOf('id="recap-h"') }; };
+      var words = function (h) { return [(/<h2 class="done-big"[^>]*>([^<]*)</.exec(h) || [])[1], (/<p class="recap-then">([^<]*)</.exec(h) || [])[1]]; };`;
+    const r = JSON.parse(A.ev(`(function () { ${SET}
+      data.user = { perfs: { rapid: { rating: 700 } } }; SF.state = 'failed';
+      var out = { tier: playerTier() };
+      var kid = mk(['miss', 'miss', 'miss', 'miss', 'shown'], [1, 2, 1, 1, 0]), h = doneHtml(kid);
+      out.kid = { words: words(h), row: row(h), lag: kid.starLag };
+      summaryMoments(kid);
+      out.again = row(doneHtml(kid));
+      var all = mk(['first', 'first', 'first', 'first', 'first'], [3, 3, 3, 3, 3]); out.all = { words: words(doneHtml(all)), row: row(doneHtml(all)), lag: all.starLag };
+      /* a position learned: its seal waits for the stars */
+      var ln = mk(['first', 'miss', 'first'], [3, 1, 3]); ln.sum[ln.keys[0]].m = 'learned';
+      var hl = doneHtml(ln); out.learned = { wait: /data-fx="seal-wait"/.test(hl), lag: ln.starLag };
+      window.__ln = ln; window.__n0 = rewardLog.length; summaryMoments(ln);
+      out.learned.early = rewardLog.slice(window.__n0).map(function (x) { return x.kind; });
+      /* reduced motion: the end state at once */
+      ui.reducedTest = true;
+      var rm = mk(['first', 'miss', 'first'], [3, 1, 3]); rm.sum[rm.keys[0]].m = 'learned';
+      var hr = doneHtml(rm); out.reduced = { row: row(hr), seal: /data-fx="seal"/.test(hr), lag: rm.starLag };
+      ui.reducedTest = false;
+      return JSON.stringify(out); })()`));
+    A.advance(r.learned.lag + 50);
+    const later = JSON.parse(A.ev('JSON.stringify(rewardLog.slice(window.__n0).map(function (x) { return x.kind; }))'));
+    /* the goal met (a Thursday, the week's 4 days counted): its medal waits too */
+    const medal = JSON.parse(boot({ now: T0 + 3 * 864e5 }).ev(`(function () { ${SET}
+      data.user = { perfs: { rapid: { rating: 700 } } }; SF.state = 'failed'; store.set('nl:weekGoal', 4);
+      for (var i = 0; i < 4; i++) store.set(dayKeyFor(new Date(Date.now() - i * DAY)), { counted: 1, sessions: 1 });
+      var gm = mk(['first', 'first'], [3, 3], { goalMet: { days: 4, goal: 4, cut: '' } }), h = doneHtml(gm);
+      return JSON.stringify([/data-fx="medal-wait"/.test(h), gm.starLag > 0, /Goal met: 4 days this week\./.test(h)]); })()`));
+    const t2 = JSON.parse(A.ev(`(function () { ${SET}
+      playerTier = function () { return 2; };
+      var h = doneHtml(mk(['first', 'first', 'miss', 'miss', 'shown'], [3, 3, 1, 1, 0])), t2 = words(h);
+      playerTier = function () { return 3; };
+      return JSON.stringify(t2.concat(words(doneHtml(mk(['first', 'first', 'miss', 'miss', 'shown'], [3, 3, 1, 1, 0]))), /star-row/.test(h))); })()`));
+    eq(r.tier, 1, 'a 700 player is at tier 1');
+    eq(JSON.stringify(r.kid.words), JSON.stringify(['You found 4 of 5.', '4 took more than one try, 1 was shown.']), 'the kid\'s headline and its line: never "of 15", never "Then"');
+    eq(JSON.stringify([r.kid.row.groups, r.kid.row.on, r.kid.row.all, r.kid.row.lead]), '[5,5,15,true]', '5 filled stars across 5 groups of three, leading the page');
+    ok(r.kid.row.fx && r.kid.row.d.length === 5 && r.kid.row.d.every((x, i) => !i || (x - r.kid.row.d[i - 1] > 0 && x - r.kid.row.d[i - 1] <= 80)), 'they fill in order, at most 80 ms apart: ' + r.kid.row.d.join(','));
+    eq(JSON.stringify([r.again.fx, r.again.d.length]), '[false,0]', 'on a later paint, no fill');
+    eq(JSON.stringify(r.all.words), JSON.stringify(['You found all 5.', null]), 'all found: "You found all 5." and no second line');
+    ok(r.all.row.d.length === 15 && r.all.row.d.every((x, i) => !i || x - r.all.row.d[i - 1] <= 80) && r.all.lag <= 1200 && r.all.row.d[14] + 200 === r.all.lag, '15 stars in 1.2 s in all: ' + r.all.row.d.join(',') + ' / ' + r.all.lag);
+    ok(r.learned.wait && r.learned.lag > 0 && r.learned.early.indexOf('learned') < 0, 'the seal waits for the stars: ' + JSON.stringify(r.learned));
+    ok(later.indexOf('learned') >= 0, 'then comes: ' + later.join(','));
+    eq(JSON.stringify(medal), '[true,true,true]', 'the medal waits for them too');
+    eq(JSON.stringify([r.reduced.row.fx, r.reduced.row.d.length, r.reduced.row.on, r.reduced.seal, r.reduced.lag]), '[false,0,7,true,0]', 'reduced motion: the stars (3 + 1 + 3) and the seal at once');
+    eq(JSON.stringify(t2), JSON.stringify(['2 of 5 found first try.', '2 after a miss · 1 shown', '2 of 5 found first try.', '2 after a miss · 1 shown', false]), 'tiers 2 and 3: the first-try count, then the rest in one line; glyphs, no stars');
+  });
+
+  await test('V4.3: at tier 1 a found verdict on a card\'s first showing adds its stars after the verdict\'s glyph, off the board (they fill 80 ms apart with the found moment); none for the answer shown, on a retry, or at tier 2', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      data.user = { perfs: { rapid: { rating: 700 } } }; SF.state = 'failed';
+      var its = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol && a.playedUci; });
+      var band = function (a) { var h = bandHtml(a, displayFor(a)), m = /<span class="bd-stars" aria-hidden="true">((?:<i class="st(?: on)?"><\\/i>)*)<\\/span>/.exec(h);
+        return m ? (m[1].match(/st on/g) || []).length + '/' + (m[1].match(/class="st/g) || []).length + (h.indexOf('bd-stars') > h.indexOf('bd-disc') && h.indexOf('bd-stars') < h.indexOf('bd-rows') ? ' after the glyph' : ' elsewhere') : 'none'; };
+      var out = {};
+      var a = openCard(its[0]); a.attempts = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); out.first = band(a);
+      var b = openCard(its[1]); b.tapped = true; gradeMove(uciToMove(b.st, b.playedUci)); tryAgain(); b.attempts = 2; solved(uciToMove(b.st, b.bestUci), b.bestUci, null); out.miss = band(b);
+      var c = openCard(its[2]); reveal(); out.shown = band(c);
+      var e = openCard(its[3]); ui.session.keys.push(its[3].key); ui.session.relearnOf[its[3].key] = 1; ui.session.idx = 1; e = cardFor(its[3]); ui.session.active = e; e.attempts = 1; solved(uciToMove(e.st, e.bestUci), e.bestUci, null); out.retry = band(e);
+      playerTier = function () { return 2; };
+      var d = openCard(its[4]); d.attempts = 1; solved(uciToMove(d.st, d.bestUci), d.bestUci, null); out.t2 = band(d);
+      return JSON.stringify(out); })()`));
+    eq(r.first, '3/3 after the glyph', 'a first-try find: three stars after the verdict\'s glyph');
+    eq(r.miss, '2/3 after the glyph', 'found after one miss: two of three (C10)');
+    eq(r.shown, 'none', 'the answer shown: none');
+    eq(r.retry, 'none', 'a retry: none (its stars were the first showing\'s)');
+    eq(r.t2, 'none', 'tier 2: none');
+    const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'app.css'), 'utf8');
+    ok(/\.bd-stars\.fx \.st:nth-child\(2\)::after\{animation-delay:80ms\}/.test(css) && /\.bd-stars\.fx \.st:nth-child\(3\)::after\{animation-delay:160ms\}/.test(css), 'the band\'s stars fill 80 ms apart');
+  });
+
+  await test('V4.4: coming back after a break (three practice days, then 14 days to a Sunday): Today welcomes once ("Welcome back. Your practice waited where you left it.") and reads "0 of 1 day this week (since you came back)", as Settings does ("This week has 1 day. From Monday: 4."); after one set "Goal met: 1 of 1 day since you came back." and, above the headline, "After 14 days away, you found F of N reviews first try." (tier 1 "After 14 days away, you found F of N."), with the backup prompt (V4.5: nothing saved in 14 days), neither on the next set; a new day opens on Today', () => {
+    const A = boot({ now: T0 + 6 * 864e5 });
+    A.ev(`(function () { playerTier = function () { return 2; }; SF.state = 'failed'; store.set('nl:weekGoal', 4); return 1; })()`);
+    const SAY = `(function () { var h = weekHtml(); return (/class="wk-say">([^<]*)</.exec(h) || [])[1]; })()`;
+    const day = (later) => JSON.parse(A.ev(`(function () { ${PLAYSET}
+      if (!${later}) { ui.session = null; startToday(); } else keepGoing();
+      playSet(function (a, i) { return i % 2 === 0; });
+      var ss = ui.session, h = doneHtml(ss); summaryMoments(ss); window.__ss = ss;
+      return JSON.stringify({ away: ss.away || 0, rev: Object.keys(ss.rev || {}).length, week: ((/class="wk-say">([^<]*)</.exec(h) || [])[1]), recall: (/<p class="recall">([^<]*)</.exec(h) || [])[1] || '',
+        backup: /Your progress lives only in this browser/.test(h), before: h.indexOf('class="recall"') < h.indexOf('id="recap-h"') }); })()`));
+    const d1 = day(false); A.ev('window.__nlTest.shiftDays(1); 1');
+    day(false); A.ev('window.__nlTest.shiftDays(1); 1');
+    const d3 = day(false);
+    A.click('backupLater');
+    A.ev('ui.session = null; window.__nlTest.shiftDays(14); 1');
+    const back = JSON.parse(A.ev(`JSON.stringify({ dow: new Date().getDay(), away: daysAway(), welcome: welcomeHtml(), again: welcomeHtml(), week: ${SAY}, settings: weekGoalLine() })`));
+    const B = makeApp({ now: T0 + 6 * 864e5, storage: Object.assign({}, A.storage) });
+    const reopen = B.ev('welcomeHtml()');
+    const set = day(false);
+    const after = JSON.parse(A.ev(`JSON.stringify({ week: ${SAY}, settings: weekGoalLine(), t1: recallHtml(window.__ss, window.__ss.keys, 1) })`));
+    const next = day(true);
+    eq(JSON.stringify([d1.away, d3.backup]), '[0,true]', 'no break on the first day; the 3rd practice day\'s summary asks for a backup (answered Later)');
+    eq(JSON.stringify([back.dow, back.away]), '[0,14]', 'a Sunday, 14 days after the last practice day');
+    eq(back.welcome, '<p class="welcome-line">Welcome back. Your practice waited where you left it.</p>', 'the welcome on Today');
+    eq(back.again, back.welcome, 'kept while the page stays');
+    eq(reopen, '', 'once: not on the next visit');
+    eq(back.week, '0 of 1 day this week (since you came back)', 'a short week, said why');
+    eq(back.settings, '<p>This week has 1 day. From Monday: 4.</p>', 'Settings matches Today');
+    eq(set.away, 14, 'the day\'s first set after the break');
+    ok(set.rev > 0, 'its reviews: ' + set.rev);
+    ok(/^After 14 days away, you found \d+ of \d+ reviews first try\.( They come back sooner now\.)?$/.test(set.recall) && set.before, 'the recall line above the headline: ' + set.recall);
+    const m = /found (\d+) of (\d+)/.exec(set.recall) || [];
+    eq(/They come back sooner now\./.test(set.recall), +m[1] * 2 < +m[2], 'under half adds "They come back sooner now."');
+    eq(set.week, 'Goal met: 1 of 1 day since you came back.', 'the goal met, in the short week\'s words');
+    eq(set.backup, true, 'the backup prompt on the first summary back (nothing saved in 14 days)');
+    eq(after.week, '1 of 1 day this week (since you came back) · 1 week in a row', 'Today after it: the short week met counts as a week at the goal');
+    eq(after.settings, back.settings, 'Settings still matches Today');
+    ok(/^<p class="recall">After 14 days away, you found \d+ of \d+\.( They come back sooner now\.)?<\/p>$/.test(after.t1), 'tier 1: ' + after.t1);
+    eq(JSON.stringify([next.away, next.recall, next.backup]), '[0,"",false]', 'the next set that day: neither the recall line nor the prompt');
+    /* a new day opens on Today; the tab comes back on the day it was left */
+    const stamp = (d) => JSON.parse(boot().ev(`JSON.stringify(dayStamp(new Date(Date.now() - ${d} * DAY)))`));
+    const view = (d) => makeApp({ now: T0, storage: Object.assign(base(), { 'nl:view': JSON.stringify('insights'), 'nl:viewDay': JSON.stringify(stamp(d)) }) }).ev('ui.view');
+    eq(view(0) + ' ' + view(1), 'insights train', 'left on Insights today: Insights; left yesterday: Today');
+  });
+
+  await test('V4.5: Erase everything and Reset practice history count a second tap only 1 to 6 s after the first: two taps 200 ms apart erase nothing (the armed row reads "Tap again to erase 50 games and your practice"); after 6 s the row disarms; a tap 1.5 s after the first resets', () => {
+    const A = boot();
+    A.ev(`(function () { var srs = srsLoad(), it = allMistakes().filter(trainable)[0]; srs[it.key] = { box: 2, streak: 1, due: Date.now() + DAY, last: Date.now(), lapses: 0, n: 1 }; srsSave(srs); return 1; })()`);
+    A.click('wipe');
+    const armed = A.ev(`(/data-act="wipe" class="danger-row armed">([^<]*)</.exec(settingsHtml()) || [])[1] || ''`);
+    A.advance(200); A.click('wipe');
+    const kept = JSON.parse(A.ev(`JSON.stringify([data.games.length, !!data.wiped, Object.keys(store.get(srsKey(), {})).length])`));
+    A.advance(6500);
+    const off = A.ev(`/danger-row armed/.test(settingsHtml())`);
+    A.click('resetProgress'); A.advance(200); A.click('resetProgress');
+    const r1 = A.ev(`Object.keys(store.get(srsKey(), {}) || {}).length`);
+    A.advance(1300); A.click('resetProgress');
+    const r2 = A.ev(`Object.keys(store.get(srsKey(), {}) || {}).length`);
+    eq(armed, 'Tap again to erase 50 games and your practice', 'the armed row');
+    eq(JSON.stringify(kept), '[50,false,1]', 'two taps 200 ms apart: nothing erased');
+    eq(off, false, 'after 6 s it disarms');
+    eq(r1, 1, 'Reset: two taps 200 ms apart reset nothing');
+    eq(r2, 0, 'a tap 1.5 s after the first resets');
+  });
+
+  await test('V4.6: the reminder the player picks: after a time chip, seven day chips (M T W T F S S) preset from the goal; Evening with Saturday off and Sunday on reads "At 7:30 pm on Mon, Tue, Thu and Sun." and the file repeats BYDAY=MO,TU,TH,SU at 19:30 local; the last day stays on; Settings lights those days and the time; en-US "7:30 pm", en-GB "19:30"', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      var blob = ''; Blob = function (parts) { blob = parts[0]; };
+      document.createElement = function () { return { click: function () {}, remove: function () {}, setAttribute: function () {}, style: {} }; };
+      var k = allMistakes().filter(trainable)[0].key, ss = { mode: 'today', label: 'Today', keys: [k], idx: 1, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true }; ss.results[k] = 'first';
+      ui.session = ss; var out = {};
+      var chips = function (h) { return (h.match(/data-act="cueDay" data-k="\\d" aria-pressed="\\w+" aria-label="\\w+">\\w</g) || []).map(function (x) { var m = /aria-pressed="(\\w+)" aria-label="(\\w+)">(\\w)</.exec(x); return m[3] + (m[1] === 'true' ? '+' : '-'); }).join(' '); };
+      out.before = chips(doneHtml(ss));
+      window.__realmClick('cueSlot', 'evening');
+      out.preset = chips(cueCardHtml(ss));
+      out.names = (cueCardHtml(ss).match(/aria-label="(\\w+day)"/g) || []).map(function (x) { return x.slice(12, 15); }).join(' ');
+      window.__realmClick('cueDay', '6'); window.__realmClick('cueDay', '0');
+      var c2 = cueCardHtml(ss);
+      out.picked = chips(c2);
+      out.when = (/<p class="cue-when">([^<]*)</.exec(c2) || [])[1];
+      window.__realmClick('cueAdd', 'evening');
+      out.ics = [/RRULE:FREQ=WEEKLY;BYDAY=MO,TU,TH,SU\\r\\n/.test(blob), (/DTSTART:\\d{8}T(\\d{6})/.exec(blob) || [])[1]];
+      out.saved = [cueLoad().slot, JSON.stringify(cueLoad().days)];
+      ui.session = null; ui.cueSlot = null; ui.cueDays = null;
+      var cue = (/<div class="set-block cue-set">[\\s\\S]*?<\\/div><div class="set-block">/.exec(settingsHtml()) || [''])[0];
+      out.settings = [chips(cue), /data-act="cueSlot" data-k="evening" aria-pressed="true"/.test(cue), (/<p class="cue-when">([^<]*)</.exec(cue) || [])[1]];
+      /* the last day on stays on */
+      ui.cueSlot = 'morning'; ui.cueDays = [3]; cueDayToggle(3); out.last = JSON.stringify(cueDayList()); ui.cueSlot = null; ui.cueDays = null;
+      out.clock = [clockTime(19, 30, 'en-US'), clockTime(19, 30, 'en-GB'), clockTime(8, 0, 'en-US'), clockTime(0, 5, 'en-US'), clockTime(12, 30, 'en-US')];
+      return JSON.stringify(out); })()`));
+    eq(r.before, '', 'no day chips before a time is picked');
+    eq(r.preset, 'M+ T+ W- T+ F- S+ S-', 'the goal\'s days lit (4: Mon, Tue, Thu, Sat), Monday first');
+    eq(r.names, 'Mon Tue Wed Thu Fri Sat Sun', 'each chip named in full for a screen reader');
+    eq(r.picked, 'M+ T+ W- T+ F- S- S+', 'Saturday off, Sunday on');
+    eq(r.when, 'At 7:30 pm on Mon, Tue, Thu and Sun.', 'the line, in the device\'s time format, no "your goal\'s days"');
+    eq(JSON.stringify(r.ics), JSON.stringify([true, '193000']), 'the file: BYDAY=MO,TU,TH,SU at 19:30 local');
+    eq(JSON.stringify(r.saved), JSON.stringify(['evening', '[1,2,4,0]']), 'kept with its days');
+    eq(JSON.stringify(r.settings), JSON.stringify(['M+ T+ W- T+ F- S- S+', true, 'At 7:30 pm on Mon, Tue, Thu and Sun.']), 'Settings lights those days and the time');
+    eq(r.last, '[3]', 'the last day on stays on');
+    eq(JSON.stringify(r.clock), JSON.stringify(['7:30 pm', '19:30', '8:00 am', '12:05 am', '12:30 pm']), 'en-US a 12-hour clock, en-GB 24');
+  });
+
+  await test('V4.7: a game\'s walk-through opens its positions in move order, whatever their state (a game with positions at moves 25 and 35 opens move 25 first); tier 1 Insights has no "Start here"', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS}
+      SF.state = 'failed';
+      var by = {}; allMistakes().filter(trainable).forEach(function (it) { (by[it.g.id] = by[it.g.id] || []).push(it); });
+      var g = Object.keys(by).map(function (id) { return by[id]; }).filter(function (l) { return l.length >= 2; })[0].sort(function (x, y) { return x.b.p - y.b.p; });
+      /* the earlier position learned, the later new: by state the later would come first */
+      var srs = srsLoad(); srs[g[0].key] = { box: 5, streak: 3, due: Date.now() + 60 * DAY, last: Date.now(), lapses: 0, learned: true, n: 3 }; srsSave(srs);
+      var plies = drillItems({ type: 'game', id: g[0].g.id }, 8).map(function (it) { return it.b.p; });
+      var byState = drillItems({ type: 'colour', colour: g[0].g.color }, 999).map(function (it) { return it.key; });
+      return JSON.stringify({ plies: plies, n: g.length, stateFirst: byState.indexOf(g[0].key) > byState.indexOf(g[g.length - 1].key), t1: /Start here/.test(insAt(1)), t2: /Start here/.test(insAt(2)) }); })()`));
+    ok(r.plies.length === r.n && r.plies.every((p, i) => !i || p > r.plies[i - 1]), 'in move order: plies ' + r.plies.join(', '));
+    ok(r.stateFirst, 'where the state order would put the later one first');
+    eq(JSON.stringify([r.t1, r.t2]), '[false,true]', 'no "Start here" at tier 1 ("Next" is the only next step); tier 2 keeps it');
+  });
+
+  await test('V4.8: progress words nobody misreads: 6 positions found first try grow the skill\'s bar 6 steps, a miss takes the steps back; Insights says "Checking 12 more positions…" while the background check runs; each pattern sheet lists every position it counts; the per-game figure is (deciding + other) / games; the skill rows sum to the headline\'s games', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS}
+      SF.state = 'failed'; playerTier = function () { return 2; };
+      var fam = function () { return insightReport().families.filter(function (a) { return a.fam.key === 'safety'; })[0]; };
+      var its = allMistakes().filter(function (it) { return trainable(it) && familyOf(patternOf(it.b)).key === 'safety'; }), out = {};
+      var s0 = fam().steps;
+      its.slice(0, 6).forEach(function (it) { srsRecord(it, 'first', { ms: 30000, attempted: true }); });
+      var s1 = fam().steps;
+      srsRecord(its[0], 'fail', { ms: 30000, attempted: true });
+      var s2 = fam().steps;
+      out.steps = [s1.l + s1.c - s0.l - s0.c, s1.n === s0.n, s1.l + s1.c - s2.l - s2.c];
+      var bar = function (h) { var m = /<span class="fr-bar"[^>]*>([\\s\\S]*?)<\\/span>/.exec(h); return m ? m[1].replace(/<i class="sk-(\\w)" style="flex-grow:(\\d+)"><\\/i>/g, '$1$2 ').trim() : ''; };
+      out.bar = bar(insAt(2));
+      /* while the deeper look runs: how many it has left */
+      var et = enrichTargets, st0 = SF.state; SF.state = 'idle'; enrichState.running = true; enrichTargets = function () { return new Array(12); };
+      out.checking = (/<p class="ins-checking">([^<]*)<\\/p>/.exec(insAt(2)) || [])[1] || '';
+      enrichTargets = et; enrichState.running = false; SF.state = st0;
+      out.idle = /ins-checking/.test(insAt(2));
+      /* every pattern sheet lists the positions it counts */
+      out.sheets = patternStats().filter(function (s) { return s.count > 0; }).map(function (s) { var h = sheetHtml('pattern:' + s.key); return [s.key, s.count, (h.match(/<div class="ex" /g) || []).length, (/<p class="sheet-sum">(\\d+) positions?/.exec(h) || [])[1]].join(':'); })
+        .filter(function (x) { var p = x.split(':'); return !(+p[1] === +p[2] && +p[1] === +p[3]); });
+      var rep = insightReport(), lead = insText(insAt(2));
+      out.rows = rep.families.reduce(function (a, f) { return a + f.lost; }, 0);
+      out.lead = lead.filter(function (x) { return /decided the most/.test(x); })[0] || '';
+      out.losses = (lead.filter(function (x) { return /^In \\d+ of your \\d+ losses/.test(x); })[0] || '').replace(/^In (\\d+) of.*$/, '$1');
+      var dec = 0, oth = 0; allMistakes().filter(function (it) { return !it.b.x; }).forEach(function (it) { if (it.b.d === 1) dec++; else oth++; });
+      noteStart(Date.now() - 3600e3);
+      out.perGame = [sinceStats().before.mean.toFixed(2), ((dec + oth) / data.games.length).toFixed(2), dec, oth];
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.steps), '[6,true,1]', '6 first-try finds: 6 steps more of the same track; a miss takes its step back');
+    ok(/^l\d+ c\d+ g\d+$|^c\d+ g\d+$/.test(r.bar), 'the bar by steps: ' + r.bar);
+    eq(r.checking, 'Checking 12 more positions…', 'while the background check runs');
+    eq(r.idle, false, 'not once it stops');
+    eq(JSON.stringify(r.sheets), '[]', 'every pattern sheet lists every position it counts: ' + r.sheets.join(' | '));
+    eq(String(r.rows), r.losses, 'the skill rows sum to the headline\'s games');
+    eq(r.perGame[0], r.perGame[1], 'the per-game figure is (deciding + other) / games: ' + r.perGame.join(', '));
   });
 
   /* ── beginner teaching (F9.1 to F9.5): its tests in test/practice.js ── */

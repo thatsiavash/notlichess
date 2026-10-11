@@ -105,14 +105,17 @@ function insightReport() {
   var stats = patternStats();
   out.families = FAMILIES.map(function (f) {
     var ps = stats.filter(function (s) { return f.types.indexOf(s.key) !== -1; });
-    var agg = { fam: f, patterns: ps, count: 0, cost: 0, pts: 0, learned: 0, practising: 0, fresh: 0, recent: 0, older: 0 };
+    var agg = { fam: f, patterns: ps, count: 0, cost: 0, lost: 0, pts: 0, learned: 0, practising: 0, fresh: 0, recent: 0, older: 0 };
     ps.forEach(function (s) {
-      agg.count += s.count; agg.cost += s.cost; agg.pts += s.pts; agg.learned += s.fixed;
+      agg.count += s.count; agg.cost += s.cost; agg.lost += lostOf(s.items); agg.pts += s.pts; agg.learned += s.fixed;
       agg.practising += s.practising; agg.fresh += s.fresh; agg.recent += s.recent; agg.older += s.older;
     });
+    agg.steps = skillSteps(ps);
     return agg;
   }).filter(function (a) { return a.count > 0; })
-    .sort(function (a, b) { return b.cost - a.cost || b.pts - a.pts; });
+    /* by the losses each decided (V4.8: the rows add up to the headline's
+       games), then as the focus weighs them (cost: a draw half) */
+    .sort(function (a, b) { return b.lost - a.lost || b.cost - a.cost || b.pts - a.pts; });
   out.rate = rateOf(gs, all, scoredMoves);
   if (!out.ready) { m.report = out; m.reportSrs = srsRevision; return out; }
 
@@ -174,7 +177,8 @@ function insightReport() {
   m.reportSrs = srsRevision;
   return out;
 }
-/* draws count half; shown as whole games, which is how people count */
+/* a count of games in words: "one game", "14 games" (V4.8: the losses a
+   skill decided, each once) */
 function fmtGames(x) {
   var n = Math.max(1, Math.round(x));
   return n === 1 ? 'one game' : n + ' games';
@@ -182,30 +186,65 @@ function fmtGames(x) {
 
 /* ── the five skills, as Insights draws them (F6.1) ─────────────────────
    One per family of 08-srs.js: a glyph (Lucide) and one plain line, tier 1
-   first, then tiers 2 and 3. A skill's bar counts its own positions in
-   practice: learned, climbing (practised, not learned yet), to go (never
+   first, then tiers 2 and 3. A skill's bar fills by steps (V4.8: each of
+   its positions its rungs out of 3); its words count the positions:
+   learned, in practice (practised, not learned yet), not started (never
    practised, or back in the queue) */
 var SKILL = {
   safety: { glyph: 'shield', line: ['Moves that let them take your pieces.', 'Moves that let them win material.'] },
   king: { glyph: 'crown', line: ['Moves that put your king in danger.', 'Moves that exposed your king or allowed mate.'] },
   chances: { glyph: 'target', line: ['Free pieces and mates you missed.', 'Moves that missed a free piece, a tactic or a mate.'] },
   conversion: { glyph: 'flag', line: ['Times you were winning and let it go.', 'Moves that let a winning position get away.'] },
-  quiet: { glyph: 'compass', line: ['Slow moves that made things worse.', 'Moves with no tactic that made your position worse.'] }
+  quiet: { glyph: 'compass', line: ['Moves with no trick that made things worse.', 'Moves with no tactic that made your position worse.'] }
 };
 var ALSO_SEEN = 3;               /* a skill that decided fewer games sits under "Also seen" */
 function skillLine(key, tier) { var s = SKILL[key]; return s ? s.line[tier === 1 ? 0 : 1] : ''; }
-/* "3 learned · 12 climbing · 29 to go", its zero parts dropped (D17): a
-   beginner reads "1 climbing · 43 to go", never "0 learned" */
+/* "3 learned · 12 in practice · 29 not started", its zero parts dropped
+   (D17): a beginner reads "1 in practice · 43 not started", never "0
+   learned" (V4.8: nobody misreads "climbing" or "to go") */
 function progressWords(agg) {
-  return [[agg.learned, 'learned'], [agg.practising, 'climbing'], [agg.fresh, 'to go']]
+  return [[agg.learned, 'learned'], [agg.practising, 'in practice'], [agg.fresh, 'not started']]
     .filter(function (x) { return x[0] > 0; }).map(function (x) { return x[0] + ' ' + x[1]; }).join(' · ');
 }
-/* games decided, said as a count (draws half, in whole games): "decided
-   15 games", tier 1 "cost you 15 games"; half a game where a draw alone */
-function decidedWords(cost, tier) {
-  var v = tier === 1 ? 'cost you ' : 'decided ';
-  if (!(cost > 0)) return tier === 1 ? 'cost you no games' : 'decided no games';
-  return v + (cost < 1 ? 'half a game' : fmtGames(cost));
+/* the losses a skill's positions decided (V4.8: each decided game counted
+   once, as the headline counts them; a draw is no loss) */
+function lostOf(items) { return items.filter(function (it) { return it.b.d === 1; }).length; }
+/* a skill's positions as steps (V4.8): each position its rungs out of 3
+   (rungsOf: a clean find on a later day climbs one, learned 3; one back in
+   the queue starts again at 0), so a find grows its bar and a miss shrinks
+   it. pats: patternStats rows. { l: the learned positions' steps, c: the
+   others', n: 3 a position } */
+function skillSteps(pats) {
+  var srs = srsLoad(), o = { l: 0, c: 0, n: 0 };
+  pats.forEach(function (s) {
+    s.items.forEach(function (it) {
+      var r = srs[it.key];
+      o.n += 3;
+      if (!r || r.q) return;
+      if (isLearned(r)) o.l += 3; else o.c += rungsOf(r);
+    });
+  });
+  return o;
+}
+/* a skill's bar (F6.1, V4.8): an outlined track its steps fill, learned
+   leaf, in practice honey */
+function stepBarHtml(st, cls) {
+  return '<span class="fr-bar' + (cls ? ' ' + cls : '') + '" aria-hidden="true">' + [[st.l, 'sk-l'], [st.c, 'sk-c'], [st.n - st.l - st.c, 'sk-g']].filter(function (x) { return x[0] > 0; })
+    .map(function (x) { return '<i class="' + x[1] + '" style="flex-grow:' + x[0] + '"></i>'; }).join('') + '</span>';
+}
+/* games decided (V4.8: losses, each once), said as a count: "decided 15
+   games", tier 1 "cost you 15 games" */
+function decidedWords(lost, tier) {
+  if (!(lost > 0)) return tier === 1 ? 'cost you no games' : 'decided no games';
+  return (tier === 1 ? 'cost you ' : 'decided ') + fmtGames(lost);
+}
+/* the positions the background check still has to look at, while it runs
+   (V4.8: Insights says so, as counts may shrink when a look takes one out):
+   the deeper look's queue (V1.1's fact sheets, once they run in the
+   background, count here instead) */
+function checkingLeft() {
+  if (SF.state === 'failed') return 0;
+  return enrichState.running ? enrichTargets().length : 0;
 }
 /* the window as dates: "21 to 27 Sept 2026", "28 Aug to 3 Sept 2026",
    "3 Nov 2025 to 27 Sept 2026" */
@@ -283,11 +322,38 @@ function bigMistakesAt(g, thr) {
   Object.defineProperty(g, 'bigCache', { value: { wp: g.wp, thr: thr, n: n }, enumerable: false, configurable: true, writable: true });
   return n;
 }
+/* a game's big mistakes at the frozen threshold thr, as its positions
+   (V4.8: one count over what Insights shows): its positions not taken out,
+   those that reach thr where the game was read at a lower one. A game read
+   at a higher one (its player in a lower band then) has no position for
+   the mistakes between the two, so its series counts them (fam null: no
+   skill's line counts it, which would read as fewer mistakes where there
+   were not). { n, fam: each skill's } */
+function bigCardsAt(g, thr) {
+  var own = mistakeMinFor(g), o = { n: 0, fam: {} };
+  if (own > thr) return { n: bigMistakesAt(g, thr), fam: null };
+  (g.bl || []).forEach(function (b) {
+    var w0 = wpAt(g, b.p - 1), w1 = wpAt(g, b.p);
+    if (b.x || (own < thr && (w0 != null && w1 != null ? w0 - w1 : b.wb - b.wa) < thr)) return;
+    o.n++;
+    var f = familyOf(patternOf(b)).key;
+    o.fam[f] = (o.fam[f] || 0) + 1;
+  });
+  return o;
+}
+/* a practised skill's verdict (V4.8), by the same calibrated rule as the
+   total, over the games its positions count in (famN), from 20 games since
+   and 10 of its mistakes before; null under those (its line hides) */
+function skillVerdict(B, S, f) {
+  if (S.famN < 20 || !B.famN || (B.fam[f] || 0) < 10) return null;
+  var m = B.fam[f] / B.famN, v = B.famN > 1 ? ((B.fsq[f] || 0) - B.famN * m * m) / (B.famN - 1) : 0;
+  return sinceVerdict({ n: B.famN, mean: m, v: v }, { n: S.famN, total: S.fam[f] || 0 });
+}
 /* the before and since numbers: { t, thr, before: { n, mean, v, clean, fam,
-   famN, opp }, since: { n, total, mean, clean, fam, famN, opp }, need,
-   verdict } (verdict a key of SINCE_SAY, 'wait' under 10 games since; need
-   the games still to come before the before count has its 20); null before
-   the start */
+   fsq, famN, opp }, since: { n, total, mean, clean, fam, fsq, famN, opp },
+   need, verdict } (verdict a key of SINCE_SAY, 'wait' under 10 games
+   since; need the games still to come before the before count has its 20);
+   null before the start */
 function sinceStats() {
   var s = startLoad();
   if (!s) return null;
@@ -298,24 +364,19 @@ function sinceStats() {
   var pre = games.filter(function (g) { return g.ts <= s.t; }).sort(function (x, y) { return y.ts - x.ts; })
     .filter(function (g, i) { return i < 150 || g.ts >= year; });
   var post = games.filter(function (g) { return g.ts > s.t; }).sort(function (x, y) { return x.ts - y.ts || (x.id < y.id ? -1 : 1); });
+  /* one count over the positions Insights shows (V4.8: the per-game figure
+     is the deciding and the other big mistakes over the games), each skill's
+     its own positions, in the games whose positions reach down to the
+     frozen threshold (bigCardsAt); fsq: each skill's per-game squares, for
+     its verdict */
   var sum = function (list) {
-    var o = { n: 0, total: 0, sq: 0, clean: 0, fam: {}, famN: 0, opp: 0, on: 0 };
+    var o = { n: 0, total: 0, sq: 0, clean: 0, fam: {}, fsq: {}, famN: 0, opp: 0, on: 0 };
     list.forEach(function (g) {
-      var k = bigMistakesAt(g, thr[g.perf]);
-      o.n++; o.total += k; o.sq += k * k; if (!k) o.clean++;
-      /* a skill's mistakes: the big ones (by the series, as counted) whose
-         card is of that skill, in the games whose cards reach down to the
-         frozen threshold (famN of them): a game read at a higher one (its
-         player in a lower band) has no card for the mistakes between the
-         two, and would read as fewer mistakes where there were not */
-      if (mistakeMinFor(g) <= thr[g.perf]) {
+      var c = bigCardsAt(g, thr[g.perf]);
+      o.n++; o.total += c.n; o.sq += c.n * c.n; if (!c.n) o.clean++;
+      if (c.fam) {
         o.famN++;
-        (g.bl || []).forEach(function (b) {
-          var w0 = wpAt(g, b.p - 1), w1 = wpAt(g, b.p);
-          if (b.x || (w0 != null && w1 != null ? w0 - w1 : b.wb - b.wa) < thr[g.perf]) return;
-          var f = familyOf(patternOf(b)).key;
-          o.fam[f] = (o.fam[f] || 0) + 1;
-        });
+        Object.keys(c.fam).forEach(function (f) { o.fam[f] = (o.fam[f] || 0) + c.fam[f]; o.fsq[f] = (o.fsq[f] || 0) + c.fam[f] * c.fam[f]; });
       }
       if (g.oppR) { o.opp += g.oppR; o.on++; }
     });
@@ -324,14 +385,14 @@ function sinceStats() {
   var B = sum(pre), key = tp.slice().sort().join(','), copy = function (o) { return JSON.parse(JSON.stringify(o)); };
   /* the kept copy (for these formats and this start) stands in once the
      before games have left the cache */
-  var same = s.b && s.b.p === key && s.b.at === s.t;
-  if (same && s.b.n > B.n) { B = copy(s.b); B.fam = B.fam || {}; B.famN = B.famN || 0; }
+  var same = s.b && s.b.p === key && s.b.at === s.t && !!s.b.fsq;
+  if (same && s.b.n > B.n) { B = copy(s.b); B.fam = B.fam || {}; B.fsq = B.fsq || {}; B.famN = B.famN || 0; }
   else if (!same || B.n !== s.b.n || B.total !== s.b.total || B.sq !== s.b.sq || B.famN !== s.b.famN) { s.b = copy(B); s.b.p = key; s.b.at = s.t; grew = true; }
   if (grew) { s.thr = thr; practiceWrite(startKey(), s); }
   /* too few before: the first games after the start fill it to 20 */
   var fill = Math.max(0, BASE_MIN - B.n), F = sum(post.slice(0, fill)), S = sum(post.slice(fill));
   ['n', 'total', 'sq', 'clean', 'famN', 'opp', 'on'].forEach(function (k) { B[k] += F[k]; });
-  Object.keys(F.fam).forEach(function (f) { B.fam[f] = (B.fam[f] || 0) + F.fam[f]; });
+  Object.keys(F.fam).forEach(function (f) { B.fam[f] = (B.fam[f] || 0) + F.fam[f]; B.fsq[f] = (B.fsq[f] || 0) + F.fsq[f]; });
   B.mean = B.n ? B.total / B.n : 0;
   B.v = B.n > 1 ? (B.sq - B.n * B.mean * B.mean) / (B.n - 1) : 0;
   S.mean = S.n ? S.total / S.n : 0;
@@ -368,7 +429,7 @@ function sinceVisitWords(fresh) {
   var st = fresh.length ? sinceStats() : null;
   if (!st || st.since.n < SINCE_MIN || !st.before.n || fresh.some(function (g) { return !g.wp || !st.thr[g.perf]; })) return '';
   var n = 0;
-  fresh.forEach(function (g) { n += bigMistakesAt(g, st.thr[g.perf]); });
+  fresh.forEach(function (g) { n += bigCardsAt(g, st.thr[g.perf]).n; });
   return 'Since your last visit: ' + plur(fresh.length, 'game') + ', ' + (n ? plur(n, 'big mistake') : 'no big mistakes') + ' (before you started: about ' + Math.round(st.before.mean * fresh.length) + ').';
 }
 

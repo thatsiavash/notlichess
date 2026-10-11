@@ -107,6 +107,8 @@ function onReturn() {
   var away = hiddenAt && Date.now() - hiddenAt > 60 * 1000;
   hiddenAt = 0;
   if (ui.session && ui.session.finished && away) endSession();
+  /* a new day opens on Today (V4.4), in a page left open on Insights too */
+  if (away && !ui.session && !ui.sheet && ui.view === 'insights' && store.get('nl:viewDay', '') !== dayStamp()) setView('train');
   paintTitle();
   if (ui.session) return;
   var c = loadCachedGames();

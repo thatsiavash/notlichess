@@ -64,8 +64,6 @@ try { sessionStorage.removeItem('nl:linkUser'); sessionStorage.removeItem('nl:li
    away in the edit panel. */
 var PERF_TCS = { bullet: ['1+0'], blitz: ['5+0','3+0'],
                  rapid: ['10+0'], classical: ['30+0'] };
-var PERF_HINT = { bullet: '1 to 2 min', blitz: '3 to 5 min',
-                  rapid: '10 to 15 min', classical: '30+ min' };
 var cfg = {
   user: urlUser || store.get('nl:user', ''),
   tcs: linkVisit ? DEFAULT_TC.slice() : store.get('nl:tcs', DEFAULT_TC.slice()),

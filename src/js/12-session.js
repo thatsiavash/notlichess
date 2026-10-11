@@ -23,7 +23,9 @@ function saveSession() {
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
                          progress: ss.progress || {}, attempted: ss.attempted || 0, carried: ss.carried || 0, notes: ss.notes || {}, sum: ss.sum || {}, firstTime: !!ss.firstTime, goalMet: ss.goalMet || null,
                          /* what a pack did to its skill (F9.4), for its end after a reload */
-                         packUp: !!ss.packUp, packDown: !!ss.packDown, packMastered: ss.packMastered || null });
+                         packUp: !!ss.packUp, packDown: !!ss.packDown, packMastered: ss.packMastered || null,
+                         /* the positions that were reviews when the set began (V4.4's recall) */
+                         rev: ss.rev || null });
 }
 /* a paused session that is dropped or replaced: a card left after a miss
    is graded a fail, and its tries still count toward the day */
@@ -150,9 +152,10 @@ function newCardScore(it, since) {
 }
 /* candidates never seen before, best first; fill: an extra set past the
    focus family's half when nothing else new is left (F7.1: practice only
-   once no new own position remains) */
-function buildCandidates(n, spec, fill) {
-  var srs = srsLoad(), focus = currentFocus(), since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
+   once no new own position remains); o: the planner's context on another
+   day (todayPlan) */
+function buildCandidates(n, spec, fill, o) {
+  var srs = (o && o.srs) || srsLoad(), focus = currentFocus(), since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
   var filter = spec ? specFilter(spec) : null;
   /* Today deals positions with one idea: a quiet card where a second move is
      as good as the best stays for drills */
@@ -181,8 +184,10 @@ function buildCandidates(n, spec, fill) {
   while (fill && out.length < n && fi < mine.length) out.push(mine[fi++]);
   return out;
 }
-function dueCards(spec) {
-  var srs = srsLoad(), end = Date.now() + 12 * 3600 * 1000;
+/* the positions due, the most valuable first: by the end of the next 12
+   hours, now or, with o (todayPlan's context), at o.at in records o.srs */
+function dueCards(spec, o) {
+  var srs = (o && o.srs) || srsLoad(), end = ((o && o.at) || Date.now()) + 12 * 3600 * 1000;
   var filter = spec ? specFilter(spec) : null;
   return allMistakes().filter(function (it) {
     var r = srs[it.key];
@@ -228,11 +233,13 @@ function dayStart(ms, k) { var d = new Date(ms); d.setHours(0, 0, 0, 0); if (k) 
 /* whole calendar days from the day of a to the day of b */
 function daysFrom(a, b) { return Math.round((dayStart(b) - dayStart(a)) / DAY); }
 /* what the day's first opening at time at would do, without doing it:
-   { due, keep, queue, spread [{ it, day }], left (due for want of room) } */
-function absorbPlan(at) {
-  var srs = srsLoad(), m = model(), size = sessionSize(), f = currentFocus(), fam = f && f.fam;
+   { due, keep, queue, spread [{ it, day }], left (due for want of room) };
+   srs0: the records to read (a copy, for a later day's set: planOn). A
+   paused set keeps its positions out only today: it is gone by tomorrow */
+function absorbPlan(at, srs0) {
+  var srs = srs0 || srsLoad(), m = model(), size = sessionSize(), f = currentFocus(), fam = f && f.fam;
   var horizon = Math.max(dayStart(at, 1), at + 12 * 3600 * 1000), due = [], perDay = {};
-  var paused = savedSession(), skip = {};
+  var paused = dayStamp(new Date(at)) === dayStamp() ? savedSession() : null, skip = {};
   if (paused) paused.keys.forEach(function (k) { skip[k] = 1; });
   Object.keys(srs).forEach(function (k) {
     var r = srs[k], it = m.byKey[k];
@@ -293,20 +300,26 @@ function absorbWords(s, back) {
   if (s.q && say('queue')) out.push(plur(s.q, 'older position') + ' went back to your queue, to return later.');
   return out.join(' ');
 }
-function todayPlan() {
-  var size = sessionSize(), day = dayLoad();
-  var due = dueCards(), cap = size;
+/* the day's own set: now, or as the planner will deal it on another day
+   (o: { at, srs, day }: the time it is asked at, the records as they will
+   stand then, that day's record), so a forecast is the set Today will deal
+   (V4.1, planOn) */
+function todayPlan(o) {
+  o = o || {};
+  var size = sessionSize(), day = o.day || dayLoad(), srs = o.srs || srsLoad();
+  var due = dueCards(null, o), cap = size;
   /* new positions join a few at a time, in proportion to the session, so
-     the reviews they create stay within what a day can hold */
+     the reviews they create stay within what a day can hold; the slot kept
+     for a new one only while fewer than a set's worth are due, so every due
+     position that fits one set is in it (V4.1) */
   var perSession = Math.max(2, Math.round(size * 0.4)), dayCap = Math.max(8, Math.round(size * 0.8));
-  var freshAllowed = Math.max(0, Math.min(dayCap - (day.fresh || 0), Math.max(1, Math.min(perSession, cap - due.length))));
-  var total = 0;
-  Object.keys(srsLoad()).forEach(function () { total++; });
+  var freshAllowed = due.length >= cap ? 0 : Math.max(0, Math.min(dayCap - (day.fresh || 0), Math.max(1, Math.min(perSession, cap - due.length))));
+  var total = Object.keys(srs).length;
   var firstTime = total < 3;
   if (firstTime) freshAllowed = Math.min(size, 5);
-  var fresh = buildCandidates(freshAllowed + 6);
+  var fresh = buildCandidates(freshAllowed + 6, null, false, o);
   if (firstTime) {
-    fresh = fresh.concat(buildCandidates(60).filter(function (x) { return fresh.indexOf(x) === -1; }));
+    fresh = fresh.concat(buildCandidates(60, null, false, o).filter(function (x) { return fresh.indexOf(x) === -1; }));
     /* a first card asks for one move: forcing lines wait (each looked at once) */
     var forcing = {};
     fresh.forEach(function (it) { forcing[it.key] = looksForcing(it) ? 1 : 0; });
@@ -324,7 +337,7 @@ function todayPlan() {
   /* a reserved slot: the best new mistake from games since the last visit */
   var since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
   if (since && !firstTime && freshAllowed > 0) {
-    var newest = fresh.concat(buildCandidates(40)).filter(function (it) { return it.g.ts > since; })[0];
+    var newest = fresh.concat(buildCandidates(40, null, false, o)).filter(function (it) { return it.g.ts > since; })[0];
     if (newest) fresh = [newest].concat(fresh.filter(function (x) { return x !== newest; }));
   }
   fresh = fresh.slice(0, freshAllowed);
@@ -332,7 +345,6 @@ function todayPlan() {
   /* the warm-up: the most familiar due card, or the gentlest new one */
   var keys = [];
   if (dueTake.length) {
-    var srs = srsLoad();
     var warm = dueTake.slice().sort(function (x, y) { return (srs[y.key].streak || 0) - (srs[x.key].streak || 0); })[0];
     keys.push(warm.key);
     dueTake = dueTake.filter(function (x) { return x !== warm; });
@@ -346,6 +358,18 @@ function todayPlan() {
   var decisiveNew = fresh.filter(function (x) { return x.b.d; }).length;
   return { keys: keys, due: due.length, dueTaken: dueTake.length + (keys.length > fresh.length + dueTake.length ? 1 : 0),
            fresh: fresh.length, decisive: decisiveNew, firstTime: firstTime };
+}
+/* the set Today will deal d days on, as at noon that day, after that day's
+   first opening (absorbPlan, its queue and spread applied to a copy of the
+   records): the planner's own answer, so the summary's "Tomorrow" is the
+   set the next day deals (V4.1); absorb: what that opening does */
+function planOn(d) {
+  var at = dayStart(Date.now(), d) + 12 * 3600 * 1000, srs = JSON.parse(JSON.stringify(srsLoad())), p = absorbPlan(at, srs);
+  p.queue.forEach(function (it) { var r = srs[it.key]; r.q = at; r.due = null; delete r.sp; });
+  p.spread.forEach(function (x) { var r = srs[x.it.key]; r.sp = at; r.due = dayStart(at, x.day) + 12 * 3600 * 1000; });
+  var plan = todayPlan({ at: at, srs: srs, day: {} });
+  plan.absorb = p;
+  return plan;
 }
 /* opts.firstTime: a first session, whose head rule (section 4) the first
    card loaded already keeps */
@@ -363,7 +387,7 @@ function startSession(mode, keys, label, spec, opts) {
   /* the sets of a day keep the size of the one played (a lesson is no
      position, F9.3) */
   if (mode === 'today' || mode === 'more') store.set('nl:setSize', keys.filter(function (k) { return !isLessonKey(k); }).length);
-  ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, carried: carried };
+  ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, carried: carried, rev: reviewKeys(keys) };
   if (from) ui.session.from = from;
   if (opts && opts.firstTime) ui.session.firstTime = true;
   data.freshOnboard = false;
@@ -374,6 +398,13 @@ function startSession(mode, keys, label, spec, opts) {
   loadCard();
   track('session_start_' + mode);
   return true;
+}
+/* the positions of a set that are reviews as it begins (V4.4: the recall
+   after a break counts them): answered before and not back in the queue */
+function reviewKeys(keys) {
+  var srs = srsLoad(), out = {};
+  keys.forEach(function (k) { var r = srs[k]; if (r && !r.q && !r.hidden && (r.n || 0) > 0) out[k] = 1; });
+  return out;
 }
 /* one set started, in the practice log: what it holds (due; new, q of
    them back from the queue; spread, graded as due; practice, positions
@@ -477,7 +508,7 @@ function resumeSession() {
   ui.session = { mode: s.mode, label: s.label, keys: s.keys, idx: s.idx, results: s.results || {},
                  relearn: s.relearn || [], relearnOf: s.relearnOf || {}, spec: s.spec, progress: s.progress || {},
                  attempted: s.attempted || 0, carried: s.carried || 0, notes: s.notes || {}, sum: s.sum || {}, firstTime: !!s.firstTime, goalMet: s.goalMet || null,
-                 packUp: !!s.packUp, packDown: !!s.packDown, packMastered: s.packMastered || null };
+                 packUp: !!s.packUp, packDown: !!s.packDown, packMastered: s.packMastered || null, rev: s.rev || null };
   setView('train', false);
   pushSessionState();
   /* a card answered before the reload is not asked again */
@@ -491,6 +522,23 @@ function resumeSession() {
    counts match the dots */
 function sessionDoneCount(s) { return Object.keys(s.results || {}).length; }
 function sessionTotal(s) { return s.keys.length + (s.relearn || []).length; }
+/* where a set stands, counted on its own positions (V4.2: a set keeps its
+   size, "3 of 5", never "of 8"): n, the place of the position on screen
+   among them (every one, once the retries begin); all, the set's size (a
+   lesson is no position, F9.3); retry, the place of the one more try on
+   screen among the retries (0 within the set); retries, those come back or
+   queued to */
+function setPlace(s) {
+  var seen = {}, all = 0, n = 0, r = 0, rn = 0, cur = s.finished ? -1 : s.idx;
+  s.keys.forEach(function (k, i) {
+    if (isLessonKey(k)) return;
+    var again = !!seen[k] && !!(s.relearnOf && s.relearnOf[k]);
+    seen[k] = 1;
+    if (again) { rn++; if (i === cur) r = rn; }
+    else { all++; if (i <= cur) n = all; }
+  });
+  return { n: r || s.finished ? all : n, all: all, retry: r, retries: rn + (s.relearn || []).length };
+}
 /* the same counts in words (C1): the positions the session started with,
    and apart from them the ones coming back for another try, so the count
    never seems to grow: "3 of 5 done, 2 to try again." */
@@ -533,8 +581,8 @@ function drillItems(spec, n) {
     return isLearned(r) ? 3 : 2;
   };
   if (spec.type === 'game') {
-    /* the move that decided the game first, then the rest in the order played */
-    list.sort(function (x, y) { return (y.b.d ? 1 : 0) - (x.b.d ? 1 : 0) || x.b.p - y.b.p; });
+    /* a game's walk-through: its positions in the order played (V4.7) */
+    list.sort(function (x, y) { return x.b.p - y.b.p; });
     return list.slice(0, n || 8);
   }
   list.sort(function (x, y) {
@@ -573,16 +621,24 @@ function countDay(ss, extra) {
   goalCheck(ss);
 }
 /* the week's goal met, once a week: the measure, and the summary of the
-   set that met it shows its medal (F4.4, ss.goalMet). Stamped with the
-   week's Monday, so a week met after a week missed counts again (the run
-   of weeks at the goal starts again at 1 there) */
+   set that met it shows its medal (F4.4, ss.goalMet; cut: a short week's
+   reason, V4.4). Stamped with the week's Monday, so a week met after a week
+   missed counts again (the run of weeks at the goal starts again at 1
+   there) */
 function goalCheck(ss) {
-  var wk = mondayOf(new Date());
-  if (weekDays() >= goalThisWeek() && store.get('nl:goalSent:' + playerId(), 0) !== wk) {
+  var wk = mondayOf(new Date()), wg = weekGoalInfo(Date.now());
+  if (weekDays() >= wg.goal && store.get('nl:goalSent:' + playerId(), 0) !== wk) {
     store.set('nl:goalSent:' + playerId(), wk);
     track('week_goal_met');
-    if (ss) ss.goalMet = { days: weekDays(), goal: goalThisWeek() };
+    if (ss) ss.goalMet = { days: weekDays(), goal: wg.goal, cut: wg.cut };
   }
+}
+/* the days away before today: from the last practice day before today to
+   today, 0 under 7 (V4.4, V4.5: a return after a break) */
+function daysAway() {
+  var today = dayStart(Date.now()), prev = countedDays().filter(function (t) { return t < today; }).pop();
+  var d = prev == null ? 0 : daysFrom(prev, Date.now());
+  return d >= 7 ? d : 0;
 }
 function finishSession() {
   var ss = ui.session;
@@ -598,6 +654,9 @@ function finishSession() {
   if (triedEnough(ss, 0)) { countDay(ss, 0); day = dayLoad(); if (!pack) day.sessions = (day.sessions || 0) + 1; }
   else if (!pack) day.short = 1;
   daySave(day);
+  /* the day's first set after 7 or more days away: its summary says what was
+     remembered (V4.4) and may ask for a backup (V4.5) */
+  if (!pack && day.sessions === 1) ss.away = daysAway();
   /* the first finished set starts "since you started" (F6.2) */
   if (day.sessions) noteStart();
   /* the routine line, once, on a first summary at tiers 2 and 3 (F2.3) */
@@ -683,8 +742,8 @@ function insightFamiliesQuick() {
   var stats = patternStats();
   return FAMILIES.map(function (f) {
     var ps = stats.filter(function (s) { return f.types.indexOf(s.key) !== -1; });
-    var agg = { fam: f, count: 0, cost: 0, pts: 0, learned: 0 };
-    ps.forEach(function (s) { agg.count += s.count; agg.cost += s.cost; agg.pts += s.pts; agg.learned += s.fixed; });
+    var agg = { fam: f, count: 0, cost: 0, lost: 0, pts: 0, learned: 0 };
+    ps.forEach(function (s) { agg.count += s.count; agg.cost += s.cost; agg.lost += lostOf(s.items); agg.pts += s.pts; agg.learned += s.fixed; });
     return agg;
   }).filter(function (a) { return a.count > 0; }).sort(function (a, b) { return b.cost - a.cost || b.pts - a.pts; });
 }

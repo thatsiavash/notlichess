@@ -412,6 +412,13 @@ function boot() {
   /* a link's player lives in this tab only (sessionStorage), and the page
      title never names anyone */
   document.title = 'notlichess.org';
+  /* a new day opens on Today (V4.4): the last tab comes back only on the
+     day it was left; a link to #insights still opens Insights */
+  if (ui.view === 'insights') {
+    var linked = /^#(insights|coach)$/.test(location.hash || '') && !reloadedPage();
+    if (!linked && store.get('nl:viewDay', '') !== dayStamp()) ui.view = 'train';
+    else store.set('nl:viewDay', dayStamp());
+  }
   engineLoad().catch(function () {});           /* in parallel with everything else */
   swRegister();                                 /* the app offline (F11.1), once Stockfish is in */
   ui.session = null;
@@ -458,6 +465,10 @@ function boot() {
     });
 }
 
+/* this page was reloaded (not opened from a link, a bookmark or the app) */
+function reloadedPage() {
+  try { var n = performance.getEntriesByType('navigation')[0]; return !!n && n.type === 'reload'; } catch (e) { return false; }
+}
 /* a refetched record replaces the old one's analysis, but the practice
    keys (gameId:ply) and anything the player marked survive */
 function adoptFresh(old, fresh) {
@@ -483,15 +494,23 @@ function exportProgress() {
     }
   } catch (e) {}
   var blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
-  var a = document.createElement('a');
+  var a = document.createElement('a'), name = progressFileName();
   a.href = URL.createObjectURL(blob);
-  a.download = 'notlichess-progress-' + u.replace(':', '-') + '.json';
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   track('export_done');
-  /* a backup made: the next prompt waits 30 practice days (F5.4) */
-  backupNoted();
+  /* a backup made: the next prompt waits 30 practice days (F5.4), Settings
+     says when (V4.5), and the player is told where it went */
+  backupSaved();
+  notice('Saved to ' + name + '.');
+  renderSettings();
+}
+/* "notlichess-tester-2026-10-11.json": the player and the day (V4.5) */
+function progressFileName() {
+  var d = new Date();
+  return 'notlichess-' + cfg.user + '-' + d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + '.json';
 }
 function importProgress() {
   var inp = document.createElement('input');
@@ -698,6 +717,7 @@ document.addEventListener('click', function (e) {
     case 'cueAdd': cueAdd(k, false); break;
     case 'cueGcal': cueAdd(k, true); break;
     case 'cueNo': cueNotNow(); break;
+    case 'cueDay': cueDayToggle(parseInt(k, 10)); break;
     case 'backupSave': backupAnswer(true); break;
     case 'backupLater': backupAnswer(false); break;
     case 'exportProgress': exportProgress(); break;
@@ -709,7 +729,7 @@ document.addEventListener('click', function (e) {
     case 'consentNo': consentAnswer(false); break;
     case 'engineRetry': SF.state = 'idle'; SF.crashes = []; engineLoad().then(function () { autoScan(); }, function () {}); renderAll(); break;
     case 'resetProgress': {
-      if (!ui.resetArmed) { ui.resetArmed = true; renderSettings(); clearTimeout(ui.resetTimer); ui.resetTimer = setTimeout(function () { ui.resetArmed = false; renderSettings(); }, 4000); break; }
+      if (!armedTap('reset')) break;
       var u = playerId();
       try {
         var del = [];
@@ -730,7 +750,7 @@ document.addEventListener('click', function (e) {
       break;
     }
     case 'wipe': {
-      if (!ui.wipeArmed) { ui.wipeArmed = true; renderSettings(); clearTimeout(ui.wipeTimer); ui.wipeTimer = setTimeout(function () { ui.wipeArmed = false; renderSettings(); }, 4000); break; }
+      if (!armedTap('wipe')) break;
       try {
         var all = [];
         for (var j = 0; j < localStorage.length; j++) { var kj = localStorage.key(j); if (kj && kj.indexOf('nl:') === 0) all.push(kj); }
@@ -747,6 +767,21 @@ document.addEventListener('click', function (e) {
   }
   if (byPointer) pointerFocusBack(t);
 });
+/* Reset and Erase (V4.5): the first tap arms the row ("Tap again to ..."),
+   and a second tap counts only 1 to 6 s after it, so a double tap does
+   nothing; the row disarms 6 s on. True when this tap is the one that
+   counts */
+var ARM_MIN = 1000, ARM_MAX = 6000;
+function armedTap(kind) {
+  var on = kind + 'Armed', at = kind + 'At', tm = kind + 'Timer', now = Date.now();
+  if (ui[on] && now - ui[at] < ARM_MIN) return false;
+  if (ui[on] && now - ui[at] <= ARM_MAX) { ui[on] = false; clearTimeout(ui[tm]); return true; }
+  ui[on] = true; ui[at] = now;
+  renderSettings();
+  clearTimeout(ui[tm]);
+  ui[tm] = setTimeout(function () { ui[on] = false; renderSettings(); }, ARM_MAX);
+  return false;
+}
 /* a pointer's click on the bar or the strip leaves no focus on that control
    (I2): the keyboard goes back to the band's heading (or nowhere, where the
    band has none), so Enter is the right-hand button, as the key line says,
@@ -1221,10 +1256,11 @@ if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
 /* n days pass: every time this player has stored moves n days back (the
    practice records' due, last, last-solved, run-start, spread and queued
    times, the day records, renamed to their date n days earlier, first and
-   last seen, the return day, the day's first opening, the paused set's
-   day, the weekly goal's history, the practice log, cue and backup
-   times, the start of practice, when each foil was shown, the practice
-   positions' times and lessons seen), so whatever was
+   last seen, the return day, the day the tab was left on and the welcome
+   back's day, the day's first opening, the paused set's day, the weekly
+   goal's history, the practice log, cue, backup and save times, the start
+   of practice, when each foil was shown, the practice positions' times
+   and lessons seen), so whatever was
    due in n days is due now. The games keep their dates: they come back from the chess site as
    they are */
 function shiftDays(n) {
@@ -1252,6 +1288,9 @@ function shiftDays(n) {
   ['nl:firstSeen:', 'nl:lastSeen:', 'nl:goalSent:'].forEach(function (k0) { var v = store.get(k0 + p, null); if (typeof v === 'number') store.set(k0 + p, back(v)); });
   var rd = store.get('nl:retDay:' + p, null);
   if (rd) store.set('nl:retDay:' + p, stampBack(rd));
+  /* the day the tab was left on, and the practice day a welcome back
+     greeted after (V4.4) */
+  ['nl:viewDay', 'nl:welcome:' + p].forEach(function (k0) { var v0 = store.get(k0, null); if (v0) store.set(k0, stampBack(v0)); });
   /* the day's first opening (F7.1) moves back too, so today opens again */
   var ab = store.get(absorbKey(), null);
   if (ab && ab.d) { ab.d = stampBack(ab.d); store.set(absorbKey(), ab); }
@@ -1313,8 +1352,10 @@ function seedAfterGames(spec) {
     g.scanned = true;
     g.ts = Math.round(from + (now - from) * (i + 1) / (n + 1));
     if (spec.rating) g.myR = +spec.rating;
-    var flat = seededSeries(g, (st && st.thr && st.thr[g.perf]) || mistakeMinFor(g), cut, plus);
+    var added = [], flat = seededSeries(g, (st && st.thr && st.thr[g.perf]) || mistakeMinFor(g), cut, plus, added);
     if (g.bl) g.bl = g.bl.filter(function (b) { return flat.indexOf(b.p) === -1; });
+    /* an added drop is a position of its own, as Insights counts them (V4.8) */
+    if (added.length) g.bl = (g.bl || []).filter(function (b) { return !added.some(function (x) { return x.p === b.p; }); }).concat(added.map(function (x) { return { p: x.p, wb: x.wb, wa: x.wa, t: 'drift' }; }));
     if (g.bl && !g.bl.length) g.bl = null;
     out.push(g);
   }
@@ -1326,9 +1367,9 @@ function seedAfterGames(spec) {
 }
 /* a clone's series, rewritten in place on the player's own plies at
    threshold min: the k-th big mistake flattened (a drop of min / 2) where
-   ceil(k x cut) grows, then plus drops of 25 points; returns the plies
-   flattened */
-function seededSeries(g, min, cut, plus) {
+   ceil(k x cut) grows, then plus drops of 25 points (each pushed to added
+   as { p, wb, wa }); returns the plies flattened */
+function seededSeries(g, min, cut, plus, added) {
   var mine = g.color === 'white' ? 0 : 1, white = { wp: g.wp, color: 'white' }, chars = [], flat = [], k = 0;
   /* in today's encoding whatever the stored one (White's view, as stored) */
   for (var c = 0; c < g.wp.length; c++) { var v = wpAt(white, c); chars.push(v == null ? '.' : wpChar(v)); }
@@ -1344,6 +1385,7 @@ function seededSeries(g, min, cut, plus) {
     var a = w(j - 1), b = w(j);
     if (a == null || b == null || a - b >= min || a < 26) continue;
     put(j, a - 25);
+    if (added) added.push({ p: j, wb: a, wa: a - 25 });
     plus--;
   }
   g.wp = chars.join('');

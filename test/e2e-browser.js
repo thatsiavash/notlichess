@@ -236,9 +236,15 @@
       ok('the board, Start and the week row above the fold, the focus card within one scroll (F5.1)', rectOf(hb).bottom <= vh() && rectOf(hst).bottom <= vh() && rectOf(hwk).bottom <= vh() && (!$('.focus') || rectOf($('.focus')).top < 2 * vh()),
         [rectOf(hb).bottom, rectOf(hst).bottom, rectOf(hwk).bottom, $('.focus') ? rectOf($('.focus')).top : '-', vh()].map((x) => Math.round(x) || x).join(' / '));
       ok('the week: Monday to Sunday, today ringed, the medal glyph at the goal (F5.1)', $$('.hero .wk-b').length === 7 && $$('.hero .wk-b.now').length === 1 && !!$('.hero .wk-goal, .hero .wk-row .medal')
-        && /^\d+ of \d+ days? this week( · \d+ weeks? in a row)?$/.test(text('.hero .wk-say')), text('.hero .wk-say'));
+        && /^\d+ of \d+ days? this week( \((your first week|since you came back)\))?( · \d+ weeks? in a row)?$/.test(text('.hero .wk-say')), text('.hero .wk-say'));
     }
-    ok('Today says no zero part ("0 learned")', !/(^|\D)0 (learned|climbing|to go|practice days?|weeks? in a row)\b/.test(text('#trainbox')), text('.focus-prog'));
+    ok('Today says no zero part ("0 learned")', !/(^|\D)0 (learned|in practice|not started|practice days?|weeks? in a row)\b/.test(text('#trainbox')), text('.focus-prog'));
+    /* V4.7: the focus card is one tap target with a chevron (no Practise or Details), Start the only button above the games */
+    const fc = $('.focus');
+    ok('the focus card is one tap target with a chevron that opens its skill (V4.7)', !fc || (fc.matches('a.focus-go[data-act=sheet]') && !!fc.querySelector('.focus-chev') && !fc.querySelector('.btn-line, .btn-big, [data-act=drill]')), fc ? fc.outerHTML.slice(0, 120) : 'no focus card');
+    const lg = $('#latest');
+    ok('Start is the only button above the games on a phone (V4.7)', innerWidth >= 600 || !lg || [].filter.call($$('#trainbox .btn-big, #trainbox .btn-line, #trainbox .btn-quiet'), (e) => shown(e) && rectOf(e).top < rectOf(lg).top).map((e) => e.getAttribute('data-act')).join(',') === 'startToday',
+      [].filter.call($$('#trainbox .btn-big, #trainbox .btn-line, #trainbox .btn-quiet'), (e) => shown(e) && rectOf(e).top < (lg ? rectOf(lg).top : 0)).map((e) => e.getAttribute('data-act')).join(','));
     ok('each game row 64 px or more, its name on two lines at most, its meta on one, its state never wrapped (the design lead\'s review of slice 4)', $$('#latest .lg-row').length === 4 && !!$('#latest [data-act=allGames]')
       && [].every.call($$('#latest .lg-row'), (r) => { const nm = r.querySelector('.lg-name'), mt = r.querySelector('.lg-who small'), st = r.querySelector('.lg-state');
         return rectOf(r).height >= 63.5 && nm.offsetHeight <= 41 && mt.offsetHeight <= 21 && st.scrollWidth <= st.clientWidth + 1 && st.offsetHeight <= 42; }),
@@ -827,8 +833,10 @@
     probe.remove();
     ok('each tile shows its result as its glyph, before its word and in the glyph\'s own colour', words.length > 0 && offGlyph.length === 0, offGlyph.join(' | '));
     const head = text('#recap-h'), firstN = words.filter((w) => /^First try/.test(w)).length, countedN = words.filter((w) => w !== 'Skipped').length;
-    const tier1 = T.ev('playerTier()') === 1;
-    ok('the recap counts what it says', !countedN ? head === 'Done.' : tier1 ? new RegExp('^\\d+ of ' + countedN * 3 + ' stars$').test(head) : head === firstN + ' of ' + countedN + ' found first try.', head + ' / ' + words.join(', '));
+    const tier1 = T.ev('playerTier()') === 1, foundN = words.filter((w) => !/^(Shown|Missed|Skipped)/.test(w)).length, allN = words.length;
+    const t1head = foundN === allN ? (allN === 1 ? 'You found it.' : allN === 2 ? 'You found both.' : 'You found all ' + allN + '.') : 'You found ' + foundN + ' of ' + allN + '.';
+    ok('the recap counts what it says (V4.3: tier 1 what was found, never "of 15")', !countedN ? head === 'Done.' : tier1 ? head === t1head : head === firstN + ' of ' + countedN + ' found first try.', head + ' / ' + words.join(', '));
+    ok('no summary line starts with "Then" or says "held" (V4.3)', ![].some.call($$('.recap-page p, .recap-page h2'), (e) => /^Then\b/.test(e.textContent.trim()) || /\bheld\b/.test(e.textContent)), text('.recap-then') + ' / ' + text('.recap-small'));
     const habits = [].map.call($$('.recap-habit .keep-line'), (e) => e.textContent);
     ok('one check line per step met, said once, under one "Keep in mind" and one bulb', habits.length >= 1 && $$('.recap-habit > .kicker').length === 1 && text('.recap-habit > .kicker') === 'Keep in mind'
       && $$('.recap-habit .plan').length === 1 && new Set(habits).size === habits.length && habits.every((h) => h.length > 10), habits.join(' | '));
@@ -836,7 +844,7 @@
     ok('the recap offers to play a game', !!$('.recap-acts .btn-big'));
     /* F4.5: a glyph per position leads the summary; the next set, in the bar at the screen's foot, stays in
        view at the summary's top and at its end, wider than Back to Today */
-    ok('the summary leads with a glyph per position (F4.5)', $$('.result-row .rg').length === $$('.recap-item').length, $$('.result-row .rg').length + ' glyphs, ' + $$('.recap-item').length + ' tiles');
+    ok('the summary leads with a glyph per position (F4.5; tier 1 three stars each, V4.3)', $$(tier1 ? '.result-row .star-grp' : '.result-row .rg').length === $$('.recap-item').length, $$('.result-row .rg, .result-row .star-grp').length + ' glyphs or star groups, ' + $$('.recap-item').length + ' tiles');
     const nextB = $('.recap-acts [data-act=keepGoing]'), backB = $('.recap-acts [data-act=endSession]');
     if (nextB && backB) {
       const inView = (e) => { const r = e.getBoundingClientRect(); return r.height > 0 && r.top >= 0 && r.bottom <= innerHeight + 0.5; };
@@ -866,14 +874,20 @@
     const ih = $('#insightsbox h2'), il = $('#insightsbox .lead');
     ok('Insights: the headline and the lead fit the first screen', !!ih && !!il && shown(il) && rectOf(il).bottom <= vh() && rectOf(ih).top >= 0,
       (ih ? Math.round(rectOf(ih).top) : '-') + ' to ' + (il ? Math.round(rectOf(il).bottom) : 'no lead') + ' of ' + vh());
+    /* at More help the skill tiles (F9.5) come right under them, their first row (with "Next") on the first screen too */
+    if (T.ev('playerTier()') === 1) {
+      const sk = $('#insightsbox .sk-tiles'), sk1 = $('#insightsbox .sk-tile'), skn = $('#insightsbox .sk-tile.is-next');
+      ok('Insights at More help: the skill tiles right under the headline and lead, their first row and "Next" on the first screen', !!sk && !!sk1 && !!il && rectOf(sk).top >= rectOf(il).bottom
+        && rectOf(sk1).bottom <= vh() && (!skn || rectOf(skn).bottom <= vh()), (sk ? Math.round(rectOf(sk).top) : 'no tiles') + ', first row to ' + (sk1 ? Math.round(rectOf(sk1).bottom) : '-') + ', Next to ' + (skn ? Math.round(rectOf(skn).bottom) : 'none') + ' of ' + vh());
+    }
     const rows = [].map.call($$('#insightsbox .fam-row'), (r) => {
       const n = +((/(\d+) positions?/.exec(r.querySelector('.fr-n').textContent) || [])[1] || 0);
       const parts = (r.querySelector('.fr-prog').textContent.match(/\d+/g) || []).map(Number), segs = r.querySelectorAll('.fr-bar i');
       return { name: r.querySelector('.fr-name').textContent, n, sum: parts.reduce((a, x) => a + x, 0), segs: segs.length, bar: r.querySelector('.fr-bar') ? rectOf(r.querySelector('.fr-bar')).width : 0 };
     });
     ok('Insights: every skill with positions has a bar of them, said in words that add up', rows.length >= 1 && rows.every((x) => x.n > 0 && x.segs >= 1 && x.bar > 40 && x.sum === x.n), JSON.stringify(rows));
-    ok('Insights: never "0 learned" (or any zero part)', !/(^|\D)0 (learned|climbing|to go)/.test(text('#insightsbox')));
-    ok('Insights: the set just finished starts "since you started", waiting for 10 games', /^Since you started, \d+ \w+/.test(text('#insightsbox .since-h')) && /Comparison from 10 games since you started: \d so far\./.test(text('#insightsbox .since')), text('#insightsbox .since'));
+    ok('Insights: never "0 learned" (or any zero part), never "climbing" or "to go" (V4.8)', !/(^|\D)0 (learned|in practice|not started)/.test(text('#insightsbox')) && !/\bclimbing\b|\bto go\b/.test(text('#insightsbox')));
+    ok('Insights: the set just finished starts "since you started", waiting for 10 games', /^Since you started, \d+ \w+/.test(text('#insightsbox .since-h')) && /Comparison from 10 games since you started: \d+ of 10 new games so far\./.test(text('#insightsbox .since')), text('#insightsbox .since'));
     click('#insightsbox [data-act=sheet][data-k=count]');
     await until(() => $('#overlay .sheet'), 3000);
     ok('Insights: "How we count" opens', /How we count/.test(text('#overlay .sheet h3')) && $$('#overlay .sheet p').length >= 2, text('#overlay .sheet'));

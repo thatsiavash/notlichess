@@ -711,17 +711,6 @@ function skillSheetHtml(k) {
     + '<a class="btn-line" data-act="lesson" data-k="' + k + '">' + (s.ls[k] ? 'See the lesson again' : 'See the lesson') + '</a></div>'
     + '<p class="dt-more">Practice positions, from lessons and other players\' games. They never change when your own positions come back.</p>';
 }
-/* Today's focus card at More help (F9.5): the meter of the skill its family
-   trains most, a way to the skill's card (its pack and its lesson: the
-   card's own Practise is the player's positions) */
-var FAMILY_SKILL = { safety: 'safety', king: 'stopmate', chances: 'free' };
-function focusSkillHtml(fam) {
-  var k = FAMILY_SKILL[fam], sk = k && PSKILL_OF[k];
-  if (!sk || playerTier() !== 1) return '';
-  var s = skillLoad();
-  return '<a class="focus-sk" data-act="sheet" data-k="skill:' + k + '">' + skillDots(s.k[k]) + '<span class="sk-state">' + esc(sk.name) + ' · ' + esc(skillState(s, k)) + ' ›</span></a>';
-}
-
 /* ── the summary ── */
 /* the practice in a set, apart from the score (F9.4): "Practice: 4 of 5
    first try." ('' with none answered) */
@@ -754,17 +743,18 @@ function packDoneHtml(ss) {
   }).join('');
   var n = 0, first = 0, by = {};
   uniq.forEach(function (k) { var e = ss.sum && ss.sum[k]; if (!e || !e.prac || e.c === 'skip') return; n++; if (e.c === 'first') first++; else by[e.c] = (by[e.c] || 0) + 1; });
-  var parts = CAT_ORDER.filter(function (c) { return by[c]; }).map(function (c) { return by[c] + ' ' + CAT_THEN[c]; });
+  /* its second line as the summary's (V4.3): never "Then ..." */
+  var then = playerTier() === 1 ? foundWords(by, 0) : thenWords(by);
   var s = skillLoad(), r = sk ? s.k[sk.k] : null, gm = ss.goalMet;
   var did = ss.packMastered ? '<p class="recap-then pack-mastered"><span class="rg rg-learned"' + (fx ? ' data-fx="seal"' : '') + ' aria-hidden="true"></span> Mastered: ' + esc(sk.name) + '.</p>'
     : ss.packUp ? '<p class="recap-small">Up a step: ' + (r && r.st >= 2 ? 'positions from other players\' games next.' : 'harder positions next.') + '</p>'
     : ss.packDown ? '<p class="recap-small">A step back: easier positions next.</p>' : '';
-  var week = gm ? weekHtml(fx, 'Goal met: ' + plur(gm.days, 'day') + ' this week.') : weekHtml();
+  var week = gm ? weekHtml(fx, goalMetWords(gm)) : weekHtml();
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page pack-page">'
     + (row ? '<div class="result-row" aria-hidden="true">' + row + '</div>' : '')
     + '<h2 class="done-big" id="recap-h" tabindex="-1">' + (n ? 'Practice: ' + first + ' of ' + n + ' first try.' : 'Lesson done.') + '</h2>'
-    + (parts.length ? '<p class="recap-then">Then ' + parts.join(', ') + '.</p>' : '')
+    + (then ? '<p class="recap-then">' + then + '</p>' : '')
     + did
     + (sk ? '<div class="sk-meter recap-sk">' + skillDots(r) + '<span class="sk-state">' + esc(sk.name) + ' · ' + esc(skillState(s, sk.k)) + '</span></div>' : '')
     + '<div class="recap-week' + (gm ? ' met' : '') + '"><div class="kicker">This week</div>' + week + '</div>'

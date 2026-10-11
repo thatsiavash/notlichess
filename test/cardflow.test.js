@@ -6078,7 +6078,7 @@ const BAR = `(function () {
   });
 
   /* ── slice 2: the honest summary and one routine ── */
-  await test('F2.1: the tour\'s set (Rg1 first try; Nc5 after a miss; Be4 a good move, then found; O-O after two misses; bxc5 first try) reads "2 of 5 found first try." then "Then 2 after a miss, 1 after a good move." at 1600, and "11 of 15 stars" at 700 (card 2\'s First look hint costs no star); each tile shows its result\'s glyph before its word', async () => {
+  await test('F2.1: the tour\'s set (Rg1 first try; Nc5 after a miss; Be4 a good move, then found; O-O after two misses; bxc5 first try) reads "2 of 5 found first try." then "2 after a miss · 1 after a good move" at 1600, and "You found all 5." then "3 took more than one try." at 700 (V4.3: never "of 15"; card 2\'s First look hint costs no star); each tile shows its result\'s glyph before its word', async () => {
     const run = async (tier) => {
       const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
       A.ev(`(function () { playerTier = function () { return ${tier}; }; window.readyEngine();
@@ -6105,11 +6105,11 @@ const BAR = `(function () {
     const t2 = await run(2), t1 = await run(1);
     eq(t2.close, 'close', 'card 3: a good move first');
     eq(t2.cats, 'first miss good miss first', 'the categories, the worst event deciding');
-    eq(t2.head + ' / ' + t2.then, '2 of 5 found first try. / Then 2 after a miss, 1 after a good move.', 'tier 2');
+    eq(t2.head + ' / ' + t2.then, '2 of 5 found first try. / 2 after a miss · 1 after a good move', 'tier 2 (V4.3)');
     eq(JSON.stringify(t2.words), JSON.stringify(['First try', 'After a miss', 'After a good move', 'After a miss', 'First try']), 'the tiles\' words');
     eq(t2.glyphs, 'first miss good miss first', 'each tile\'s glyph before its word (F3.1): ticks on cards 1 and 5, a ring tick on card 3, rotates on 2 and 4');
     eq(t2.row, 'first miss good miss first', 'the result row leads the summary, one glyph per position in order (F4.5)');
-    eq(t1.head + ' / ' + t1.then, '11 of 15 stars / Then 2 after a miss, 1 after a good move.', 'tier 1: stars, the same second line');
+    eq(t1.head + ' / ' + t1.then, 'You found all 5. / 3 took more than one try.', 'tier 1: what was found, never "of 15" (V4.3)');
     eq(t1.stars, '32213', 'tier 1: card 2\'s First look and its miss with the automatic hint 2 stars; two misses 1');
   });
 
@@ -6731,11 +6731,11 @@ const BAR = `(function () {
     eq(JSON.stringify(r.events), JSON.stringify(['card_result_2_cued_first', 'card_result_2_game_hint', 'card_result_2_foil_first']), 'Clarity: tier, mode and category');
     ok(!/tester|135\d|\b\d{12}\b|[a-h][1-8][a-h][1-8]/.test(r.flat), 'no name, rating, key or position: ' + r.flat);
     eq(r.head, '1 of 2 found first try.', 'the score counts the two mistakes');
-    eq(r.then, 'Then 1 with a hint.', 'and their second line');
+    eq(r.then, '1 with a hint', 'and their second line (V4.3)');
     eq(r.foils, '1 had nothing to fix: 1 good move.', 'the foil apart');
     eq(JSON.stringify(r.row), JSON.stringify(['rg-first', 'rg-hint', 'rg-first']), 'a glyph for each, the foil\'s too');
     eq(JSON.stringify(r.tile), JSON.stringify({ name: true, glyph: true, word: true, rungs: false, act: false, red: false, played: 2 }), 'the foil\'s tile: "Nothing to fix", "Good move", no rungs, nothing to open, its game move tinted as a move played, never red');
-    eq(r.moved, '1 moved up, 1 held.', 'what moved: the mistakes alone');
+    eq(r.moved, 'Back in 7 days: 1. Back in 5 days: 1.', 'when they come back: the mistakes alone (V4.3)');
     eq(r.stack, 'recap-then / recap-then recap-foils / recap-small', 'the foils\' line right after the category line, before the quiet paragraph');
   });
 
@@ -6789,7 +6789,7 @@ const BAR = `(function () {
       exportProgress();
       out.file = Object.keys(JSON.parse(blob).keys).filter(function (k) { return !/^nl:day:/.test(k); }).sort();
       return JSON.stringify(out); })()`));
-    A.click('resetProgress'); A.click('resetProgress');
+    A.click('resetProgress'); A.advance(1500); A.click('resetProgress');
     const gone = JSON.parse(A.ev(`JSON.stringify({ foil: store.get(foilStoreKey(), null), srs: store.get(srsKey(), null) })`));
     eq(JSON.stringify(r.today), JSON.stringify({ first: true, game: true, reds: 0, same: true, ghost: false }), 'Today\'s board: card 1, a game-mode review, as the card opens: no red arrow, no faded game move');
     eq(r.t1, 1, 'at tier 1 the same card is cued: its red arrow');

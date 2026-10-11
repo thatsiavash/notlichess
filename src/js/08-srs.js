@@ -312,34 +312,43 @@ function countedDays() {
 }
 /* "27 practice days": every day that counted, never reset by a week */
 function practiceDays() { return countedDays().length; }
-/* a week's goal, the first week's cut to the days it has left (F5.1): from
-   the first practice day (today, while none has counted yet) to Sunday, so
-   a Saturday starter reads "1 of 2 days this week". first: the first
-   practice day, or null */
-function goalOfWeek(ms, first) {
-  var g = weekGoalAt(ms), start = first != null ? first : new Date().setHours(0, 0, 0, 0);
-  if (mondayOf(start) !== mondayOf(ms)) return g;
-  return Math.min(g, 7 - (new Date(start).getDay() + 6) % 7);
+/* a week's goal (F5.1, V4.4): the goal it had, cut in a short week to the
+   days from its first practice day to Sunday. A short week is the first
+   week, and a week whose first practice follows 7 or more days without one
+   (a return). The week under way takes today as its first practice day
+   while none has counted yet, so a Saturday starter reads "1 of 2 days this
+   week" and a Sunday return "0 of 1 day". ms: a time in the week; days:
+   the counted days (countedDays). { goal, cut: 'first', 'back' or '' (the
+   goal stood) } */
+function weekGoalInfo(ms, days) {
+  days = days || countedDays();
+  var mon = mondayOf(ms), g = weekGoalAt(ms), now0 = new Date(); now0.setHours(0, 0, 0, 0);
+  var inWeek = days.filter(function (t) { return mondayOf(t) === mon; });
+  var first = inWeek.length ? inWeek[0] : mondayOf(now0) === mon ? now0.getTime() : null;
+  if (first == null) return { goal: g, cut: '' };
+  var prev = days.filter(function (t) { return t < first; }).pop();
+  var kind = prev == null ? 'first' : Math.round((first - prev) / DAY) >= 7 ? 'back' : '';
+  var left = 7 - (new Date(first).getDay() + 6) % 7;
+  return kind && left < g ? { goal: left, cut: kind } : { goal: g, cut: '' };
 }
-function goalThisWeek() { return goalOfWeek(Date.now(), countedDays()[0]); }
 /* consistency counted in weeks: the run of Monday-to-Sunday weeks that met
-   the goal, this week included once it is met; a week still under way never
-   breaks the run */
+   the goal (a short week its own, V4.4), this week included once it is
+   met; a week still under way never breaks the run */
 function weeksAtGoal() {
-  var n = 0, d = new Date(), first = countedDays()[0];
+  var n = 0, d = new Date(), days = countedDays();
   d.setHours(12, 0, 0, 0);
   var dow = (d.getDay() + 6) % 7, monday = new Date(d);
   monday.setDate(d.getDate() - dow);
-  var count = function (mon, days) {
+  var count = function (mon, len) {
     var c = 0;
-    for (var i = 0; i < days; i++) { var x = new Date(mon); x.setDate(mon.getDate() + i); if (dayCounts(dayRecOf(x))) c++; }
+    for (var i = 0; i < len; i++) { var x = new Date(mon); x.setDate(mon.getDate() + i); if (dayCounts(dayRecOf(x))) c++; }
     return c;
   };
-  if (count(monday, dow + 1) >= goalOfWeek(monday.getTime(), first)) n++;
+  if (count(monday, dow + 1) >= weekGoalInfo(monday.getTime(), days).goal) n++;
   for (var w = 1; w < 105; w++) {
     var m = new Date(monday);
     m.setDate(monday.getDate() - 7 * w);
-    if (count(m, 7) >= goalOfWeek(m.getTime(), first)) n++; else break;
+    if (count(m, 7) >= weekGoalInfo(m.getTime(), days).goal) n++; else break;
   }
   return n;
 }

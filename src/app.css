@@ -80,6 +80,9 @@
   --ic-seal:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cmask id='m'%3E%3Crect width='24' height='24' fill='%23fff' stroke='none'/%3E%3Cpath d='m16 9-5.5 5.5L8 12' stroke='%23000'/%3E%3C/mask%3E%3Cpath d='M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z' fill='%23000' mask='url(%23m)'/%3E%3C/svg%3E");
   /* Share as iOS draws it, for the iPhone how-to (Lucide: share) */
   --ic-share:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2v13'/%3E%3Cpath d='m16 6-4-4-4 4'/%3E%3Cpath d='M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8'/%3E%3C/svg%3E");
+  /* tier 1's stars (V4.3), filled and outlined (Feather: star) */
+  --ic-star:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpolygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2' fill='%23000' stroke='%23000' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --ic-star-o:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpolygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2' fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 @media (min-width:861px){
   :root{
@@ -366,15 +369,21 @@ body.in-session .consent-slot{display:none}
 .focus-name{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:6px 0 4px}
 .focus p{margin:0 0 12px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
 .focus .sec{color:var(--text-2)}
-.focus-more{position:absolute;top:16px;right:16px;display:inline-flex;align-items:center;min-height:44px;padding:0 8px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--honey)}
-.focus-more:hover{color:var(--honey-hover)}
+/* the focus card, one tap target that opens the skill's sheet, its chevron
+   at the right (V4.7) */
+a.focus-go{display:block;color:inherit;cursor:pointer;padding-right:52px}
+a.focus-go:hover{color:inherit;box-shadow:inset 0 0 0 2px var(--border)}
+.focus-chev{position:absolute;top:50%;right:16px;width:24px;height:24px;margin-top:-12px;background:var(--text-3);
+  -webkit-mask:var(--ic-fwd) center/contain no-repeat;mask:var(--ic-fwd) center/contain no-repeat}
+a.focus-go:hover .focus-chev{background:var(--text-1)}
+/* back after a break (V4.4), above the hero */
+.welcome-line{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1);margin:0 0 16px}
 /* the focus card (F5.1): its glyph and name, the check line, the meter of
    its positions (as an Insights bar) and its words, Practise N */
 .focus-head{display:flex;align-items:center;gap:12px;margin:8px 0 12px}
 .focus-head .focus-name{margin:0}
 .focus .focus-bar{display:flex;margin:16px 0 6px}
-.focus p.focus-prog{margin:0 0 16px;font-variant-numeric:tabular-nums}
-.focus > .btn-line{min-width:160px}
+.focus p.focus-prog{margin:0;font-variant-numeric:tabular-nums}
 /* the habit: one line with a honey bulb, never a word more */
 .plan{display:flex;gap:10px;align-items:flex-start;color:var(--text-1);font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700}
 .plan::before{content:"";flex:none;width:20px;height:20px;margin-top:2px;background:var(--honey);-webkit-mask:var(--ic-bulb) center/contain no-repeat;mask:var(--ic-bulb) center/contain no-repeat}
@@ -407,6 +416,15 @@ a.lg-row{color:inherit}
 .lg-state.ok{color:var(--leaf)}
 .lg-state.dim{color:var(--text-3)}
 .lg-foot{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;margin:8px 0 4px}
+/* a narrow phone (V4.7): name and rating, then the meta, then the state,
+   one line each under the result, so nothing is cut short */
+@media (max-width:399px){
+  .lg-row{flex-wrap:wrap;align-items:flex-start;row-gap:2px}
+  .lg-who{flex:1 1 calc(100% - 44px)}
+  .lg-who small{white-space:normal}
+  .lg-state{flex:1 1 100%;padding-left:44px;text-align:left}
+  .lg-state i{display:inline;margin:0 0 0 8px}
+}
 /* the first minute: every state takes the Today card's place, one shape */
 .finding{background:var(--surface-1);border-radius:var(--r-card);padding:20px 22px}
 .finds{display:flex;flex-direction:column;gap:6px;margin:12px 0 16px}
@@ -424,7 +442,7 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
   .hero .btn-big[data-icon]::before{width:22px;height:22px}
   .today-grid{display:flex;flex-direction:column;gap:0}
   .today-grid .today-main{display:contents}
-  .today-grid .since,.today-grid .clean-line{order:0}
+  .today-grid .welcome-line,.today-grid .since,.today-grid .clean-line{order:0}
   .today-grid .hero{order:1}
   .today-grid .why-these{order:2}
   /* the focus card above the games (F5.1) */
@@ -454,6 +472,8 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .dot.relearn{background:repeating-linear-gradient(135deg,var(--honey) 0 2px,transparent 2px 5px);box-shadow:inset 0 0 0 2px var(--honey)}
 .dot.relearn.on{background:repeating-linear-gradient(135deg,var(--honey) 0 3px,transparent 3px 6px);box-shadow:inset 0 0 0 2.5px var(--honey)}
 .dot.relearn.done{background:repeating-linear-gradient(135deg,var(--honey) 0 3px,var(--honey-lip) 3px 5px);box-shadow:none}
+/* the retries after a gap, apart from the set's own segments (V4.2) */
+.dot.gap{margin-left:12px}
 .card-menu{margin-left:auto;position:relative;color:var(--text-2)}
 .card-menu > a{display:inline-flex;min-width:44px;min-height:44px;align-items:center;justify-content:center;color:var(--text-2);font-size:var(--fs-heading);font-weight:900;border-radius:12px}
 .card-menu > a:hover{background:var(--surface-2);color:var(--text-1)}
@@ -589,6 +609,13 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
    board is still */
 .bd-disc.fx-found{animation:found-pop .24s linear}
 .bd-disc.fx-found3{animation:found-pop3 .15s var(--ease-pop)}
+/* tier 1 (V4.3): a card found on its first showing, its stars under its
+   verdict's glyph, filling with the found moment 80 ms apart */
+.bd-stars{position:absolute;left:0;top:38px;width:32px;display:flex;justify-content:center;gap:1px}
+.bd-stars .st{width:10px;height:10px}
+.bd-stars.fx .st.on::after{animation:star-fill .2s var(--ease) both}
+.bd-stars.fx .st:nth-child(2)::after{animation-delay:80ms}
+.bd-stars.fx .st:nth-child(3)::after{animation-delay:160ms}
 @keyframes found-pop{0%{transform:scale(.6);animation-timing-function:var(--ease)}60%{transform:scale(1.08);animation-timing-function:ease-in-out}100%{transform:none}}
 @keyframes found-pop3{from{transform:scale(.8)}to{transform:none}}
 /* row 1 and a forcing line's pips share one line */
@@ -869,6 +896,22 @@ body.in-session{padding-bottom:0}
 .result-row{display:flex;flex-wrap:wrap;gap:6px;max-width:334px;margin:0 0 16px}
 .result-row .rg{width:28px;height:28px;vertical-align:0}
 .result-row .rg::after{width:17px;height:17px}
+/* tier 1 (V4.3): each position's three 16 px stars, 12 px between
+   positions; earned honey, the rest outlined; on the first paint the
+   earned ones fill in order (--d, its delay: at most 80 ms apart, 1.2 s in
+   all), 0.6 to 1.08 to 1 */
+.result-row.star-row{gap:10px 12px}
+.star-grp{display:inline-flex;gap:2px}
+.st{position:relative;flex:none;display:inline-block;width:16px;height:16px}
+.st::before,.st.on::after{content:"";position:absolute;inset:0;background:var(--border);
+  -webkit-mask:var(--ic-star-o) center/contain no-repeat;mask:var(--ic-star-o) center/contain no-repeat}
+.st.on::after{background:var(--honey);-webkit-mask-image:var(--ic-star);mask-image:var(--ic-star)}
+.star-row.fx .st.on::after{animation:star-fill .2s var(--ease) var(--d,0s) both}
+@keyframes star-fill{0%{opacity:0;transform:scale(.6)}1%{opacity:1}60%{transform:scale(1.08)}100%{opacity:1;transform:none}}
+/* the seal and the medal wait for the stars, then move as before (F4.4) */
+.recap-learned[data-fx=seal-wait] .rg-learned,.medal[data-fx=medal-wait]{opacity:0}
+/* after a break (V4.4): what was remembered, above the headline */
+.recall{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1);margin:0 0 12px}
 .done-big{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);margin:0 0 24px;outline:none;font-variant-numeric:lining-nums tabular-nums}
 .recap-page .done-big{margin:0 0 20px}
 /* what moved and when the found ones come back: one quiet paragraph */
@@ -913,6 +956,9 @@ body.in-session{padding-bottom:0}
 .cue-acts .btn-line{min-height:44px}
 .cue-set .chips{margin:8px 0}
 .cue-set .cue-when{margin:8px 0}
+/* the reminder's seven days (V4.6), M to S, sharing a narrow phone's row */
+.chips.cue-days{flex-wrap:nowrap;gap:4px;max-width:340px}
+.cue-days .day-chip{flex:1 1 0;min-width:0;padding:0;justify-content:center}
 /* the install offer in the same place (F11.1), never beside them: the
    question in the heading size, a line of why, Add and Not now; on an
    iPhone the how-to with its Share glyph */
@@ -948,8 +994,8 @@ body.in-session{padding-bottom:0}
 .recap-then + .recap-foils{margin-top:0}
 .recap-item.recap-foil{cursor:default}
 .recap-item .stars,.recap-item .rungs{display:flex;align-items:center;gap:6px;margin-top:6px}
-.stars i{font-style:normal;font-size:var(--fs-small);line-height:1;color:var(--border)}
-.stars i.on{color:var(--honey)}
+.recap-item .stars{gap:3px}
+.stars .st{width:14px;height:14px}
 .rungs i{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--border)}
 .rungs i.on{background:var(--honey);border-color:var(--honey)}
 .recap-item .tile-check{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
@@ -990,6 +1036,8 @@ body.in-session{padding-bottom:0}
 .ins > .kicker{color:var(--text-3)}
 .ins h2{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);max-width:20em;margin:8px 0 10px;font-variant-numeric:lining-nums tabular-nums}
 .ins .lead{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-2);margin:0;max-width:40em}
+/* while the background check runs, its count (V4.8: counts may still shrink) */
+.ins-checking{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:6px 0 0}
 .ins-h{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:32px 0 12px}
 .ins-h.ins-also{margin-top:24px}
 .fam-list{background:var(--surface-1);border-radius:var(--r-card);overflow:hidden}
@@ -1122,17 +1170,16 @@ body.in-session{padding-bottom:0}
 /* beginner teaching (F9.1 to F9.5): a lesson's frame with the honey edge
    and its bar (‹ beside Next ›); a practice position's source line beside
    its tag, cut short where the row runs out; its session-bar segment hollow
-   once done, a lesson's short; the ten skill tiles that open Insights at
-   More help, each its number (the seal once mastered) and name, a 10-dot
-   meter of first tries, its state and "Next"; the skill's card; the meter
-   on the focus card and on a pack's end ──────────────────────────────── */
+   once done, a lesson's short; the ten skill tiles under Insights'
+   headline at More help, each its number (the seal once mastered) and
+   name, a 10-dot meter of first tries, its state and "Next"; the skill's
+   card; the meter on a pack's end ───────────────────────────────────── */
 .coach.k-lesson::before{background:var(--honey)}
 .guess-acts .nav-btn{flex:0 0 48px;min-width:48px;height:44px;padding:0}
 .tag-src{flex:0 1 auto;min-width:0;font-size:var(--fs-small);line-height:var(--lh-heading);font-weight:600;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dot.lesson{flex:0 0 12px}
 .dot.prac.done,.dot.lesson.done{background:transparent;box-shadow:inset 0 0 0 2px var(--honey)}
 .sk-tiles{margin:0 0 8px}
-.sk-tiles .ins-h{margin-top:0}
 .sk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .sk-tile{display:flex;flex-direction:column;align-items:stretch;gap:10px;min-width:0;padding:12px;border-radius:var(--r-card);background:var(--surface-1);color:inherit;cursor:pointer}
 .sk-tile:hover{background:var(--surface-2);color:inherit}
@@ -1151,9 +1198,6 @@ body.in-session{padding-bottom:0}
 .sk-tile.is-done .sk-state{color:var(--honey)}
 .sk-meter{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:12px 0 16px}
 .sk-meter .sk-dots{flex:0 0 160px}
-.focus-sk{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;min-height:48px;margin:16px 0 0;padding-top:12px;border-top:1px solid var(--divider);color:inherit}
-.focus-sk:hover .sk-state{color:var(--text-1)}
-.focus-sk .sk-dots{flex:0 0 120px}
 .pack-offer{margin:0 0 12px;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700}
 .recap-item.recap-prac{cursor:default}
 @media (min-width:861px){
@@ -1196,6 +1240,8 @@ body.in-session{padding-bottom:0}
   .card-task.sweep::after{animation:none !important;left:0;width:100%;opacity:.5}
   /* the words' beat still fades, without the rise (F4.4) */
   .bd-rows{animation-name:fade-in !important;animation-duration:.15s !important}
+  /* the stars fill at once (V4.3): a pseudo-element is no element for the rule above */
+  .st::after{animation:none !important}
   .btn-big:active,.btn-line:active,.nav-btn:active{transform:none}
   .btn-big:active{background:var(--honey-lip)}
   .btn-line:active,.nav-btn:active{background:var(--border)}

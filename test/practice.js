@@ -412,8 +412,8 @@ module.exports = function practiceTests(h) {
       var own = allMistakes().filter(trainable)[0].key, ss = { mode: 'today', label: 'Today', keys: [own, 'pk:free-1'], idx: 2, results: {}, notes: {}, sum: {}, relearn: [], relearnOf: {}, finished: true };
       ss.results[own] = 'retry'; ss.sum[own] = { c: 'miss', s: 1, fc: '' };
       ss.results['pk:free-1'] = 'first'; ss.sum['pk:free-1'] = { c: 'first', s: 3, fc: '', prac: 1, sk: 'free' };
-      var w = words(doneHtml(ss));
-      out.summary = [w[w.indexOf('1 of 3 stars') >= 0 ? w.indexOf('1 of 3 stars') : 1], w.indexOf('Practice: 1 of 1 first try.') >= 0, w.indexOf('Free pieces · Practice') >= 0].join(' / ');
+      var dh = doneHtml(ss), w = words(dh);
+      out.summary = [(/<h2 class="done-big"[^>]*>([^<]*)</.exec(dh) || [])[1], w.indexOf('Practice: 1 of 1 first try.') >= 0, w.indexOf('Free pieces · Practice') >= 0].join(' / ');
       return JSON.stringify(out); })()`));
     eq(r.open, 'Your turn / Find the free piece. / Practice / Another player\'s game / true / Hint | Show the answer / true', 'before its first move: its tag and source line in the tag row');
     ok(/^Found it \/ That wins their \w+\. \/  \/ Details$/.test(r.found), 'found, then settled (the tag row the strip\'s place): ' + r.found);
@@ -424,7 +424,7 @@ module.exports = function practiceTests(h) {
     ok(/^Not this one \/ .+ \/ 1 \/ 1$/.test(r.miss), 'a miss says why, and brings Hint 1 at More help: ' + r.miss);
     eq(r.shown, 'Here is the answer / Play the green arrow.', 'the answer shown');
     ok(/^Here is the answer \/ That wins their \w+\. \/ fail$|^The answer: .+ \/ That wins their \w+\. \/ fail$/.test(r.shownSettled), 'shown, played and settled: ' + r.shownSettled);
-    eq(r.summary, '1 of 3 stars / true / true', 'the headline counts the own position alone; practice on its own line and tile');
+    eq(r.summary, 'You found it. / true / true', 'the headline counts the own position alone (V4.3: "You found it.", one found); practice on its own line and tile');
   });
 
   test('F9.4: mastery: 8 of the last 10 first tries over 2 days or more, half from real positions (as many as the skill has), the seal on the pack\'s end; "Needs polish" under 6 of 10 later; one mixed review per Today set, from the mastered skills in turn, never card 1', () => {
@@ -467,13 +467,14 @@ module.exports = function practiceTests(h) {
     ok(r.mixed[0].split('@')[0] !== r.mixed[1].split('@')[0], 'taken in turn: ' + r.mixed.join(', '));
   });
 
-  test('F9.5: skill tiles: at More help Insights opens with ten tiles a beginner can read (number, name, a 10-dot meter, its words, "Next" on the coming skill), meters moving from a new player\'s first pack; a tap opens the skill\'s card (Practise 5, the lesson); the focus card\'s meter; none at Normal help', () => {
+  test('F9.5: skill tiles: at More help Insights shows, right under its headline and lead, ten tiles a beginner can read (number, name, a 10-dot meter, its words, "Next" on the coming skill), meters moving from a new player\'s first pack; a tap opens the skill\'s card (Practise 5, the lesson); the focus card one tap target with one meter (V4.7: no skill meter beside it); none at Normal help', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${AT(700)} ${PLAY}
       var out = {}, ins = function () { var box = { innerHTML: '' }, el0 = el; el = function (id) { return id === 'insightsbox' ? box : el0(id); }; ui.view = 'insights'; renderInsights(); ui.view = 'train'; el = el0; return box.innerHTML; };
       var tiles = function (h) { return (String(h).match(/<a class="sk-tile[\\s\\S]*?<\\/a>/g) || []).map(function (t) { return [(/data-k="skill:(\\w+)"/.exec(t) || [])[1], (t.match(/<i class="on">/g) || []).length, (/class="sk-state">([^<]*)</.exec(t) || [])[1], /class="pill">Next</.test(t)].join(':'); }); };
       var h0 = ins();
-      out.first = h0.indexOf('<section class="sk-tiles"') === '<div class="ins">'.length;
+      /* the headline, its lead, the tiles, then what cost the games (the first screen keeps the headline, F6.1) */
+      out.first = ['<h2>', '<p class="lead">', '<section class="sk-tiles"', '<h3 class="ins-h">What cost you games'].map(function (k) { return h0.indexOf(k); });
       out.t0 = tiles(h0);
       var s = skillLoad(); s.ls.free = Date.now(); skillSave(s);
       startPack('free');
@@ -482,11 +483,12 @@ module.exports = function practiceTests(h) {
       out.t1 = tiles(ins())[0];
       out.sheet = words(sheetHtml('skill:free'));
       out.acts = (sheetHtml('skill:free').match(/data-act="(pack|lesson)" data-k="free"/g) || []).length;
-      out.focus = words(focusHtml()).filter(function (x) { return /Piece safety ·/.test(x); }).concat((/<a class="focus-sk" data-act="sheet" data-k="(skill:\\w+)"/.exec(focusHtml()) || [])[1] || 'no link');
+      var fh = focusHtml();
+      out.focus = [(/^<a class="focus focus-go" data-act="sheet" data-k="([^"]*)"/.exec(fh) || [])[1] || 'no link', /focus-sk|Piece safety ·/.test(fh), (fh.match(/class="fr-bar/g) || []).length];
       setHelp('normal');
       out.normal = /sk-tiles/.test(ins()) || /focus-sk/.test(focusHtml());
       return JSON.stringify(out); })()`));
-    eq(r.first, true, 'Insights opens with the tiles');
+    ok(r.first.every((v, i) => v > 0 && (i === 0 || v > r.first[i - 1])), 'Insights: the headline and its lead, then the tiles, then what cost the games: ' + r.first.join(' '));
     eq(r.t0.length, 10, 'ten tiles');
     eq(r.t0.map((x) => x.split(':')[0]).join(','), 'free,safety,count,mate1,stopmate,fork,pin,hidden,backrank,pawns', 'in path order');
     ok(r.t0.every((x) => /^\w+:0:Not started:/.test(x)), 'a new player: empty meters, "Not started": ' + r.t0.join(' '));
@@ -494,7 +496,7 @@ module.exports = function practiceTests(h) {
     eq(r.t1, 'free:5:5 of 5 first try:true', 'the meter moves from the first pack (Free pieces still the coming skill)');
     eq(JSON.stringify(r.sheet.slice(0, 3)), JSON.stringify(['Skill 1 of 10', 'Free pieces', 'A piece with no guard can be taken for free.']), 'the skill\'s card');
     ok(r.sheet.indexOf('Practise 5') >= 0 && r.sheet.indexOf('See the lesson again') >= 0 && r.acts === 2, 'Practise 5 and the lesson: ' + JSON.stringify(r.sheet));
-    eq(JSON.stringify(r.focus), JSON.stringify(['Piece safety · Not started ›', 'skill:safety']), 'the focus card\'s meter, opening the skill\'s card');
+    eq(JSON.stringify(r.focus), JSON.stringify(['family:safety', false, 1]), 'the focus card: one tap target opening its skill\'s sheet, one meter, no skill meter beside it (V4.7)');
     eq(r.normal, false, 'Normal help: none');
   });
 
@@ -512,7 +514,7 @@ module.exports = function practiceTests(h) {
       return JSON.stringify(out); })()`));
     eq(r.shift, '3,3,3', 'three days back');
     eq(r.file, 'nl:help:cc:tester,nl:skill:cc:tester', 'in the progress file');
-    A.click('resetProgress'); A.click('resetProgress');
+    A.click('resetProgress'); A.advance(1500); A.click('resetProgress');
     eq(A.ev('localStorage.getItem("nl:skill:" + playerId())'), null, 'Reset takes nl:skill');
     eq(A.ev('localStorage.getItem("nl:help:" + playerId())'), '"more"', 'and keeps the help level');
   });
