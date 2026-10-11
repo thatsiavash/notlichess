@@ -640,7 +640,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     eq(B.ev('window.__label()'), '', 'no storage: the next card does not teach it again');
   });
 
-  await test('the worked example (S9): a tier-1 player\'s first card of a family opens with hint 1 drawn, the band saying it ("Hint 1 of 2", what the game move runs into) and Hint 2 in the bar, as every band that says "Hint 1 of 2"; Hint gives hint 2; a solve records hint, notes a first look and counts the family; never at tiers 2 and 3, on a relearn card, or with storage unreadable', () => {
+  await test('the worked example (S9): a tier-1 player\'s first card of a family opens with hint 1 drawn, the band saying it ("Hint 1 of 2", or "Hint 1 of 3" where Hint 3 follows, what the game move runs into) and Hint 2 in the bar, as every band that says it; Hint gives hint 2; a solve records hint, notes a first look and counts the family; never at tiers 2 and 3, on a relearn card, or with storage unreadable', () => {
     /* the first card ever has taught the game arrow (S18) */
     const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
@@ -655,9 +655,10 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
         var drawn = hm.rings.concat(hm.arrows).every(function (m) { return (f.opts.rings || []).concat(f.opts.arrows || []).some(function (x) { return x.kind === m.kind && (x.sq === m.sq || (x.from === m.from && x.to === m.to)); }); });
         /* the band says the hint: a rung of its own ladder, fitted to the words the bar leaves */
         var hx = hintText(a);
-        res.open.push([a.hints, a.predraw, drawn, d.row1, !!d.row2 && hx.cands.concat([hx.fall]).indexOf(d.row2) >= 0, hm.danger ? ['See what ' + sanOf(a.pre, a.played) + ' runs into.', 'See what ' + moveWords(a.pre, a.played) + ' runs into.'].indexOf(d.row2) >= 0 : true, d.buttons.map(function (b) { return b.label; }).join(' | ')].join(' / '));
+        /* "Hint 1 of 2", or "Hint 1 of 3" where Hint 3 can follow (F9.2) */
+        res.open.push([a.hints, a.predraw, drawn, d.row1 === CARD_COPY[hintMax(a) === 3 ? 'H4' : 'H1'](), !!d.row2 && hx.cands.concat([hx.fall]).indexOf(d.row2) >= 0, hm.danger ? ['See what ' + sanOf(a.pre, a.played) + ' runs into.', 'See what ' + moveWords(a.pre, a.played) + ' runs into.'].indexOf(d.row2) >= 0 : true, d.buttons.map(function (b) { return b.label; }).join(' | ')].join(' / '));
         /* the band and the button agree at every showing: a miss, See it, Try again */
-        var chk = function (what) { var dd = displayFor(a), hb = dd.buttons.filter(function (b) { return b.act === 'hint'; })[0]; res.agree++; if (dd.row1 === 'Hint 1 of 2' && (!hb || hb.label !== 'Hint 2')) res.disagree.push(it.key + ' ' + what + ': ' + (hb && hb.label)); };
+        var chk = function (what) { var dd = displayFor(a), hb = dd.buttons.filter(function (b) { return b.act === 'hint'; })[0]; res.agree++; if (/^Hint 1 of [23]$/.test(dd.row1) && (!hb || hb.label !== 'Hint 2')) res.disagree.push(it.key + ' ' + what + ': ' + (hb && hb.label)); };
         a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
         if (a.phase === 'tried') { a.reason = 2; chk('miss'); if (a.tried.reply) { seeIt(); a.animMove = null; chk('See it'); } tryAgain(); a.triedHold = false; chk('Try again'); }
       });
@@ -665,7 +666,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
       var it = allMistakes().filter(trainable).filter(function (x) { var a = openCard(x); return a && !a.sol && workedExample(a); })[0], fam = familyOf(patternOf(it.b)).key;
       var a = openCard(it); workedExample(a);
       giveHint();
-      res.hint2 = [a.hints, displayFor(a).row1, hintMarks(a).rings.map(function (x) { return x.kind; }).join(',')].join(' / ');
+      res.hint2 = [a.hints, displayFor(a).row1 === CARD_COPY[hintMax(a) === 3 ? 'H5' : 'H3'](), hintMarks(a).rings.map(function (x) { return x.kind; }).join(',')].join(' / ');
       solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
       res.result = ui.session.results[it.key]; res.note = (ui.session.notes || {})[it.key]; res.count = localStorage.getItem('nl:seen:' + fam);
       /* the family is seen: its next card is a card like any other */
@@ -679,7 +680,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
          hint never repeats one shown, the worked example's own included) */
       store.del('nl:seen:' + fam2);
       a = openCard(it2); workedExample(a); a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain(); a.triedHold = false;
-      res.afterMiss = [a.hints, displayFor(a).row1, displayFor(a).buttons[0].label].join(' / ');
+      res.afterMiss = [a.hints, displayFor(a).row1 === CARD_COPY[hintMax(a) === 3 ? 'H5' : 'H3'](), displayFor(a).buttons[0].label === (hintMax(a) === 3 ? 'Hint 3' : 'No more hints')].join(' / ');
       solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
       res.afterMissResult = ui.session.results[it2.key] + ' / ' + ((ui.session.notes || {})[it2.key] || 'no note');
       /* never at tiers 2 and 3, never on a relearn card */
@@ -704,16 +705,16 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
       localStorage.setItem = si;
       return JSON.stringify(res); })()`));
     ok(r.worked >= 5, 'worked examples ' + r.worked);
-    r.open.forEach((x) => eq(x, '1 / true / true / Hint 1 of 2 / true / true / Hint 2 | Show the answer', 'the worked example opens'));
+    r.open.forEach((x) => eq(x, '1 / true / true / true / true / true / Hint 2 | Show the answer', 'the worked example opens'));
     ok(r.agree > 20, 'showings checked ' + r.agree);
     eq(r.disagree.length, 0, 'the band says "Hint 1 of 2" beside another button: ' + r.disagree.slice(0, 3).join(' | '));
-    eq(r.hint2, '2 / Hint 2 of 2 / hint', 'Hint gives hint 2');
+    eq(r.hint2, '2 / true / hint', 'Hint gives hint 2');
     eq(r.result, 'hint', 'a solve records hint');
     eq(r.note, 'firstlook', 'the summary\'s note');
     eq(r.count, '1', 'the family counted');
     eq(r.next, false, 'the family\'s next card');
     eq(r.shown, 'fail / shown / 1', 'a worked example revealed: Shown, and counted');
-    eq(r.afterMiss, '2 / Hint 2 of 2 / No more hints', 'after a miss the automatic hint is hint 2, never the drawn hint 1 again');
+    eq(r.afterMiss, '2 / true / true', 'after a miss the automatic hint is hint 2, never the drawn hint 1 again (then Hint 3 where it follows, F9.2)');
     eq(r.afterMissResult, 'retry / no note', 'a solve after a miss is found after a miss, not a first look (T10)');
     eq(JSON.stringify(r.tiers), '[false,false]', 'tiers 2 and 3');
     eq(r.relearn, false, 'a relearn card');

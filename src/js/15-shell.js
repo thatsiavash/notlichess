@@ -381,7 +381,7 @@ function exportProgress() {
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
       if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u || k === 'nl:foil:' + u)
+      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u || k === 'nl:foil:' + u || k === 'nl:skill:' + u || k === 'nl:help:' + u)
         out.keys[k] = JSON.parse(localStorage.getItem(k));
     }
   } catch (e) {}
@@ -536,6 +536,13 @@ document.addEventListener('click', function (e) {
     /* reduced motion: the forcing reply plays on this tap alone (S10, S19) */
     case 'theirReply': if (a) theirReply(a, true); break;
     case 'seeWhy': seeWhy(); break;
+    /* a lesson's frames (F9.3); the help level (F9.1); a pack and a lesson
+       from a skill's card, the summary or Today (F9.4, F9.5) */
+    case 'lessonBack': lessonStep(-1); break;
+    case 'lessonFwd': lessonStep(1); break;
+    case 'help': setHelp(k); break;
+    case 'pack': startPack(k); break;
+    case 'lesson': startLesson(k); break;
     /* closing it gives focus back to what opened it: the strip's link, or
        the ••• button whose menu offered it */
     case 'details': if (a && a.phase === 'done') {
@@ -615,6 +622,7 @@ document.addEventListener('click', function (e) {
         store.del(absorbKey());
         store.del(startKey());
         store.del(foilStoreKey());
+        store.del(skillKey());
       } catch (e2) {}
       srsMem = null; srsRevision++; ui.session = null; ui.resetArmed = false; modelDirty();
       notice('Practice history reset. Your games and analysis are kept.');
@@ -721,6 +729,11 @@ document.addEventListener('keydown', function (e) {
     else if (e.key === 'Enter' && !onAct) { e.preventDefault(); pressRight(); }
     /* → plays their reply to a wrong try (See it), as its button does */
     else if (e.key === 'ArrowRight' && a.phase === 'tried') { e.preventDefault(); pressAct('seeIt'); }
+  } else if (a.phase === 'lesson') {
+    /* a lesson's frames (F9.3): ← → step, Space forward, Enter its Next › */
+    if (e.key === 'ArrowLeft') { e.preventDefault(); lessonStep(-1); }
+    else if (e.key === 'ArrowRight' || (e.key === ' ' && (!onAct || e.target.closest('#cbar')))) { e.preventDefault(); lessonStep(1); }
+    else if (e.key === 'Enter' && !onAct) { e.preventDefault(); pressRight(); }
   } else if (a.phase === 'reply' && e.key === 'Enter' && !onAct) {
     /* under reduced motion the forcing reply waits for its button, the
        right-hand one (otherwise the key started the reply and was dropped) */
@@ -802,7 +815,7 @@ document.addEventListener('keydown', function (e) {
        Continue or See why, only Enter is the right-hand button (in the
        story the page's own handler takes Space as a step forward) */
     var sa = ui.session && ui.session.active;
-    if (e.key === ' ' && sa && sa.phase === 'done' && !sa.explore && e.target.closest && e.target.closest('#cbar')) return;
+    if (e.key === ' ' && sa && (sa.phase === 'done' || sa.phase === 'lesson') && !sa.explore && e.target.closest && e.target.closest('#cbar')) return;
     /* once per press: focus keeps its slot, so a repeat would press the
        button that just took this one's place */
     if (!e.repeat) e.target.click();
@@ -962,6 +975,8 @@ document.addEventListener('pointerup', function (e) { pointerFinish(e, false); }
    it. Input first (2.2); the click a mouse swipe may send is not a tap */
 function storySwipe(d) {
   var a = ui.session && ui.session.active;
+  /* a lesson's frames step the same way (F9.3) */
+  if (a && a.phase === 'lesson' && !a.pendingPromo) { pointerState.suppressClick = true; if (!flushStage()) lessonStep(d); return true; }
   if (!a || a.phase !== 'done' || a.explore || a.pendingPromo || !a.view || (a.view.mode !== 's0' && a.view.mode !== 'story')) return false;
   pointerState.suppressClick = true;
   if (flushStage()) return true;
@@ -1044,9 +1059,10 @@ window.__nlTest = {
   card: function () {
     var ss = ui.session, a = ss && ss.active;
     if (!a) return { session: !!ss, finished: !!(ss && ss.finished), idx: ss ? ss.idx : null, n: ss ? ss.keys.length : null };
-    return { idx: ss.idx, n: ss.keys.length, key: a.key, mode: a.foil ? 'foil' : a.game ? 'game' : 'cued', phase: a.phase, best: a.bestUci, played: a.playedUci,
+    return { idx: ss.idx, n: ss.keys.length, key: a.key, mode: a.lesson ? 'lesson' : a.prac ? 'practice' : a.foil ? 'foil' : a.game ? 'game' : 'cued', phase: a.phase, best: a.bestUci || null, played: a.playedUci || null,
              sol: a.sol || null, solIdx: a.solIdx, turn: a.st.w ? 'w' : 'b', fen: stateFen(a.st), misses: a.misses,
-             hints: a.hints, predraw: !!a.predraw, result: a.result || null, pattern: patternOf(a.it.b), view: a.view, tried: a.tried || null, reason: a.reason || 0, settle: a.settle || 0, showWait: !!a.showWait,
+             hints: a.hints, predraw: !!a.predraw, result: a.result || null, pattern: a.prac || a.lesson ? null : patternOf(a.it.b), view: a.view,
+             lesson: a.lesson ? { k: a.lesson.k, i: a.lesson.i } : null, skill: a.prac ? a.it.skill : null, tried: a.tried || null, reason: a.reason || 0, settle: a.settle || 0, showWait: !!a.showWait,
              reply: a.reply ? { uci: a.reply.uci, tele: !!a.reply.tele, played: !!a.reply.played, show: !!a.reply.show } : null,
              story: a.phase === 'done' && a.view && a.view.mode === 'story' ? (function (S) { return { i: a.view.i, n: S.steps.length, g: S.g, cap: S.steps[a.view.i].cap, pre: !!a.view.pre }; })(buildStory(a)) : null,
              lines: a.lines ? { best: a.lines.best.san, refute: a.lines.refute.san, game: a.lines.game.san } : null,
@@ -1097,7 +1113,8 @@ if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
    times, the day records, renamed to their date n days earlier, first and
    last seen, the return day, the day's first opening, the paused set's
    day, the weekly goal's history, the practice log, cue and backup
-   times, the start of practice, when each foil was shown), so whatever was
+   times, the start of practice, when each foil was shown, the practice
+   positions' times and lessons seen), so whatever was
    due in n days is due now. The games keep their dates: they come back from the chess site as
    they are */
 function shiftDays(n) {
@@ -1143,6 +1160,14 @@ function shiftDays(n) {
   /* when each foil was shown (F8.2): 7 days on, it may come again */
   var fo = store.get(foilStoreKey(), null);
   if (fo && fo.s) { Object.keys(fo.s).forEach(function (k) { fo.s[k] = back(fo.s[k]); }); store.set(foilStoreKey(), fo); }
+  /* the practice positions' times and the lessons seen (F9.3, F9.4): the
+     days a skill's mastery spans */
+  var sl = store.get(skillKey(), null);
+  if (sl && typeof sl === 'object') {
+    Object.keys(sl.ls || {}).forEach(function (k) { sl.ls[k] = back(sl.ls[k]); });
+    Object.keys(sl.k || {}).forEach(function (k) { var r = sl.k[k]; r.h = (r.h || []).map(function (x) { return [back(x[0])].concat(x.slice(1)); }); if (r.m) r.m = back(r.m); });
+    store.set(skillKey(), sl);
+  }
   srsMem = null;
   srsRevision++;
   modelDirty();

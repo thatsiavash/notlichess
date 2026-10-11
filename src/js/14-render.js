@@ -422,7 +422,7 @@ function doneTodayHtml() {
   return '<div class="hero">'
     + '<h2>' + ((dayLoad().sessions || 0) > 0 ? 'Today\'s set is done.' : 'Nothing due right now.') + '</h2><p class="why">' + nextDueHtml() + '</p>'
     + (more ? '<div class="acts"><a class="btn-big" data-icon="arrow" data-act="keepGoing">' + nextSetWords(more) + '</a></div>'
-      : '<p class="why">You have practised every position from your games so far.</p>') + weekHtml() + '</div>';
+      : '<p class="why">You have practised every position from your games so far.</p>') + packOfferHtml() + weekHtml() + '</div>';
 }
 function dueWhen(ts) {
   var days = Math.round((ts - Date.now()) / DAY);
@@ -499,7 +499,9 @@ function focusHtml() {
     + '<div class="focus-name">' + esc(fam.name) + '</div></div>'
     + '<div class="plan">' + esc(lineOfStep(familyStep(fam.key), playerTier())) + '</div>'
     + '<span class="fr-bar focus-bar" aria-hidden="true">' + bar + '</span><p class="focus-prog">' + progressWords(agg) + '</p>'
-    + (nDrill ? '<a class="btn-line" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify(spec)) + '">Practise ' + nDrill + '</a>' : '') + '</div>';
+    + (nDrill ? '<a class="btn-line" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify(spec)) + '">Practise ' + nDrill + '</a>' : '')
+    /* at More help, the meter of the skill this focus trains (F9.5) */
+    + focusSkillHtml(fam.key) + '</div>';
 }
 /* a date outside the current year carries its year */
 function gameDateLine(g) {
@@ -569,8 +571,9 @@ function recapScore(ss, keys, tier) {
   var n = 0, first = 0, stars = 0, by = {};
   keys.forEach(function (k) {
     var e = sumOf(ss, k);
-    /* a foil is counted apart (foilWords): it had nothing to find */
-    if (!e || e.c === 'skip' || e.foil) return;
+    /* a foil is counted apart (foilWords): it had nothing to find; a
+       practice position too (pracWords, F9.4) */
+    if (!e || e.c === 'skip' || e.foil || e.prac) return;
     n++; stars += e.s || 0;
     if (e.c === 'first') first++; else by[e.c] = (by[e.c] || 0) + 1;
   });
@@ -699,14 +702,19 @@ function resultGlyph(c) {
    settles its medal; with both, the seal moves and the medal shows as it
    ends */
 function doneHtml(ss) {
+  /* a pack's end (F9.4) is a page of its own */
+  if (ss.spec && ss.spec.type === 'pack') return packDoneHtml(ss);
   var tier = playerTier(), uniq = [], fx = !ss.fxShown, row = '';
   ss.keys.forEach(function (k) { if (uniq.indexOf(k) === -1) uniq.push(k); });
   var learned = '', recap = uniq.map(function (k) {
     var it = itemOf(k), e = sumOf(ss, k);
     /* a card taken out as not a real mistake has left the model: gone from the summary too */
     if (!it || !e || !ss.results[k]) return '';
-    /* a foil: its own glyph and tile (F8.2) */
+    /* a foil: its own glyph and tile (F8.2); a practice position its own
+       tile, scored apart (F9.4); a lesson none (F9.3) */
     if (it.foil) { row += resultGlyph(e.c === 'first' && e.fk === 'playable' ? 'good' : e.c); return foilTileHtml(it, e); }
+    if (it.lesson) return '';
+    if (it.prac) { row += resultGlyph(e.c); return pracTileHtml(it, e); }
     row += resultGlyph(e.c);
     if (e.m === 'learned' && !learned) { learned = learnedHtml(it, e, tier, fx); if (learned) return ''; }
     /* a card that came back for one more try says how that went too (a
@@ -723,7 +731,7 @@ function doneHtml(ss) {
       + (e.c === 'skip' ? '' : tier === 1 ? starsHtml(e.s || 0) : e.p != null ? rungHtml(e.p) : '')
       + (e.f && e.l ? '<span class="tile-check">' + esc(e.l) + '</span>' : '') + '</div>';
   }).join('');
-  var sc = recapScore(ss, uniq, tier), fw = foilWords(ss, uniq), moved = movedWords(ss, uniq), back = ladderWords(ss, uniq), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
+  var sc = recapScore(ss, uniq, tier), fw = foilWords(ss, uniq), pw = pracWords(ss, uniq), moved = movedWords(ss, uniq), back = ladderWords(ss, uniq), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
   var gm = ss.goalMet, week = gm ? weekHtml(fx && !learned, 'Goal met: ' + plur(gm.days, 'day') + ' this week.') : weekHtml();
   /* the headline and its category line, then the foils' line (F8.2:
      counted apart, they had nothing to find); what moved and when the
@@ -736,6 +744,7 @@ function doneHtml(ss) {
     + '<h2 class="done-big" id="recap-h" tabindex="-1">' + sc.head + '</h2>'
     + (sc.then ? '<p class="recap-then">' + sc.then + '</p>' : '')
     + (fw ? '<p class="recap-then recap-foils">' + fw + '</p>' : '')
+    + (pw ? '<p class="recap-then recap-foils">' + pw + '</p>' : '')
     + (moved || back ? '<p class="recap-small">' + (moved ? '<span class="recap-moved">' + moved + '</span>' : '') + (moved && back ? ' ' : '')
       + (back ? '<span class="recap-ladder">' + back + '</span>' : '') + '</p>' : '')
     + '<div class="recap-week' + (gm ? ' met' : '') + '"><div class="kicker">This week</div>' + week + '</div>'
@@ -746,6 +755,8 @@ function doneHtml(ss) {
     /* the first summary with the week's goal met: the app's install offer
        (F11.1), never beside the reminder or the backup card (it waits) */
     + installCardHtml(ss)
+    /* at More help, a pack of the coming skill just above the bar (F9.4) */
+    + packOfferHtml()
     /* the next set is the main way on: a bar that stays at the foot of the
        screen, the next set twice as wide as the way back */
     + '<div class="acts-row recap-acts">'
@@ -778,6 +789,8 @@ function summaryMoments(ss) {
   ss.fxShown = true;
   var learned = Object.keys(ss.sum || {}).some(function (k) { return ss.sum[k].m === 'learned' && !!itemOf(k); });
   if (learned) { reward('learned'); snd('learned'); }
+  /* a skill mastered in a pack (F9.4) dings as a position learned does */
+  else if (ss.packMastered) { reward('mastered'); snd('learned'); learned = true; }
   if (ss.goalMet) { reward('goal'); if (learned) setTimeout(function () { snd('goal'); }, NOTES_AFTER_DING); else snd('goal'); }
   if (!learned && !ss.goalMet) snd('set');
   var c = cueLoad(), put = false;
@@ -1015,6 +1028,8 @@ function cuePaint() {
    every frame (the spoiler rule) without a page; what drawing a frame
    remembers is kept by paintBoard */
 function boardOptsFor(a) {
+  /* a lesson's frame (F9.3): its own board and marks */
+  if (a.phase === 'lesson') return lessonBoard(a);
   var it = a.it, flip = it.g.color === 'black';
   var view, opts = { flip: flip }, evLive = false, slideMs = 0, land = false;
   if (a.phase === 'done' && a.explore) {
@@ -1115,9 +1130,10 @@ function boardOptsFor(a) {
     if ((a.phase === 'guess' || (a.phase === 'reply' && a.reply && a.reply.played)) && a.sel >= 0) opts.dots = legalMoves(a.st).filter(function (m) { return m.from === a.sel; }).map(function (m) { return m.to; });
     opts.shapes = a.shapes;
     /* the game move: its red arrow on a cued card; in game mode nothing
-       before the first graded try, then its faded piece (F8.1) */
+       before the first graded try, then its faded piece (F8.1); a practice
+       position has no game move, so no arrow (F9.4) */
     if (a.phase === 'guess' && a.solIdx === 0 && !a.explore) {
-      if (!a.game) opts.bad = [a.played.from, a.played.to];
+      if (!a.game && a.played) opts.bad = [a.played.from, a.played.to];
       else if (ghostOn(a)) opts.ghosts = gameGhosts(a, a.key + ':gm');
     }
     /* your move slides as you make it; their reply, once See it plays it,
@@ -1176,6 +1192,8 @@ function boardOptsFor(a) {
       var hm = hintMarks(a);
       if (hm.rings.length) opts.rings = (opts.rings || []).concat(hm.rings);
       if (hm.arrows.length) opts.arrows = (opts.arrows || []).concat(hm.arrows);
+      /* Hint 3's red squares (F9.2), each tinted with an inset edge */
+      if (hm.reds.length) opts.tints = (opts.tints || []).concat(hm.reds.map(function (q) { return { sq: q, kind: 'lose' }; }));
     }
   }
   /* "not a move here": the grey outline on a square just tapped. Before an
@@ -1275,14 +1293,20 @@ function boardAria(a, st, o) {
     else if (m.kind === 'reply' && m.solid) out.push('Blue arrow: ' + side(!myPov(a.it)) + '\'s reply, ' + mv(m) + '.');
     else if (m.kind === 'better') out.push('Green arrow: ' + (m.key === 'answer' ? 'the answer, ' : 'the better move, ') + mv(m) + '.');
     else if (m.kind === 'explore') out.push('Gold arrow: ' + (a.tier === 1 ? 'the computer\'s pick, ' : 'Stockfish\'s pick, ') + mv(m) + '.');
+    /* a lesson's arrow (F9.3): a piece's line, as its caption says it */
+    else if (m.kind === 'lesson') out.push('Gold arrow: ' + mv(m) + '.');
   });
   (o.hint != null ? [{ sq: o.hint, kind: 'hint' }] : []).concat(o.rings || []).forEach(function (r) {
     if (r.kind === 'threat' && !ringed[r.sq]) out.push('Red ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' punishes it.');
     else if (r.kind === 'attacked') out.push(r.mate ? 'Red ring: they could checkmate on ' + sqName(r.sq) + '.' : b[r.sq] && isW(b[r.sq]) === myPov(a.it) ? 'Red ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is in danger.' : 'Red ring: ' + sqName(r.sq) + ', where your piece would be in danger.');
     else if (r.kind === 'hint') out.push('Gold ring: move the ' + pw(r.sq) + ' on ' + sqName(r.sq) + '.');
     else if (r.kind === 'block') out.push('Gold ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' blocks their mate.');
-    else if (r.kind === 'target') out.push('Dashed gold ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is there to win.');
+    /* a lesson's ring may stand on a king or an empty square (F9.3) */
+    else if (r.kind === 'target') out.push(b[r.sq] && pType(b[r.sq]) !== 'K' ? 'Dashed gold ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is there to win.' : 'Dashed gold ring: ' + (b[r.sq] ? 'the king on ' : '') + sqName(r.sq) + '.');
   });
+  /* Hint 3's red squares (F9.2), and a lesson's (F9.3) */
+  var reds = (o.tints || []).filter(function (t) { return t.kind === 'lose'; }).map(function (t) { return sqName(t.sq); });
+  if (reds.length) out.push('Red squares: ' + reds.join(', ') + '. A move there loses.');
   /* after a forcing line, S0's tokens stand for what the line changed: it
      is read whole, what you took and what they took (final fixes 3) */
   var took = function (xs, w) { return xs.map(function (x) { return w + PIECE_WORD[pType(x.p)] + ' on ' + sqName(x.sq); }); };
@@ -1595,6 +1619,8 @@ function s0Marks(a, st) {
   var out = { ghosts: [], rings: [], arrows: [], tokens: [] }, c = a.cls, pl = a.played, mm = a.markMove;
   var line = !!(a.sol && a.solIdx > 1);
   if (pl && !(mm && mm.to === pl.to) && (!line || !st.b[pl.to])) out.ghosts = gameGhosts(a, a.key + ':s0');
+  /* a practice position has no game move, nor a threat it ran into (F9.4) */
+  if (a.prac) return out;
   /* a foil's game move was fine (F8.2): its faded piece with no cross, and
      no threat it ran into */
   if (a.foil) { out.ghosts.forEach(function (g) { g.ok = true; }); return out; }
@@ -1865,7 +1891,7 @@ function watchBoardSize() {
    bar as slots, the strip's markup and the live region's words */
 function displayFor(a) {
   var b = bandFor(a), ss = ui.session, buttons = barSlots(a, ss);
-  return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', tag: b.tag || '', sweep: !!b.sweep, pips: b.pips || null,
+  return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', tag: b.tag || '', src: b.src || '', sweep: !!b.sweep, pips: b.pips || null,
            buttons: buttons, strip: stripHtml(a, ss), live: liveWords(a, b), keys: keyLine(a, buttons) };
 }
 /* the desktop key line under the panel (2.0): only the keys that do
@@ -1895,9 +1921,12 @@ function keyLine(a, slots, foc) {
     k.push('Esc: back');
   } else if (a.phase === 'done') {
     if (has('seeWhy')) k.push('→ see why');
+  } else if (a.phase === 'lesson') {
+    /* a lesson's frames (F9.3) step as the story's do */
+    k.push(a.lesson.i > 0 ? '← → step' : '→ step');
   } else {
     if (a.phase === 'tried' && has('seeIt')) k.push('→ see it');
-    if ((a.phase === 'guess' || a.phase === 'tried' || (a.phase === 'checking' && !a.checkSaid)) && a.hints < 2) k.push('? hint');
+    if ((a.phase === 'guess' || a.phase === 'tried' || (a.phase === 'checking' && !a.checkSaid)) && a.hints < hintMax(a)) k.push('? hint');
   }
   if (a.phase === 'checking') k.push('Esc: take back');
   return k.join(' · ');
@@ -2123,8 +2152,11 @@ function bandHtml(a, d) {
    first sight ("Lost vs opponent1", neutral, never coral), or a game-mode
    card's "Review" (slate, F8.1) */
 function tagRowHtml(d) {
-  var t = d.chip || d.tag, cls = !t ? '' : d.chip ? (d.chip === CARD_COPY.T3() ? 'tag-honey' : 'tag-slate') : d.tag === CARD_COPY.G1() ? 'tag-slate' : 'tag-ctx';
-  return '<div class="bd-tags">' + (t ? '<span class="tag ' + cls + '">' + esc(t) + '</span>' : '') + '</div>';
+  /* a practice position's "Practice" in slate, as a review's; a lesson's
+     "Lesson" in honey (F9.3, F9.4) */
+  var t = d.chip || d.tag, cls = !t ? '' : d.chip ? (d.chip === CARD_COPY.T3() ? 'tag-honey' : 'tag-slate') : d.tag === CARD_COPY.G1() || d.tag === CARD_COPY.P1() ? 'tag-slate' : d.tag === CARD_COPY.P2() ? 'tag-honey' : 'tag-ctx';
+  /* a practice position's source line beside its tag (F9.4) */
+  return '<div class="bd-tags">' + (t ? '<span class="tag ' + cls + '">' + esc(t) + '</span>' : '') + (t && !d.chip && d.src ? '<span class="tag-src">' + esc(d.src) + '</span>' : '') + '</div>';
 }
 /* the forcing pips (2.0): a 7 px dot per move of yours, filled for each
    one found, ringed for the one due now; they repeat nothing the band does
@@ -2149,13 +2181,15 @@ function discHtml(a, kind) {
    exploration's own line */
 function liveWords(a, b) {
   if (a.phase === 'done' && a.explore) return xpLive(a, a.explore, a.explore.at);
+  /* a lesson's frame says where it is first (F9.3): "Lesson, step 2 of 3." */
+  if (a.phase === 'lesson') return 'Lesson, step ' + (a.lesson.i + 1) + ' of ' + PSKILL_OF[a.lesson.k].lesson.frames.length + '. ' + b.cap;
   /* a story step says where it is first (S20): "Step 2 of 3, your game." */
   if (a.phase === 'done' && a.view && a.view.mode === 'story') {
     var S = buildStory(a), i = a.view.i;
     /* the move they could have played is not your game (S.could) */
     return 'Step ' + (i + 1) + ' of ' + S.steps.length + ', ' + (S.steps[i].df ? 'before your game move.' : i < S.g ? (S.could && i === S.g - 1 ? 'what they could have played.' : 'your game.') : S.alt ? 'your move.' : 'the better move.') + ' ' + ledgerSay(b.cap);
   }
-  return [LIVE_PREFIX[b.disc] || '', b.row1 || '', ledgerSay(b.row2 || '')].filter(Boolean).join(' ');
+  return [LIVE_PREFIX[b.disc] || '', b.row1 || '', ledgerSay(b.row2 || ''), b.src || ''].filter(Boolean).join(' ');
 }
 /* the action bar as slots, left to right: {act, k, label, cls, off, aria}.
    Answered: See why and Continue (S0), Continue and Play it (the answer
@@ -2166,6 +2200,8 @@ function liveWords(a, b) {
    the answer switched off; a reply playing: Hint and the answer switched
    off, so the bar keeps its place */
 function barSlots(a, ss) {
+  /* a lesson (F9.3): back, and Next › in gold */
+  if (a.phase === 'lesson') return lessonSlots(a);
   if (a.phase === 'done') {
     var last = ss.idx + 1 >= ss.keys.length && !(ss.relearn && ss.relearn.length);
     var cont = { act: 'next', label: last ? 'Finish' : 'Continue', cls: 'btn-big' };
@@ -2193,8 +2229,9 @@ function barSlots(a, ss) {
     if (a.view.mode === 'show' || (a.revealed && a.settle < 2))
       return [{ act: 'next', label: cont.label, cls: 'btn-line' }, replyButton(a) || { act: 'playIt', label: 'Play it', cls: 'btn-big', off: a.showWait || !showDue(a) }];
     /* settled (S0): the story, and Continue in gold; a foil has no story
-       to tell (F8.2), so its place stays empty */
-    if (a.foil) return [{ label: '', cls: 'slot-empty', off: true, empty: true }, cont];
+       to tell (F8.2), nor a practice position (F9.4), so its place stays
+       empty */
+    if (a.foil || a.prac) return [{ label: '', cls: 'slot-empty', off: true, empty: true }, cont];
     return [{ act: 'seeWhy', label: 'See why', cls: 'btn-line' }, cont];
   }
   if (a.phase === 'tried') return triedSlots(a);
@@ -2205,7 +2242,7 @@ function barSlots(a, ss) {
   if (a.phase === 'guess' || (a.phase === 'checking' && !a.checkSaid)) {
     /* Hint is named by the hint it gives next, and switched off when it
        has nothing left to give */
-    return [{ act: 'hint', label: hintLabel(a), cls: 'btn-line', off: a.hints >= 2 },
+    return [{ act: 'hint', label: hintLabel(a), cls: 'btn-line', off: a.hints >= hintMax(a) },
             { act: 'reveal', label: 'Show the answer', cls: 'btn-line' }];
   }
   if (a.phase === 'checking') return [{ act: 'takeBack', label: 'Take back', cls: 'btn-line' }, { act: 'reveal', label: 'Show the answer', cls: 'btn-line', off: true }];
@@ -2220,8 +2257,9 @@ function honeyOf(slots) {
   return (slots || []).filter(function (s) { return !s.empty && !s.off && s.act && /\bbtn-big\b/.test(s.cls || '') && !/nav-off/.test(s.cls || ''); })[0] || null;
 }
 /* Hint is named by the hint it gives next: the worked example (S9), whose
-   band says "Hint 1 of 2" from the start, reads "Hint 2" too */
-function hintLabel(a) { return a.hints >= 2 ? 'No more hints' : a.hints ? 'Hint 2' : 'Hint'; }
+   band says "Hint 1 of 2" from the start, reads "Hint 2" too; where Hint 3
+   can follow (F9.2), "Hint 3" after Hint 2 */
+function hintLabel(a) { return a.hints >= hintMax(a) ? 'No more hints' : a.hints ? 'Hint ' + (a.hints + 1) : 'Hint'; }
 /* "Their reply" (S10, S19): under reduced motion no timer moves a piece,
    so the forcing reply waits for this gold button; null when no reply waits */
 function replyButton(a) {
@@ -2240,7 +2278,7 @@ function triedSlots(a, seen) {
   if (t.kind === 'close') return [{ act: 'reveal', label: 'Show the answer', cls: 'btn-line' }, { act: 'dismissStronger', label: 'Keep looking', cls: 'btn-big' }];
   if (t.kind === 'miss' && t.reply && !seen) left = { act: 'seeIt', label: 'See it', cls: 'btn-line' };
   else if (t.kind === 'unchecked' || a.misses >= 3) left = { act: 'reveal', label: 'Show the answer', cls: 'btn-line' };
-  else if (a.hints >= 2) left = { act: 'hint', label: 'No more hints', cls: 'btn-line', off: true };
+  else if (a.hints >= hintMax(a)) left = { act: 'hint', label: 'No more hints', cls: 'btn-line', off: true };
   else left = { act: 'hint', label: hintLabel(a), cls: 'btn-line' };
   return [left, { act: 'tryAgain', label: 'Try again', cls: 'btn-big' }];
 }
@@ -2294,9 +2332,11 @@ function altNames(a) {
 }
 /* the session bar: end, progress, more */
 function sessionBarHtml(ss, a) {
-  var n = Math.min(ss.idx + 1, ss.keys.length);
+  /* a lesson is no position (F9.3): the count leaves it out */
+  var pos = function (k) { return !isLessonKey(k); }, n = ss.keys.slice(0, Math.min(ss.idx + 1, ss.keys.length)).filter(pos).length, all = ss.keys.filter(pos).length;
+  var where = isLessonKey(ss.keys[ss.idx]) && !ss.finished ? 'A lesson, before position ' + Math.min(n + 1, all) + ' of ' + all : 'Position ' + n + ' of ' + all;
   return '<a class="sb-end" data-act="endSession" aria-label="End the session">×</a>' + dotsHtml(ss)
-    + '<span class="sr-only">Position ' + n + ' of ' + ss.keys.length + relearnWords(ss) + '</span>'
+    + '<span class="sr-only">' + where + relearnWords(ss) + '</span>'
     + (a ? '<span class="card-menu"><a data-act="menu" aria-label="More" aria-expanded="' + !!a.menuOpen + '">•••</a>' + (a.menuOpen ? menuHtml(a) : '') + '</span>' : '');
 }
 /* the cards queued to come back, for the screen reader (once they come,
@@ -2313,7 +2353,8 @@ function dotsHtml(ss) {
     var r = relearn ? ss.results[k + '#r'] : ss.results[k];
     /* progress only: results are said in words on the recap */
     var cls = i === ss.idx && !ss.finished ? 'on' : (r ? 'done' : '');
-    out += '<span class="dot ' + cls + (relearn ? ' relearn' : '') + '"></span>';
+    /* a practice position's segment is hollow, a lesson's a short one (F9.3, F9.4) */
+    out += '<span class="dot ' + cls + (relearn ? ' relearn' : '') + (isPracKey(k) ? ' prac' : isLessonKey(k) ? ' lesson' : '') + '"></span>';
   });
   /* one more try still to come: its segment joins the bar as the card is
      queued, marked as a card coming back (S16, U7), so the bar growing
@@ -2322,17 +2363,19 @@ function dotsHtml(ss) {
   return '<div class="dots" aria-hidden="true">' + out + '</div>';
 }
 function menuHtml(a) {
-  var g = a.it.g;
+  var g = a.it.g, own = !a.prac && !a.lesson;
   return '<div class="menu-pop">'
-    + '<a href="' + gameHref(g.id, g.color, a.it.b.p) + '">Open the game ↗</a>'
-    + '<a href="' + analysisHref(a.explore ? xpCur(a.explore).fen : stateFen(a.pre), g.color) + '">Analyse on ' + (isCC() ? 'chess.com' : 'lichess') + ' ↗</a>'
-    + '<span class="sep"></span>'
+    /* a practice position is no game of the player's (F9.4), a lesson's
+       board none at all (F9.3) */
+    + (own ? '<a href="' + gameHref(g.id, g.color, a.it.b.p) + '">Open the game ↗</a>' : '')
+    + (a.lesson ? '' : '<a href="' + analysisHref(a.explore ? xpCur(a.explore).fen : stateFen(a.pre), g.color) + '">Analyse on ' + (isCC() ? 'chess.com' : 'lichess') + ' ↗</a>'
+    + '<span class="sep"></span>')
     /* a foil claims no mistake (F8.2): nothing to dispute */
-    + (a.foil ? '' : '<a data-act="dispute" data-k="misclick">Not a real mistake: a misclick or premove</a>'
+    + (a.foil || !own ? '' : '<a data-act="dispute" data-k="misclick">Not a real mistake: a misclick or premove</a>'
       + '<a data-act="dispute" data-k="decided">Not a real mistake: the game was already decided</a>'
       + '<a data-act="dispute" data-k="engine">Not a real mistake: I think ' + (a.tier === 1 ? 'the computer' : 'Stockfish') + ' is wrong</a>'
       + '<span class="sep"></span>')
-    + (a.phase !== 'done' ? '<a data-act="skip">Skip this one</a>' : '<a data-act="details">Details</a>')
+    + (a.phase !== 'done' ? '<a data-act="skip">' + (a.lesson ? 'Skip the lesson' : 'Skip this one') + '</a>' : '<a data-act="details">Details</a>')
     /* exploring, on an answered card while the engine works (S14, S11);
        not while a shown line's reply is on its way, when a tap is input to
        the reply (S10) */
@@ -2491,6 +2534,8 @@ function detailsBest(a, s, best) {
 }
 function detailsHtml() {
   var a = ui.session && ui.session.active;
+  /* a practice position's own Details (F9.4): no game, no lines */
+  if (a && a.prac && a.phase === 'done') return pracDetailsHtml(a);
   if (!a || a.phase !== 'done' || !a.lines) return '';
   var it = a.it, b = it.b, s = a.cls.sentences, best = a.lines.best.san[0] || '', t = patternOf(b), info = patternInfo(t);
   var row = function (cls, text) { return '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
@@ -2727,8 +2772,11 @@ function renderInsights() {
   if (!box || !cfg.user) return;
   if (ui.view !== 'insights' && box.innerHTML) return;       /* rendered on demand */
   var r = insightReport(), n = analysisNumbers(), tier = playerTier();
+  /* at More help Insights opens with the ten skill tiles (F9.5), from the
+     first day: practice packs need no games read */
+  var tiles = tier === 1 ? skillTilesHtml() : '';
   if (!data.games.length) {
-    box.innerHTML = '<div class="ins">' + (data.sections.games === 'loading' ? '<p class="loading">Reading your games…</p>'
+    box.innerHTML = '<div class="ins">' + tiles + (data.sections.games === 'loading' ? '<p class="loading">Reading your games…</p>'
       : '<p class="sec">Insights appear once there are rated games to read. See Today for what to do next.</p>') + '</div>';
     return;
   }
@@ -2741,7 +2789,7 @@ function renderInsights() {
   var win = partial ? realGames() : coveredGames(), cg = win.map(function (g) { return g.ts; });
   var kinds = trackedPerfs().filter(function (p) { return win.some(function (g) { return g.perf === p; }); }).map(perfLabel).join(' and ');
   var games = (kinds ? kinds + ' ' : '') + 'game' + ((partial ? total : r.games) === 1 ? '' : 's');
-  var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + total + ' ' + games + ' so far' : r.games + ' ' + games)
+  var h = '<div class="ins">' + tiles + '<div class="kicker">Based on ' + (partial ? r.games + ' of ' + total + ' ' + games + ' so far' : r.games + ' ' + games)
     + (cg.length ? ', ' + dateSpan(Math.min.apply(null, cg), Math.max.apply(null, cg)) : '') + '</div>';
   if (!r.families.length) {
     h += '<h2>Your report appears as ' + (tier === 1 ? 'the computer reads' : 'Stockfish reads') + ' your games.</h2><p class="lead">' + read + ' of ' + total + ' games checked. The first patterns show up after a handful of games; the full picture at about ' + INSIGHT_MIN_GAMES + '.</p></div>';
@@ -2985,6 +3033,8 @@ function sheetHtml(kind) {
   if (parts[0] === 'settings') return settingsHtml();
   if (parts[0] === 'details') return detailsHtml();
   if (parts[0] === 'count') return countHtml();
+  /* a skill's card (F9.5) */
+  if (parts[0] === 'skill') return skillSheetHtml(k);
   if (parts[0] === 'family') {
     var fam = FAMILIES.filter(function (f) { return f.key === k; })[0];
     var agg = insightReport().families.filter(function (a) { return a.fam.key === k; })[0];
@@ -3060,6 +3110,11 @@ function settingsHtml() {
   return '<h3>Settings</h3>'
     + '<div class="set-block"><span class="kicker">Player</span><p class="set-who">' + esc(cfg.user) + ' on ' + (isCC() ? 'chess.com' : 'lichess') + '</p>'
       + '<a class="btn-line" data-act="logout" data-k="confirm">' + (ui.logoutArmed ? 'Tap again to switch' : 'Switch player') + '</a></div>'
+    /* the help level (F9.1): set from the rating until one is picked */
+    + '<div class="set-block"><span class="kicker">Help</span><div class="chips">'
+      + HELP.map(function (h) { return chip('help', h, HELP_WORD[h], helpLevel() === h); }).join('') + '</div>'
+      + '<p>More help: moves in words, a hint after a miss, a third hint. Less help: notation, no automatic hints.</p>'
+      + (helpChosen() ? '' : '<p class="dim">Set from your rating until you pick one.</p>') + '</div>'
     + '<div class="set-block"><span class="kicker">Games to learn from</span><p>Which of your rated games to read. Most players pick the one or two they play most.</p><div class="chips">'
       + ['rapid', 'blitz', 'bullet', 'classical'].filter(function (p) { return !isCC() || p !== 'classical'; }).map(function (p) {
         /* one text: a chip is a flex box, and the space before a span would go */

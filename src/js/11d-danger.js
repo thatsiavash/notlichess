@@ -281,8 +281,9 @@ function ensureDanger(it, prio) {
    move left it standing)} or null, saves ['Q'], step, check (the player in
    check on the card's position); null while not read */
 function dangerView(a) {
-  /* a foil has no mistake to read (F8.2): its hint reads its board (foilDanger) */
-  if (a.foil) return null;
+  /* a foil has no mistake to read (F8.2): its hint reads its board
+     (foilDanger); nor has a practice position or a lesson (pracDanger) */
+  if (a.foil || a.prac || a.lesson) return null;
   var d = dangerOf(a.it.b) || dangerNow(a.it);
   if (!d) return null;
   var b = a.pre.b, th = d.th, nst = th ? dzNullState(a.pre) : null, m = th ? uciToMove(nst, th[0]) : null;

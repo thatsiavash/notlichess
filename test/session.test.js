@@ -89,7 +89,8 @@ const INS = `function insAt(tier) {
   el = el0;
   return box.innerHTML;
 }
-function insText(h) { return String(h).replace(/<[^>]+>/g, '\\n').split('\\n').map(function (x) { return x.replace(/\\s+/g, ' ').trim(); }).filter(Boolean); }
+/* (the skill tiles that open Insights at More help, F9.5, are read apart: tilesOf) */
+function insText(h) { return String(h).replace(/<section class="sk-tiles"[\\s\\S]*?<\\/section>/, '').replace(/<[^>]+>/g, '\\n').split('\\n').map(function (x) { return x.replace(/\\s+/g, ' ').trim(); }).filter(Boolean); }
 function insRows(h) {
   var also = false;
   return String(h).split(/(?=<a class="fam-row)|(?=<h3 class="ins-h ins-also">)/).map(function (p) {
@@ -966,7 +967,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.out.length, 0, 'leaks: ' + r.out.slice(0, 2).join(' | '));
   });
 
-  await test('hints never name the answer, in words or marks: every card and tier, hints 1 and 2, on the card and inside a forcing line; a prize ringed is a piece the line wins', () => {
+  await test('hints never name the answer, in words or marks: every card and tier, hints 1 and 2 (and 3 where it follows, F9.2), on the card and inside a forcing line; a prize ringed is a piece the line wins', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       ${PLAIN}
@@ -1057,6 +1058,14 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         var sqs = [];
         hm.rings.forEach(function (m) { sqs.push(m.sq); });
         hm.arrows.forEach(function (m) { sqs.push(m.from, m.to); });
+        /* Hint 3 (F9.2): the circled piece and the red squares, never the answer's own square */
+        if (a.hints >= 3) {
+          n.ring3 = (n.ring3 || 0) + 1;
+          var h3 = hint3Of(a), tints = (f.opts.tints || []).filter(function (t) { return t.kind === 'lose'; }).map(function (t) { return t.sq; });
+          if (!h3 || a.tier !== 1 || !same(hm.rings, [{ sq: due.from, kind: 'hint' }]) || hm.arrows.length || !same(tints, hm.reds) || hm.reds.indexOf(due.to) >= 0 || !hm.reds.length) out.push(what + ': hint 3 draws ' + JSON.stringify([hm, tints]));
+          if (d.row1 !== 'Hint 3 of 3' || hint3Words(h3 || {}).indexOf(d.row2) < 0) out.push(what + ': hint 3 reads ' + d.row1 + ' / ' + d.row2);
+          return;
+        }
         if (a.hints >= 2) {
           n.ring2++;
           if (!same(hm.rings, [{ sq: due.from, kind: 'hint' }]) || hm.arrows.length) out.push(what + ': hint 2 draws ' + JSON.stringify(hm));
@@ -1064,11 +1073,11 @@ const SIM = `function simRun(seed, days, plan, noRule) {
              of danger (content's review) */
           var safe = !(a.sol && a.solIdx > 0) && (dangerView(a) || { attacked: [] }).attacked.some(function (x) { return x.sq === due.from; });
           if (safe) { var af2 = cloneState(a.st); applyMove(af2, due); safe = !(dzSee(af2.b, due.to, !myPov(a.it)) > 0); }
-          if (d.row1 !== 'Hint 2 of 2' || d.row2 !== (safe ? 'Find a safe square.' : 'Move the circled piece.')) out.push(what + ': hint 2 reads ' + d.row1 + ' / ' + d.row2);
+          if (d.row1 !== (hintMax(a) === 3 ? 'Hint 2 of 3' : 'Hint 2 of 2') || d.row2 !== (safe ? 'Find a safe square.' : 'Move the circled piece.')) out.push(what + ': hint 2 reads ' + d.row1 + ' / ' + d.row2);
           n.safe = (n.safe || 0) + (safe ? 1 : 0);
           return;
         }
-        if (d.row1 !== 'Hint 1 of 2') out.push(what + ': hint 1 reads ' + d.row1);
+        if (d.row1 !== (hintMax(a) === 3 ? 'Hint 1 of 3' : 'Hint 1 of 2')) out.push(what + ': hint 1 reads ' + d.row1);
         /* hint 1 never touches the answer's to-square (both arrow ends), nor its from-square but for the
            danger's red ring on the player's own attacked piece and its attackers' arrows into it (F1.1:
            what is attacked is the lesson, where it goes is the answer) */
@@ -1138,9 +1147,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         playerTier = function () { return tier; };
         allMistakes().filter(trainable).forEach(function (it) {
           var at = 'tier ' + tier + ' ' + it.key;
-          [1, 2].forEach(function (h) {
+          [1, 2, 3].forEach(function (h) {
             var a = openCard(it);
-            if (!a) return;
+            if (!a || (h === 3 && hintMax(a) < 3)) return;
             a.hints = h; a.hintAfter = true; frame(at + ' hint ' + h, a);
             /* inside a forcing line, at each of your moves after the first */
             for (var i = 2; a.sol && i < a.sol.length; i += 2) {
@@ -1224,7 +1233,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       n.doctored = fx;
       return JSON.stringify({ out: out, n: n }); })()`));
     ok(r.n.doctored.line >= 5 && r.n.doctored.word >= 10 && r.n.doctored.named >= 20 && r.n.doctored.mate >= 20 && r.n.doctored.fork >= 5, JSON.stringify(r.n.doctored));
-    ok(r.n.frames > 600 && r.n.danger >= 15 && r.n.harmless >= 3 && r.n.look >= 10 && r.n.prize >= 6 && r.n.words >= 20 && r.n.mid > 30 && r.n.ring2 > 300 && r.n.plain2 > 4 * r.n.frames
+    ok(r.n.frames > 600 && r.n.danger >= 15 && r.n.harmless >= 3 && r.n.look >= 10 && r.n.prize >= 6 && r.n.words >= 20 && r.n.mid > 30 && r.n.ring2 > 300 && r.n.ring3 >= 10 && r.n.plain2 > 4 * r.n.frames
       && r.n.dz > 40 && r.n['dz attacked'] >= 15 && r.n['dz made'] >= 15 && r.n['dz madeMate'] >= 6 && r.n['dz loose'] >= 3 && r.n['dz lost'] >= 10 && r.n['dz check'] >= 3 && r.n.safe >= 20, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
   });
@@ -1537,10 +1546,12 @@ const SIM = `function simRun(seed, days, plan, noRule) {
              move of a forcing line; T4 beside each */
           var hintBand = function (what, a) {
             d = band(what, a);
-            if (d.kind !== 'hint' || !/^Hint [12] of 2$/.test(d.row1) || !d.row2) out.push(what + ' reads ' + d.kind + ': ' + d.row1 + ' / ' + d.row2);
+            if (d.kind !== 'hint' || !/^Hint ([12] of 2|[123] of 3)$/.test(d.row1) || !d.row2) out.push(what + ' reads ' + d.kind + ': ' + d.row1 + ' / ' + d.row2);
             band(what + ', T4', note(a, 'T4')); a.note = null;
           };
           a.hints = 1; hintBand(at + ' hint 1', a); a.hints = 2; hintBand(at + ' hint 2', a);
+          /* Hint 3 where it follows (F9.2) */
+          if (hintMax(a) === 3) { a.hints = 3; hintBand(at + ' hint 3', a); }
           a = openCard(it); a.misses = 1; gradeMove(uciToMove(a.st, a.playedUci));
           if (a.phase === 'tried') { tryAgain(); if (a.hints) hintBand(at + ' the automatic hint after Try again', a); }
           a = openCard(it); gradeMove(uciToMove(a.st, a.playedUci));
@@ -3595,6 +3606,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     A.ev(`store.set('nl:firstSeen:' + playerId(), Date.now()); 1`);
     ok(/installApp/.test(A.ev('installSettingsHtml()')), 'the first day too');
   });
+
+  /* ── beginner teaching (F9.1 to F9.5): its tests in test/practice.js ── */
+  for (const t of require('./practice')({ boot, eq, ok, tick })) await test(t[0], t[1]);
 
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'sessions and bookkeeping: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));

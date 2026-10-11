@@ -114,8 +114,10 @@ var boardSeq = 0, boardFxSeen = {};
 /* the marks over the board: one colour and one shape per
    meaning, never a second one. Arrows by kind: your game move (solid red),
    their threat (dashed red), their expected reply in a forcing line (dashed
-   blue-grey), the better move (green), Stockfish's pick (gold) */
+   blue-grey), the better move (green), Stockfish's pick (gold), a lesson's
+   line of attack (gold, thinner: a lesson has no Stockfish, F9.3) */
 var MARK_ARROW = {
+  lesson: { color: 'rgba(182,130,53,.95)', w: 5, cls: 'lesson-arrow' },
   game: { color: 'rgba(201,80,60,.9)', w: 6, cls: 'bad-arrow' },
   better: { color: 'rgba(61,139,58,.92)', w: 6, cls: 'good-arrow' },
   explore: { color: 'rgba(182,130,53,.85)', w: 6, cls: 'ghost-arrow' },
@@ -127,7 +129,9 @@ var MARK_ARROW = {
    differs from the found one by shape and not only by colour) */
 var MARK_TINT = {
   good: 'rgba(61,150,66,.42)', bad: 'rgba(214,70,52,.42)', close: 'rgba(125,147,171,.34)',
-  checking: 'rgba(160,150,130,.30)', unchecked: 'rgba(120,114,104,.40)', info: 'rgba(120,114,104,.40)'
+  checking: 'rgba(160,150,130,.30)', unchecked: 'rgba(120,114,104,.40)', info: 'rgba(120,114,104,.40)',
+  /* Hint 3's red squares (F9.2): a lighter red, with an inset edge */
+  lose: 'rgba(214,70,52,.34)'
 };
 /* the answer shown (info) is a slate disc with an eye (F3.1), so the
    better move's badge says "found" (a tick) or "shown" (an eye) by shape,
@@ -252,7 +256,10 @@ function boardSvg(st, opts) {
       /* a verdict's tint takes the place of the last-move tint on its square */
       if (tintOf[sq])
         tints += '<rect class="tint tint-' + tintOf[sq] + '" x="' + x + '" y="' + y + '" width="' + SZ + '" height="' + SZ
-          + '" fill="' + (MARK_TINT[tintOf[sq]] || MARK_TINT.info) + '" style="pointer-events:none"/>';
+          + '" fill="' + (MARK_TINT[tintOf[sq]] || MARK_TINT.info) + '" style="pointer-events:none"/>'
+          /* a red square (F9.2) reads as a square marked, not a move's tint */
+          + (tintOf[sq] === 'lose' ? '<rect class="tint-edge" x="' + (x + 2) + '" y="' + (y + 2) + '" width="' + (SZ - 4) + '" height="' + (SZ - 4)
+            + '" fill="none" stroke="#d6452f" stroke-width="2.5" style="pointer-events:none"/>' : '');
       else if (opts.mark && opts.mark.indexOf(sq) >= 0)
         tints += '<rect x="' + x + '" y="' + y + '" width="' + SZ + '" height="' + SZ
           + '" fill="' + HL_MOVE + '" style="pointer-events:none"/>';

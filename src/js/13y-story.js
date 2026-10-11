@@ -98,7 +98,18 @@ var CARD_COPY = {
   O4: function (m) { return m + ' in your game kept more.'; },
   O5: function (m) { return 'Your game move ' + m + ' was fine here.'; },
   O6: function (m) { return 'You played ' + m + ' in your game too.'; },
-  O7: function () { return 'No danger here.'; }
+  O7: function () { return 'No danger here.'; },
+  /* practice (F9.3, F9.4): the tag a practice position wears, a lesson's
+     tag, the two source lines, a lesson's own position's end; where Hint 3
+     can follow (F9.2), the hint rows count to three */
+  P1: function () { return 'Practice'; },
+  P2: function () { return 'Lesson'; },
+  P3: function () { return 'Lesson position'; },
+  P4: function () { return 'Another player\'s game'; },
+  P5: function () { return 'Now find it in your games.'; },
+  H4: function () { return 'Hint 1 of 3'; },
+  H5: function () { return 'Hint 2 of 3'; },
+  H6: function () { return 'Hint 3 of 3'; }
 };
 /* the first game-mode card's notice, once (F8.1) */
 var GAME_NOTE = 'Reviews now look like your game: no arrow, and not every position hides a mistake.';
@@ -189,7 +200,7 @@ var LINE_BUDGET = 13;
 function wordsIn(s) { return oneUnit(s).split(/\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w); }).length; }
 function barWords(slots) { return (slots || []).reduce(function (n, b) { return n + wordsIn(b.label); }, 0); }
 /* the tag row's context line counts too (F4.2) */
-function bandWords(b, slots) { return wordsIn(b.row1) + wordsIn(b.row2) + wordsIn(b.chip) + wordsIn(b.tag) + wordsIn(b.cap) + barWords(slots); }
+function bandWords(b, slots) { return wordsIn(b.row1) + wordsIn(b.row2) + wordsIn(b.chip) + wordsIn(b.tag) + wordsIn(b.src) + wordsIn(b.cap) + barWords(slots); }
 /* a verdict as the band says it: {kind, row1, row2, html},
    with row 2's ladder kept (cands, fall) so the band can fit it to the
    words left beside the bar */
@@ -568,13 +579,21 @@ function triedVerdict(a, t, why, again) {
    names the answer due now */
 function hintText(a) {
   var marks = hintMarks(a), due = dueMove(a), dueSan = sanOf(a.st, due), cands, fall, row = null;
-  var r = { row1: CARD_COPY[a.hints >= 2 ? 'H3' : 'H1'](), marks: marks };
+  /* where Hint 3 can follow (F9.2), "Hint 1 of 3", "Hint 2 of 3", "Hint 3 of 3" */
+  var r = { row1: CARD_COPY[hintMax(a) === 3 ? (a.hints >= 3 ? 'H6' : a.hints >= 2 ? 'H5' : 'H4') : a.hints >= 2 ? 'H3' : 'H1'](), marks: marks };
   /* game mode (F8.1), on the card's first move: hint 1 the step's row-2
      form (F2.3), never a computed fact, which would name the answer or the
      game move (both tries' danger in its place, F1.3); hint 2 the danger on
      the board (hintMarks' dz, F1.1's words), else the circled piece */
-  var gm = a.game && !(a.sol && a.solIdx > 0);
-  if (gm && a.hints >= 2) { cands = marks.dz ? dangerWords(a, marks.dz) : (safeSquare(a, due) ? [CARD_COPY.H3c()] : []).concat([CARD_COPY.H3b()]); fall = ''; }
+  var gm = a.game && !(a.sol && a.solIdx > 0), sk = a.prac ? PSKILL_OF[a.it.skill] : null;
+  /* Hint 3 (F9.2): what the red squares do, "Red squares lose your knight." */
+  if (a.hints >= 3 && marks.reds.length) { cands = hint3Words(hint3Of(a)); fall = ''; }
+  /* a practice position (F9.4): hint 1 its board's danger where that is
+     its skill (pracDanger), else the skill's question; hint 2 the circled
+     piece, "Find a safe square." where the answer takes it out of danger */
+  else if (sk && a.hints >= 2) { cands = (pracSafeSq(a) ? [CARD_COPY.H3c()] : []).concat([CARD_COPY.H3b()]); fall = ''; }
+  else if (sk) { cands = marks.dz ? dangerWords(a, marks.dz) : [sk.ask]; fall = sk.ask; }
+  else if (gm && a.hints >= 2) { cands = marks.dz ? dangerWords(a, marks.dz) : (safeSquare(a, due) ? [CARD_COPY.H3c()] : []).concat([CARD_COPY.H3b()]); fall = ''; }
   else if (gm) { row = checkRow(a); cands = marks.rep ? repeatedWords(a, marks.rep) : row.slice(0, 1); fall = row[0]; }
   /* hint 2 on a piece hint 1 rang as in danger: where to take it (content's
      review), when the answer takes it out of danger */
@@ -612,7 +631,7 @@ function hintText(a) {
   }
   /* the guard: no form names the answer due now, in SAN or in words; in
      game mode, nor the game move before it shows (a foil's, never) */
-  var dueW = moveWords(a.st, due), hide = a.game && !ghostOn(a), gs = [sanOf(a.pre, a.played), capSan(a.pre, a.played)], gw = moveWords(a.pre, a.played);
+  var dueW = moveWords(a.st, due), hide = a.game && !ghostOn(a), gs = a.played ? [sanOf(a.pre, a.played), capSan(a.pre, a.played)] : [], gw = moveWords(a.pre, a.played);
   var names = function (x) {
     var ws = String(x || '').split(/[\s.,:]+/), low = String(x || '').toLowerCase();
     return ws.indexOf(dueSan) >= 0 || (!!dueW && low.indexOf(dueW) >= 0) || (hide && (ws.indexOf(gs[0]) >= 0 || ws.indexOf(gs[1]) >= 0 || (!!gw && low.indexOf(gw) >= 0)));
@@ -630,7 +649,7 @@ function hintText(a) {
    after it. Every tier alike but their mate (tier 1 says the square) and
    the game move (in words at tier 1, "that move" where they do not fit) */
 function dangerWords(a, dz) {
-  var P = function (p) { return PIECE_WORD[pType(p)]; }, t1 = inWords(a), gs = t1 ? [upFirst(moveWords(a.pre, a.played)), 'That move'] : [capSan(a.pre, a.played)];
+  var P = function (p) { return PIECE_WORD[pType(p)]; }, t1 = inWords(a), gs = !a.played ? [] : t1 ? [upFirst(moveWords(a.pre, a.played)), 'That move'] : [capSan(a.pre, a.played)];
   /* (each form's last rung fits five words: game mode's hint 2, beside "No
      more hints", F8.1) */
   if (dz.kind === 'check') return ['In check: move, block or take?', 'You are in check.'];
@@ -713,6 +732,9 @@ function familyStep(f) { return FAMILY_STEP[f] || 5; }
    safety check */
 function cardStep(a) {
   if (a.foil) return foilDanger(a).kind === 'none' ? 3 : 1;
+  /* a practice position's by its skill (F9.4): their move for a mate or a
+     pawn to stop, the safety check for a piece to save, else your chances */
+  if (a.prac) return { stopmate: 1, pawns: 1, safety: 3 }[a.it.skill] || 2;
   var v = dangerView(a);
   return (v && v.step) || familyStep(familyOf(patternOf(a.it.b)).key);
 }
@@ -820,7 +842,9 @@ function bandFit(a, b) {
     /* a step chip (F1.2) or the context line (F4.2) goes first when the
        frame has no room for it: the task and the reason are never cut for it */
     if (b.stepChip && wordsIn(b.row2) > room) { b.chip = ''; room = rowRoom(a, b); }
-    if (b.tag && wordsIn(b.row2) > room) { b.tag = ''; room = rowRoom(a, b); }
+    /* a practice position's source line goes before its tag (F9.4) */
+    if (b.src && wordsIn(b.row2) > room) { b.src = ''; room = rowRoom(a, b); }
+    if (b.tag && wordsIn(b.row2) > room) { b.tag = ''; b.src = ''; room = rowRoom(a, b); }
     if (wordsIn(b.row2) > room) b.row2 = fitRow(b.cands, { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
     /* a ladder step that would say something untrue (R4's found form) */
     if (b.never && b.never.indexOf(b.row2) >= 0) b.row2 = fitRow([], { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
@@ -1465,7 +1489,7 @@ function stripWords(a) {
 function rowRoom(a, b) {
   var ss = ui.session, slots = ss ? barSlots(a, ss) : [], bw = barWords(slots);
   if (ss && a.phase === 'tried' && a.tried && a.tried.kind === 'miss') bw = Math.max(barWords(triedSlots(a, false)), barWords(triedSlots(a, true)));
-  return (b.budget || WORD_BUDGET) - bandWords({ row1: b.row1, chip: b.chip, tag: b.tag }, []) - bw - stripWords(a);
+  return (b.budget || WORD_BUDGET) - bandWords({ row1: b.row1, chip: b.chip, tag: b.tag, src: b.src }, []) - bw - stripWords(a);
 }
 /* what the card is showing, so a word or an outline meant for one state
    never outlives it: a move (each one counted, so coming back to the same
@@ -1477,9 +1501,12 @@ function cardStateKey(a) {
 }
 function bandOf(a) {
   var t = a.tried, v = a.verdict;
+  /* a lesson's frame (F9.3): its caption and the "Lesson" tag */
+  if (a.phase === 'lesson') return lessonBand(a);
   /* every game-mode card wears the neutral "Review" tag until its answer
-     (F8.1), where its frame has room: a step chip goes before it */
-  var tag = a.game ? CARD_COPY.G1() : '';
+     (F8.1), a practice position "Practice" (F9.4), where its frame has
+     room: a step chip goes before it */
+  var tag = a.game ? CARD_COPY.G1() : a.prac ? CARD_COPY.P1() : '';
   /* exploring (S14): what it is, in two fixed rows; Stockfish's sentence
      is in the panel */
   if (a.phase === 'done' && a.explore) return { disc: 'king', kind: 'explore', row1: CARD_COPY.X1(), row2: CARD_COPY.X2(a) };
@@ -1506,6 +1533,17 @@ function bandOf(a) {
       var fend = a.misses || a.revealed ? CARD_COPY.O5(fm) : !fok ? CARD_COPY.O4(fm) : a.foilGame ? CARD_COPY.O6(fm) : CARD_COPY.O3(fm);
       if (a.revealed) return { disc: 'info', kind: 'info', row1: answerRow(a, said), cands: said ? [fend] : [CARD_COPY.V2()], fall: '' };
       return { disc: fok ? 'good' : 'close', kind: fok ? 'good' : 'close', row1: fok ? CARD_COPY.O1() : CARD_COPY.O2(), cands: said ? [fend] : [], fall: '' };
+    }
+    /* a practice position (F9.4): "Found it" for every accepted move (each
+       holds the skill's claim), else the answer shown; once settled, what
+       the move does (pracSaid: "That wins their bishop."), a lesson's own
+       position "Now find it in your games." Its tag stays with the task:
+       answered, the tag row is the strip's place on a phone, and Details
+       says where it is from */
+    if (a.prac) {
+      var ps = said ? pracSaid(a) : '';
+      if (a.revealed) return { disc: 'info', kind: 'info', row1: answerRow(a, said), cands: said ? (ps ? [ps] : []) : [CARD_COPY.V2()], fall: '' };
+      return { disc: 'good', kind: 'good', row1: a.result === 'first' ? CARD_COPY.R1() : CARD_COPY.R2(), cands: ps ? [ps] : [], fall: '' };
     }
     var r4 = said ? r4Of(a) : null;
     /* settled, a reveal names the card's own answer, the move R4 is about
@@ -1557,6 +1595,10 @@ function answerRow(a, settled) {
      that says a mistake is here; once its game move shows (a graded try),
      the task names it beside its faded piece (a foil's never shows) */
   if (a.game) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: [ghostOn(a) ? CARD_COPY.T2(a) : gameRow(a)], fall: '', tag: tag };
+  /* a practice position (F9.4): your turn, and its skill's task ("Find the
+     free piece."); no game move to name. Before its first move, its source
+     beside the tag ("Lesson position", "Another player's game") */
+  if (a.prac) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: [PSKILL_OF[a.it.skill].task], fall: '', tag: tag, src: pracSrcOn(a) ? pracSrc(a) : '' };
   /* tier 1 names the game move in words, else says no move (F1.6); a
      decisive first sight names the game it decided in the tag row (F4.2) */
   return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: inWords(a) ? [CARD_COPY.T2(a, true), 'Find a better move.'] : [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '', tag: ctxLine(a) };
@@ -1649,7 +1691,8 @@ function threatSay(a, f, ar) {
    never change in a slide */
 function labelCands(a, f, seen) {
   var o = f.opts, first = {}, short = [], answered = a.phase === 'done';
-  if (!LABELS_ON || o.anim || o.decor) return [];
+  /* a lesson's caption names its marks (F9.3) */
+  if (!LABELS_ON || o.anim || o.decor || a.phase === 'lesson') return [];
   var cand = function (text, role, tip, head, tail, mark, order) { return { text: text, role: role, tip: tip, head: head, tail: tail, mark: mark, order: order }; };
   var arrows = [];
   if (o.ghost) arrows.push({ from: o.ghost[0], to: o.ghost[1], kind: 'explore' });

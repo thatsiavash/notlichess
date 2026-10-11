@@ -1093,6 +1093,47 @@ body.in-session{padding-bottom:0}
 .set-block p.set-who{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1)}
 .set-app .btn-line{margin-top:4px}
 .switch-row{display:flex;align-items:center;justify-content:space-between;min-height:52px;cursor:pointer;color:var(--text-1);font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600}
+/* beginner teaching (F9.1 to F9.5): a lesson's frame with the honey edge
+   and its bar (‹ beside Next ›); a practice position's source line beside
+   its tag, cut short where the row runs out; its session-bar segment hollow
+   once done, a lesson's short; the ten skill tiles that open Insights at
+   More help, each its number (the seal once mastered) and name, a 10-dot
+   meter of first tries, its state and "Next"; the skill's card; the meter
+   on the focus card and on a pack's end ──────────────────────────────── */
+.coach.k-lesson::before{background:var(--honey)}
+.guess-acts .nav-btn{flex:0 0 48px;min-width:48px;height:44px;padding:0}
+.tag-src{flex:0 1 auto;min-width:0;font-size:var(--fs-small);line-height:var(--lh-heading);font-weight:600;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot.lesson{flex:0 0 12px}
+.dot.prac.done,.dot.lesson.done{background:transparent;box-shadow:inset 0 0 0 2px var(--honey)}
+.sk-tiles{margin:0 0 8px}
+.sk-tiles .ins-h{margin-top:0}
+.sk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.sk-tile{display:flex;flex-direction:column;align-items:stretch;gap:10px;min-width:0;padding:12px;border-radius:var(--r-card);background:var(--surface-1);color:inherit;cursor:pointer}
+.sk-tile:hover{background:var(--surface-2);color:inherit}
+.sk-tile.is-next{box-shadow:inset 0 0 0 2px var(--honey)}
+.sk-num{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--surface-2);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1);font-variant-numeric:lining-nums tabular-nums}
+.sk-num.rg{background:none;vertical-align:0}
+.sk-num.rg-learned::after{width:28px;height:28px}
+.sk-head{display:flex;align-items:center;gap:8px;min-width:0}
+.sk-name{min-width:0;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1)}
+.sk-foot{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:24px}
+.sk-dots{display:flex;gap:3px;width:100%;max-width:200px}
+.sk-dots i{flex:1 1 0;height:8px;border-radius:4px;box-shadow:inset 0 0 0 1.5px var(--border)}
+.sk-dots i.on{background:var(--leaf);box-shadow:none}
+.sk-dots i.off{background:var(--honey-14);box-shadow:inset 0 0 0 1.5px var(--honey)}
+.sk-state{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
+.sk-tile.is-done .sk-state{color:var(--honey)}
+.sk-meter{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:12px 0 16px}
+.sk-meter .sk-dots{flex:0 0 160px}
+.focus-sk{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;min-height:48px;margin:16px 0 0;padding-top:12px;border-top:1px solid var(--divider);color:inherit}
+.focus-sk:hover .sk-state{color:var(--text-1)}
+.focus-sk .sk-dots{flex:0 0 120px}
+.pack-offer{margin:0 0 12px;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700}
+.recap-item.recap-prac{cursor:default}
+@media (min-width:861px){
+  .sk-grid{grid-template-columns:repeat(auto-fill,minmax(176px,1fr))}
+}
+
 .switch-row input{position:absolute;opacity:0;width:1px;height:1px}
 .switch-row i{width:48px;height:28px;border-radius:14px;background:var(--surface-2);box-shadow:inset 0 0 0 2px var(--border);position:relative;transition:background var(--dur-1)}
 .switch-row i::after{content:"";position:absolute;left:4px;top:4px;width:20px;height:20px;border-radius:50%;background:var(--text-2);transition:transform var(--dur-1)}

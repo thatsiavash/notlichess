@@ -2071,7 +2071,7 @@ const BAR = `(function () {
         eq(S().nope.length, 0, at + ': no outline on the try');
         A.ev('(tryAgain(), 1)');
         run(400);
-        ok(/^(Your turn|Hint 1 of 2)/.test(band()) && !/Move a (white|black) piece/.test(band()), at + ': the task (or the hint it brought), not T4, after Try again: ' + band());
+        ok(/^(Your turn|Hint 1 of [23])/.test(band()) && !/Move a (white|black) piece/.test(band()), at + ': the task (or the hint it brought), not T4, after Try again: ' + band());
         /* a try on the board: their piece says it too, and the verdict comes back */
         A.ev('(function (a) { gradeMove(uciToMove(a.st, a.playedUci)); return 1; })(ui.session.active)');
         run(1000);
@@ -2665,7 +2665,7 @@ const BAR = `(function () {
       }); return dz.slice(0, 4).concat(pz.slice(0, 2)); })())`));
     ok(keys.length === 6, 'cards ' + keys.length);
     const at0 = (t) => JSON.parse(A.ev(`JSON.stringify(window.__writes.filter(function (w) { return w.t >= ${t} && w.v != null && w.kind !== 'keys'; }).map(function (w) {
-      return w.kind + ' ' + w.id + ' +' + (w.t - ${t}) + (w.kind === 'text' ? (/Hint 1 of 2/.test(w.v) ? ' H1' : /Hint 2 of 2/.test(w.v) ? ' H3' : '') : ' ' + w.v);
+      return w.kind + ' ' + w.id + ' +' + (w.t - ${t}) + (w.kind === 'text' ? (/Hint 1 of [23]/.test(w.v) ? ' H1' : /Hint 2 of [23]/.test(w.v) ? ' H3' : '') : ' ' + w.v);
     }))`));
     /* the marks the card draws now, against the budget (2.1): the game arrow
        and one dashed arrow, one ring (the gold pair aside), one tried line;
@@ -2769,7 +2769,7 @@ const BAR = `(function () {
       var look = function (what, a, fresh) {
         a.triedHold = false;
         var d = displayFor(a), hm = hintMarks(a), o = boardOptsFor(a).opts;
-        var drawn = hm.rings.length + hm.arrows.length > 0, said = d.row1 === 'Hint 1 of 2' || d.row1 === 'Hint 2 of 2';
+        var drawn = hm.rings.length + hm.arrows.length > 0, said = /^Hint [12] of [23]$/.test(d.row1);
         var dz = hm.dz || hm.rep;
         var onBoard = (o.rings || []).some(function (m) { return m.kind === 'target' || m.kind === 'hint' || (hm.danger && m.kind === 'threat') || (dz && m.kind === 'attacked'); })
           || (!!dz && (o.arrows || []).some(function (m) { return m.kind === 'threat'; }));
@@ -5726,7 +5726,8 @@ const BAR = `(function () {
       eq(JSON.stringify(x.rings), '["f5 attacked","d3 attacked"]', at + ': the queen and the bishop ringed red');
       eq(JSON.stringify(x.arrows), '["g6f5 threat danger","f8f5 threat danger","c4d3 threat danger"]', at + ': the queen\'s two attackers first, the c4 pawn third');
       eq(JSON.stringify(x.drawn), '[2,3]', at + ': drawn on the board');
-      eq(x.row1 + ' / ' + x.row2, 'Hint 1 of 2 / Your queen is attacked twice.', at + ': the band');
+      /* (at More help Hint 3 can follow here, F9.2) */
+      eq(x.row1 + ' / ' + x.row2, (t === 1 ? 'Hint 1 of 3' : 'Hint 1 of 2') + ' / Your queen is attacked twice.', at + ': the band');
       eq(x.faults.length, 0, at + ': ' + x.faults.join(' | '));
     });
   });

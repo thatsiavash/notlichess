@@ -21,6 +21,10 @@
 // are clear: `t1card`, `ins`). NL_LINT_WRITE=1 node test/labels.test.js writes the baseline afresh.
 // Insights is read with how we count and, after every frame, since you started in both its states (with
 // how we count's line on the start day's threshold).
+// Beginner teaching (slice 9), at tiers 1 and 2: every lesson's three frames and its own position, every
+// practice position's frames (open, hints, a miss and its reason, a close move, found and settled, the
+// answer shown), their Details and menu; the pack's end, the skill tiles, each skill's card, the focus
+// card's meter, the pack offer, a Today summary with practice and Settings' Help.
 const fs = require('fs'), path = require('path');
 const BASE = path.join(__dirname, 'data', 'copylint-baseline.json');
 
@@ -60,6 +64,40 @@ const generic = (s) => String(s).replace(/\bopponent\d+\b/g, 'O').replace(MOVE_W
    buttons, strip, label, tag], screens [tier, where, text], habits [tier, key, details, summary] */
 const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
   var frames = [], screens = [], habits = [], seen = {};
+  /* a practice position's frames (F9.4) and a lesson's (F9.3), its own position after it */
+  var eachPracFrame = function (key, cb) {
+    var it = itemOf(key);
+    if (!it) return;
+    var a = openCard(it);
+    cb('prac open', a);
+    a.hints = 1; cb('prac hint 1', a); a.hints = 2; cb('prac hint 2', a);
+    if (hintMax(a) === 3) { a.hints = 3; cb('prac hint 3', a); }
+    a = openCard(it);
+    var off = legalMoves(a.st).filter(function (m) { var u = moveUci(m); return it.ok.indexOf(u) < 0 && it.cl.indexOf(u) < 0; });
+    if (off.length) {
+      a.tapped = true; gradeMove(off[0]); a.animMove = null;
+      cb('prac miss', a); a.reason = 2; cb('prac miss, its reason said', a);
+      if (a.tried.reply) { seeIt(); a.animMove = null; cb('prac See it, landed', a); }
+      tryAgain(); a.triedHold = false; cb('prac after Try again', a);
+    }
+    if (it.cl.length) { a = openCard(it); a.tapped = true; gradeMove(uciToMove(a.st, it.cl[0])); a.animMove = null; cb('prac close', a); }
+    a = openCard(it); a.tapped = true; gradeMove(uciToMove(a.st, it.ok[0])); a.animMove = null;
+    cb('prac found', a); a.settle = 2; cb('prac settled', a);
+    a = openCard(it); reveal(); a.animMove = null; cb('prac shown', a); playIt(false); a.animMove = null; a.settle = 2; cb('prac shown, settled', a);
+  };
+  var eachLessonFrame = function (k, cb) {
+    var sk = PSKILL_OF[k], keys = ['ls:' + k, 'pk:' + sk.tryId];
+    ui.session = { mode: 'pack', label: sk.name, keys: keys, idx: 0, results: {}, relearn: [], relearnOf: {}, spec: { type: 'pack', k: k } };
+    var a = cardFor(itemOf(keys[0]));
+    ui.session.active = a;
+    for (var i = 0; i < 3; i++) { a.lesson.i = i; a.animMove = null; cb('lesson ' + i, a); }
+    ui.session.idx = 1;
+    var b = cardFor(itemOf(keys[1]));
+    b.lessonTry = lessonTryOf(ui.session, keys[1]);
+    ui.session.active = b;
+    cb('lesson try open', b);
+    b.tapped = true; gradeMove(uciToMove(b.st, b.bestUci)); b.animMove = null; b.settle = 2; cb('lesson try settled', b);
+  };
   /* the typed-move field is off screen (the keyboard's way in), so not counted */
   var txt = function (h) { return String(h || '').replace(/<label class="kb-move[^"]*">[\\s\\S]*?<\\/label>/g, ' ').replace(/<input[^>]*>/g, ' ').replace(/<[^>]+>/g, '\\n').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'"); };
   var bits = function (h) { return txt(h).split('\\n').map(function (x) { return x.replace(/\\s+/g, ' ').trim(); }).filter(Boolean); };
@@ -101,6 +139,36 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
         if (what === 'foil settled') screen(tier, 'details', detailsHtml());
       });
     });
+    /* beginner teaching (slice 9), at tiers 1 and 2; the skill store put back after */
+    if (tier <= 2) {
+      var sk0 = store.get(skillKey(), null);
+      var push = function (key, what, a) {
+        var d = displayFor(a), lb = null;
+        try { lb = frameLabel(a, boardOptsFor(a), 360, false); } catch (e) {}
+        /* (a practice position's source line, beside its tag, is read with the strip's words) */
+        frames.push([tier, key, what, d.row1, d.row2, d.cap, d.chip, d.buttons.map(function (b) { return b.label; }), bits(d.strip).concat(d.src ? [d.src] : []).join(' '), lb ? lb.text : '', d.tag]);
+      };
+      PSKILL.forEach(function (sk) { eachLessonFrame(sk.k, function (what, a) { push('ls:' + sk.k, what, a); }); });
+      PRAC_DATA.forEach(function (row) {
+        var key = 'pk:' + row.split('|')[0];
+        eachPracFrame(key, function (what, a) {
+          push(key, what, a);
+          if (what === 'prac open') screen(tier, 'menu', menuHtml(a));
+          if (what === 'prac settled') { screen(tier, 'details', detailsHtml()); screen(tier, 'menu', menuHtml(a)); }
+        });
+      });
+      var pks = ['pk:free-1', 'pk:free-2', 'pk:m16b', 'pk:free-3', 'pk:free-4'], pr = { mode: 'pack', label: 'Free pieces', keys: pks, idx: 5, results: {}, notes: {}, sum: {}, relearn: [], relearnOf: {}, finished: true, spec: { type: 'pack', k: 'free' } };
+      [['first', 'first'], ['first', 'first'], ['retry', 'miss'], ['hint', 'hint'], ['fail', 'shown']].forEach(function (x, i) { pr.results[pks[i]] = x[0]; pr.sum[pks[i]] = { c: x[1], s: 0, fc: '', prac: 1, sk: 'free' }; });
+      screen(tier, 'summary', doneHtml(pr));
+      pr.packUp = true; screen(tier, 'summary', doneHtml(pr)); pr.packUp = false; pr.packDown = true; screen(tier, 'summary', doneHtml(pr)); pr.packDown = false; pr.packMastered = 'free'; screen(tier, 'summary', doneHtml(pr));
+      screen(tier, 'summary', doneHtml({ mode: 'pack', label: 'Free pieces', keys: ['ls:free', 'pk:free-1'], idx: 2, results: { 'ls:free': 'lesson' }, notes: {}, sum: {}, relearn: [], relearnOf: {}, finished: true, spec: { type: 'pack', k: 'free', lesson: 1 } }));
+      screen(tier, 'insights', skillTilesHtml());
+      PSKILL.forEach(function (sk) { screen(tier, 'insights', skillSheetHtml(sk.k)); });
+      screen(tier, 'today', focusSkillHtml('safety') + focusSkillHtml('king') + focusSkillHtml('chances') + packOfferHtml());
+      var hb = /<div class="set-block"><span class="kicker">Help<\\/span>[\\s\\S]*?<\\/div><div class="set-block">/.exec(settingsHtml());
+      screen(tier, 'settings', hb ? hb[0] : 'no Help block');
+      if (sk0) store.set(skillKey(), sk0); else store.del(skillKey());
+    }
     ui.session = null;
     screen(tier, 'today', heroHtml() + whyTheseHtml(todayPlan()) + cleanLineHtml() + focusHtml() + latestGamesHtml() + nextDueHtml());
     var ks = allMistakes().filter(trainable).slice(0, 5).map(function (x) { return x.key; });

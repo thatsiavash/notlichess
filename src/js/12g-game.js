@@ -132,8 +132,9 @@ function foilItem(key) {
   foilItems[key] = { g: g, b: b, key: key, foil: true };
   return foilItems[key];
 }
-/* a session's position by its key: a foil, or a mistake of the model */
-function itemOf(key) { return isFoilKey(key) ? foilItem(key) : (key ? model().byKey[key] || null : null); }
+/* a session's position by its key: a foil, a practice position or a
+   lesson (F9.3, F9.4: 12q-practice.js), or a mistake of the model */
+function itemOf(key) { return isFoilKey(key) ? foilItem(key) : isPracKey(key) ? pracItem(key) : isLessonKey(key) ? lessonItem(key) : (key ? model().byKey[key] || null : null); }
 function foilReady(it) { return !!(it && it.foil && it.b.ok); }
 /* a foil as its opening frame draws it before its look: the game move
    stands in for the best move, which no frame shows before the answer (on
