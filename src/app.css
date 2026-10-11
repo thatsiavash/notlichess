@@ -69,6 +69,7 @@
   --ic-search:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21 21-4.34-4.34'/%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3C/svg%3E");
   --ic-back:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m15 18-6-6 6-6'/%3E%3C/svg%3E");
   --ic-fwd:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
+  --ic-calendar:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2v4'/%3E%3Cpath d='M16 2v4'/%3E%3Crect width='18' height='18' x='3' y='4' rx='2'/%3E%3Cpath d='M3 10h18'/%3E%3C/svg%3E");
   --ic-medal:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15'/%3E%3Cpath d='M11 12 5.12 2.2'/%3E%3Cpath d='m13 12 5.88-9.8'/%3E%3Cpath d='M8 7h8'/%3E%3Ccircle cx='12' cy='17' r='5'/%3E%3Cpath d='M12 18v-2h-.5'/%3E%3C/svg%3E");
   /* the five skills' glyphs on Insights (Lucide: shield, crown, target, flag, compass), 2 px strokes */
   --ic-shield:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3C/svg%3E");
@@ -131,6 +132,7 @@ button{font-family:inherit}
 [data-icon=arrow]{--ic:var(--ic-arrow)}
 [data-icon=info]{--ic:var(--ic-info)}
 [data-icon=search]{--ic:var(--ic-search)}
+[data-icon=calendar]{--ic:var(--ic-calendar)}
 [data-icon=back]{--ic:var(--ic-back)}
 [data-icon=fwd]{--ic:var(--ic-fwd)}
 [data-icon=shield]{--ic:var(--ic-shield)}
@@ -306,12 +308,36 @@ button{font-family:inherit}
 .hero .btn-big{min-width:220px;min-height:44px}
 .hero .finds{margin:0 0 16px}
 .hero .find{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-1);margin:4px 0}
-/* the weekly goal: one segment per day of the goal */
-.week{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 28px;flex-wrap:wrap}
-.wsegs{display:flex;gap:6px}
-.wseg{width:32px;height:8px;border-radius:4px;box-shadow:inset 0 0 0 2px var(--border)}
-.wseg.on{background:var(--honey);box-shadow:none}
-.wseg.wseg-now{box-shadow:inset 0 0 0 2px var(--honey)}
+/* card 1's board beside its caption (F5.1): a 136 px board of its opening
+   frame, a tap on it starts too; while the games are read a still square
+   waits in its place, no shimmer */
+.hero-first{display:flex;align-items:flex-start;gap:16px;margin:0 0 20px}
+.hero-board{flex:none;display:block;width:136px;border-radius:8px;overflow:hidden;cursor:pointer}
+.hero-board .board{border-radius:8px;box-shadow:none}
+.hero-board.wait{height:136px;background:var(--surface-2);cursor:default}
+.hero .why.hero-cap{flex:1 1 auto;min-width:0;margin:0;color:var(--text-1)}
+/* the week (F5.1): Monday to Sunday bubbles, a day that counted honey
+   with a tick, today ringed in honey, the days to come quieter, the medal
+   glyph at the goal (honey once met); the words under them */
+.week{margin:20px 0 0}
+.wk-row{display:flex;align-items:center;gap:6px}
+.wk-b{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;box-shadow:inset 0 0 0 2px var(--border);
+  font-size:var(--fs-small);line-height:1;font-weight:700;color:var(--text-3)}
+.wk-b.ahead{box-shadow:inset 0 0 0 2px var(--surface-2)}
+.wk-b.now{box-shadow:inset 0 0 0 2px var(--honey);color:var(--text-1)}
+.wk-b.on{background:var(--honey);box-shadow:none}
+.wk-b.on::after{content:"";width:16px;height:16px;background:var(--on-honey);-webkit-mask:var(--ic-check) center/contain no-repeat;mask:var(--ic-check) center/contain no-repeat}
+.wk-b.on.now{box-shadow:0 0 0 2px var(--surface-1),0 0 0 4px var(--honey)}
+.wk-goal{flex:none;width:28px;height:28px;margin-left:4px;background:var(--text-3);-webkit-mask:var(--ic-medal) center/20px no-repeat;mask:var(--ic-medal) center/20px no-repeat}
+.wk-row .medal{margin-left:2px}
+.wk-say{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1);margin:10px 0 0}
+.wk-life,.wk-note{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:2px 0 0}
+.wk-note{color:var(--text-2);margin-top:8px}
+/* why these positions (F5.2), a line under the hero, to the report */
+.why-these{margin:12px 0 0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700}
+/* a game read with no big mistake (F5.3), once */
+.clean-line{display:flex;align-items:flex-start;gap:8px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-1);margin:0 0 16px}
+.clean-line::before{content:"";flex:none;width:20px;height:20px;background:var(--leaf);-webkit-mask:var(--ic-check) center/contain no-repeat;mask:var(--ic-check) center/contain no-repeat}
 .focus{position:relative;background:var(--surface-1);border-radius:var(--r-card);padding:24px;margin-top:24px}
 .focus .kicker{color:var(--text-3)}
 .focus-name{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:6px 0 4px}
@@ -319,6 +345,13 @@ button{font-family:inherit}
 .focus .sec{color:var(--text-2)}
 .focus-more{position:absolute;top:16px;right:16px;display:inline-flex;align-items:center;min-height:44px;padding:0 8px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--honey)}
 .focus-more:hover{color:var(--honey-hover)}
+/* the focus card (F5.1): its glyph and name, the check line, the meter of
+   its positions (as an Insights bar) and its words, Practise N */
+.focus-head{display:flex;align-items:center;gap:12px;margin:8px 0 12px}
+.focus-head .focus-name{margin:0}
+.focus .focus-bar{display:flex;margin:16px 0 6px}
+.focus p.focus-prog{margin:0 0 16px;font-variant-numeric:tabular-nums}
+.focus > .btn-line{min-width:160px}
 /* the habit: one line with a honey bulb, never a word more */
 .plan{display:flex;gap:10px;align-items:flex-start;color:var(--text-1);font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700}
 .plan::before{content:"";flex:none;width:20px;height:20px;margin-top:2px;background:var(--honey);-webkit-mask:var(--ic-bulb) center/contain no-repeat;mask:var(--ic-bulb) center/contain no-repeat}
@@ -340,10 +373,13 @@ a.lg-row{color:inherit}
 .lg-D{background:var(--slate-14);color:var(--slate)}
 .lg-who{flex:1 1 auto;min-width:0;font-size:var(--fs-body);line-height:var(--lh-small);font-weight:700;color:var(--text-1);overflow-wrap:anywhere}
 .lg-who .dim{font-weight:600}
-.lg-who small{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin-top:2px}
-/* the state never squeezes the name: both wrap, nothing is cut */
-.lg-state{flex:0 1 auto;max-width:44%;white-space:normal;text-align:right;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1)}
+.lg-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lg-who small{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* the state on its own lines, never wrapping ("4 mistakes", then "1 cost
+   the game"); only a long name wraps (the design lead's review of slice 4) */
+.lg-state{flex:none;white-space:nowrap;text-align:right;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1)}
 .lg-state i{display:block;font-style:normal;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin-top:2px}
+.latest .lg-all{min-height:44px;margin:4px 0 0}
 .lg-state i::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--coral);margin-right:6px;vertical-align:0}
 .lg-state.ok{color:var(--leaf)}
 .lg-state.dim{color:var(--text-3)}
@@ -365,12 +401,19 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
   .hero .btn-big[data-icon]::before{width:22px;height:22px}
   .today-grid{display:flex;flex-direction:column;gap:0}
   .today-grid .today-main{display:contents}
-  .today-grid .since{order:0}
+  .today-grid .since,.today-grid .clean-line{order:0}
   .today-grid .hero{order:1}
-  .today-grid .latest{order:2;margin-top:16px}
+  .today-grid .why-these{order:2}
+  /* the focus card above the games (F5.1) */
   .today-grid .focus{order:3;margin-top:16px}
-  .today-grid .status{order:4}
+  .today-grid .latest{order:4;margin-top:16px}
+  .today-grid .status{order:5}
   .latest{padding:12px 16px 8px}
+}
+/* a wide screen: the board a little larger beside its caption */
+@media (min-width:861px){
+  .hero-board{width:168px}
+  .hero-board.wait{height:168px}
 }
 
 /* the card: the board, then the Coach Panel (F4.1) ────────────────────── */
@@ -474,16 +517,22 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
    (the open card untinted, its edge the border colour), changing with its
    words; story steps, hints and exploring keep the edge alone ─────────── */
 .panel{min-width:0;display:flex;flex-direction:column}
+/* the edge is a 4 px bar inset 16 px from the panel's top and foot, so it
+   never curls into the rounded corners (the design lead's review of slice 4) */
 .coach{position:relative;display:flex;flex-direction:column;min-width:0;background-color:var(--surface-1);border-radius:var(--r-card);
-  border-left:4px solid var(--border);padding:16px 16px 12px 12px;transition:background-color .15s var(--ease),border-color .15s var(--ease)}
-.coach.k-good{background-color:color-mix(in srgb,var(--leaf) 10%,var(--surface-1));border-left-color:var(--leaf)}
-.coach.k-bad{background-color:color-mix(in srgb,var(--coral) 10%,var(--surface-1));border-left-color:var(--coral)}
-.coach.k-close,.coach.k-info{background-color:color-mix(in srgb,var(--slate) 10%,var(--surface-1));border-left-color:var(--slate)}
-.coach.k-hint,.coach.k-explore{border-left-color:var(--honey)}
+  padding:16px 16px 12px;transition:background-color .15s var(--ease)}
+.coach::before{content:"";position:absolute;left:0;top:16px;bottom:16px;width:4px;border-radius:0 2px 2px 0;background:var(--border);transition:background-color .15s var(--ease)}
+.coach.k-good{background-color:color-mix(in srgb,var(--leaf) 10%,var(--surface-1))}
+.coach.k-bad{background-color:color-mix(in srgb,var(--coral) 10%,var(--surface-1))}
+.coach.k-close,.coach.k-info{background-color:color-mix(in srgb,var(--slate) 10%,var(--surface-1))}
+.coach.k-good::before{background:var(--leaf)}
+.coach.k-bad::before{background:var(--coral)}
+.coach.k-close::before,.coach.k-info::before{background:var(--slate)}
+.coach.k-hint::before,.coach.k-explore::before{background:var(--honey)}
 /* the story (S12): a coral edge on your game's steps, a leaf one on the
    better ones (the disc, a king or a tick, says which in shape) */
-.coach.k-sgame{border-left-color:var(--coral)}
-.coach.k-sbetter{border-left-color:var(--leaf)}
+.coach.k-sgame::before{background:var(--coral)}
+.coach.k-sbetter::before{background:var(--leaf)}
 
 /* the band, at the panel's top: a 32 px disc, 12 px from the rows; row 1
    (28 px), row 2 (two lines, 48 px; honey in a hint) and the tag row (24
@@ -686,7 +735,7 @@ body.in-session{padding-bottom:0}
   /* the eval bar, while exploring: in the gutter left of the board */
   .evalbar{right:100%;top:0;bottom:0;margin-right:8px;width:12px}
   /* 200 px: the verdict, two body lines, the tag row, the strip */
-  .coach{min-height:200px;padding:16px 20px 12px 16px}
+  .coach{min-height:200px;padding:16px 20px 12px}
   .coach.exploring{min-height:0}
   .bd-top{height:var(--lh-verdict)}
   .bd-r1{font-size:var(--fs-verdict);line-height:var(--lh-verdict)}
@@ -721,6 +770,11 @@ body.in-session{padding-bottom:0}
   .card{--panel-gap:clamp(0px, 100svh - 216px - env(safe-area-inset-bottom) - min(100vw, 600px), 12px)}
   .card > .panel{flex:1 1 0;min-height:0;padding:12px var(--gutter) calc(64px + var(--panel-gap) + env(safe-area-inset-bottom))}
   .coach{flex:1 1 0;min-height:96px;container-type:size}
+  /* a tall phone: the panel stops at 176 px (16 + row 1 28 + row 2 48 + the
+     tag row 24 + the strip 48 + 12), the ground below it; exploring still
+     fills to the bar, and a short phone keeps what it has room for (the
+     design lead's review of slice 4) */
+  .coach:not(.exploring){flex:0 1 176px}
   /* the decisive tag stays for screen readers only */
   .panel .stakes-tag{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;margin:0;padding:0;min-height:0}
   /* the bar: fixed at the foot, 64 px on the ground, 48 px buttons (a 44 px
@@ -740,12 +794,14 @@ body.in-session{padding-bottom:0}
   .xp.tight .xp-head{height:28px}
   .xp.tight .xp-back{min-height:28px}
   .xp.tight .xp-say{margin-bottom:0}
+  /* before the first move explored, a row in the sentence's place (fitRows) */
+  .xp.nosay .xp-say{display:none}
 }
 /* a short panel (under 176 px: a 360 by 640 phone): the strip takes the tag
    row's line (the tag row is empty once a card is answered, the strip before
    it); under 120 px only the rows show, and Details is in the ••• menu */
 @container (max-height:175px){
-  .coach:not(.exploring) .strip{position:absolute;left:12px;right:16px;top:92px;min-height:40px;padding-top:0;margin:0;align-items:flex-start}
+  .coach:not(.exploring) .strip{position:absolute;left:16px;right:16px;top:92px;min-height:40px;padding-top:0;margin:0;align-items:flex-start}
   .coach:not(.exploring) .bd-tags{height:40px;align-items:flex-start}
 }
 @container (max-height:119px){
@@ -775,6 +831,8 @@ body.in-session{padding-bottom:0}
   .evalbar-fill,.evalbar-label{display:block}
   .evalbar-fill-h{display:none}
   .card > .panel{grid-column:2;grid-row:2;min-height:0;padding:4px 0 0}
+  /* held sideways the panel fills its column, the bar at the column's foot */
+  .coach:not(.exploring){flex:1 1 0}
   .card-top{padding:0}
   .sticky-acts{position:static;height:auto;border-top:0;padding:12px 0 0;background:none}
   .guess-acts,.done-acts{height:auto}
@@ -790,24 +848,48 @@ body.in-session{padding-bottom:0}
 .result-row .rg::after{width:17px;height:17px}
 .done-big{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);margin:0 0 24px;outline:none;font-variant-numeric:lining-nums tabular-nums}
 .recap-page .done-big{margin:0 0 20px}
-.recap-ladder{color:var(--text-2);margin:-8px 0 20px}
-.recap-week{margin:0 0 4px}
+/* what moved and when the found ones come back: one quiet paragraph */
+.recap-small{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:0}
+.recap-week{margin:24px 0 4px}
 .recap-week .week{margin:8px 0 12px}
-/* the week's goal met (F4.4): its medal leads the week, settling 0.92 to 1
-   in 300 ms on the summary's first paint, and the line says so */
-.recap-week.met .week > span:last-child{color:var(--text-1);font-weight:700}
+/* the week's goal met (F4.4): its medal at the goal, settling 0.92 to 1 in
+   300 ms on the summary's first paint, and the line says so */
 .medal{flex:none;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:var(--honey-14)}
 .medal::after{content:"";width:20px;height:20px;background:var(--honey);-webkit-mask:var(--ic-medal) center/contain no-repeat;mask:var(--ic-medal) center/contain no-repeat}
 .medal[data-fx=medal]{animation:medal-in .3s var(--ease-pop)}
 @keyframes medal-in{from{transform:scale(.92)}to{transform:none}}
 .recap-next{color:var(--text-1);margin:0 0 20px}
 .recap-habit{margin:0 0 24px}
-/* the summary's one takeaway, in the body size (.focus p is small) */
-.recap-habit .plan,.recap-habit p.plan{margin:8px 0 0;background:none;padding:0;font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-1)}
-.recap-habit .plan:first-child{margin-top:0}
-.recap-habit .plans{margin:8px 0 0;padding-left:30px}
-.recap-habit .plans .plan{display:list-item;margin-top:6px}
-.recap-habit .plans .plan::before{display:none}
+/* the habit card (the design lead's review of slice 4): the kicker, the
+   check lines under one bulb in the body size, the routine in small words */
+.recap-habit .plan{margin:8px 0 0;background:none;padding:0;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600;color:var(--text-1)}
+.recap-habit .plans{margin:0;padding:0;list-style:none}
+.recap-habit .plans li + li{margin-top:6px}
+.recap-habit .routine-line{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:12px 0 0}
+.recap-habit > .routine-line:first-child{margin-top:0}
+/* the first diagnosis (F5.2), above the result row until shown in full,
+   then one line in its place */
+.diag{background:var(--surface-1);border-radius:var(--r-card);padding:20px;margin:0 0 24px}
+.diag .kicker{color:var(--text-3)}
+.diag-h,.diag-so{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:6px 0 12px}
+.dg-rows{max-width:520px;margin:0 0 12px}
+.dg-row{display:flex;align-items:center;gap:12px;min-height:44px}
+.dg-row .sk-glyph,.diag-line .sk-glyph{width:32px;height:32px;border-radius:10px}
+.dg-row .sk-glyph::before,.diag-line .sk-glyph::before{width:18px;height:18px}
+.dg-name{flex:1 1 auto;min-width:0;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1)}
+.dg-n{flex:none;white-space:nowrap;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+.diag-start{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 4px}
+.diag .diag-go{min-height:44px}
+.diag-line{display:flex;align-items:center;gap:12px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 16px}
+/* the reminder and the backup (F5.4), after the habit card */
+.cue{background:var(--surface-1);border-radius:var(--r-card);padding:20px;margin:0 0 24px}
+.cue-q{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:0 0 12px}
+.cue .chips{margin:0 0 12px}
+.cue-when{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 12px}
+.cue-acts{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px}
+.cue-acts .btn-line{min-height:44px}
+.cue-set .chips{margin:8px 0}
+.cue-set .cue-when{margin:8px 0}
 /* the positions as tiles: two columns on a phone, (100vw - 44) / 2 px each;
    160 px tiles in an 880 px column on a wide screen, five a line. Each: its
    board, the pattern, the result as its glyph and its word in its colour,
@@ -824,24 +906,23 @@ body.in-session{padding-bottom:0}
 .rg-hint + .res,.rg-miss + .res{color:var(--honey)}
 .rg-shown + .res{color:var(--slate)}
 .rg-skip + .res{color:var(--text-3)}
-/* the honest score (F2.1, F2.2): its second line and what moved under the
-   headline; on each tile its stars (tier 1) or its rungs (three 10 px pips,
-   6 px apart, honey when lit) and tier 3's computed check line; a position
-   just learned leads the tiles, across both columns, with its seal; the
-   routine line (F2.3) */
+/* the honest score (F2.1, F2.2): its second line under the headline; on
+   each tile its stars (tier 1) or its rungs (three 10 px pips, 6 px apart,
+   honey when lit) and tier 3's computed check line; a position just learned
+   leads the tiles, across both columns, its seal a 32 px badge on its
+   board's corner and no pips (the design lead's review of slice 4) */
 .recap-then{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600;color:var(--text-1);margin:-16px 0 6px}
-.recap-moved{color:var(--text-2);margin:0 0 20px}
-.recap-moved + .recap-ladder{margin-top:-14px}
-.recap-habit .plan.routine{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
 .recap-item .stars,.recap-item .rungs{display:flex;align-items:center;gap:6px;margin-top:6px}
 .stars i{font-style:normal;font-size:var(--fs-small);line-height:1;color:var(--border)}
 .stars i.on{color:var(--honey)}
 .rungs i{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--border)}
 .rungs i.on{background:var(--honey);border-color:var(--honey)}
 .recap-item .tile-check{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
-.recap-item.recap-learned{grid-column:1/-1;display:flex;align-items:center;gap:12px}
-.recap-learned .board{width:96px;flex:none}
-.recap-learned .rg,.recap-learned .rungs{margin:0}
+.recap-item.recap-learned{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding-top:8px}
+.recap-learned .learned-board{position:relative;flex:none;width:96px;margin:0}
+.recap-learned .learned-board .board{width:100%}
+.recap-learned .learned-board .rg{position:absolute;top:-8px;right:-8px;width:32px;height:32px;margin:0;background:var(--bg)}
+.recap-learned .learned-board .rg::after{width:26px;height:26px}
 .recap-item .learned-say{flex:1 1 auto;min-width:0;font-size:var(--fs-small);line-height:var(--lh-small);color:var(--text-1);margin:0}
 /* a position learned (F4.4): its seal stamps, 1.4 to 1 in 200 ms, on the
    summary's first paint */

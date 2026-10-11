@@ -254,12 +254,36 @@ function weekGoalAt(ms) {
   h.forEach(function (e) { if (e.from <= ms) g = e.goal; });
   return g;
 }
-function goalThisWeek() { return weekGoalAt(Date.now()); }
+/* the days that counted, from this player's day records: their local
+   midnights, oldest first (F5.1: the lifetime practice days, the first
+   practice day) */
+function countedDays() {
+  var p = 'nl:day:' + playerId() + ':', keys = {}, out = [];
+  Object.keys(mem).forEach(function (k) { keys[k] = 1; });
+  try { for (var i = 0; i < localStorage.length; i++) { var k0 = localStorage.key(i); if (k0) keys[k0] = 1; } } catch (e) {}
+  Object.keys(keys).forEach(function (k) {
+    var m = k.indexOf(p) === 0 && /^(\d+)-(\d+)-(\d+)$/.exec(k.slice(p.length));
+    if (m && dayCounts(store.get(k, null))) out.push(new Date(+m[1], +m[2] - 1, +m[3]).getTime());
+  });
+  return out.sort(function (a, b) { return a - b; });
+}
+/* "27 practice days": every day that counted, never reset by a week */
+function practiceDays() { return countedDays().length; }
+/* a week's goal, the first week's cut to the days it has left (F5.1): from
+   the first practice day (today, while none has counted yet) to Sunday, so
+   a Saturday starter reads "1 of 2 days this week". first: the first
+   practice day, or null */
+function goalOfWeek(ms, first) {
+  var g = weekGoalAt(ms), start = first != null ? first : new Date().setHours(0, 0, 0, 0);
+  if (mondayOf(start) !== mondayOf(ms)) return g;
+  return Math.min(g, 7 - (new Date(start).getDay() + 6) % 7);
+}
+function goalThisWeek() { return goalOfWeek(Date.now(), countedDays()[0]); }
 /* consistency counted in weeks: the run of Monday-to-Sunday weeks that met
    the goal, this week included once it is met; a week still under way never
    breaks the run */
 function weeksAtGoal() {
-  var n = 0, d = new Date();
+  var n = 0, d = new Date(), first = countedDays()[0];
   d.setHours(12, 0, 0, 0);
   var dow = (d.getDay() + 6) % 7, monday = new Date(d);
   monday.setDate(d.getDate() - dow);
@@ -268,11 +292,11 @@ function weeksAtGoal() {
     for (var i = 0; i < days; i++) { var x = new Date(mon); x.setDate(mon.getDate() + i); if (dayCounts(dayRecOf(x))) c++; }
     return c;
   };
-  if (count(monday, dow + 1) >= weekGoalAt(monday.getTime())) n++;
+  if (count(monday, dow + 1) >= goalOfWeek(monday.getTime(), first)) n++;
   for (var w = 1; w < 105; w++) {
     var m = new Date(monday);
     m.setDate(monday.getDate() - 7 * w);
-    if (count(m, 7) >= weekGoalAt(m.getTime())) n++; else break;
+    if (count(m, 7) >= goalOfWeek(m.getTime(), first)) n++; else break;
   }
   return n;
 }

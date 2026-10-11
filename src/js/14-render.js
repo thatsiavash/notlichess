@@ -67,6 +67,7 @@ function renderViews() {
   el('view-insights').hidden = ui.view !== 'insights';
   /* session mode: the board and nothing else */
   document.body.classList.toggle('in-session', !!ui.session && ui.view === 'train');
+  paintTitle();
 }
 function tabDot() { return !!(cfg.user && !(dayLoad().sessions > 0) && (dueCards().length > 0 || todayPlan().keys.length > 0)); }
 function renderShell() {
@@ -176,25 +177,34 @@ function renderTrain() {
       + '</div>';
     return;
   }
-  var since = sinceHtml();
-  if (n.ready < 3) { box.innerHTML = '<div class="today">' + since + findingHtml(n) + '</div>'; return; }
+  var since = sinceHtml() + cleanLineHtml();
+  if (n.ready < 3) { box.innerHTML = '<div class="today">' + since + findingHtml(n) + '</div>'; paintTitle(); return; }
   /* the day's first opening: the extra-set rule, once a day (F7.1) */
   absorbOpen();
   var saved = savedSession();
-  var day = dayLoad();
+  var day = dayLoad(), plan = todayPlan();
   /* the day has a finish line: the chosen session done means done for today */
-  var doneToday = (day.sessions || 0) > 0 || (!saved && !todayPlan().keys.length);
+  var doneToday = (day.sessions || 0) > 0 || (!saved && !plan.keys.length);
   var fh = focusHtml();
-  lastTodaySig = todaySig(fh);
+  lastTodaySig = plan.keys.join(',') + '|' + fh;
+  /* the hero, why these positions (F5.2), the focus, then the games; two
+     columns on a wide screen, the games beside the rest */
   box.innerHTML = '<div class="today today-grid"><div class="today-main">' + since
-    + (saved ? resumeHtml(saved) : (doneToday ? doneTodayHtml() : heroHtml()))
+    + (saved ? resumeHtml(saved) : (doneToday ? doneTodayHtml() : heroHtml(plan) + whyTheseHtml(plan)))
     + fh
     + '<p class="status" id="astat">' + analysisLine(n) + '</p>'
     + '</div>' + latestGamesHtml() + '</div>';
+  /* the due count in the tab, once the day's opening has run (F5.4) */
+  paintTitle();
 }
-/* the latest games, each one a way into its own mistakes */
+/* the latest games, each one a way into its own mistakes: four, then All
+   games (F5.1); a row is its result, the opponent, "Rapid · 27 Sept ·
+   White" and what it holds, "4 mistakes" with "1 cost the game" under it
+   (the design lead's review of slice 4: the state never wraps, a long name
+   alone may) */
+var LATEST_N = 4;
 function latestGamesHtml() {
-  var games = scopedGames().sort(function (a, b) { return b.ts - a.ts; }).slice(0, 6);
+  var all = scopedGames().sort(function (a, b) { return b.ts - a.ts; }), games = ui.allGames ? all : all.slice(0, LATEST_N);
   if (!games.length) return '';
   var byGame = {};
   allMistakes().forEach(function (it) {
@@ -204,83 +214,163 @@ function latestGamesHtml() {
     if (it.b.d) e.lost = true;
   });
   var rows = games.map(function (g) {
-    var e = byGame[g.id], res = g.res === 'win' ? 'W' : (g.res === 'loss' ? 'L' : 'D');
+    var e = byGame[g.id], res = g.res === 'win' ? 'W' : (g.res === 'loss' ? 'L' : 'D'), big = covered(g) && !e ? gameMistakeCount(g) : 0;
     var right;
     if (!covered(g)) right = '<span class="lg-state dim">' + (scannableAny(g) ? 'Not checked yet' : (g.plies < 6 ? 'Too short to check' : 'Could not be read')) + '</span>';
     /* a loss with no position: no single move lost it (it may still hold big
-       mistakes, as Insights counts them, e.g. a tester's clone) */
-    else if (!e) right = g.res === 'loss' ? '<span class="lg-state dim">No single losing move</span>' : '<span class="lg-state ok">✓ Clean game</span>';
-    else right = '<span class="lg-state">' + e.n + (e.n === 1 ? ' mistake' : ' mistakes')
-      + (e.lost ? '<i>' + (g.res === 'draw' ? 'one cost the win' : 'one cost the game') + '</i>' : '') + '</span>';
+       mistakes, as Insights counts them, e.g. a tester's clone); "Clean
+       game" only where the game holds no big mistake at all */
+    else if (!e) right = g.res === 'loss' ? '<span class="lg-state dim">No single losing move</span>'
+      : big ? '<span class="lg-state dim">' + plur(big, 'mistake') + '</span>' : '<span class="lg-state ok">✓ Clean game</span>';
+    else right = '<span class="lg-state">' + plur(e.n, 'mistake')
+      + (e.lost ? '<i>' + (g.res === 'draw' ? '1 cost the win' : '1 cost the game') + '</i>' : '') + '</span>';
     /* a game with cards opens its drill; one without opens on its own site */
     var attrs = e ? ' data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'game', id: g.id, label: 'Game vs ' + g.opp })) + '" role="button"' : '';
     var tag = e ? 'div' : 'a';
     if (!e) attrs = ' href="' + gameHref(g.id, g.color, 0) + '"';
     return '<' + tag + ' class="lg-row is-open"' + attrs + '>'
       + '<span class="lg-res lg-' + res + '" title="' + esc(g.res) + '">' + res + '</span>'
-      + '<span class="lg-who">vs ' + esc(g.opp) + (g.oppR ? ' <span class="dim">' + g.oppR + '</span>' : '')
-      + '<small>' + esc(g.perf || '') + ' · ' + agoWords(g.ts) + ' · as ' + g.color + '</small></span>'
+      + '<span class="lg-who"><span class="lg-name">vs ' + esc(g.opp) + (g.oppR ? ' <span class="dim">' + g.oppR + '</span>' : '') + '</span>'
+      + '<small>' + esc(upFirst(perfLabel(g.perf || ''))) + ' · ' + gameDayWord(g.ts) + ' · ' + upFirst(g.color) + '</small></span>'
       + right + '</' + tag + '>';
   }).join('');
   return '<aside class="latest" id="latest"><div class="latest-head"><div class="kicker">Your latest games</div>'
     + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>' + rows
+    + (all.length > games.length ? '<a class="btn-quiet lg-all" data-act="allGames">All games</a>' : '')
     + '<p class="lg-foot dim">' + tapWord() + ' a game to go through its mistakes in order.</p></aside>';
 }
-function agoWords(ts) {
+/* a game's day in its row: "today", "yesterday", else its date ("27 Sept") */
+function gameDayWord(ts) {
   var d0 = new Date(); d0.setHours(0, 0, 0, 0);
-  var days = Math.ceil((d0.getTime() - ts) / DAY);
   if (ts >= d0.getTime()) return 'today';
-  if (days <= 1) return 'yesterday';
-  if (days < 7) return days + ' days ago';
+  if (ts >= d0.getTime() - DAY) return 'yesterday';
   return gameDateLine({ ts: ts });
 }
 function sinceHtml() { return data.greeting ? '<p class="since">' + data.greeting + '</p>' : ''; }
-/* the weekly goal as its own shape: one segment per day of the goal; on
-   the summary of the set that met it, its medal leads (lead) and its line
-   says so (line, F4.4) */
-function weekHtml(lead, line) {
-  var goal = goalThisWeek(), done = Math.min(weekDays(), goal), today = dayCounts(dayRecOf(new Date())), segs = '';
-  for (var i = 0; i < goal; i++) segs += '<span class="wseg' + (i < done ? ' on' : (i === done && !today ? ' wseg-now' : '')) + '"></span>';
-  var weeks = weeksAtGoal();
-  return '<div class="week">' + (lead || '') + '<div class="wsegs" aria-hidden="true">' + segs + '</div>'
-    + '<span>' + (line || Math.min(weekDays(), 7) + ' of ' + goal + ' days this week.') + (weeks >= 2 ? ' ' + weeks + ' weeks in a row at your goal.' : '') + '</span></div>';
-}
-function heroHtml() {
-  var plan = todayPlan();
-  var mins = Math.max(1, Math.round(plan.keys.length * 0.8));
-  var why;
-  var first0 = model().byKey[plan.keys[0]];
-  if (plan.firstTime) why = first0 && first0.b.d
-    ? 'First, the move that ' + decisiveWords(first0.g, first0.b) + ' vs ' + esc(first0.g.opp) + '.'
-      + (plan.keys.slice(1).some(function (k) { var x = model().byKey[k]; return x && cardEase(x) > cardEase(first0); }) ? ' Then easier ones.' : '')
-    : 'We\'ll start with the easier ones.';
-  else {
-    /* the reason to start now: the newest game one of these positions decided */
-    var m = model(), dec = plan.keys.map(function (k) { return m.byKey[k]; })
-      .filter(function (it) { return it && it.b.d; }).sort(function (x, y) { return y.g.ts - x.g.ts; })[0];
-    var reviews = plan.keys.length - plan.fresh;
-    if (dec) why = 'Includes the move that ' + decisiveWords(dec.g, dec.b) + ' vs ' + esc(dec.g.opp) + ', ' + agoWords(dec.g.ts) + '.';
-    else why = (reviews ? plur(reviews, 'position') + ' back for another look' + (plan.fresh ? ', and ' + plan.fresh + ' new from your games.' : '.') : plan.fresh + ' new from your games.');
+/* a game read with no big mistake (F5.3), said once on Today: "Clean game
+   vs opponent41: no big mistakes." (every tier). The newest one read since
+   the last said (and since the last visit) is named for the rest of this
+   page load; nl:clean:<player> keeps the time of the game said, so a
+   reload says it no more. A loss is left out, as the games' rail does */
+function cleanLineHtml() {
+  var key = 'nl:clean:' + playerId();
+  if (data.cleanFor !== key) { data.cleanFor = key; data.cleanLine = ''; }
+  if (!data.cleanLine) {
+    var from = Math.max(+store.get(key, 0) || 0, data.prevSeenFor === cfg.user ? data.prevSeen || 0 : 0);
+    var g = scopedGames().filter(function (x) { return x.ts > from && x.res !== 'loss' && covered(x) && (x.plies || 0) >= 6 && gameMistakeCount(x) === 0; })
+      .sort(function (x, y) { return y.ts - x.ts; })[0];
+    if (g) { store.set(key, g.ts); data.cleanLine = 'Clean game vs ' + esc(g.opp) + ': no big mistakes.'; }
   }
+  return data.cleanLine ? '<p class="clean-line">' + data.cleanLine + '</p>' : '';
+}
+/* the week (F5.1): Monday to Sunday, a day that counted filled with a
+   tick, today ringed, and the medal glyph at the goal, honey once it is met;
+   then "2 of 4 days this week · 3 weeks in a row" and the lifetime "27
+   practice days", their zero parts dropped. The first week's goal is the
+   days it has left (goalThisWeek). On the summary of the set that met the
+   goal (F4.4) its medal settles (fx) and line says so ("Goal met: 4 days
+   this week.", the run of weeks then beside the practice days) */
+function weekHtml(fx, line) {
+  var goal = goalThisWeek(), done = weekDays(), weeks = weeksAtGoal(), life = practiceDays();
+  var d = new Date(), dow = (d.getDay() + 6) % 7, row = '';
+  d.setHours(12, 0, 0, 0);
+  for (var i = 0; i < 7; i++) {
+    var x = new Date(d); x.setDate(d.getDate() - dow + i);
+    var on = i <= dow && dayCounts(dayRecOf(x));
+    row += '<span class="wk-b' + (on ? ' on' : '') + (i === dow ? ' now' : i > dow ? ' ahead' : '') + '">' + (on ? '' : 'MTWTFSS'.charAt(i)) + '</span>';
+  }
+  row += done >= goal ? '<span class="medal"' + (fx ? ' data-fx="medal"' : '') + ' aria-hidden="true"></span>' : '<span class="wk-goal"></span>';
+  var run = weeks ? plur(weeks, 'week') + ' in a row' : '', days = life ? plur(life, 'practice day') : '';
+  var say = line ? [line, [run, days].filter(Boolean).join(' · ')] : [Math.min(done, 7) + ' of ' + plur(goal, 'day') + ' this week' + (run ? ' · ' + run : ''), days];
+  return '<div class="week"><div class="wk-row" aria-hidden="true">' + row + '</div>'
+    + '<p class="wk-say">' + say[0] + '</p>' + (say[1] ? '<p class="wk-life">' + say[1] + '</p>' : '') + '</div>';
+}
+/* card 1's opening frame on Today (F5.1), drawn by the card's own frame
+   code (boardOptsFor on the card as it opens): the red arrow on a cued
+   first sight, never a hint or the answer. Kept per position and record,
+   since Today is drawn again often while the games are read */
+var firstFrameMemo = { k: null, h: '' };
+function firstFrameHtml(it) {
+  var r = srsRec(it), mk = it.key + '|' + (it.b.v || 0) + '|' + (it.b.bu || '') + '|' + (r ? (r.n || 0) + '|' + (r.q || 0) : '-') + '|' + playerTier();
+  if (firstFrameMemo.k === mk) return firstFrameMemo.h;
+  var h = '';
+  try {
+    var a = cardFor(it), f = a && boardOptsFor(a);
+    if (f) h = boardSvg(f.st, Object.assign({}, f.opts, { decor: true, fx: null }));
+  } catch (e) { h = ''; }
+  firstFrameMemo = { k: mk, h: h };
+  return h;
+}
+/* the board beside its caption, the board a way in too (a tap starts) */
+function firstHtml(it, act, cap) {
+  var b = it ? firstFrameHtml(it) : '';
+  /* the board is a second way to the button beside it, for a finger or a
+     mouse: the keyboard and a screen reader keep the one button */
+  return '<div class="hero-first">' + (b ? '<a class="hero-board" data-act="' + act + '" tabindex="-1" aria-hidden="true">' + b + '</a>'
+    : '<span class="hero-board wait" aria-hidden="true"></span>') + '<p class="why hero-cap">' + cap + '</p></div>';
+}
+/* what card 1 is (F5.1): "First: the move that lost vs opponent1." (a draw
+   "...cost the win vs ...", a win let go "...let the win get away vs
+   ...", where it turned "First: where the game turned vs ..."), a
+   position met before "First: back for another look, from your game vs
+   opponent5.", another "First: a mistake from your game vs opponent3." */
+function firstCaption(it) {
+  if (!it) return '';
+  var g = it.g, b = it.b, r = srsRec(it), vs = ' vs ' + esc(g.opp) + '.';
+  if (b.d) return 'First: ' + (b.dw === 'turn' ? 'where the game turned' : 'the move that ' + (b.dw === 'slip' ? 'let the win get away' : g.res === 'draw' ? 'cost the win' : 'lost')) + vs;
+  return 'First: ' + (r && !r.q ? 'back for another look, from your game' : 'a mistake from your game') + vs;
+}
+function heroHtml(plan) {
+  plan = plan || todayPlan();
+  var mins = Math.max(1, Math.round(plan.keys.length * 0.8));
+  var first0 = model().byKey[plan.keys[0]];
   /* a session finished today without enough tries: say what counts */
-  var dl = dayLoad();
-  var need = Math.min(3, plan.keys.length);
-  if (dl.short && !dayCounts(dl)) why += need > 1 ? ' Try ' + need + ' positions to count today.' : ' Try it to count today.';
+  var dl = dayLoad(), need = Math.min(3, plan.keys.length), note = '';
+  if (dl.short && !dayCounts(dl)) note = need > 1 ? 'Try ' + need + ' positions to count today.' : 'Try it to count today.';
   /* the title names one set; the rest, when there is more, in line 2 (F7.2) */
   var ab = absorbToday(), dueN = dueCards().length, more = [];
   if (ab && ab.sp) more.push(ab.sp + ' more spread over the next 3 weeks.');
   if (dueN > sessionSize()) more.push(dueN + ' due in all. Each set takes the most important first.');
+  /* phones: the title full width, card 1's board beside its caption, Start
+     full width, then the week (F5.1) */
   return '<div class="hero">'
     + '<h2 id="hero-n" data-n="' + plan.keys.length + '">' + plur(plan.keys.length, 'position') + ', about ' + plur(mins, 'minute') + '</h2>'
     + (more.length ? '<p class="why hero-more">' + more.join(' ') + '</p>' : '')
-    + '<p class="why">' + why + '</p>' + weekHtml()
-    + '<div class="acts"><a class="btn-big" data-icon="play" data-act="startToday">Start</a></div></div>';
+    + firstHtml(first0, 'startToday', firstCaption(first0))
+    + '<div class="acts"><a class="btn-big" data-icon="play" data-act="startToday">Start</a></div>'
+    + weekHtml() + (note ? '<p class="wk-note">' + note + '</p>' : '') + '</div>';
+}
+/* why these positions (F5.2), under the hero: the focus skill and the
+   games it decided, "Why these? Piece safety decided 15 of your games ›"
+   (tier 1 "...cost you 15 games ›"), to the report; only while the set
+   holds a position of that skill */
+function whyTheseHtml(plan) {
+  var f = currentFocus(), m = model();
+  var agg = f && insightFamiliesQuick().filter(function (x) { return x.fam.key === f.fam; })[0];
+  if (!agg || agg.cost < 1 || !plan.keys.some(function (k) { var it = m.byKey[k]; return it && familyOf(patternOf(it.b)).key === f.fam; })) return '';
+  var n = Math.round(agg.cost);
+  return '<p class="why-these"><a data-act="view" data-k="insights">Why these? ' + esc(agg.fam.name)
+    + (playerTier() === 1 ? ' cost you ' + plur(n, 'game') : ' decided ' + (n === 1 ? 'one' : n) + ' of your games') + ' ›</a></p>';
 }
 function resumeHtml(s) {
+  var it = model().byKey[s.keys[s.idx]];
   return '<div class="hero">'
-    + '<h2>Pick up where you left off.</h2><p class="why">' + countsWords(s)
-    + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.') + '</p>' + weekHtml()
-    + '<div class="acts"><a class="btn-big" data-icon="play" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">End this set</a></div></div>';
+    + '<h2>Pick up where you left off.</h2>'
+    + firstHtml(it, 'resume', countsWords(s) + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.'))
+    + '<div class="acts"><a class="btn-big" data-icon="play" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">End this set</a></div>'
+    + weekHtml() + '</div>';
+}
+/* the tab's title (F5.4): "(3) notlichess.org" while 3 positions are due
+   (those a set would take now: dueCards, after the day's opening), else
+   "notlichess.org"; never a name */
+function titleNow() {
+  var n = 0;
+  try { n = cfg.user && !data.narrate && data.games.length ? dueCards().length : 0; } catch (e) { n = 0; }
+  return (n ? '(' + n + ') ' : '') + 'notlichess.org';
+}
+function paintTitle() {
+  var t = titleNow();
+  if (document.title !== t) document.title = t;
 }
 /* the next time something is due back, as one set (F2.6, F7.2, calm):
    "Tomorrow: a set of 10, about 8 minutes." (fewer: "Tomorrow: 3
@@ -323,9 +413,9 @@ function nextSetWords(n) { return n === 1 ? 'One more position' : 'Next set of '
 function doneTodayHtml() {
   var more = morePracticeKeys().length;
   return '<div class="hero">'
-    + '<h2>' + ((dayLoad().sessions || 0) > 0 ? 'Today\'s set is done.' : 'Nothing due right now.') + '</h2><p class="why">' + nextDueHtml() + '</p>' + weekHtml()
+    + '<h2>' + ((dayLoad().sessions || 0) > 0 ? 'Today\'s set is done.' : 'Nothing due right now.') + '</h2><p class="why">' + nextDueHtml() + '</p>'
     + (more ? '<div class="acts"><a class="btn-big" data-icon="arrow" data-act="keepGoing">' + nextSetWords(more) + '</a></div>'
-      : '<p class="why">You have practised every position from your games so far.</p>') + '</div>';
+      : '<p class="why">You have practised every position from your games so far.</p>') + weekHtml() + '</div>';
 }
 function dueWhen(ts) {
   var days = Math.round((ts - Date.now()) / DAY);
@@ -363,35 +453,46 @@ function findingHtml(n) {
       ? stateCard('Only ' + plur(n.total, 'game') + ' so far.', 'Not enough to find much yet. Play a few more rated games and come back.', play)
       : stateCard('Clean games.', 'Stockfish found no big mistakes in your ' + n.total + ' games. That is rare. New games are checked when you come back.', play);
   }
-  var can = n.ready ? todayPlan().keys.length : 0;
+  var plan = n.ready ? todayPlan() : null, can = plan ? plan.keys.length : 0, first0 = can ? model().byKey[plan.keys[0]] : null;
   if (done) {
-    return stateCard(n.ready === 1 ? 'One mistake to learn from.' : n.ready + ' mistakes to learn from.',
-      'Play a few more rated games and more will turn up.', (can ? '<a class="btn-big" data-icon="play" data-act="startToday">Start with ' + can + '</a>' : '') + play.replace('btn-big', 'btn-quiet'));
+    return stateCard(n.ready === 1 ? 'One mistake to learn from.' : n.ready + ' mistakes to learn from.', 'Play a few more rated games and more will turn up.',
+      (can ? '<a class="btn-big" data-icon="play" data-act="startToday">Start with ' + can + '</a>' : '') + play.replace('btn-big', 'btn-quiet'),
+      first0 ? firstHtml(first0, 'startToday', firstCaption(first0)) : '');
   }
+  /* while the games are read the board's place waits as a still square
+     (F5.1), and the first position found takes it */
   if (n.ready) {
     return stateCard(n.ready + ' found so far', 'Start with ' + (n.ready === 1 ? 'this one' : 'these') + ' now, or wait a minute for more.',
       can ? '<a class="btn-big" data-icon="play" data-act="startToday">Start with ' + can + '</a>' : '',
-      '<div class="finds" id="finds">' + recentFindsHtml() + '</div>' + readBar(n));
+      firstHtml(first0, 'startToday', first0 ? firstCaption(first0) : 'More are found as Stockfish reads your games.')
+      + '<div class="finds" id="finds">' + recentFindsHtml() + '</div>' + readBar(n));
   }
-  return stateCard('Reading your games',
-    'Stockfish checks your moves on your device, newest games first. Your first positions show up here as they are found.', '', readBar(n));
+  return stateCard('Reading your games', '',
+    '', firstHtml(null, '', 'Stockfish checks your moves on your device, newest games first. Your first positions show up here as they are found.') + readBar(n));
 }
+/* the focus card (F5.1), above the games: the skill's glyph and name, its
+   check line, a meter of its positions in practice (learned leaf, climbing
+   honey, to go grey, one unit as on Insights) with "3 learned · 12
+   climbing · 29 to go" (zero parts dropped: a beginner reads "12 climbing ·
+   32 to go"), and Practise 8, a drill of the skill */
 function focusHtml() {
   var f = currentFocus();
   if (!f) return '';
   var fam = FAMILIES.filter(function (x) { return x.key === f.fam; })[0];
-  var agg = insightFamiliesQuick().filter(function (x) { return x.fam.key === f.fam; })[0];
-  if (!fam || !agg) return '';
-  /* the personal part is one level down: the family's top patterns */
-  var top = patternStats().filter(function (s) { return fam.types.indexOf(s.key) !== -1 && s.count; })
-    .sort(function (x, y) { return y.cost - x.cost || y.count - x.count; }).slice(0, 2)
-    .map(function (s) { return patternInfo(s.key).plural.toLowerCase(); });
-  var cost = agg.cost >= 1 ? 'Decided ' + fmtGames(agg.cost) + ' of yours' : plur(agg.count, 'position') + ' in your games';
+  if (!fam) return '';
+  var agg = { learned: 0, practising: 0, fresh: 0, count: 0 };
+  patternStats().forEach(function (s) { if (fam.types.indexOf(s.key) !== -1) { agg.learned += s.fixed; agg.practising += s.practising; agg.fresh += s.fresh; agg.count += s.count; } });
+  if (!agg.count) return '';
+  var bar = [[agg.learned, 'sk-l'], [agg.practising, 'sk-c'], [agg.fresh, 'sk-g']].filter(function (x) { return x[0] > 0; })
+    .map(function (x) { return '<i class="' + x[1] + '" style="flex-grow:' + x[0] + '"></i>'; }).join('');
+  var spec = { type: 'family', fam: fam.key, label: fam.name }, nDrill = drillItems(spec, 8).length;
   return '<div class="focus"><a class="focus-more" data-act="sheet" data-k="family:' + fam.key + '">Details ›</a>'
     + '<div class="kicker">Your focus</div>'
-    + '<div class="focus-name">' + esc(fam.name) + '</div>'
-    + '<p class="sec">' + cost + (top.length ? ', mostly ' + esc(top.join(' and ')) : '') + '.</p>'
-    + '<div class="plan">' + esc(lineOfStep(familyStep(fam.key), playerTier())) + '</div></div>';
+    + '<div class="focus-head"><span class="sk-glyph" data-icon="' + ((SKILL[fam.key] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
+    + '<div class="focus-name">' + esc(fam.name) + '</div></div>'
+    + '<div class="plan">' + esc(lineOfStep(familyStep(fam.key), playerTier())) + '</div>'
+    + '<span class="fr-bar focus-bar" aria-hidden="true">' + bar + '</span><p class="focus-prog">' + progressWords(agg) + '</p>'
+    + (nDrill ? '<a class="btn-line" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify(spec)) + '">Practise ' + nDrill + '</a>' : '') + '</div>';
 }
 /* a date outside the current year carries its year */
 function gameDateLine(g) {
@@ -403,7 +504,7 @@ function gameDateLine(g) {
 }
 /* the ladder moving, in plain words: the positions found first try wait
    longer before they come back, and when that is */
-function ladderHtml(ss, keys) {
+function ladderWords(ss, keys) {
   var srs = srsLoad(), now = Date.now(), days = [];
   keys.forEach(function (k) {
     var r = srs[k], e = sumOf(ss, k);
@@ -411,8 +512,8 @@ function ladderHtml(ss, keys) {
   });
   if (!days.length) return '';
   var lo = Math.min.apply(null, days), hi = Math.max.apply(null, days);
-  return '<p class="recap-ladder">' + (days.length === 1 ? 'The position you found comes' : 'The ' + days.length + ' positions you found come') + ' back in '
-    + (lo === hi ? plur(lo, 'day') : lo + ' to ' + hi + ' days') + '.</p>';
+  return (days.length === 1 ? 'The position you found comes' : 'The ' + days.length + ' positions you found come') + ' back in '
+    + (lo === hi ? plur(lo, 'day') : lo + ' to ' + hi + ' days') + '.';
 }
 /* the check line above one card (F2.3): a drill's family or pattern, the
    family of the move that decided a drilled game, or the focus after a
@@ -530,12 +631,14 @@ function learnedHtml(it, e, tier, fx) {
   if (!pre || !pm) return '';
   var g = it.g, mv = tier === 1 ? moveWords(pre, pm) : sanOf(pre, pm).replace(/[+#]$/, '');
   var from = g.res === 'loss' ? 'loss to ' : g.res === 'draw' ? 'draw with ' : 'win against ';
-  /* fx: its seal stamps once, as the summary first paints (F4.4) */
+  /* fx: its seal stamps once, as the summary first paints (F4.4). The seal
+     says it: a 32 px badge on the board's top-right corner, no pips (the
+     design lead's review of slice 4: three pips at the far right read as a
+     ••• menu) */
   return '<div class="recap-item recap-learned"' + (fx ? ' data-fx="seal"' : '') + ' data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'One position' })) + '">'
-    + boardSvg(pre, { flip: g.color === 'black', bad: [pm.from, pm.to], decor: true }) + resultGlyph('learned')
+    + '<span class="learned-board">' + boardSvg(pre, { flip: g.color === 'black', bad: [pm.from, pm.to], decor: true }) + resultGlyph('learned') + '</span>'
     + '<span class="learned-say"><b>Learned: ' + esc(mv) + ', from your ' + from + esc(g.opp) + '.</b> '
-    + (e.d != null ? 'Found ' + plur(e.n, 'time') + ' over ' + plur(e.d, 'day') + '.' : 'Found ' + plur(e.n, 'time') + ' in a row.') + '</span>'
-    + rungHtml(3) + '</div>';
+    + (e.d != null ? 'Found ' + plur(e.n, 'time') + ' over ' + plur(e.d, 'day') + '.' : 'Found ' + plur(e.n, 'time') + ' in a row.') + '</span></div>';
 }
 /* a result's glyph (F3.1), by its category (sumOf's c): a leaf disc with
    a tick first try or for another move that works, a leaf ring with a tick
@@ -580,22 +683,24 @@ function doneHtml(ss) {
       + (e.c === 'skip' ? '' : tier === 1 ? starsHtml(e.s || 0) : e.p != null ? rungHtml(e.p) : '')
       + (e.f && e.l ? '<span class="tile-check">' + esc(e.l) + '</span>' : '') + '</div>';
   }).join('');
-  var sc = recapScore(ss, uniq, tier), moved = movedWords(ss, uniq), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
-  var gm = ss.goalMet, week = gm ? weekHtml('<span class="medal"' + (fx && !learned ? ' data-fx="medal"' : '') + ' aria-hidden="true"></span>', 'Goal met: ' + plur(gm.days, 'day') + ' this week.') : weekHtml();
+  var sc = recapScore(ss, uniq, tier), moved = movedWords(ss, uniq), back = ladderWords(ss, uniq), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
+  var gm = ss.goalMet, week = gm ? weekHtml(fx && !learned, 'Goal met: ' + plur(gm.days, 'day') + ' this week.') : weekHtml();
+  /* the headline and its category line; what moved and when the positions
+     come back in one quiet paragraph under them (the design lead's review
+     of slice 4) */
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
+    + diagHtml(ss, tier)
     + (row ? '<div class="result-row" aria-hidden="true">' + row + '</div>' : '')
     + '<h2 class="done-big" id="recap-h" tabindex="-1">' + sc.head + '</h2>'
     + (sc.then ? '<p class="recap-then">' + sc.then + '</p>' : '')
-    + (moved ? '<p class="recap-moved">' + moved + '</p>' : '')
-    + ladderHtml(ss, uniq)
+    + (moved || back ? '<p class="recap-small">' + (moved ? '<span class="recap-moved">' + moved + '</span>' : '') + (moved && back ? ' ' : '')
+      + (back ? '<span class="recap-ladder">' + back + '</span>' : '') + '</p>' : '')
     + '<div class="recap-week' + (gm ? ' met' : '') + '"><div class="kicker">This week</div>' + week + '</div>'
     + '<p class="recap-next">' + nextDueHtml() + '</p>'
     + (learned || recap ? '<div class="recap">' + learned + recap + '</div>' : '')
-    + (keep.length || ss.routine ? '<div class="focus recap-habit">' + (ss.routine && tier >= 2 ? '<p class="plan routine">' + ROUTINE_LINE + '</p>' : '')
-      + (keep.length === 1 ? '<p class="plan">Keep in mind: ' + esc(keep[0]) + '</p>'
-        : keep.length ? '<p class="plan">Keep in mind:</p><ul class="plans">' + keep.map(function (h) { return '<li class="plan">' + esc(h) + '</li>'; }).join('') + '</ul>' : '')
-    + '</div>' : '')
+    + habitHtml(ss, keep, tier)
+    + cueCardHtml(ss)
     /* the next set is the main way on: a bar that stays at the foot of the
        screen, the next set twice as wide as the way back */
     + '<div class="acts-row recap-acts">'
@@ -604,11 +709,24 @@ function doneHtml(ss) {
     + '</div>'
     + '</div>';
 }
+/* the habit card: the kicker "Keep in mind", the check lines under one
+   bulb, and the routine (F2.3) in small words after them, no icon (the
+   design lead's review of slice 4) */
+function habitHtml(ss, keep, tier) {
+  var routine = !!ss.routine && tier >= 2;
+  if (!keep.length && !routine) return '';
+  return '<div class="focus recap-habit">' + (keep.length ? '<div class="kicker">Keep in mind</div>'
+      + (keep.length === 1 ? '<p class="plan keep-line">' + esc(keep[0]) + '</p>'
+        : '<div class="plan"><ul class="plans">' + keep.map(function (h) { return '<li class="keep-line">' + esc(h) + '</li>'; }).join('') + '</ul></div>') : '')
+    + (routine ? '<p class="routine-line">' + ROUTINE_LINE + '</p>' : '') + '</div>';
+}
 /* the summary's moments (F4.4), once, after its first paint: a position
    learned dings, a goal met plays its four notes (both: the ding, then the
    notes), and a set with neither its own three; under reduced motion the
    stylesheet draws the seal and the medal as they end, and the sound stays.
-   Sound off silences them all (snd) */
+   Sound off silences them all (snd). The way back's bookkeeping, once too:
+   the diagnosis shown in full (F5.2, its measure) and the reminder's
+   question first shown (F5.4) */
 var NOTES_AFTER_DING = 450;
 function summaryMoments(ss) {
   if (!ss || ss.fxShown) return;
@@ -617,6 +735,220 @@ function summaryMoments(ss) {
   if (learned) { reward('learned'); snd('learned'); }
   if (ss.goalMet) { reward('goal'); if (learned) setTimeout(function () { snd('goal'); }, NOTES_AFTER_DING); else snd('goal'); }
   if (!learned && !ss.goalMet) snd('set');
+  var c = cueLoad(), put = false;
+  if (ss.dx && ss.dx.full && !c.rv) { c.rv = Date.now(); put = true; track('reveal_seen'); }
+  if (ss.cue === 'ask' && !c.q) { c.q = Date.now(); put = true; }
+  if (put) cueSave(c);
+}
+
+/* ── the way back (F5.2, F5.4) ───────────────────────────────────────────
+   nl:cue:<player>: q (when the reminder's question first showed), slot and
+   cal (the time picked and added), no (Not now), rv (the diagnosis shown in
+   full), bk and bt (the practice days and the time at the last backup:
+   a file saved, or the prompt answered). shiftDays moves its times */
+function cueKey() { return 'nl:cue:' + playerId(); }
+function cueLoad() { var c = store.get(cueKey(), null); return c && typeof c === 'object' ? c : {}; }
+function cueSave(c) { store.set(cueKey(), c); }
+/* the first diagnosis (F5.2), above the result row, on each summary until
+   it has shown in full once: "Your games, read" / "In 19 of your 27
+   losses, one move turned the game for good." (tier 1 "...one move cost
+   you the game.") / the top three skills with the games they decided /
+   "You started on the biggest: Piece safety." (tier 1 "Your first skill:
+   Piece safety.") / See your report ›. In full once 5 losses are read and
+   the read is done or 30 games are read (a finished read with fewer
+   losses says Insights' own headline); before that "So far: in 7 of your 9
+   losses, one move turned the game for good." (5 losses read) or "Your
+   report builds as you practise: 12 of 40 games read.". Once it has shown
+   in full, one line on the focus skill (else the biggest): "Piece safety: 3
+   learned · 12 climbing · 29 to go.". Decided once a summary (ss.dx), so
+   drawing it again says the same */
+function diagHtml(ss, tier) {
+  if (!ss.dx) {
+    var cov = coverage(), over = readOver(), fams = insightReport().families;
+    if (!fams.length) ss.dx = { k: 'none' };
+    else if (cueLoad().rv) ss.dx = { k: 'line' };
+    else ss.dx = { k: 'card', full: (over || cov.covered >= 30) && (cov.losses >= 5 || over), cov: cov };
+  }
+  var d = ss.dx, fams2 = insightReport().families, t1 = tier === 1;
+  if (d.k === 'none' || !fams2.length) return '';
+  var f = currentFocus(), top = (f && fams2.filter(function (a) { return a.fam.key === f.fam; })[0]) || fams2[0];
+  if (d.k === 'line') return '<p class="diag-line"><span class="sk-glyph" data-icon="' + ((SKILL[top.fam.key] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
+    + '<span>' + esc(top.fam.name) + ': ' + progressWords(top) + '.</span></p>';
+  var cv = d.cov, turned = ', one move ' + (t1 ? 'cost you the game.' : 'turned the game for good.');
+  var link = '<a class="btn-quiet diag-go" data-act="reportOpen">See your report ›</a>';
+  if (!d.full) {
+    return '<section class="diag" aria-label="Your games, read"><div class="kicker">Your games, read</div><p class="diag-so">'
+      + (cv.losses >= 5 ? 'So far: in ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your report builds as you practise: ' + cv.covered + ' of ' + plur(cv.total, 'game') + ' read.')
+      + '</p>' + link + '</section>';
+  }
+  var big = fams2[0], tie = fams2[1] && Math.round(fams2[1].cost) === Math.round(big.cost);
+  var rows = fams2.filter(function (a) { return a.cost > 0; }).slice(0, 3).map(function (a) {
+    return '<div class="dg-row"><span class="sk-glyph" data-icon="' + ((SKILL[a.fam.key] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
+      + '<span class="dg-name">' + esc(a.fam.name) + '</span><span class="dg-n">' + decidedWords(a.cost, tier) + '</span></div>';
+  }).join('');
+  /* "you started on" only once a position of it has been practised, and
+     "the biggest" only where no other skill decided as many */
+  var started = !tie && big.cost > 0 && big.learned + big.practising > 0;
+  return '<section class="diag" aria-label="Your games, read"><div class="kicker">Your games, read</div>'
+    + '<h3 class="diag-h">' + (cv.losses >= 5 ? 'In ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your mistakes, grouped by the skill that would prevent them.') + '</h3>'
+    + (rows ? '<div class="dg-rows">' + rows + '</div>' : '')
+    + (started ? '<p class="diag-start">' + (t1 ? 'Your first skill: ' : 'You started on the biggest: ') + esc(big.fam.name) + '.</p>' : '')
+    + link + '</section>';
+}
+/* the reminder (F5.4), on the summary after the habit card, never in the
+   sticky bar: once, on the first summary (and that day's others until it
+   is answered), "When will you practise?" Morning, Midday, Evening, then
+   Add to calendar (an .ics file) or Google Calendar, and Not now; then
+   Settings keeps it. Else, when it is due, the backup prompt: "Your
+   progress lives only in this browser. Save a copy?" Save a file, Later.
+   Decided once a summary (ss.cue) */
+var CUE_AT = { morning: [8, 0], midday: [12, 30], evening: [19, 30] };
+var CUE_WORD = { morning: 'Morning', midday: 'Midday', evening: 'Evening' };
+function cueAsk() {
+  var c = cueLoad();
+  return !c.cal && !c.no && (!c.q || dayStamp(new Date(c.q)) === dayStamp());
+}
+function cueCardHtml(ss) {
+  if (ss.cue == null) ss.cue = cueAsk() ? 'ask' : backupDue() ? 'backup' : '';
+  if (ss.cue === 'ask') return '<section class="cue" id="cue" aria-label="Reminders">' + cueBody('summary') + '</section>';
+  if (ss.cue === 'backup') {
+    return '<section class="cue" id="cue" aria-label="Your progress"><p class="cue-q">Your progress lives only in this browser. Save a copy?</p>'
+      + '<div class="cue-acts"><a class="btn-line" data-act="backupSave">Save a file</a><a class="btn-quiet" data-act="backupLater">Later</a></div></section>';
+  }
+  return '';
+}
+/* the reminder's question and its steps, on the summary or in Settings:
+   the three times (the one picked lit), then what the reminder will be
+   ("At 19:30 on Mon, Tue, Thu and Sat, your goal's days.") with Add to
+   calendar and Google Calendar; once a file is made, how to finish */
+function cueBody(where) {
+  var c = cueLoad(), slot = ui.cueSlot || (where === 'settings' ? c.slot : null), made = where === 'summary' && !!c.cal, g = ui.cueHow === 'google';
+  if (made) return '<p class="cue-q">' + (g ? 'Save it in the Google Calendar tab.' : 'Open the file to add it to your calendar.') + '</p><p class="cue-when">' + cueWhen(c.slot) + '</p>'
+    + '<div class="cue-acts"><a class="btn-quiet" data-act="' + (g ? 'cueAdd' : 'cueGcal') + '" data-k="' + c.slot + '">' + (g ? 'Or a calendar file ›' : 'Or Google Calendar ›') + '</a></div>';
+  return (where === 'summary' ? '<p class="cue-q">When will you practise?</p>' : '')
+    + '<div class="chips">' + ['morning', 'midday', 'evening'].map(function (s) {
+      return '<a class="chip' + (slot === s ? ' chip-on' : '') + '" data-act="cueSlot" data-k="' + s + '" aria-pressed="' + (slot === s) + '">' + CUE_WORD[s] + '</a>';
+    }).join('') + '</div>'
+    + (slot ? '<p class="cue-when">' + cueWhen(slot) + '</p>' : '')
+    + (slot || where === 'summary' ? '<div class="cue-acts">' + (slot ? '<a class="btn-line" data-icon="calendar" data-act="cueAdd" data-k="' + slot + '">Add to calendar</a>'
+      + '<a class="btn-quiet" data-act="cueGcal" data-k="' + slot + '">Google Calendar ›</a>' : '')
+    + (where === 'summary' ? '<a class="btn-quiet" data-act="cueNo">Not now</a>' : '') + '</div>' : '');
+}
+/* "At 19:30 on Mon, Tue, Thu and Sat, your goal's days." ("At 19:30
+   Monday to Friday, ...", "At 19:30 every day.") */
+function cueWhen(slot) {
+  var at = CUE_AT[slot] || CUE_AT.evening, days = cueDays(weekGoal()), N = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var on = days.length === 7 ? 'every day' : days.length === 5 ? 'Monday to Friday, your goal\'s days'
+    : 'on ' + days.slice(0, -1).map(function (x) { return N[x]; }).join(', ') + ' and ' + N[days[days.length - 1]] + ', your goal\'s days';
+  return 'At ' + pad2(at[0]) + ':' + pad2(at[1]) + ' ' + on + '.';
+}
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+/* the goal's days (JS days, Monday first): 3 Mon Wed Fri, 4 Mon Tue Thu
+   Sat, 5 Mon to Fri, 7 every day (6 and up: every day) */
+var CUE_DAYS = { 3: [1, 3, 5], 4: [1, 2, 4, 6], 5: [1, 2, 3, 4, 5], 7: [1, 2, 3, 4, 5, 6, 0] };
+function cueDays(g) { return g >= 6 ? CUE_DAYS[7] : CUE_DAYS[g] || CUE_DAYS[3]; }
+/* the event (D12): "notlichess: your practice", "A few minutes on positions
+   from your own games." and the link, never a count of minutes; 10 minutes
+   long, an alarm at its start, weekly on the goal's days at the time
+   picked, in local time wherever the player is (a floating time), from the
+   first of those days after today */
+var CUE_TITLE = 'notlichess: your practice', CUE_NOTE = 'A few minutes on positions from your own games.', CUE_URL = 'https://notlichess.org/#train';
+var ICS_DAY = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+function cueStart(slot, g, now) {
+  var at = CUE_AT[slot] || CUE_AT.evening, days = cueDays(g), d = new Date(now);
+  for (var i = 1; i <= 7; i++) {
+    var x = new Date(d.getFullYear(), d.getMonth(), d.getDate() + i, at[0], at[1]);
+    if (days.indexOf(x.getDay()) >= 0) return x;
+  }
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, at[0], at[1]);
+}
+function icsLocal(d) { return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + 'T' + pad2(d.getHours()) + pad2(d.getMinutes()) + '00'; }
+function icsText(slot, g, now) {
+  var s = cueStart(slot, g, now), e = new Date(s.getTime() + 10 * 60 * 1000);
+  var esc1 = function (x) { return String(x).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); };
+  /* lines over 75 characters fold, the rest of each on a line of its own that starts with a space */
+  var fold = function (l) { var out = l.slice(0, 75); for (var i = 75; i < l.length; i += 74) out += '\r\n ' + l.slice(i, i + 74); return out; };
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//notlichess.org//practice reminder//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VEVENT', 'UID:practice-' + now + '@notlichess.org', 'DTSTAMP:' + new Date(now).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, ''),
+    'DTSTART:' + icsLocal(s), 'DTEND:' + icsLocal(e), 'RRULE:FREQ=WEEKLY;BYDAY=' + cueDays(g).map(function (x) { return ICS_DAY[x]; }).join(','),
+    'SUMMARY:' + esc1(CUE_TITLE), 'DESCRIPTION:' + esc1(CUE_NOTE + '\n' + CUE_URL), 'URL:' + CUE_URL,
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + esc1(CUE_TITLE), 'TRIGGER:PT0S', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].map(fold).join('\r\n') + '\r\n';
+}
+/* the same event as a Google Calendar link, in the player's time zone */
+function gcalUrl(slot, g, now) {
+  var s = cueStart(slot, g, now), e = new Date(s.getTime() + 10 * 60 * 1000), tz = '';
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (x) { tz = ''; }
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(CUE_TITLE) + '&dates=' + icsLocal(s) + '/' + icsLocal(e)
+    + '&details=' + encodeURIComponent(CUE_NOTE + '\n' + CUE_URL) + '&recur=' + encodeURIComponent('RRULE:FREQ=WEEKLY;BYDAY=' + cueDays(g).map(function (x) { return ICS_DAY[x]; }).join(','))
+    + (tz ? '&ctz=' + encodeURIComponent(tz) : '');
+}
+/* the reminder added, as a file or a Google Calendar link: kept, measured
+   (cue_calendar, the cue tag), and the card says how to finish */
+function cueAdd(slot, google) {
+  slot = CUE_AT[slot] ? slot : 'evening';
+  var now = Date.now(), c = cueLoad();
+  if (google) { try { window.open(gcalUrl(slot, weekGoal(), now), '_blank', 'noopener'); } catch (e) {} }
+  else {
+    try {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([icsText(slot, weekGoal(), now)], { type: 'text/calendar;charset=utf-8' }));
+      a.download = 'notlichess-practice.ics';
+      document.body.appendChild(a);
+      if (a.click) a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    } catch (e) {}
+  }
+  c.cal = now; c.slot = slot; delete c.no;
+  cueSave(c);
+  ui.cueHow = google ? 'google' : 'file';
+  track('cue_calendar');
+  measureTag('cue', slot);
+  /* from Settings (no card to say it): how to finish, in a notice */
+  if (!el('cue')) notice(google ? 'Save it in the Google Calendar tab.' : 'Open the file to add it to your calendar.');
+  cuePaint();
+}
+function cueNotNow() {
+  var c = cueLoad();
+  c.no = Date.now();
+  cueSave(c);
+  track('cue_notnow');
+  measureTag('cue', 'notnow');
+  if (ui.session && ui.session.finished) ui.session.cue = '';
+  cuePaint();
+}
+/* the cue tag (F0.7), coarse words only: the time added, notnow, none */
+function cueTag() { var c = cueLoad(); return c.cal ? c.slot || 'calendar' : c.no ? 'notnow' : 'none'; }
+/* the backup prompt (F5.4): once at the first learned position or the 14th
+   practice day, then 30 practice days after the last backup (a file
+   saved, or the prompt answered: Later waits as long) */
+function backupDue() {
+  var c = cueLoad(), days = practiceDays(), srs = srsLoad();
+  if (c.bk == null) return days >= 14 || Object.keys(srs).some(function (k) { return srs[k] && srs[k].learned && !srs[k].hidden; });
+  return days - Math.min(+c.bk || 0, days) >= 30;
+}
+function backupNoted() {
+  var c = cueLoad();
+  c.bk = practiceDays(); c.bt = Date.now();
+  cueSave(c);
+}
+function backupAnswer(save) {
+  if (save) exportProgress(); else backupNoted();
+  if (ui.session && ui.session.finished) ui.session.cue = '';
+  cuePaint();
+}
+/* the card (or Settings) drawn again in place, the keyboard kept on the
+   control it was on */
+function cuePaint() {
+  var foc = document.activeElement, fk = foc && foc.getAttribute ? (foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || '') : '';
+  var card = el('cue'), ss = ui.session;
+  if (ui.sheet === 'settings') renderSettings();
+  if (card && ss && ss.finished) {
+    var html = cueCardHtml(ss);
+    if (html) card.outerHTML = html; else card.remove();
+  } else if (ss && ss.finished && !card) return;
+  var p = fk.split('|'), back = p[0] && document.querySelector('[data-act="' + p[0] + '"]' + (p[1] ? '[data-k="' + p[1] + '"]' : ''));
+  if (!back) back = document.querySelector('#cue [data-act]') || (ss && ss.finished ? el('recap-h') : null);
+  if (back && back.focus) { makeFocusable(back.parentNode || document.body); back.focus({ preventScroll: true }); }
 }
 
 /* ── the card ────────────────────────────────────────────────────────────── */
@@ -2176,7 +2508,18 @@ function fitRows() {
     var barTop = cr && cr.height ? cr.bottom - 8 : bar.getBoundingClientRect().top;
     var roomOf = function () { return barTop - rowsEl.getBoundingClientRect().top; };
     xpEl.classList.remove('tight');
+    xpEl.classList.remove('nosay');
     var room = roomOf();
+    /* before the first move explored, one row takes the sentence's place
+       when no row fits under it (the gold arrow says what the sentence
+       would); after a move the sentence wins (the design lead's review of
+       slice 4) */
+    if (room < XP_ROW && ex.nodes.length === 1) {
+      xpEl.classList.add('nosay');
+      if (roomOf() < XP_ROW) xpEl.classList.add('tight');
+      if (roomOf() < XP_ROW) { xpEl.classList.remove('nosay'); xpEl.classList.remove('tight'); }
+      room = roomOf();
+    }
     /* no room for a row: the head gives up 16 px and the sentence its 4,
        kept where that makes a row fit, or where the sentence would
        otherwise run past the panel's foot */
@@ -2195,6 +2538,7 @@ function fitRows() {
     if (cap) cap.style.display = '';
     rowsEl.style.display = '';
     el('xp').classList.remove('tight');
+    el('xp').classList.remove('nosay');
     /* tier 1 keeps its two rows beside the board */
     k = a.tier === 1 ? 2 : 3;
     rowsEl.className = 'xp-rows k' + k;
@@ -2633,8 +2977,12 @@ function settingsHtml() {
       + [[5, 'Short · 5'], [10, 'Normal · 10'], [20, 'Long · 20']].map(function (o) { return chip('size', o[0], o[1], sessionSize() === o[0]); }).join('')
       + '</div><p>Weekly goal, in days:</p><div class="chips">'
       + [3, 4, 5, 7].map(function (n) { return chip('weekGoal', n, n, weekGoal() === n); }).join('')
-      + '</div>' + (goalThisWeek() !== weekGoal() ? '<p>The new goal starts on Monday. This week stays at ' + goalThisWeek() + '.</p>' : '')
+      + '</div>' + (weekGoalAt(Date.now()) !== weekGoal() ? '<p>The new goal starts on Monday. This week stays at ' + weekGoalAt(Date.now()) + '.</p>'
+        : goalThisWeek() < weekGoal() ? '<p>Your first week counts from your first practice day: ' + plur(goalThisWeek(), 'day') + ' this week.</p>' : '')
       + '<p>' + DAY_RULE + '</p></div>'
+    /* the reminder lives here once the summary has asked (F5.4) */
+    + '<div class="set-block cue-set"><span class="kicker">Reminders</span><p>Add to calendar: a reminder on your goal\'s days, at the time you pick. Nothing is sent to us.</p>'
+      + cueBody('settings') + '</div>'
     + '<div class="set-block"><span class="kicker">Board</span>'
       + sw('sound', 'Sounds', cfg.sound) + '</div>'
     + '<div class="set-block"><span class="kicker">Analysis</span><p>Reading your games</p><div class="chips">'

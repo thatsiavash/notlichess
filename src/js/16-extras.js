@@ -86,9 +86,13 @@ function narrAnimate() {
   setTimeout(tick, 5000);   /* the tips start after 5 s, never at once */
 }
 
-/* new games are picked up about once an hour while the page is open */
+/* new games are picked up about once an hour while the page is open; the
+   tab's due count follows positions as they come due (F5.4), after the
+   day's first opening when a new day has begun */
 setInterval(function () {
   if (!cfg.user || data.narrate || data.sections.games === 'loading') return;
+  if (!ui.session && !absorbToday() && allMistakes().filter(trainable).length >= 3) renderTrain();
+  paintTitle();
   var c = loadCachedGames();
   if (Date.now() - (c.fetchedAt || c.at || 0) > 3600 * 1000) loadGames().then(function () { setTimeout(autoScan, 800); });
 }, 10 * 60 * 1000);
@@ -103,6 +107,7 @@ function onReturn() {
   var away = hiddenAt && Date.now() - hiddenAt > 60 * 1000;
   hiddenAt = 0;
   if (ui.session && ui.session.finished && away) endSession();
+  paintTitle();
   if (ui.session) return;
   var c = loadCachedGames();
   if (Date.now() - (c.fetchedAt || c.at || 0) > 2 * 60 * 1000) loadGames().then(function () { computeGreeting(); renderTrain(); setTimeout(autoScan, 800); });

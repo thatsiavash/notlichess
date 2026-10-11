@@ -140,6 +140,13 @@
         /* beside the board on a phone held sideways, else under it */
         if (c.left < q.right - 1 && (gap < 7.5 || gap > 16.5)) W.lay.push(what + ': the panel\'s top is ' + Math.round(gap) + ' px under the board');
         if (vw() <= 360 && vh() <= 640 && (q.width < 339.5 || c.height < 95.5)) W.lay.push(what + ': at 360 x 640 the board is ' + Math.round(q.width) + ' px and the panel ' + Math.round(c.height));
+        /* a phone held upright: the panel stops at 176 px, or at the room it has where that is less (the
+           design lead's review of slice 4); exploring fills to the bar */
+        const pn = $('#cpanel');
+        if (pn && vh() >= 600 && c.left < q.right - 1 && !$('.card.xp-card')) {
+          const ps = getComputedStyle(pn), room = pn.clientHeight - parseFloat(ps.paddingTop) - parseFloat(ps.paddingBottom), want = Math.max(96, Math.min(176, room));
+          if (Math.abs(c.height - want) > 1.5) W.lay.push(what + ': the panel is ' + Math.round(c.height) + ' px tall, not ' + Math.round(want));
+        }
       }
     } else {
       ['#ctop', '#cband', '#cpanel'].forEach((sel) => { const e = $(sel); if (e && shown(e) && meets(rectOf(e), q)) W.lay.push(what + ': ' + sel + ' overlaps the board'); });
@@ -195,6 +202,24 @@
     ok('Today shows the latest games rail', !!$('#latest .lg-row'));
     layoutCheck('Today');
     ok('no em dash anywhere on Today', text('#main').indexOf('—') === -1);
+    /* F5.1: card 1 as it opens beside its caption (the red arrow of the game move, never a hint or the answer),
+       a tap on it starts; the board, Start and the week above the fold; the focus card within one scroll; no
+       zero part; the game rows on two lines at most. F5.4: the tab's title counts the positions due */
+    const hb = $('.hero .hero-board svg.board'), hst = $('.hero [data-act=startToday].btn-big'), hwk = $('.hero .week');
+    if (hb && hst && hwk) {
+      ok('Today shows card 1 as it opens: the red arrow, no hint, no answer, a tap on it starts (F5.1)', $$('.hero-board .bad-arrow').length === 1 && !$('.hero-board .good-arrow, .hero-board .threat-arrow, .hero-board [class*=ring-]')
+        && $('.hero-board').getAttribute('data-act') === 'startToday' && /^First: /.test(text('.hero-cap')), text('.hero-cap'));
+      ok('the board, Start and the week row above the fold, the focus card within one scroll (F5.1)', rectOf(hb).bottom <= vh() && rectOf(hst).bottom <= vh() && rectOf(hwk).bottom <= vh() && (!$('.focus') || rectOf($('.focus')).top < 2 * vh()),
+        [rectOf(hb).bottom, rectOf(hst).bottom, rectOf(hwk).bottom, $('.focus') ? rectOf($('.focus')).top : '-', vh()].map((x) => Math.round(x) || x).join(' / '));
+      ok('the week: Monday to Sunday, today ringed, the medal glyph at the goal (F5.1)', $$('.hero .wk-b').length === 7 && $$('.hero .wk-b.now').length === 1 && !!$('.hero .wk-goal, .hero .wk-row .medal')
+        && /^\d+ of \d+ days? this week( · \d+ weeks? in a row)?$/.test(text('.hero .wk-say')), text('.hero .wk-say'));
+    }
+    ok('Today says no zero part ("0 learned")', !/(^|\D)0 (learned|climbing|to go|practice days?|weeks? in a row)\b/.test(text('#trainbox')), text('.focus-prog'));
+    ok('each game row 64 px or more, its name on two lines at most, its meta on one, its state never wrapped (the design lead\'s review of slice 4)', $$('#latest .lg-row').length === 4 && !!$('#latest [data-act=allGames]')
+      && [].every.call($$('#latest .lg-row'), (r) => { const nm = r.querySelector('.lg-name'), mt = r.querySelector('.lg-who small'), st = r.querySelector('.lg-state');
+        return rectOf(r).height >= 63.5 && nm.offsetHeight <= 41 && mt.offsetHeight <= 21 && st.scrollWidth <= st.clientWidth + 1 && st.offsetHeight <= 42; }),
+      [].map.call($$('#latest .lg-row'), (r) => Math.round(rectOf(r).height)).join(','));
+    ok('the tab\'s title counts the positions due (F5.4)', document.title === (T.stats().due ? '(' + T.stats().due + ') ' : '') + 'notlichess.org', document.title + ' / ' + T.stats().due);
 
     /* ── a session: solve the first card ─────────────────────────────── */
     click('[data-act=startToday]') || click('[data-act=keepGoing]')
@@ -741,8 +766,17 @@
     await until(() => T.card().finished || !!$('.recap-item'), 20000);
     ok('the session ends in a recap', !!$('.recap-item'), text('#trainbox').slice(0, 80));
     layoutCheck('the summary');
+    /* F5.2: the first diagnosis (in full, or how far the read is) above the result row, with its way to the report;
+       F5.4: the first summary asks when you will practise, after the habit card, never in the sticky bar */
+    const dg = $('.recap-page .diag') || $('.recap-page .diag-line'), rr = $('.recap-page .result-row');
+    ok('the summary leads with the diagnosis above the result row, with See your report (F5.2)', !!dg && (!rr || !!(dg.compareDocumentPosition(rr) & Node.DOCUMENT_POSITION_FOLLOWING))
+      && (!$('.recap-page .diag') || (!!$('.diag [data-act=reportOpen]') && /^(In \d+ of your \d+ losses, one move (turned the game for good|cost you the game)\.|So far: in \d+ of your \d+ losses|Your report builds as you practise: \d+ of \d+ games read\.|Your mistakes, grouped)/.test(text('.diag h3, .diag .diag-so')))),
+      dg ? dg.innerText.replace(/\n+/g, ' / ').slice(0, 120) : 'none');
+    const cue = $('#cue'), hab = $('.recap-habit');
+    ok('the first summary asks "When will you practise?" after the habit card, never in the bar (F5.4)', !!cue && /When will you practise\?/.test(cue.innerText) && $$('#cue [data-act=cueSlot]').length === 3 && !!$('#cue [data-act=cueNo]')
+      && !cue.closest('.recap-acts') && (!hab || !!(hab.compareDocumentPosition(cue) & Node.DOCUMENT_POSITION_FOLLOWING)), cue ? cue.innerText.replace(/\n+/g, ' / ') : 'no cue card');
     /* F2.1: each position by its category (a one more try after it), the honest score from them
-       (tier 1 in stars); no "spotted" line; "Keep in mind:" once with the check lines (F2.3) */
+       (tier 1 in stars); no "spotted" line; "Keep in mind" once with the check lines (F2.3) */
     const words = [].map.call($$('.recap-item .res'), (e) => e.textContent);
     ok('the recap says each card in words', words.length > 0 && words.every((w) => /^(First try|Works too|After a good move|With a hint|First look|After a miss|Shown|Missed|Skipped)(, then (found|found with a hint|found after a miss|shown again|missed again))?$/.test(w)), words.join(', '));
     ok('the cards revealed to finish read Shown', words.some((w) => /^Shown/.test(w)), words.join(', '));
@@ -764,8 +798,9 @@
     const head = text('#recap-h'), firstN = words.filter((w) => /^First try/.test(w)).length, countedN = words.filter((w) => w !== 'Skipped').length;
     const tier1 = T.ev('playerTier()') === 1;
     ok('the recap counts what it says', !countedN ? head === 'Done.' : tier1 ? new RegExp('^\\d+ of ' + countedN * 3 + ' stars$').test(head) : head === firstN + ' of ' + countedN + ' found first try.', head + ' / ' + words.join(', '));
-    const habits = $$('.recap-habit li.plan').length ? [].map.call($$('.recap-habit li.plan'), (e) => e.textContent) : [].map.call($$('.recap-habit .plan:not(.routine)'), (e) => e.textContent.replace(/^Keep in mind: /, ''));
-    ok('one check line per step met, said once', habits.length >= 1 && (text('.recap-habit').match(/Keep in mind:/g) || []).length === 1 && new Set(habits).size === habits.length && habits.every((h) => h.length > 10), habits.join(' | '));
+    const habits = [].map.call($$('.recap-habit .keep-line'), (e) => e.textContent);
+    ok('one check line per step met, said once, under one "Keep in mind" and one bulb', habits.length >= 1 && $$('.recap-habit > .kicker').length === 1 && text('.recap-habit > .kicker') === 'Keep in mind'
+      && $$('.recap-habit .plan').length === 1 && new Set(habits).size === habits.length && habits.every((h) => h.length > 10), habits.join(' | '));
     ok('no "spotted" line on the recap', !/spotted/i.test(text('#trainbox')));
     ok('the recap offers to play a game', !!$('.recap-acts .btn-big'));
     /* F4.5: a glyph per position leads the summary; the next set, in the bar at the screen's foot, stays in

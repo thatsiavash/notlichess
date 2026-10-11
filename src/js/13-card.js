@@ -1318,6 +1318,8 @@ function finishCard(result, beats) {
   modelDirty();
   renderCard(beats);
   renderHeader();
+  /* the tab's due count follows each answer (F5.4) */
+  paintTitle();
   track(result === 'first' ? 'solve_first' : 'solve_' + result);
 }
 /* missed cards come back once at the end, for the widest spacing */

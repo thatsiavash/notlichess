@@ -141,6 +141,8 @@ function returnEvents() {
     measureTag('first_week', isoWeek(first || now));
     measureTag('tier', playerTier());
     measureTag('installed', installedApp() ? 'yes' : 'no');
+    /* the reminder chosen (F5.4): its time, notnow, or none */
+    measureTag('cue', cueTag());
     var utm = linkStore.get('nl:utm');
     if (utm && window.clarity) window.clarity('set', 'utm_source', utm.slice(0, 40));
     var sent = 'nl:retDay:' + playerId();
@@ -390,6 +392,8 @@ function exportProgress() {
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   track('export_done');
+  /* a backup made: the next prompt waits 30 practice days (F5.4) */
+  backupNoted();
 }
 function importProgress() {
   var inp = document.createElement('input');
@@ -576,6 +580,21 @@ document.addEventListener('click', function (e) {
     case 'scanDepth': store.set('nl:scanDepth', k === 'thorough' ? 'thorough' : 'std'); track('scan_' + (k === 'thorough' ? 'thorough_on' : 'standard')); renderSettings(); autoScan(); setTimeout(autoEnrich, 500); break;
     case 'weekGoal': setWeekGoal(parseInt(k, 10)); renderSettings(); renderTrain(); break;
     case 'reload': checkForGames(); break;
+    /* Today's games rail: every game, not four (F5.1) */
+    case 'allGames': {
+      ui.allGames = true;
+      var lgr = el('latest');
+      if (lgr) { lgr.outerHTML = latestGamesHtml(); var lgn = document.querySelectorAll('#latest .lg-row')[LATEST_N]; if (lgn) { makeFocusable(el('latest')); lgn.focus({ preventScroll: true }); } }
+      break;
+    }
+    /* the way back (F5.2, F5.4): the diagnosis's report, the reminder, the backup */
+    case 'reportOpen': closeSheet(); track('reveal_open'); setView('insights'); break;
+    case 'cueSlot': ui.cueSlot = CUE_AT[k] ? k : null; cuePaint(); break;
+    case 'cueAdd': cueAdd(k, false); break;
+    case 'cueGcal': cueAdd(k, true); break;
+    case 'cueNo': cueNotNow(); break;
+    case 'backupSave': backupAnswer(true); break;
+    case 'backupLater': backupAnswer(false); break;
     case 'exportProgress': exportProgress(); break;
     case 'importProgress': importProgress(); break;
     case 'engineRetry': SF.state = 'idle'; SF.crashes = []; engineLoad().then(function () { autoScan(); }, function () {}); renderAll(); break;

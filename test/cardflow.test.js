@@ -6106,7 +6106,7 @@ const BAR = `(function () {
         solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.animMove = null; a.settle = 2;
         var dh = detailsHtml(), ss = ui.session; ss.active = null; ss.finished = true;
         var h = doneHtml(ss);
-        out[tier] = { details: (/<p class="habit">([^<]*)</.exec(dh) || [])[1], keep: (/Keep in mind: ([^<]*)</.exec(h) || [])[1] || '', tile: (/class="tile-check">([^<]*)</.exec(h) || [])[1] || '' };
+        out[tier] = { details: (/<p class="habit">([^<]*)</.exec(dh) || [])[1], keep: (/class="(?:plan )?keep-line">([^<]*)</.exec(h) || [])[1] || '', tile: (/class="tile-check">([^<]*)</.exec(h) || [])[1] || '' };
       });
       /* the routine: the first summary at tier 2 once; Insights at 2 and 3 */
       var fin = function (tier) { playerTier = function () { return tier; }; ui.session = { mode: 't', label: 't', keys: [], idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {} }; finishSession(); return /Every move: their move, your chances, safety check\\./.test(doneHtml(ui.session)); };

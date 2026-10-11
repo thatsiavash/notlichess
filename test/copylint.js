@@ -85,18 +85,23 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
           var e = ui.session.sum && ui.session.sum[it.key], one = { mode: 't', label: 't', keys: [it.key], idx: 1, results: {}, notes: {}, sum: {}, relearn: [], relearnOf: {}, finished: true };
           one.results[it.key] = ui.session.results[it.key] || 'first';
           if (e) one.sum[it.key] = e;
-          var d1 = doneHtml(one), tc = /<span class="tile-check">([^<]*)</.exec(d1), km = /Keep in mind: ([^<]*)</.exec(d1);
+          var d1 = doneHtml(one), tc = /<span class="tile-check">([^<]*)</.exec(d1), km = /class="(?:plan )?keep-line">([^<]*)</.exec(d1);
           habits.push([tier, it.key, hm ? txt(hm[1]).trim() : '', tc ? txt(tc[1]).trim() : km ? txt(km[1]).trim() : '']);
         }
       });
     });
     ui.session = null;
-    screen(tier, 'today', heroHtml() + focusHtml() + latestGamesHtml() + nextDueHtml());
+    screen(tier, 'today', heroHtml() + whyTheseHtml(todayPlan()) + cleanLineHtml() + focusHtml() + latestGamesHtml() + nextDueHtml());
     var ks = allMistakes().filter(trainable).slice(0, 5).map(function (x) { return x.key; });
     var res = ['first', 'retry', 'hint', 'fail', 'skip'], ss = { mode: 'today', label: 'Today', keys: ks, idx: ks.length, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true };
     ks.forEach(function (k, i) { ss.results[k] = res[i]; });
     ss.notes[ks[3]] = 'shown';
+    /* with the first diagnosis in full and the reminder's question (F5.2, F5.4); then the diagnosis's
+       other states, the backup prompt and the reminder in Settings */
     screen(tier, 'summary', doneHtml(ss));
+    screen(tier, 'summary', diagHtml({ dx: { k: 'line' } }, tier) + diagHtml({ dx: { k: 'card', full: false, cov: { losses: 9, decided: 7, covered: 12, total: 40 } } }, tier)
+      + diagHtml({ dx: { k: 'card', full: false, cov: { losses: 2, decided: 1, covered: 12, total: 40 } } }, tier) + cueCardHtml({ cue: 'backup' }));
+    ui.cueSlot = 'evening'; screen(tier, 'settings', cueBody('settings')); ui.cueSlot = null;
     ui.view = 'insights'; box.innerHTML = '';
     renderInsights();
     screen(tier, 'insights', box.innerHTML);
