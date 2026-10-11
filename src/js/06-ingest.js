@@ -100,10 +100,17 @@ function blunderLedger(g, meIsWhite, gRec) {
   if (!out.length) return null;
   return keepMistakes(out, gRec, g.moves, analysisSeries(g));
 }
-/* White-view series from lichess analysis */
+/* White-view series from lichess analysis. A game that ended in mate
+   scores its last position as the mate (V1.8), whatever the analysis left
+   there (an unscored entry reads 0, 50%) */
 function analysisSeries(g) {
   if (!g.analysis) return null;
-  return wpSeries(g.analysis.map(function (a) { return a ? evalCp(a) : null; }));
+  var cps = g.analysis.map(function (a) { return a ? evalCp(a) : null; }), n = g.moves ? g.moves.split(' ').length : 0;
+  if (g.status === 'mate' && g.winner && n) {
+    while (cps.length < n) cps.push(null);
+    cps[n - 1] = g.winner === 'white' ? 1500 : -1500;
+  }
+  return wpSeries(cps);
 }
 /* the stored cards of a game: the decisive mistake always, then the
    biggest swings up to the cap; time-scramble moves (under 5 seconds on the
@@ -295,6 +302,9 @@ function scanGame(g) {
         }
         var cps = [];
         for (var k = 0; k < toks.length && k < LAST; k++) cps.push(evals[k] ? evals[k].cp : null);
+        /* a game that ended in mate: its last position is the mate (V1.8),
+           whatever the engine left there */
+        if (walkOk && toks.length <= LAST && isMate(st)) cps[toks.length - 1] = st.w ? -1500 : 1500;
         g.wp = wpSeries(cps);
         g.bl = bl.length ? keepMistakes(bl, g, full.moves, g.wp) : null;
         g.mv = g.bl ? full.moves : null;   /* movetext stays only where cards live */

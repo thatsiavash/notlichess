@@ -47,6 +47,10 @@ function model() {
   var items = [], byKey = {};
   data.games.forEach(function (g) {
     if (!g.bl || !g.mv || !inScope(g)) return;
+    /* a card's fact sheet (V1.1), stored but not yet written to its record
+       (a progress file, a refetch, the test fixture), is applied first, so
+       the decisive flags read its win chances */
+    g.bl.forEach(function (b) { if (b.k && b.kp !== FACTS_V) factsApply({ g: g, b: b }); });
     markDecisive(g);
     g.bl.forEach(function (b) {
       if (!b.x && b.bu && (b.cv || 1) < CLASSIFY_V) relabelLater();
@@ -89,17 +93,24 @@ function liveCache() {
   return { games: data.games, ts: c.games.length ? c.ts : 0, perfs: c.perfs, hd: c.hd, fetchedAt: c.fetchedAt };
 }
 function trainable(it) { return !!(it.g.mv && it.b.bu && !it.b.x); }
+/* a position a set may deal: with the engine down, only one whose fact
+   sheet is stored (V1.1), since nothing else on it is checked */
+function dealable(it) { return trainable(it) && (SF.state !== 'failed' || !!factsOf(it.b)); }
 
 
 /* ── decisive mistakes ──────────────────────────────────────────────────
    The move that decided a game. With the stored win-chance series (g.wp,
    one character per ply, White's view) the rule is exact: in a loss, the
-   first mistake from 40%+ after which you never get back to 40%; in a draw
-   or loss from a won game, a drop from 70%+ to under 60% that never
-   recovers to 70%. Without the series (older records) the last such
-   crossing among your mistakes stands in. */
+   biggest drop from a playable position (30% or more, V1.8) after which you
+   never get back to even; in a draw or loss from a won game, a drop from
+   70%+ to under 60% that never recovers to 70%. Without the series (older
+   records) the last crossing of 30% among your mistakes stands in. A game
+   that ended in mate scores its last position 0 or 100 (V1.8), whatever the
+   series kept there: an import that left the mated position unscored reads
+   it as 50%, "back to even" */
 function wpAt(g, ply) {
   if (!g.wp || ply < 0 || ply >= g.wp.length) return null;
+  if (g.status === 'mate' && ply === g.plies - 1 && (g.res === 'win' || g.res === 'loss')) return g.res === 'win' ? 100 : 0;
   var ch = g.wp.charAt(ply);
   if (ch === '.') return null;
   var code = g.wp.charCodeAt(ply);
@@ -129,6 +140,9 @@ function maxAfter(g, ply) {
   }
   return m;
 }
+/* a playable position, for the decided rule: a blunder into mate from 34%
+   lost a game the player could still play (V1.8) */
+var DECIDED_FLOOR = 30;
 function markDecisive(g) {
   if (!g.bl) return;
   g.bl.forEach(function (b) { b.d = 0; delete b.dw; });
@@ -139,7 +153,7 @@ function markDecisive(g) {
     /* in a loss: the biggest drop from a playable position after which the
        player never got back to even */
     if (g.res === 'loss') mine.forEach(function (b) {
-      if (b.wb >= 40 && maxAfter(g, b.p) < 50 && (!pick || b.wb - b.wa > pick.wb - pick.wa)) { pick = b; w = 1; }
+      if (b.wb >= DECIDED_FLOOR && maxAfter(g, b.p) < 50 && (!pick || b.wb - b.wa > pick.wb - pick.wa)) { pick = b; w = 1; }
     });
     if (pick) pick.dw = pick.wa < 30 ? 'lost' : 'turn';
     if (!pick) for (var j = 0; j < mine.length && !pick; j++) {
@@ -149,7 +163,7 @@ function markDecisive(g) {
   } else {
     for (var k = mine.length - 1; k >= 0 && !pick; k--) {
       var d = mine[k];
-      if (g.res === 'loss' && d.wb >= 40 && d.wa < 40) { pick = d; w = 1; }
+      if (g.res === 'loss' && d.wb >= DECIDED_FLOOR && d.wa < DECIDED_FLOOR) { pick = d; w = 1; }
     }
     if (!pick) for (var q = mine.length - 1; q >= 0 && !pick; q--) {
       var e = mine[q];

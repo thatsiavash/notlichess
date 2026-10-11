@@ -121,6 +121,8 @@ var MARK_ARROW = {
   lesson: { color: 'rgba(182,130,53,.95)', w: 5, cls: 'lesson-arrow' },
   game: { color: 'rgba(201,80,60,.9)', w: 6, cls: 'bad-arrow' },
   better: { color: 'rgba(61,139,58,.92)', w: 6, cls: 'good-arrow' },
+  /* the main move beside a move in its found band (V1.2), thin */
+  main: { color: 'rgba(61,139,58,.85)', w: 3, cls: 'main-arrow' },
   explore: { color: 'rgba(182,130,53,.85)', w: 6, cls: 'ghost-arrow' },
   threat: { color: 'rgba(201,80,60,.9)', w: 5, cls: 'threat-arrow', dash: '7 5.5' },
   reply: { color: 'rgba(122,150,184,.95)', w: 5, cls: 'reply-arrow', dash: '7 5.5' },

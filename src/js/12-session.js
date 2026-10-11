@@ -163,7 +163,7 @@ function buildCandidates(n, spec, fill, o) {
   /* never seen, or back in the queue (F7.1): those count as new */
   var list = allMistakes().filter(function (it) {
     var r = srs[it.key];
-    return trainable(it) && (!r || (r.q && !r.hidden)) && (!filter || filter(it)) && !twoAnswers(it);
+    return dealable(it) && (!r || (r.q && !r.hidden)) && (!filter || filter(it)) && !twoAnswers(it);
   });
   /* each score once: the ease check replays the game */
   var score = {};
@@ -191,7 +191,7 @@ function dueCards(spec, o) {
   var filter = spec ? specFilter(spec) : null;
   return allMistakes().filter(function (it) {
     var r = srs[it.key];
-    return r && !r.hidden && r.due != null && r.due <= end && trainable(it) && (!filter || filter(it));
+    return r && !r.hidden && r.due != null && r.due <= end && dealable(it) && (!filter || filter(it));
   }).sort(valueOrder(srs));
 }
 /* the most valuable first (F7.1): a move that decided a game, then the
@@ -213,7 +213,7 @@ function spreadCards() {
   var srs = srsLoad();
   return allMistakes().filter(function (it) {
     var r = srs[it.key];
-    return r && r.sp && !r.hidden && r.due != null && trainable(it);
+    return r && r.sp && !r.hidden && r.due != null && dealable(it);
   }).sort(valueOrder(srs));
 }
 
@@ -488,7 +488,7 @@ function morePracticeKeys() {
   if (keys.length < size) {
     allMistakes().filter(function (it) {
       var r = srs[it.key];
-      return r && !r.hidden && !r.q && trainable(it) && keys.indexOf(it.key) === -1 && !(r.last && now - r.last < recent);
+      return r && !r.hidden && !r.q && dealable(it) && keys.indexOf(it.key) === -1 && !(r.last && now - r.last < recent);
     }).sort(function (x, y) {
       var dx = srs[x.key].due, dy = srs[y.key].due;
       return (dx == null ? Infinity : dx) - (dy == null ? Infinity : dy);
@@ -573,7 +573,7 @@ function specFilter(spec) {
 }
 function drillItems(spec, n) {
   var srs = srsLoad(), now = Date.now(), f = specFilter(spec);
-  var list = allMistakes().filter(function (it) { return trainable(it) && f(it) && !(srs[it.key] && srs[it.key].hidden); });
+  var list = allMistakes().filter(function (it) { return dealable(it) && f(it) && !(srs[it.key] && srs[it.key].hidden); });
   var band = function (it) {
     var r = srs[it.key];
     if (!r || r.q) return 1;

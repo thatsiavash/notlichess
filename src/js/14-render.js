@@ -769,11 +769,13 @@ function learnedHtml(it, e, tier, fx) {
     + (e.d != null ? 'Found ' + plur(e.n, 'time') + ' over ' + plur(e.d, 'day') + '.' : 'Found ' + plur(e.n, 'time') + ' in a row.') + '</span></div>';
 }
 /* a result's glyph (F3.1), by its category (sumOf's c): a leaf disc with
-   a tick first try or for another move that works, a leaf ring with a tick
-   after a good move, a honey bulb with a hint or a first look, a honey
-   rotate after a miss, a slate eye shown, a dash for one missed or skipped,
-   a honey seal for a position learned; drawn by the stylesheet (.rg) */
-var RESULT_GLYPH = { first: 'first', alt: 'first', good: 'good', hint: 'hint', look: 'hint', miss: 'miss', shown: 'shown', left: 'skip', skip: 'skip', learned: 'learned' };
+   a tick first try, a leaf ring with a tick after a good move or for
+   another move that works too (it holds, V1.2: the first-try tick is only
+   for a find the headline counts), a honey bulb with a hint or a first
+   look, a honey rotate after a miss, a slate eye shown, a dash for one
+   missed or skipped, a honey seal for a position learned; drawn by the
+   stylesheet (.rg) */
+var RESULT_GLYPH = { first: 'first', alt: 'good', good: 'good', hint: 'hint', look: 'hint', miss: 'miss', shown: 'shown', left: 'skip', skip: 'skip', learned: 'learned' };
 function resultGlyph(c) {
   var g = RESULT_GLYPH[c];
   return g ? '<span class="rg rg-' + g + '" aria-hidden="true"></span>' : '';
@@ -1252,8 +1254,12 @@ function boardOptsFor(a) {
     if (addReplyMarks(a, view, opts, !!sdue)) land = true;
     if (sdue) {
       opts.sel = a.sel;
-      if (a.sel === sdue.from) opts.dots = [sdue.to];
+      var snear = showNearMoves(a).filter(function (x) { return x.from === a.sel; }).map(function (x) { return x.to; });
+      if (a.sel === sdue.from || snear.length) opts.dots = (a.sel === sdue.from ? [sdue.to] : []).concat(snear);
     }
+    /* V1.2: a move in the found band settles with the main move beside it,
+       a thin green arrow */
+    if (a.view.mode === 's0' && a.near && !opts.anim) opts.arrows = (opts.arrows || []).concat([{ from: a.best.from, to: a.best.to, kind: 'main', key: 'main' }]);
     if (a.view.mode === 's0' && a.settle >= 1 && !opts.anim) {
       /* the ghost and the tokens fade in once, as this beat's effect */
       var s0 = s0Marks(a, view.st);
@@ -1459,6 +1465,9 @@ function boardAria(a, st, o) {
     /* the player's own guess of their reply (F10.1) */
     else if (m.kind === 'guess') out.push('Blue arrow: your guess of ' + side(!myPov(a.it)) + '\'s reply, ' + mv(m) + '.');
     else if (m.kind === 'better') out.push('Green arrow: ' + (m.key === 'answer' ? 'the answer, ' : 'the better move, ') + mv(m) + '.');
+    /* V1.2: beside a move in its found band, the main move (from the card's
+       own position, where its piece stood) */
+    else if (m.kind === 'main') out.push('Thin green arrow: the main move, ' + PIECE_WORD[pType(a.pre.b[m.from])] + ' ' + sqName(m.from) + ' to ' + sqName(m.to) + '.');
     else if (m.kind === 'explore') out.push('Gold arrow: ' + (a.tier === 1 ? 'the computer\'s pick, ' : 'Stockfish\'s pick, ') + mv(m) + '.');
     /* a lesson's arrow (F9.3): a piece's line, as its caption says it */
     else if (m.kind === 'lesson') out.push('Gold arrow: ' + mv(m) + '.');
@@ -1837,7 +1846,7 @@ function s0ThreatHolds(a, st, th) {
    settle, next (its move from st, UCI, or null at its end)}; null when st
    is on neither */
 function s0Line(a, st) {
-  var own = !!(a.alt && a.yours), ucis = own ? a.yours.uci : unpackUci(a.it.b.lu), key = posKey(st);
+  var own = !!(a.own && a.yours), ucis = own ? a.yours.uci : unpackUci(a.it.b.lu), key = posKey(st);
   var line = own ? buildLine(a.pre, '0000', ucis, myPov(a.it)) : a.cls.bestLine;
   if (!line) return null;
   for (var j = 0; j < line.nodes.length; j++) {
@@ -2703,6 +2712,8 @@ function detailsGame(a) {
 var SAFE_CLAIM = /\bsafe\b|out of danger|keeps your position together/;
 function detailsBest(a, s, best) {
   var c = a.cls, say = s.best || best + ' keeps your position together.', bl = c && c.bestLine;
+  /* a best line that forces mate claims no material (V1.4) */
+  if (forcedMate(a) && !(c && c.mateFor)) return best + ' forces mate.';
   if (SAFE_CLAIM.test(say) && bl && !c.mateFor && bestLossFrom(a, 0) >= 1) return best + ' was the better move.';
   if (bl && / wins [^.]+\.$/.test(say)) {
     var won = c.matBest >= 1 ? plainCapture(bl, c.bSettle) || oneWord(null, c.matBest) : '', sq = wonSquare(bl, 1, c.bSettle, won);
@@ -2726,7 +2737,7 @@ function detailsHtml() {
   if (b.d) h += '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(it.g, b) + '.</p>';
   var why = detailsGame(a);
   h += '<div class="dt-lines">' + row('tl-bad', esc(a.tier === 1 ? why.replace(/ \(\d+% to \d+%\)/g, '') : why))
-    + (a.alt && a.lines.yours ? row('tl-alt', esc(altNames(a).mine) + ' also holds.') : '')
+    + ((a.alt || (a.near && a.near.deep)) && a.lines.yours ? row('tl-alt', esc(altNames(a).mine) + ' also holds.') : '')
     + row('tl-good', esc(detailsBest(a, s, best)));
   var opp = opponentLine(a);
   if (opp) h += row('tl-opp', opp);

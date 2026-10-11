@@ -1446,7 +1446,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       /* R4 and F1.4: what the better move saves (or keeps), what it guards, a trade in the board's pieces, a
          plan card's loss, where your game left it ("In your game, Nc5 left White better."), tier 3's figures,
          tier 1 without SAN; never "on top" (content's review of slice 1) */
-      var R4 = /^(\\S+ is guarded\\. |\\S+ wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\. )?\\S+ (lost|could lose) (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.$|^\\S+ (is guarded|wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?))\\.$|^\\S+ allowed checkmate\\.( They missed it\\.)?$|^\\S+ wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\. \\S+ missed it\\.$|^\\S+ leads to checkmate\\.$|^\\S+ allowed (a draw|endless checks)\\.$|^(In your game, \\S+|\\S+|Your game move) left (you still better|the game even|(White|Black) (better|winning))\\.$|^(\\S+|Your game move) was a mistake\\.$|^Your game move (lost|could lose) (?:(?:a|an|the|two|three) [a-z ]+|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.$|^\\S+ (saves|keeps) your (?:pawn|knight|bishop|rook|queen)( and (?:pawn|knight|bishop|rook|queen))?\\.( \\S+ (lost|could lose) (it|them)\\.)?$|^\\S+ guards [a-h][1-8] and your (?:pawn|knight|bishop|rook|queen)\\.$|^(Only move|Best): \\S+ \\d+%\\. Next best \\d+%\\.$|^\\S+ \\d+%\\. Your \\S+ \\d+%\\.$/;
+      /* V1.2 adds the found band's and works too's forms, V1.4 a forced mate's, V1.6 a line's later miss */
+      var R4 = /^(\\S+ is guarded\\. |\\S+ wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\. )?\\S+ (lost|could lose) (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.$|^\\S+ (is guarded|wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?))\\.$|^\\S+ allowed checkmate\\.( They missed it\\.)?$|^\\S+ wins (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\. \\S+ missed it\\.$|^\\S+ leads to checkmate\\.$|^\\S+ allowed (a draw|endless checks)\\.$|^(In your game, \\S+|\\S+|Your game move) left (you still better|the game even|(White|Black) (better|winning))\\.$|^(\\S+|Your game move) was a mistake\\.$|^Your game move (lost|could lose) (?:(?:a|an|the|two|three) [a-z ]+|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.$|^\\S+ (saves|keeps) your (?:pawn|knight|bishop|rook|queen)( and (?:pawn|knight|bishop|rook|queen))?\\.( \\S+ (lost|could lose) (it|them)\\.)?$|^\\S+ guards [a-h][1-8] and your (?:pawn|knight|bishop|rook|queen)\\.$|^(Only move|Best): \\S+ \\d+%\\. Next best \\d+%\\.$|^\\S+ \\d+%\\. Your \\S+ \\d+%\\.$|^The main move was \\S+\\.$|^\\S+ is as good as \\S+\\.$|^Just as good as the main answer\\.$|^(Only move: )?\\S+ forces (mate|checkmate)\\.$|^First move found, a later one missed\\.$|^\\S+ found\\. \\S+ missed later\\.$/;
       /* a word for a tap that is not a move, shown as the page shows it */
       var note = function (a, id) { a.note = { id: id, key: cardStateKey(a), seq: 0 }; return a; };
       /* a miss's reason (M3), in one of its forms or its fallbacks, in plain
@@ -2605,23 +2606,23 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       modelDirty();
       return JSON.stringify(insText(insAt(2))[0]); })()`));
     ok(/^Based on 50 rapid games, \d+ to \d+ Sept? 2026$/.test(r[2].w[0]), 'the window: ' + r[2].w[0]);
-    eq(JSON.stringify(r[2].w.slice(1, 3)), JSON.stringify(['In 19 of your 27 losses, one move turned the game for good.', 'Piece safety decided the most: 14 games.']), 'headline and lead, tier 2 (losses, each once: no draws to explain)');
+    eq(JSON.stringify(r[2].w.slice(1, 3)), JSON.stringify(['In 25 of your 27 losses, one move turned the game for good.', 'Piece safety decided the most: 16 games.']), 'headline and lead, tier 2 (losses, each once: no draws to explain; V1.8: losses to mate and from 30% count)');
     eq(JSON.stringify(r[3].w.slice(1, 3)), JSON.stringify(r[2].w.slice(1, 3)), 'tier 3 the same');
-    eq(JSON.stringify(r[1].w.slice(1, 3)), JSON.stringify(['In 19 of your 27 losses, one move cost you the game.', 'Piece safety cost you the most games: 14.']), 'tier 1 in its words');
+    eq(JSON.stringify(r[1].w.slice(1, 3)), JSON.stringify(['In 25 of your 27 losses, one move cost you the game.', 'Piece safety cost you the most games: 16.']), 'tier 1 in its words');
     const col = (t, k) => r[t].rows.map((x) => x[k]);
-    eq(JSON.stringify(col(2, 'name')), JSON.stringify(['Piece safety', 'Quiet moves', 'Spotting chances', 'King safety', 'Finishing wins']), 'the skills, by games decided');
-    eq(JSON.stringify(col(2, 'glyph')), JSON.stringify(['shield', 'compass', 'target', 'crown', 'flag']), 'their glyphs');
+    eq(JSON.stringify(col(2, 'name')), JSON.stringify(['Piece safety', 'King safety', 'Quiet moves', 'Spotting chances', 'Finishing wins']), 'the skills, by games decided');
+    eq(JSON.stringify(col(2, 'glyph')), JSON.stringify(['shield', 'crown', 'compass', 'target', 'flag']), 'their glyphs');
     eq(JSON.stringify(col(2, 'focus')), JSON.stringify([true, false, false, false, false]), '"Start here" on the focus');
     eq(JSON.stringify(col(1, 'focus')), JSON.stringify([false, false, false, false, false]), 'tier 1: no "Start here", the skill tiles\' "Next" the one next step (V4.7)');
-    eq(col(2, 'n').reduce((a, x) => a + (+((/decided (\d+)/.exec(x) || [])[1]) || (/decided one/.test(x) ? 1 : 0)), 0), 19, 'the rows add up to the headline\'s 19 games (V4.8)');
+    eq(col(2, 'n').reduce((a, x) => a + (+((/decided (\d+)/.exec(x) || [])[1]) || (/decided one/.test(x) ? 1 : 0)), 0), 25, 'the rows add up to the headline\'s 25 games (V4.8)');
     eq(JSON.stringify(col(2, 'also')), JSON.stringify([false, false, true, true, true]), 'under 3 games decided: "Also seen"');
-    eq(JSON.stringify(col(2, 'n')), JSON.stringify(['decided 14 games · 38 positions', 'decided 3 games · 27 positions', 'decided one game · 10 positions', 'decided one game · 7 positions', 'decided no games · 9 positions']), 'games decided and positions');
-    eq(JSON.stringify(col(1, 'n')), JSON.stringify(['cost you 14 games · 38 positions', 'cost you 3 games · 27 positions', 'cost you one game · 10 positions', 'cost you one game · 7 positions', 'cost you no games · 9 positions']), 'tier 1: what they cost you');
-    eq(JSON.stringify(col(2, 'line')), JSON.stringify(['Moves that let them win material.', 'Moves with no tactic that made your position worse.', 'Moves that missed a free piece, a tactic or a mate.', 'Moves that exposed your king or allowed mate.', 'Moves that let a winning position get away.']), 'plain lines, tier 2');
+    eq(JSON.stringify(col(2, 'n')), JSON.stringify(['decided 16 games · 38 positions', 'decided 6 games · 7 positions', 'decided 2 games · 27 positions', 'decided one game · 10 positions', 'decided no games · 9 positions']), 'games decided and positions');
+    eq(JSON.stringify(col(1, 'n')), JSON.stringify(['cost you 16 games · 38 positions', 'cost you 6 games · 7 positions', 'cost you 2 games · 27 positions', 'cost you one game · 10 positions', 'cost you no games · 9 positions']), 'tier 1: what they cost you');
+    eq(JSON.stringify(col(2, 'line')), JSON.stringify(['Moves that let them win material.', 'Moves that exposed your king or allowed mate.', 'Moves with no tactic that made your position worse.', 'Moves that missed a free piece, a tactic or a mate.', 'Moves that let a winning position get away.']), 'plain lines, tier 2');
     eq(JSON.stringify(col(3, 'line')), JSON.stringify(col(2, 'line')), 'tier 3 the same');
-    eq(JSON.stringify(col(1, 'line')), JSON.stringify(['Moves that let them take your pieces.', 'Moves with no trick that made things worse.', 'Free pieces and mates you missed.', 'Moves that put your king in danger.', 'Times you were winning and let it go.']), 'plain lines, tier 1');
-    eq(JSON.stringify(col(2, 'prog')), JSON.stringify(['38 not started', '27 not started', '10 not started', '7 not started', '9 not started']), 'nothing practised yet: all not started');
-    eq(JSON.stringify(col(2, 'bar')), JSON.stringify(['g114', 'g81', 'g30', 'g21', 'g27']), 'every skill a bar of its positions\' steps, 3 each, "Also seen" too');
+    eq(JSON.stringify(col(1, 'line')), JSON.stringify(['Moves that let them take your pieces.', 'Moves that put your king in danger.', 'Moves with no trick that made things worse.', 'Free pieces and mates you missed.', 'Times you were winning and let it go.']), 'plain lines, tier 1');
+    eq(JSON.stringify(col(2, 'prog')), JSON.stringify(['38 not started', '7 not started', '27 not started', '10 not started', '9 not started']), 'nothing practised yet: all not started');
+    eq(JSON.stringify(col(2, 'bar')), JSON.stringify(['g114', 'g21', 'g81', 'g30', 'g27']), 'every skill a bar of its positions\' steps, 3 each, "Also seen" too');
     const pr = r.practised.filter((x) => /Piece safety|Spotting chances/.test(x.name)).map((x) => [x.name, x.prog, x.bar]);
     eq(JSON.stringify(pr), JSON.stringify([['Piece safety', '3 learned · 12 in practice · 23 not started', 'l9 c12 g93'], ['Spotting chances', '1 in practice · 9 not started', 'c1 g29']]), 'learned (3 steps each), in practice (its rungs: one back in the queue starts again at 0), and one clean find (a step)');
     eq(r.zero, false, 'never "0 learned", nor any zero part');
@@ -2771,16 +2772,19 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(!/tester|\b1[0-9]{3}\b|\b\d{12}\b/.test(q.flat), 'no name, rating or key: ' + q.flat);
   });
 
-  await test('F6.3: your clock on the fixture: tier 2 "In your losses you used 10 of 30 minutes." and "The moves that lost took 18 s (your pace: 13 s a move), with 23 min left.", tier 3 adds "6 of 20 deciding moves took under 10 s (22 of your 71 other big mistakes did too).", tier 1 spells the units; a 30+0 game\'s time trouble is under 3 minutes (a quarter of the losing moves, with Practise these); mixed time controls in shares; under 5 losses with a clock, no row; the end clock stored at ingest', () => {
+  await test('F6.3: your clock on the fixture: tier 2 "In your losses you used 10 of 30 minutes." and "The moves that lost took 18 s (your pace: 15 s a move), with 23 min left.", tier 3 adds "7 of 26 deciding moves took under 10 s (21 of your 65 other big mistakes did too).", tier 1 spells the units; a 30+0 game\'s time trouble is under 3 minutes (a quarter of the losing moves, with Practise these); mixed time controls in shares; under 5 losses with a clock, no row; the end clock stored at ingest', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${INS}
       SF.state = 'failed';
       var res = {};
       [1, 2, 3].forEach(function (t) { res[t] = clockText(insAt(t)); });
       var lost = allMistakes().filter(function (it) { return it.b.d === 1 && it.g.res === 'loss'; }).sort(function (x, y) { return x.b.c - y.b.c; });
-      lost.slice(0, 4).forEach(function (it) { it.b.c = 150; });
+      /* one short of a quarter of the losing moves under 3 minutes, then a quarter */
+      var q = Math.ceil(lost.length / 4);
+      res.q = [q, lost.length];
+      lost.slice(0, q - 1).forEach(function (it) { it.b.c = 150; });
       res.four = clockText(insAt(2)).length;
-      lost[4].b.c = 170;
+      lost[q - 1].b.c = 170;
       var h = insAt(2);
       res.trouble = clockText(h).slice(2).join(' ');
       res.drill = /data-act="drill" data-spec="\\{&quot;type&quot;:&quot;clock&quot;,&quot;label&quot;:&quot;Time trouble&quot;\\}">Practise these ›</.test(h);
@@ -2803,12 +2807,14 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         pgn: '[Event "x"]\\n\\n1. e4 {[%clk 0:05:00]} 1... e5 {[%clk 0:04:51.5]} 2. Nf3 {[%clk 0:04:58]} 1-0' });
       res.ingest = [li.clockPct, compact(cc, 'tester').clockPct, endClockPct(null, true, 600)];
       return JSON.stringify(res); })()`));
-    eq(JSON.stringify(r[2]), JSON.stringify(['In your losses you used 10 of 30 minutes.', 'The moves that lost took 18 s (your pace: 13 s a move), with 23 min left.']), 'tier 2');
-    eq(JSON.stringify(r[3]), JSON.stringify(['In your losses you used 10 of 30 minutes.', 'The moves that lost took 18 s (your pace: 13 s a move), with 23 min left.', '6 of 20 deciding moves took under 10 s (22 of your 71 other big mistakes did too).']), 'tier 3');
-    eq(JSON.stringify(r[1]), JSON.stringify(['In your losses you used 10 of 30 minutes.', 'The moves that lost took 18 seconds (you usually take 13), with 23 minutes left.']), 'tier 1');
-    eq(r.four, 2, '4 of 19 losing moves under 3 minutes: under a quarter, no row');
-    eq(r.trouble, '5 of 19 losing moves came with under 3 min left. Practise these ›', '5 of 19: the row, at 3 minutes for 30+0');
-    ok(r.drill && r.items >= 5, 'Practise these drills them (' + r.items + ')');
+    /* V1.8: 25 losses decided (mates scored as losses, the 30% floor), so 26 deciding moves and their pace */
+    eq(JSON.stringify(r[2]), JSON.stringify(['In your losses you used 10 of 30 minutes.', 'The moves that lost took 18 s (your pace: 15 s a move), with 23 min left.']), 'tier 2');
+    eq(JSON.stringify(r[3]), JSON.stringify(['In your losses you used 10 of 30 minutes.', 'The moves that lost took 18 s (your pace: 15 s a move), with 23 min left.', '7 of 26 deciding moves took under 10 s (21 of your 65 other big mistakes did too).']), 'tier 3');
+    eq(JSON.stringify(r[1]), JSON.stringify(['In your losses you used 10 of 30 minutes.', 'The moves that lost took 18 seconds (you usually take 15), with 23 minutes left.']), 'tier 1');
+    eq(JSON.stringify(r.q), '[7,25]', 'a quarter of the 25 losing moves is 7');
+    eq(r.four, 2, '6 of 25 losing moves under 3 minutes: under a quarter, no row');
+    eq(r.trouble, '7 of 25 losing moves came with under 3 min left. Practise these ›', '7 of 25: the row, at 3 minutes for 30+0');
+    ok(r.drill && r.items >= 7, 'Practise these drills them (' + r.items + ')');
     eq(JSON.stringify(r.mixed2), JSON.stringify(['In your losses you used 33% of your time.', 'The moves that lost took 18 s (your pace: 13 s a move), with 78% of your time left.']), 'mixed time controls: shares (the pace is seconds a move in any)');
     eq(JSON.stringify(r.mixed1), JSON.stringify(['In your losses you used about a third of your time.', 'The moves that lost took 18 seconds (you usually take 13), with about three quarters of your time left.']), 'tier 1: shares in words');
     eq(r.few, null, 'under 5 losses with an end clock: no clock row');
@@ -2903,7 +2909,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       return JSON.stringify(insText(insAt(2))[0]); })()`));
     eq(r.syn, 24, '24 clones');
     eq(JSON.stringify(r.after.top), JSON.stringify(r.before.top), 'the window and the headline as before: ' + r.after.top.join(' | '));
-    ok(/^Based on 50 rapid games, /.test(r.after.top[0]) && /^In 19 of your 27 losses, /.test(r.after.top[1]), 'the player\'s 50 games, 19 of 27 losses');
+    ok(/^Based on 50 rapid games, /.test(r.after.top[0]) && /^In 25 of your 27 losses, /.test(r.after.top[1]), 'the player\'s 50 games, 25 of 27 losses');
     eq(JSON.stringify(r.after.clock), JSON.stringify(r.before.clock), 'the clock as before');
     eq(r.after.count, r.before.count, 'how we count at the player\'s own band: ' + r.after.count);
     eq(r.before.since, null, 'no start, no card');
@@ -2955,8 +2961,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     const said = r.details.filter((x) => x != null).sort((a, b) => a - b), h = Math.floor(said.length / 2);
     ok(said.length >= 15 && JSON.stringify(r.details) === JSON.stringify(r.paces), 'Details says each losing move\'s pace as paceOf: ' + r.details.join(','));
     eq(+r.bracket, Math.round(said.length % 2 ? said[h] : (said[h - 1] + said[h]) / 2), 'the bracket is the median of Details\' paces over the moves that lost');
-    eq(+r.bracket, 13, 'on the fixture, 13 s against the 18 s the moves that lost took');
-    eq(r.quick, '6 of 20 deciding moves took under 10 s (25 of your 71 other big mistakes did too).', 'the other big mistakes counted as the deciding moves are');
+    eq(+r.bracket, 15, 'on the fixture, 15 s against the 18 s the moves that lost took');
+    eq(r.quick, '7 of 26 deciding moves took under 10 s (24 of your 65 other big mistakes did too).', 'the other big mistakes counted as the deciding moves are');
     ok(/^The moves that lost took 1 minute 15 seconds \(you usually take \d+ seconds\), with 23 minutes left\.$/.test(r.t1), 'tier 1 keeps the unit beside minutes: ' + r.t1);
     eq(r.none, 'The moves that lost took 1:15, with 30 min left.', 'no pace, no bracket');
     ok(/No single losing move/.test(row) && !/big mistake/.test(row), 'Today: a loss with no position to practise has no single losing move');
@@ -3255,7 +3261,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(r.st), JSON.stringify(['4 mistakes', '1 cost the game']), 'the state on two lines');
   });
 
-  await test('F5.2: the diagnosis shows on each summary until it has shown in full once: the first summary "Your report builds as you practise: 12 of 40 games read.", then "So far: ...", then with the read done the full card ("In 19 of your 27 losses, one move turned the game for good.", the top three skills, "You started on the biggest: Piece safety.", See your report ›, reveal_seen once), then one line ("Piece safety: 1 in practice · 37 not started."); tier 1\'s words; Today\'s "Why these?"', () => {
+  await test('F5.2: the diagnosis shows on each summary until it has shown in full once: the first summary "Your report builds as you practise: 12 of 40 games read.", then "So far: ...", then with the read done the full card ("In 25 of your 27 losses, one move turned the game for good.", the top three skills, "You started on the biggest: Piece safety.", See your report ›, reveal_seen once), then one line ("Piece safety: 1 climbing · 37 to go."); tier 1\'s words; Today\'s "Why these?"', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       playerTier = function () { return 2; };
@@ -3292,8 +3298,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(r.first.before, 'above the result row');
     eq(r.first.seen, 0, 'not yet seen in full');
     eq(r.sofar[1], 'So far: in 7 of your 9 losses, one move turned the game for good.', '5 losses read, the read under way');
-    eq(r.full.card[0] + ' | ' + r.full.card[1], 'Your games, read | In 19 of your 27 losses, one move turned the game for good.', 'the read done: the full card');
-    eq(JSON.stringify(r.full.card.slice(2, 8)), JSON.stringify(['Piece safety', 'decided 14 games', 'Quiet moves', 'decided 3 games', 'Spotting chances', 'decided one game']), 'the top three skills with the games they decided (V4.8: losses, each once)');
+    eq(r.full.card[0] + ' | ' + r.full.card[1], 'Your games, read | In 25 of your 27 losses, one move turned the game for good.', 'the read done: the full card');
+    eq(JSON.stringify(r.full.card.slice(2, 8)), JSON.stringify(['Piece safety', 'decided 16 games', 'King safety', 'decided 6 games', 'Quiet moves', 'decided 2 games']), 'the top three skills with the games they decided');
     eq(r.full.card[8], 'You started on the biggest: Piece safety.', 'the skill practised first');
     ok(r.full.link, 'See your report ›');
     eq(r.full.seen, 1, 'reveal_seen once');
@@ -3301,9 +3307,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.later.card, null, 'after it has shown in full: no card');
     eq(r.later.line, 'Piece safety: 1 in practice · 37 not started.', 'one line, zero parts dropped');
     eq(r.later.seen, 1, 'seen once only');
-    eq(r.t1[1], 'In 19 of your 27 losses, one move cost you the game.', 'tier 1\'s headline');
+    eq(r.t1[1], 'In 25 of your 27 losses, one move cost you the game.', 'tier 1\'s headline');
     eq(r.t1[8], 'Your first skill: Piece safety.', 'tier 1\'s skill line');
-    eq(JSON.stringify(r.why), JSON.stringify(['Why these? Piece safety decided 14 of your games ›', 'Why these? Piece safety cost you 14 games ›']), 'Today, under the hero, at tiers 2 and 1');
+    eq(JSON.stringify(r.why), JSON.stringify(['Why these? Piece safety decided 16 of your games ›', 'Why these? Piece safety cost you 16 games ›']), 'Today, under the hero, at tiers 2 and 1');
     eq(JSON.stringify(r.open), JSON.stringify({ calls: 1, view: 'insights' }), 'See your report opens Insights, reveal_open once');
   });
 
@@ -3974,7 +3980,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
 
   /* how your games are decided (F10.3): decidedText(h) the rows' words, in order */
   const DECIDED = `function decidedText(h) { var m = /<h3 class="ins-h">How your games are decided<\\/h3><div class="clock-rows dec-rows">([\\s\\S]*?)<\\/div>/.exec(h); return m ? m[1].split('</p>').filter(Boolean).map(function (p) { return insText(p).join(' '); }) : null; }`;
-  await test('F10.3: the fixture as a chess.com 2000 player, at tier 3 under the headline: "Converting wins: won 21 of 30 games after reaching +2.", "Saving bad positions: saved 11 of 38 after falling to \u22122." and "Slow slides: 8 of 27 losses had no single losing move.", the peer figures 72% and 31% beside the first two (lichess rapid 2100), Practise these on the rows with positions, no verdict word; none at tiers 1 and 2; a row needs 10 games; no peer figure for a format the blob lacks; the definitions are the peer script\'s', () => {
+  await test('F10.3: the fixture as a chess.com 2000 player, at tier 3 under the headline: "Converting wins: won 21 of 30 games after reaching +2.", "Saving bad positions: saved 11 of 38 after falling to \u22122." and "Slow slides: 2 of 27 losses had no single losing move.", the peer figures 72% and 31% beside the first two (lichess rapid 2100), Practise these on the rows with positions, no verdict word; none at tiers 1 and 2; a row needs 10 games; no peer figure for a format the blob lacks; the definitions are the peer script\'s', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${INS} ${DECIDED}
       SF.state = 'failed';
@@ -4012,8 +4018,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       return JSON.stringify(res); })()`));
     eq(JSON.stringify(r.t3), JSON.stringify(['Converting wins: won 21 of 30 games after reaching +2. Practise these › Lichess players at your level: 72%.',
       'Saving bad positions: saved 11 of 38 after falling to \u22122. Practise these › Lichess players at your level: 31%.',
-      'Slow slides: 8 of 27 losses had no single losing move.']), 'the three rows at tier 3');
-    eq(JSON.stringify([r.d.conv.n, r.d.conv.won, r.d.save.n, r.d.save.saved, r.d.slow.n, r.d.slow.none]), '[30,21,38,11,27,8]', 'the counts');
+      'Slow slides: 2 of 27 losses had no single losing move.']), 'the three rows at tier 3');
+    eq(JSON.stringify([r.d.conv.n, r.d.conv.won, r.d.save.n, r.d.save.saved, r.d.slow.n, r.d.slow.none]), '[30,21,38,11,27,2]', 'the counts');
     eq(JSON.stringify([Math.round(r.d.conv.peer * 10) / 10, Math.round(r.d.save.peer * 10) / 10]), '[71.9,30.6]', 'lichess rapid 2100: 71.9% and 30.6%');
     ok(r.order[0] > 0 && r.order[0] < r.order[1] && r.order[1] < r.order[2], 'under the headline and its lead, above the skills: ' + r.order);
     eq(JSON.stringify([r.t2, r.t1]), '[null,null]', 'none at tiers 2 and 1');
@@ -4023,7 +4029,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify([r.p2049, r.p600, r.p3000]), '[71.9,59,77.9]', 'chess.com 2049 is lichess 2199 (2100); 600 the 800 band; 3000 the 2400 band');
     eq(r.daily && r.daily.peer, null, 'a daily game among them: no peer figure');
     ok(r.daily && r.daily.n === 30, 'its count stands');
-    eq(JSON.stringify(r.norating), JSON.stringify(['Converting wins: won 21 of 30 games after reaching +2. Practise these ›', 'Saving bad positions: saved 11 of 38 after falling to \u22122. Practise these ›', 'Slow slides: 8 of 27 losses had no single losing move.']), 'no rating known: no peer figure');
+    eq(JSON.stringify(r.norating), JSON.stringify(['Converting wins: won 21 of 30 games after reaching +2. Practise these ›', 'Saving bad positions: saved 11 of 38 after falling to \u22122. Practise these ›', 'Slow slides: 2 of 27 losses had no single losing move.']), 'no rating known: no peer figure');
     eq(r.few.conv, null, 'under 10 games that reached +2: no row');
     ok(!/better|worse|good|bad|well|weak|strong/i.test(r.t3.join(' ').replace(/Saving bad positions/, '')), 'no verdict word');
   });

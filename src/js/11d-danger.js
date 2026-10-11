@@ -8,14 +8,17 @@
          [[square, attacker squares...], ...], the most valuable piece first,
          its cheapest attacker first; only attackers that may legally take
          (not pinned off the line, a king only where nothing guards)
-     th  their best move if it were their turn: a null-move search (the same
+     th  their best move if it were their turn (V1.5, factsThreats): the
+         card's key's threats (its 1,000,000-node null-move search, two
+         lines), or before the key a null-move search of its own (the same
          position with them to move and no en passant, 250,000 nodes, three
-         lines), each line kept only when it wins material by the card
-         face's own claim rule (xpClaim) or mates; the one named, as [uci,
-         mate in n or 0, pawns won]: a mate beats material, then the threat
-         the better move meets, then the biggest. null: searched and none
-         (or the player is in check, where no search runs); absent: not
-         searched yet (the engine down), so a later load asks again
+         lines) read by the same rule: every mate in one, every capture by
+         what it nets where its line settles, a quiet move only when its
+         line wins material where it settles; the one named, as [uci, mate
+         in n or 0, pawns won]: a mate first, then the biggest gain. null:
+         searched and none (or the player is in check, where no search
+         runs); absent: not searched yet (the engine down and no key), so a
+         later load asks again
      sv  what the better move saves: the pieces the game line takes from
          the player, net of what it gives back, up to where its loss is
          claimed (lossClaim: in line with the score, more than the best line
@@ -36,7 +39,7 @@
          missed
      v, k  the version (DZ_V) and a signature of the lines and scores it was
          read from (dzSig): a change to either reads it again */
-var DZ_V = 2;
+var DZ_V = 3;
 var DZ_STEP = { threat: 1, missedMaterial: 2, missedTactic: 2, mateMissed: 2, slipped: 4, openingSlip: 5, drift: 5, endgame: 5 };
 var DZ_NODES = 250000;
 function dzSig(b) {
@@ -58,7 +61,8 @@ function dangerCard(it) {
   var g = it.g, b = it.b, pre = g && g.mv ? stateAtPly(g.mv, b.p) : null, pu = pre ? uciOfSan(g.mv, b.p) : null;
   var played = pu ? uciToMove(pre, pu) : null, best = b.bu && pre ? uciToMove(pre, b.bu) : null;
   if (!played || !best || b.bu === pu) return null;
-  var cls = classifyMistake(pre, pu, { pv: unpackUci(b.lu), mate: b.mb }, { pv: unpackUci(b.ru), mate: b.ma }, b.wb, b.wa, b.p);
+  var fs = factsSettle(b, g.color === 'white');
+  var cls = classifyMistake(pre, pu, { pv: unpackUci(b.lu), mate: b.mb, settle: fs.b }, { pv: unpackUci(b.ru), mate: b.ma, settle: fs.g }, b.wb, b.wa, b.p);
   return { it: it, key: it.key, pre: pre, played: played, playedUci: pu, best: best, cls: cls };
 }
 /* the same position with them to move: castling kept, no en passant */
@@ -140,36 +144,12 @@ function dangerSaves(a) {
   lost.forEach(function (t) { if (t !== 'K' && out.indexOf(t) < 0 && keeps(t)) out.push(t); });
   return out.sort(function (x, y) { return MOTIF_VAL[y] - MOTIF_VAL[x]; }).join('');
 }
-/* their threats from the null-move search r (scores from White's side):
-   each kept line as [uci, mate, pawns], the one to name first (a mate,
-   then what the better move meets, then the biggest); [] when none */
-function dangerThreats(a, r, sv) {
-  var nst = dzNullState(a.pre), them = !myPov(a.it), cands = [];
+/* their threats from the null-move search r (scores from White's side),
+   by the fact sheet's rule (factsThreats, V1.5): each kept line as [uci,
+   mate, pawns], a mate first, then the biggest gain; [] when none */
+function dangerThreats(a, r) {
   var lines = r && r.lines && r.lines.length ? r.lines : r && r.pv ? [{ cp: r.cp, mate: r.mate, pv: r.pv }] : [];
-  lines.forEach(function (l, i) {
-    var u = l && l.pv && l.pv[0], m = u ? uciToMove(nst, u) : null;
-    if (!m) return;
-    var mate = l.mate != null ? (them ? l.mate : -l.mate) : null;
-    if (mate != null && mate > 0) { cands.push({ u: u, m: m, mate: mate, n: 0, i: i }); return; }
-    var cl = xpClaim(nst, l.pv, them ? l.cp : -l.cp);
-    if (cl && cl.n >= 1) cands.push({ u: u, m: m, mate: 0, n: cl.n, i: i });
-  });
-  if (!cands.length) return [];
-  /* the better move meets it: after it their move is gone, or takes
-     something else, or what it would take is what the better move saves */
-  var after = cloneState(a.pre);
-  applyMove(after, a.best);
-  var meets = function (x) {
-    var m2 = uciToMove(after, x.u), t0 = nst.b[x.m.to];
-    if (!m2) return true;
-    if (t0 && after.b[m2.to] !== t0) return true;
-    return !!t0 && (sv || '').indexOf(pType(t0)) >= 0;
-  };
-  cands.forEach(function (x) { x.met = meets(x) ? 1 : 0; });
-  cands.sort(function (x, y) {
-    return (y.mate ? 1 : 0) - (x.mate ? 1 : 0) || (x.mate && y.mate ? x.mate - y.mate : 0) || y.met - x.met || y.n - x.n || x.i - y.i;
-  });
-  return cands.map(function (x) { return [x.u, x.mate, x.n]; });
+  return factsThreats(a.pre, lines, myPov(a.it));
 }
 /* their threat still stands once the game move is on the board: the same
    piece makes the same move there and takes the same piece (a mate in one
@@ -240,9 +220,11 @@ function dzRaises(a, th, sv, s) {
 /* the facts for card a; r: the null-move search's answer, null when it
    found nothing, undefined when none ran */
 function dangerFacts(a, r) {
-  var b = a.it.b, pov = myPov(a.it), d = { v: DZ_V, k: dzSig(b), at: dangerAttacked(a.pre, pov), sv: dangerSaves(a) }, all = [];
+  var b = a.it.b, pov = myPov(a.it), d = { v: DZ_V, k: dzSig(b), at: dangerAttacked(a.pre, pov), sv: dangerSaves(a) }, all = [], key = factsOf(b);
   if (dzInCheck(a)) d.th = null;
-  else if (r !== undefined) { all = r ? dangerThreats(a, r, d.sv) : []; d.th = all[0] || null; }
+  /* the card's key has them already: no search of its own (V1.1) */
+  else if (key && !key.x && r === undefined) { all = (key.th || []).slice(); d.th = all[0] || null; }
+  else if (r !== undefined) { all = r ? dangerThreats(a, r) : []; d.th = all[0] || null; }
   d.st = dangerStep(a, d.th, all.slice(1), d.sv);
   return d;
 }
@@ -265,7 +247,7 @@ function ensureDanger(it, prio) {
   var a = dangerCard(it);
   if (!a) return Promise.resolve(it);
   if (!dangerOf(b)) b.dz = dangerFacts(a, undefined);
-  if (dzInCheck(a) || SF.state === 'failed') return Promise.resolve(it);
+  if (dzInCheck(a) || SF.state === 'failed' || factsOf(b)) return Promise.resolve(it);
   var sig = dzSig(b), done = function () { delete dangerPending[key]; return it; };
   var p = engineEval(stateFen(dzNullState(a.pre)), { nodes: DZ_NODES }, !!prio, { multipv: 3, tag: key, dz: 1 }).then(function (r) {
     if (!r || r.stopped || stale(myGen) || b.x || dzSig(b) !== sig) return;
@@ -336,7 +318,7 @@ function dangerPick(list, saves, skip) {
 var gapPending = {};
 function ensureGap(it) {
   var b = it.b, key = it.key, myGen = gen;
-  if (b.g2 != null || b.j === 'l' || b.x || !b.bu || SF.state === 'failed' || gapPending[key]) return;
+  if (b.g2 != null || factsOf(b) || b.j === 'l' || b.x || !b.bu || SF.state === 'failed' || gapPending[key]) return;
   var pre = stateAtPly(it.g.mv, b.p), sign = it.g.color === 'white' ? 1 : -1;
   if (!pre) return;
   gapPending[key] = engineEval(stateFen(pre), { nodes: DEEP_NODES }, false, { multipv: 2, tag: key }).then(function (r) {

@@ -77,7 +77,7 @@ const FRAMES = `function eachFrame(it, cb) {
       if (!rq || !rq.ask) return;
       var alts = legalMoves(a.st).map(moveUci).filter(function (u) { return u !== a.sol[1]; });
       if (alts.length < (c[0] === 'open' ? 3 : 1)) return;
-      a.it.b.rl = { k: dzSig(a.it.b), n: alts.length + 1, l: c[0] === 'open' ? [[a.sol[1], 100, null], [alts[1], 95, null], [alts[2], 90, null]] : [[a.sol[1], 50, null], [alts[0], c[1], null]] };
+      a.it.b.rl = { k: dzSig(a.it.b), d: CONFIRM_NODES, n: alts.length + 1, l: c[0] === 'open' ? [[a.sol[1], 100, null], [alts[1], 95, null], [alts[2], 90, null]] : [[a.sol[1], 50, null], [alts[0], c[1], null]] };
       makeGuess(a, uciToMove(a.st, alts[0])); a.animMove = null; cb('forcing 0, guessed ' + c[0], a);
       rq.tele = true; cb('forcing 0, the telegraph after a guess ' + c[0], a);
       theirReply(a, false); a.animMove = null; a.animSlow = false;

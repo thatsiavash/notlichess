@@ -1,6 +1,6 @@
 // Boots the whole built app (index.html's main script) in Node with a small DOM stub, and reaches its
 // internals through window.__nlTest.ev (enabled because location.hostname is 'localhost').
-// Usage: const A = require('./app-realm')({ now, storage: {...}, session: {...} });
+// Usage: const A = require('./app-realm')({ now, storage: {...}, session: {...}, keysOnly });
 //        A.ev('todayPlan()'); A.setNow(ms); A.storage; A.click('tryAgain', k, slot, { detail: 1 }) (a button click, through the page's handler)
 //        A.key('Enter', repeat, on): a key through the page's keydown handlers (on a focused button when on = { act, k, slot })
 //        A.tap(sq), A.drag(from, to, mouse): the board by hand, through the page's pointer and click handlers
@@ -72,6 +72,12 @@ module.exports = function makeApp(opts) {
   const fn = new Function(...names, src);
   fn(...names.map((k) => ctx[k]));
   const ev = (code) => window.__nlTest.ev(code);
+  /* the engine cannot load in Node (SF.state 'failed' a few ticks after
+     boot), where a set deals only positions with a stored fact sheet (V1.1,
+     dealable). The bookkeeping tests deal the fixture's stored cards as the
+     page did before fact sheets; a realm made with keysOnly keeps the rule
+     (window.__dealable is the page's own) */
+  if (!opts.keysOnly) ev('(window.__dealable = dealable, dealable = function (it) { return trainable(it); }, 1)');
   /* a button with this data-act (and data-k, and the bar slot it sits in),
      as an event target: focusable, and its click goes to the page's own
      document click handler */

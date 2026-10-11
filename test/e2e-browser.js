@@ -650,7 +650,11 @@
         ok('Play it plays the answer: the grey i, then R4 under the answer, and See why', !!$('#bwrap .marks .badge-info') && /^The answer: \S+/.test(text('#cband .bd-r1')) && /\S/.test(text('#cband .bd-r2'))
           && text('#cband .bd-r2') !== 'Play the green arrow.' && !!$('#cbar [data-act=seeWhy]'), v1 + ' -> ' + text('#cband') + ' | ' + text('#cbar'));
         bandFits('the answer played');
-      } else ok('a close alternative was accepted as solved', c2.result !== 'fail');
+      } else {
+        ok('a close alternative was accepted as solved', c2.result !== 'fail');
+        /* V1.2: a move in the found band ends the card; its bar offers Continue once the card has settled */
+        await until(() => !!$('#cbar [data-act=next]'), 6000);
+      }
       /* Next ignores taps for 450 ms after the bar changed to it (the reveal above), which left the
          skip and drag lines below waiting 30 s for a card that never came */
       await sleep(500);
@@ -816,11 +820,14 @@
        (tier 1 in stars); no "spotted" line; "Keep in mind" once with the check lines (F2.3) */
     const words = [].map.call($$('.recap-item .res'), (e) => e.textContent);
     ok('the recap says each card in words', words.length > 0 && words.every((w) => /^(First try|Works too|After a good move|With a hint|First look|After a miss|Shown|Missed|Skipped)(, then (found|found with a hint|found after a miss|shown again|missed again))?$/.test(w)), words.join(', '));
-    ok('the cards revealed to finish read Shown', words.some((w) => /^Shown/.test(w)), words.join(', '));
+    /* a card revealed to finish at its first showing reads Shown; one back for one more try, "then shown again"
+       (V1.2: a move in the found band can end a card early, so the cards left may all be second showings) */
+    ok('the cards revealed to finish read Shown', words.some((w) => /^Shown|, then shown again$/.test(w)), words.join(', '));
     ok('the card skipped after its miss reads Missed', words.indexOf('Missed') >= 0, words.join(', '));
     /* F3.1: each tile shows its result as its glyph, just before its word and in the glyph's own colour
        (a dark tick on the leaf disc, a honey bulb or rotate, a slate eye, a dash), never the words' */
-    const GLYPH = { 'First try': 'first', 'Works too': 'first', 'After a good move': 'good', 'With a hint': 'hint', 'First look': 'hint', 'After a miss': 'miss', 'Shown': 'shown', 'Missed': 'skip', 'Skipped': 'skip' };
+    /* a move that works too holds (V1.2): the ring with a tick, as after a good move */
+    const GLYPH = { 'First try': 'first', 'Works too': 'good', 'After a good move': 'good', 'With a hint': 'hint', 'First look': 'hint', 'After a miss': 'miss', 'Shown': 'shown', 'Missed': 'skip', 'Skipped': 'skip' };
     const INK = { first: '--ink', good: '--leaf', hint: '--honey', miss: '--honey', shown: '--slate', skip: '--text-3' };
     const probe = document.createElement('i');
     document.body.appendChild(probe);

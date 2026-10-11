@@ -478,6 +478,9 @@ function adoptFresh(old, fresh) {
     var o = oldBy[b.p];
     if (o && o.x && /^user/.test(o.x)) b.x = o.x;
     if (o && (o.v || 0) >= 2 && o.ru) { b.ru = o.ru; b.ma = o.ma; b.v = o.v; }
+    /* the position's fact sheet (V1.1) is the same position's: kept, and
+       written to the record again when the model next reads it */
+    if (o && factsOf(o)) { b.k = o.k; delete b.kp; }
   });
   ['bl', 'mv', 'wp', 'opening', 'analysed'].forEach(function (k) { if (fresh[k] != null) old[k] = fresh[k]; });
 }
@@ -1045,9 +1048,9 @@ document.addEventListener('pointerdown', function (e) {
     return;
   }
   if (e.button !== 0 || !bs.live || a.pendingPromo) return;
-  /* the answer shown: only its own piece picks up; any other press is
-     answered by its click (N1) */
-  if (bs.show && sq !== bs.show.from) return;
+  /* the answer shown: only its own piece picks up (or one with a move in
+     its found band, V1.2); any other press is answered by its click (N1) */
+  if (bs.show && sq !== bs.show.from && !showNearMoves(a).some(function (x) { return x.from === sq; })) return;
   if (!bs.explore && !bs.show && a.shapes.length) { a.shapes = []; renderCardBoard(); }
   var p = bs.st.b[sq];
   if (p && isW(p) === bs.st.w) {
@@ -1224,7 +1227,12 @@ window.__nlTest = {
     if (a.phase === 'tried') tryAgain();
     /* the answer shown: its move is played (Play it) */
     var due = a.phase === 'done' && !a.explore && !a.showWait ? showDue(a) : null;
-    if (due) { if (moveUci(due) !== uci) return 'not the answer'; playIt(false); return 'played'; }
+    if (due) {
+      var near = showNearMoves(a).filter(function (x) { return moveUci(x) === uci; })[0];
+      if (near) { playNear(a, near, false); return 'played'; }
+      if (moveUci(due) !== uci) return 'not the answer';
+      playIt(false); return 'played';
+    }
     if (a.phase === 'guess') { gradeMove(m); return 'graded'; }
     if (a.phase === 'done' && a.explore) { explorePlay(m, false); return 'explored'; }
     return 'not guessing';

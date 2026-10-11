@@ -139,8 +139,9 @@ module.exports = function designChecks(A) {
   /* a lone chevron is drawn as its own icon, its glyph kept as the button's text (review of slice 3) */
   if (!/data-icon="bulb"[^>]*>Hint</.test(bar) || !/data-icon="eye" data-act="reveal">Show the answer</.test(bar) || !/class="nav-btn nav-ic" data-slot="2" data-icon="back" data-act="storyBack">‹</.test(bar)) no('icons: the bar names its icons, on or off, and only for actions that have one, a lone chevron its own: ' + bar);
   ['first', 'good', 'hint', 'miss', 'shown', 'skip', 'learned'].forEach((g) => { if (!new RegExp('\\.rg-' + g + '\\{').test(rules)) no('glyphs: no ' + g + ' glyph'); });
-  /* every category of the summary (its tile's word) has its glyph, and a position learned its seal */
-  const WANT = { 'First try': 'first', 'Works too': 'first', 'After a good move': 'good', 'With a hint': 'hint', 'First look': 'hint', 'After a miss': 'miss', 'Shown': 'shown', 'Missed': 'skip', 'Skipped': 'skip', 'Learned': 'learned' };
+  /* every category of the summary (its tile's word) has its glyph, and a position learned its seal; a
+     move that works too holds (V1.2), so it takes the ring with a tick, never the first-try disc */
+  const WANT = { 'First try': 'first', 'Works too': 'good', 'After a good move': 'good', 'With a hint': 'hint', 'First look': 'hint', 'After a miss': 'miss', 'Shown': 'shown', 'Missed': 'skip', 'Skipped': 'skip', 'Learned': 'learned' };
   const cats = JSON.parse(A.ev(`JSON.stringify(Object.keys(CAT_WORD).map(function (c) { return [CAT_WORD[c], resultGlyph(c)]; }).concat([['Learned', resultGlyph('learned')]]))`));
   if (cats.map((x) => x[0]).sort().join('|') !== Object.keys(WANT).sort().join('|')) no('glyphs: the summary\'s words are ' + cats.map((x) => x[0]).join(', '));
   cats.forEach((x) => { if (x[1] !== '<span class="rg rg-' + WANT[x[0]] + '" aria-hidden="true"></span>') no('glyphs: "' + x[0] + '" is drawn as ' + (x[1] || 'nothing')); });

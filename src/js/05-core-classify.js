@@ -48,6 +48,16 @@ function settleIndex(line) {
   line.unsettled = !!(last && last.move && !last.pov && (last.captured || checkersOf(last.after).length));
   return endCapture(n, n.length - 1);
 }
+/* the settled index a caller gives (a card's fact sheet, V1.1, whose
+   settle rule also reads on past a hanging pawn and past a capture pending
+   after the two quiet plies, where settleIndex stops), or the line's own;
+   one beyond the line's end leaves its count no result (unsettled) */
+function settleOr(line, k, own) {
+  if (k == null) return own;
+  var last = line.nodes.length - 1;
+  line.unsettled = k > last;
+  return Math.max(0, Math.min(k, last));
+}
 /* material is still in motion: the side to move can take something for
    profit (a loose piece, or one attacked by a cheaper piece; kings and pawns
    aside), or it faces a double attack it cannot fully meet (two of its own
@@ -193,7 +203,9 @@ function checksAll(line, first) {
    (UCI); best = { pv: [uci...], mate: n|null } from MY point of view
    (mate > 0: I mate in n; < 0: I get mated); after = { pv: [uci...],
    mate: n|null } for the position after my move, also from MY point of view;
-   wb/wa = my win chance before/after (0-100).
+   wb/wa = my win chance before/after (0-100). best.settle and after.settle,
+   when given, are where each line settles (settleOr: the best line's node
+   index, the game line's).
    output: { t: pattern key, tags: {...}, matGame, matBest, sentences } */
 function classifyMistake(pre, played, best, after, wb, wa, ply, voice) {
   var meW = pre.w;
@@ -202,8 +214,11 @@ function classifyMistake(pre, played, best, after, wb, wa, ply, voice) {
   var allowed = gameLine ? lineMotifs(gameLine) : {};
   var missed = bestLine ? lineMotifs(bestLine) : {};
   var mat0 = matDiff(pre.b, meW);
-  var gSettle = gameLine ? settleIndex(gameLine) : 0;
-  var bSettle = bestLine ? settleIndex(bestLine) : 0;
+  /* the line's own settle index is kept apart: a forcing line's length
+     (cardFor) reads it, the material counts read the caller's */
+  var gOwn = gameLine ? settleIndex(gameLine) : 0, bOwn = bestLine ? settleIndex(bestLine) : 0;
+  var gSettle = gameLine ? settleOr(gameLine, after && after.settle, gOwn) : 0;
+  var bSettle = bestLine ? settleOr(bestLine, best && best.settle, bOwn) : 0;
   var matGame = gameLine ? matDiff(gameLine.nodes[gSettle].after.b, meW) - mat0 : 0;
   var matBest = bestLine ? matDiff(bestLine.nodes[bSettle].after.b, meW) - mat0 : 0;
   var n0 = gameLine && gameLine.nodes[0], r1 = gameLine && gameLine.nodes[1];
@@ -294,7 +309,7 @@ function classifyMistake(pre, played, best, after, wb, wa, ply, voice) {
   var res = {
     t: t, allowed: allowed, missed: missed, matGame: matGame, matBest: matBest,
     mateAgainst: mateAgainst, mateFor: mateFor, gameLine: gameLine, bestLine: bestLine,
-    gSettle: gSettle, bSettle: bSettle, lossG: lossG, lossAt: lossAt, stalemate: stalemate,
+    gSettle: gSettle, bSettle: bSettle, bSettleOwn: bOwn, lossG: lossG, lossAt: lossAt, stalemate: stalemate,
     perpetualAgainst: perpetualAgainst, loosened: loosened, kingMoved: kingMoved, sameCapture: !!sameCapture,
     lowerTake: lowerTake, ply: ply || 0, alreadyLost: !!alreadyLost
   };
