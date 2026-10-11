@@ -824,7 +824,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     eq(tips(A), '', 'nothing remembered');
   });
 
-  await test('a label is aria-hidden and in its mark\'s colour, sized from its words measured in the page\'s font (12 px on a phone, 14 on the desktop, once per text, again when a font arrives), else from a table wide enough for Georgia, on a frame that slides never', () => {
+  await test('a label is aria-hidden and in its mark\'s colour, sized from its words measured in the page\'s font (the tag size, 12 px 800, on a board under 500 px, the small size, 14 px 700, above; once per text, again when a font arrives), else from a table wide enough for Georgia, on a frame that slides never', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       playerTier = function () { return 2; };
@@ -849,7 +849,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     const m = JSON.parse(B.ev(`(function () {
       var calls = [], fontsOn = {};
       document.fonts = { addEventListener: function (k, fn) { fontsOn[k] = fn; } };
-      window.getComputedStyle = function () { return { getPropertyValue: function (k) { return k === '--font-body' ? ' "Lora",Georgia,serif' : ''; } }; };
+      window.getComputedStyle = function () { return { getPropertyValue: function (k) { return k === '--font' ? ' "Nunito",ui-rounded,sans-serif' : ''; } }; };
       var ctx = { font: '', measureText: function (t) { calls.push(ctx.font + '|' + t); return { width: t.length * 5.25 }; } };
       document.createElement = function (tag) { return tag === 'canvas' ? { getContext: function () { return ctx; } } : {}; };
       labelCtx = null; labelW = {};
@@ -860,8 +860,15 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
       res.after = calls.length;
       return JSON.stringify(res); })()`));
     eq(JSON.stringify([m.ph, m.dk]), JSON.stringify([{ w: Math.ceil(5 * 5.25 + 18), h: 18 }, { w: Math.ceil(5 * 5.25 + 18), h: 20 }]), 'measured pills');
-    eq(m.calls.join(' ; '), '600 12px "Lora",Georgia,serif|takes ; 600 14px "Lora",Georgia,serif|takes', 'measured in the label\'s font, once per text and size');
+    eq(m.calls.join(' ; '), '800 12px "Nunito",ui-rounded,sans-serif|takes ; 700 14px "Nunito",ui-rounded,sans-serif|takes', 'measured in the label\'s font and weight, once per text and size');
     eq(m.after, 3, 'measured again once a font has arrived');
+  });
+
+  /* design system v2 (test/design.js, F3.1): Nunito, the seven type tokens and nothing else, the
+     palette and every pair in use at its contrast, the button hierarchy, the icons and glyphs */
+  await test('design system: Nunito in seven sizes, every font-size a token, every colour pair in use readable (text 4.5:1, borders and glyphs 3:1), the button hierarchy, an icon for each bar action, a result glyph for each of the summary\'s categories, the found and shown badges told apart by shape, the board\'s coordinates readable', () => {
+    const f = require('./design')(boot());
+    eq(f.length, 0, f.length + ' design failures: ' + f.slice(0, 6).join(' || '));
   });
 
   /* the copy lint (test/copylint.js) walks the same frames, at tiers 1 to 3, with Today, the summary

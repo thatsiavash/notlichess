@@ -5064,7 +5064,8 @@ const BAR = `(function () {
       return JSON.stringify(out); })()`));
     ok(r.length >= 20, 'boards ' + r.length);
     const TINT = { bad: 'rgba(214,70,52,.42)', close: 'rgba(125,147,171,.34)' }, HL_MOVE = 'rgba(155,199,0,.41)';
-    const BADGE = { good: '#3d9142', bad: '#d04a3a', checking: '#8f8b83', unchecked: '#6b665d', info: '#6b665d' };
+    /* the answer shown is a filled slate disc with an eye (F3.1): it differs from the close ring by shape */
+    const BADGE = { good: '#3d9142', bad: '#d04a3a', checking: '#8f8b83', unchecked: '#6b665d', info: '#7d93ab' };
     r.forEach((s, n) => {
       const o = s.o, flip = o.flip, name = 'card ' + (n >> 1) + (flip ? ' flipped' : ''), p = split(s.svg);
       /* verdict tints: one per tinted square, in its kind's colour, in place of the last-move tint */
@@ -6047,7 +6048,7 @@ const BAR = `(function () {
   });
 
   /* ── slice 2: the honest summary and one routine ── */
-  await test('F2.1: the tour\'s set (Rg1 first try; Nc5 after a miss; Be4 a good move, then found; O-O after two misses; bxc5 first try) reads "2 of 5 found first try." then "Then 2 after a miss, 1 after a good move." at 1600, and "11 of 15 stars" at 700 (card 2\'s First look hint costs no star)', async () => {
+  await test('F2.1: the tour\'s set (Rg1 first try; Nc5 after a miss; Be4 a good move, then found; O-O after two misses; bxc5 first try) reads "2 of 5 found first try." then "Then 2 after a miss, 1 after a good move." at 1600, and "11 of 15 stars" at 700 (card 2\'s First look hint costs no star); each tile shows its result\'s glyph before its word', async () => {
     const run = async (tier) => {
       const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
       A.ev(`(function () { playerTier = function () { return ${tier}; }; window.readyEngine();
@@ -6067,13 +6068,15 @@ const BAR = `(function () {
       open(4); best();
       return JSON.parse(A.ev(`(function () { var ss = ui.session; ss.active = null; ss.finished = true; var h = doneHtml(ss);
         return JSON.stringify({ close: '${close}', head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], then: (/class="recap-then">([^<]*)</.exec(h) || [])[1], cats: ss.keys.map(function (k) { return ss.sum[k].c; }).join(' '),
-          stars: ss.keys.map(function (k) { return ss.sum[k].s; }).join(''), words: (h.match(/class="res[^"]*">[^<]*/g) || []).map(function (x) { return x.replace(/^.*>/, ''); }) }); })()`));
+          stars: ss.keys.map(function (k) { return ss.sum[k].s; }).join(''), words: (h.match(/class="res[^"]*">[^<]*/g) || []).map(function (x) { return x.replace(/^.*>/, ''); }),
+          glyphs: (h.match(/<span class="rg rg-\\w+" aria-hidden="true"><\\/span><span class="res/g) || []).map(function (x) { return /rg-(\\w+)/.exec(x)[1]; }).join(' ') }); })()`));
     };
     const t2 = await run(2), t1 = await run(1);
     eq(t2.close, 'close', 'card 3: a good move first');
     eq(t2.cats, 'first miss good miss first', 'the categories, the worst event deciding');
     eq(t2.head + ' / ' + t2.then, '2 of 5 found first try. / Then 2 after a miss, 1 after a good move.', 'tier 2');
     eq(JSON.stringify(t2.words), JSON.stringify(['First try', 'After a miss', 'After a good move', 'After a miss', 'First try']), 'the tiles\' words');
+    eq(t2.glyphs, 'first miss good miss first', 'each tile\'s glyph before its word (F3.1): ticks on cards 1 and 5, a ring tick on card 3, rotates on 2 and 4');
     eq(t1.head + ' / ' + t1.then, '11 of 15 stars / Then 2 after a miss, 1 after a good move.', 'tier 1: stars, the same second line');
     eq(t1.stars, '32213', 'tier 1: card 2\'s First look and its miss with the automatic hint 2 stars; two misses 1');
   });

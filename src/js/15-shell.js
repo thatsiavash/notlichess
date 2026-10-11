@@ -17,7 +17,7 @@ function renderFirstVisit(prefill) {
     + '<div class="first-form">'
       + '<input class="input" id="firstUser" placeholder="Your chess.com or lichess username" autocomplete="off" '
       + 'autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-label="Your chess.com or lichess username" value="' + esc(prefill || '') + '">'
-      + '<button class="btn-big" data-act="findUser" id="findBtn">Find my mistakes</button>'
+      + '<button class="btn-big" data-icon="search" data-act="findUser" id="findBtn">Find my mistakes</button>'
     + '</div>'
     + '<div id="whichSite" aria-live="polite"></div>'
     + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. Microsoft Clarity records clicks and the screen, with all text hidden, to show how the site is used.</p>'
@@ -117,7 +117,7 @@ function renderNoAccount() {
       + '<button class="src-btn' + (!isCC() ? ' src-on' : '') + '" data-act="srcPick" data-k="lichess">lichess</button>'
       + '<button class="src-btn' + (isCC() ? ' src-on' : '') + '" data-act="srcPick" data-k="chesscom">chess.com</button></div>'
     + '<div class="first-form"><input class="input" id="firstUser" value="' + esc(cfg.user) + '" autocomplete="off" spellcheck="false">'
-    + '<button class="btn-big" data-act="setUser">Try again</button></div><div id="other-site"></div></div>';
+    + '<button class="btn-big" data-icon="rotate" data-act="setUser">Try again</button></div><div id="other-site"></div></div>';
   var input = el('firstUser');
   if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') setUser(input.value); });
   /* the name may simply be on the other site: look, and offer it in one tap */

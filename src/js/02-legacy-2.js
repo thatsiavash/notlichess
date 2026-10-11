@@ -105,7 +105,7 @@ function perfLabel(p) { return p === 'ultraBullet' ? 'ultrabullet' : p; }
    already reads fluently. Squares #f0d9b5/#b58863, last-move green, quiet
    dots for legal targets. Piece art is CC-BY-SA (see the credit in the
    symbol sheet and in settings). */
-var SQ_LIGHT = '#f0d9b5', SQ_DARK = '#b58863';
+var SQ_LIGHT = '#f0d9b5', SQ_DARK = '#b58863', COORD_ON_LIGHT = '#7A5534', COORD_ON_DARK = '#ffffff';
 var HL_MOVE = 'rgba(155,199,0,.41)', HL_SEL = 'rgba(20,85,30,.5)';
 var PIECE_ID = { K:'wK',Q:'wQ',R:'wR',B:'wB',N:'wN',P:'wP',
                  k:'bK',q:'bQ',r:'bR',b:'bB',n:'bN',p:'bP' };
@@ -129,13 +129,16 @@ var MARK_TINT = {
   good: 'rgba(61,150,66,.42)', bad: 'rgba(214,70,52,.42)', close: 'rgba(125,147,171,.34)',
   checking: 'rgba(160,150,130,.30)', unchecked: 'rgba(120,114,104,.40)', info: 'rgba(120,114,104,.40)'
 };
-var MARK_BADGE = { good: '#3d9142', bad: '#d04a3a', close: '#7d93ab', checking: '#8f8b83', unchecked: '#6b665d', info: '#6b665d' };
+/* the answer shown (info) is a slate disc with an eye (F3.1), so the
+   better move's badge says "found" (a tick) or "shown" (an eye) by shape,
+   never by hue alone */
+var MARK_BADGE = { good: '#3d9142', bad: '#d04a3a', close: '#7d93ab', checking: '#8f8b83', unchecked: '#6b665d', info: '#7d93ab' };
 var BADGE_GLYPH = {
   good: 'M-3.7 .3 L-1.2 2.8 L3.9 -2.6', close: 'M-3.7 .3 L-1.2 2.8 L3.9 -2.6',
   bad: 'M-2.9 -2.9 L2.9 2.9 M2.9 -2.9 L-2.9 2.9',
   checking: 'M-3.3 0 h.01 M0 0 h.01 M3.3 0 h.01',
   unchecked: 'M-2.4 -2.4 C-2.4 -5.3 2.6 -5.3 2.6 -2.4 C2.6 -.7 0 -.5 0 1.4 M0 4.3 h.01',
-  info: 'M0 -4.1 h.01 M0 -1 V4.3'
+  info: 'M-5 0 Q0 -6 5 0 Q0 6 -5 0 Z M0 0 h.01'
 };
 /* an arrow from square centre to square centre (board units), with a dark
    halo so it reads on light and dark squares alike. Its head is a marker of
@@ -269,8 +272,10 @@ function boardSvg(st, opts) {
           animAttr = ' class="anim-piece' + (opts.animMs === 400 ? ' anim-slow' : opts.animMs === 320 ? ' anim-show' : '') + '" style="transform:translate('
             + (acol * SZ - x) + 'px,' + (arow * SZ - y) + 'px)"';
         }
+        /* the selected piece lifts (F3.1): selecting redraws the board
+           anyway, so the lift costs no extra paint */
         var use = '<use href="#pc-' + PIECE_ID[p] + '" x="' + x + '" y="' + y
-          + '" width="' + SZ + '" height="' + SZ + '" data-sq="' + sq + '"' + animAttr + '/>';
+          + '" width="' + SZ + '" height="' + SZ + '" data-sq="' + sq + '"' + (animAttr || (opts.sel === sq ? ' class="lift"' : '')) + '/>';
         if (animAttr) slide = use; else pcs += use;
       }
       if (opts.dots && opts.dots.indexOf(sq) >= 0) {
@@ -281,17 +286,19 @@ function boardSvg(st, opts) {
           top += '<circle cx="' + (x + SZ / 2) + '" cy="' + (y + SZ / 2) + '" r="5.5"'
             + ' fill="' + HL_SEL + '" style="pointer-events:none"/>';
       }
-      /* coordinates live inside the edge squares, tinted with the opposite
-         square colour, exactly where a Lichess eye expects them */
+      /* coordinates live inside the edge squares, exactly where a Lichess
+         eye expects them: dark brown on a light square, white bold on a
+         dark one (F3.1: 4.8:1 and 3.2:1, where the old square colours gave
+         2.3:1) */
       if (row === 7)
         top += '<text x="' + (x + SZ - 3.2) + '" y="' + (y + SZ - 3) + '" text-anchor="end"'
-          + ' font-size="7.5" font-weight="600" font-family="sans-serif" fill="'
-          + (light ? SQ_DARK : SQ_LIGHT) + '" style="pointer-events:none">'
+          + ' font-size="7.5" font-weight="' + (light ? 700 : 800) + '" font-family="sans-serif" fill="'
+          + (light ? COORD_ON_LIGHT : COORD_ON_DARK) + '" style="pointer-events:none">'
           + String.fromCharCode(97 + sq % 8) + '</text>';
       if (col === 0)
         top += '<text x="' + (x + 2.8) + '" y="' + (y + 9.5) + '"'
-          + ' font-size="7.5" font-weight="600" font-family="sans-serif" fill="'
-          + (light ? SQ_DARK : SQ_LIGHT) + '" style="pointer-events:none">'
+          + ' font-size="7.5" font-weight="' + (light ? 700 : 800) + '" font-family="sans-serif" fill="'
+          + (light ? COORD_ON_LIGHT : COORD_ON_DARK) + '" style="pointer-events:none">'
           + (1 + (sq >> 3)) + '</text>';
     }
   }
@@ -432,11 +439,17 @@ function snd(name) {
       o.connect(g); g.connect(sndCtx.destination);
       o.start(t + start); o.stop(t + start + dur + 0.02);
     }
+    /* the voices (F3.1): found a rising 660 then 990 Hz, wrong a muted 110 Hz
+       knock (never a buzzer), the week's goal C, E, G, C 90 ms apart, a
+       position learned a bright 1319 Hz ding (the last two for the
+       summary's moments) */
     if (name === 'tap') tone(340, 0, 0.04, 'triangle', 0.025);
     else if (name === 'move') tone(220, 0, 0.06, 'triangle', 0.05);
-    else if (name === 'good') { tone(660, 0, 0.09); tone(880, 0.09, 0.14); }
-    else if (name === 'bad') tone(140, 0, 0.16, 'sawtooth', 0.04);
+    else if (name === 'good') { tone(660, 0, 0.09); tone(990, 0.09, 0.14); }
+    else if (name === 'bad') tone(110, 0, 0.09, 'triangle', 0.08);
     else if (name === 'set') { tone(523, 0, 0.1); tone(659, 0.1, 0.1); tone(784, 0.2, 0.22); }
+    else if (name === 'goal') { tone(523, 0, 0.12); tone(659, 0.09, 0.12); tone(784, 0.18, 0.12); tone(1047, 0.27, 0.3); }
+    else if (name === 'learned') tone(1319, 0, 0.35, 'sine', 0.05);
   } catch (e) {}
 }
 

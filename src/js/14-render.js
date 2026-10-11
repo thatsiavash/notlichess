@@ -169,7 +169,7 @@ function renderTrain() {
     box.innerHTML = '<div class="today">' + (gamesLoading
       ? stateCard('Reading your games', 'Fetching your rated games from ' + site + '.', '')
       : (data.sections.games === 'fail'
-        ? stateCard(site + ' did not answer.', 'Your saved games and progress are all here. Check your connection and try again.', '<a class="btn-big" data-act="reload">Try again</a>')
+        ? stateCard(site + ' did not answer.', 'Your saved games and progress are all here. Check your connection and try again.', '<a class="btn-big" data-icon="rotate" data-act="reload">Try again</a>')
         : stateCard('No rated games yet.', 'notlichess reads rated live games on ' + site + ': bullet, blitz, rapid' + (isCC() ? '' : ' and classical') + '. '
           + (isCC() ? 'Daily games are not read yet.' : 'Correspondence games are not read yet.') + ' Play a few rated games, then come back. Your mistakes will be waiting.',
           '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>')))
@@ -270,13 +270,13 @@ function heroHtml() {
     + '<h2 id="hero-n" data-n="' + plan.keys.length + '">' + plur(plan.keys.length, 'position') + ', about ' + plur(mins, 'minute') + '</h2>'
     + (more.length ? '<p class="why hero-more">' + more.join(' ') + '</p>' : '')
     + '<p class="why">' + why + '</p>' + weekHtml()
-    + '<div class="acts"><a class="btn-big" data-act="startToday">Start</a></div></div>';
+    + '<div class="acts"><a class="btn-big" data-icon="play" data-act="startToday">Start</a></div></div>';
 }
 function resumeHtml(s) {
   return '<div class="hero">'
     + '<h2>Pick up where you left off.</h2><p class="why">' + countsWords(s)
     + (sessionDoneCount(s) >= sessionTotal(s) ? ' Resume to finish it.' : ' The rest are waiting where you stopped.') + '</p>' + weekHtml()
-    + '<div class="acts"><a class="btn-big" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">End this set</a></div></div>';
+    + '<div class="acts"><a class="btn-big" data-icon="play" data-act="resume">Resume</a><a class="btn-quiet" data-act="dropSession">End this set</a></div></div>';
 }
 /* the next time something is due back, as one set (F2.6, F7.2, calm):
    "Tomorrow: a set of 10, about 8 minutes." (fewer: "Tomorrow: 3
@@ -320,7 +320,7 @@ function doneTodayHtml() {
   var more = morePracticeKeys().length;
   return '<div class="hero">'
     + '<h2>' + ((dayLoad().sessions || 0) > 0 ? 'Today\'s set is done.' : 'Nothing due right now.') + '</h2><p class="why">' + nextDueHtml() + '</p>' + weekHtml()
-    + (more ? '<div class="acts"><a class="btn-big" data-act="keepGoing">' + nextSetWords(more) + '</a></div>'
+    + (more ? '<div class="acts"><a class="btn-big" data-icon="arrow" data-act="keepGoing">' + nextSetWords(more) + '</a></div>'
       : '<p class="why">You have practised every position from your games so far.</p>') + '</div>';
 }
 function dueWhen(ts) {
@@ -351,7 +351,7 @@ function findingHtml(n) {
   if (SF.state === 'failed' && !n.ready) {
     return stateCard('Stockfish could not start in this browser.',
       'It runs on your device, and something blocked it: a content blocker, or an old browser.' + (isCC() ? '' : ' Games that lichess already analysed still work.'),
-      '<a class="btn-big" data-act="engineRetry">Try again</a>');
+      '<a class="btn-big" data-icon="rotate" data-act="engineRetry">Try again</a>');
   }
   var done = n.total && n.covered >= n.total && !n.working;
   if (done && !n.ready) {
@@ -362,11 +362,11 @@ function findingHtml(n) {
   var can = n.ready ? todayPlan().keys.length : 0;
   if (done) {
     return stateCard(n.ready === 1 ? 'One mistake to learn from.' : n.ready + ' mistakes to learn from.',
-      'Play a few more rated games and more will turn up.', (can ? '<a class="btn-big" data-act="startToday">Start with ' + can + '</a>' : '') + play.replace('btn-big', 'btn-quiet'));
+      'Play a few more rated games and more will turn up.', (can ? '<a class="btn-big" data-icon="play" data-act="startToday">Start with ' + can + '</a>' : '') + play.replace('btn-big', 'btn-quiet'));
   }
   if (n.ready) {
     return stateCard(n.ready + ' found so far', 'Start with ' + (n.ready === 1 ? 'this one' : 'these') + ' now, or wait a minute for more.',
-      can ? '<a class="btn-big" data-act="startToday">Start with ' + can + '</a>' : '',
+      can ? '<a class="btn-big" data-icon="play" data-act="startToday">Start with ' + can + '</a>' : '',
       '<div class="finds" id="finds">' + recentFindsHtml() + '</div>' + readBar(n));
   }
   return stateCard('Reading your games',
@@ -520,17 +520,27 @@ function starsHtml(n) {
 }
 /* a position just learned leads the tiles (F2.2): "Learned: Rg1, from
    your loss to opponent1. Found 3 times over 23 days." (tier 1 the move in
-   words) */
+   words), with the learned glyph, its honey seal (F3.1) */
 function learnedHtml(it, e, tier) {
   var pre = stateAtPly(it.g.mv, it.b.p), pm = pre && uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
   if (!pre || !pm) return '';
   var g = it.g, mv = tier === 1 ? moveWords(pre, pm) : sanOf(pre, pm).replace(/[+#]$/, '');
   var from = g.res === 'loss' ? 'loss to ' : g.res === 'draw' ? 'draw with ' : 'win against ';
   return '<div class="recap-item recap-learned" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'One position' })) + '">'
-    + boardSvg(pre, { flip: g.color === 'black', bad: [pm.from, pm.to], decor: true })
+    + boardSvg(pre, { flip: g.color === 'black', bad: [pm.from, pm.to], decor: true }) + resultGlyph('learned')
     + '<span class="learned-say"><b>Learned: ' + esc(mv) + ', from your ' + from + esc(g.opp) + '.</b> '
     + (e.d != null ? 'Found ' + plur(e.n, 'time') + ' over ' + plur(e.d, 'day') + '.' : 'Found ' + plur(e.n, 'time') + ' in a row.') + '</span>'
     + rungHtml(3) + '</div>';
+}
+/* a result's glyph (F3.1), by its category (sumOf's c): a leaf disc with
+   a tick first try or for another move that works, a leaf ring with a tick
+   after a good move, a honey bulb with a hint or a first look, a honey
+   rotate after a miss, a slate eye shown, a dash for one missed or skipped,
+   a honey seal for a position learned; drawn by the stylesheet (.rg) */
+var RESULT_GLYPH = { first: 'first', alt: 'first', good: 'good', hint: 'hint', look: 'hint', miss: 'miss', shown: 'shown', left: 'skip', skip: 'skip', learned: 'learned' };
+function resultGlyph(c) {
+  var g = RESULT_GLYPH[c];
+  return g ? '<span class="rg rg-' + g + '" aria-hidden="true"></span>' : '';
 }
 function doneHtml(ss) {
   var tier = playerTier(), uniq = [];
@@ -546,10 +556,11 @@ function doneHtml(ss) {
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
     var pm = uciToMove(pre, uciOfSan(it.g.mv, it.b.p)), done = e.c !== 'skip' && e.c !== 'shown' && e.c !== 'left';
-    /* the result in words, never in colour alone; tier 3's computed check line on its tile (F2.3) */
+    /* the result in words and as its glyph, never in colour alone; tier 3's
+       computed check line on its tile (F2.3) */
     return '<div class="recap-item" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: k, label: 'One position' })) + '">'
       + boardSvg(pre, { flip: it.g.color === 'black', bad: pm ? [pm.from, pm.to] : null, decor: true }) + '<span>' + esc(patternInfo(patternOf(it.b)).name) + '</span>'
-      + '<span class="res' + (done ? '' : ' shown') + '">' + word + '</span>'
+      + resultGlyph(e.c) + '<span class="res' + (done ? '' : ' shown') + '">' + word + '</span>'
       + (e.c === 'skip' ? '' : tier === 1 ? starsHtml(e.s || 0) : e.p != null ? rungHtml(e.p) : '')
       + (e.f && e.l ? '<span class="tile-check">' + esc(e.l) + '</span>' : '') + '</div>';
   }).join('');
@@ -562,7 +573,7 @@ function doneHtml(ss) {
     + ladderHtml(ss, uniq)
     /* the next set is the main way on: in reach without scrolling */
     + '<div class="acts-row recap-acts">'
-      + (more ? '<a class="btn-big" data-act="keepGoing">' + nextSetWords(more) + '</a>' : '')
+      + (more ? '<a class="btn-big" data-icon="arrow" data-act="keepGoing">' + nextSetWords(more) + '</a>' : '')
       + '<a class="' + (more ? 'btn-quiet' : 'btn-big') + '" data-act="endSession">Back to Today</a>'
     + '</div>'
     + '<div class="recap-week"><div class="kicker">This week</div>' + weekHtml() + '</div>'
@@ -942,12 +953,12 @@ function headClear(from, to, flip, at, r) {
 }
 /* ── labels: one pill a frame, beside the mark it names ───────────────────
    The pill's size: its words measured in the font the page draws them in
-   (12 px on a phone, 14 on the desktop, Lora 600 or whatever stands in for
-   it: Georgia sets wider), plus 14 px of padding, the 1 px border and 2 px
-   to spare, 18 or 20 px tall. Measured once per text and size, again when a
-   font arrives; where nothing can measure (no canvas), a table wide enough
-   for Georgia's bold: 7.4 px a character and 4 to spare at 12 px, 8.7 and
-   5 at 14 */
+   (the tag size, 12 px 800, on a board under 500 px; the small size, 14 px
+   700, above: Nunito or whatever stands in for it), plus 14 px of padding,
+   the 1 px border and 2 px to spare, 18 or 20 px tall. Measured once per
+   text and size, again when a font arrives; where nothing can measure (no
+   canvas), a table wide enough for Georgia's bold: 7.4 px a character and
+   4 to spare at 12 px, 8.7 and 5 at 14 */
 var labelW = {}, labelCtx = null;
 function labelMeasure(text, fs) {
   var k = fs + '|' + text;
@@ -960,8 +971,8 @@ function labelMeasure(text, fs) {
       if (labelCtx && document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', function () { labelW = {}; });
     }
     if (labelCtx) {
-      var fam = window.getComputedStyle(document.documentElement).getPropertyValue('--font-body').trim() || 'Georgia, serif';
-      labelCtx.font = '600 ' + fs + 'px ' + fam;
+      var fam = window.getComputedStyle(document.documentElement).getPropertyValue('--font').trim() || 'Georgia, serif';
+      labelCtx.font = (fs < 14 ? '800 ' : '700 ') + fs + 'px ' + fam;
       w = labelCtx.measureText(text).width;
     }
   } catch (e) { w = null; }
@@ -1133,13 +1144,15 @@ function labelShown(a, lb) {
   store.set('nl:tip:' + lb.tip, 1);
 }
 function boardPx(bw) { return (bw && bw.clientWidth) || 360; }
-function deskLabels() { return !!(window.matchMedia && window.matchMedia('(min-width:861px)').matches); }
+/* the larger label on a board of 500 px or more (the stylesheet's
+   container query on #bwrap says the same) */
+function deskLabels(bw) { return boardPx(bw) >= 500; }
 /* the label over the board as it is now: after a resize, or when the words
    beside it change (a word for a tap takes the label's room for a while) */
 function paintLabels(a, f) {
   var bw = el('bwrap'), box = bw && bw.querySelector('.blabels');
   if (!box || !a) return;
-  var lb = frameLabel(a, f || boardOptsFor(a), boardPx(bw), deskLabels()), fresh = labelFresh(a, lb), was = box.nlHtml;
+  var lb = frameLabel(a, f || boardOptsFor(a), boardPx(bw), deskLabels(bw)), fresh = labelFresh(a, lb), was = box.nlHtml;
   if (!fresh && was != null && lb && was.replace(' fx-in', '') === labelHtml(lb)) { labelShown(a, lb); return; }
   setHtml(box, labelHtml(lb, fresh));
   labelShown(a, lb);
@@ -1274,7 +1287,7 @@ function paintBoard(a, instant) {
   var pos = stateFen(f.st), moved = a.drawnPos != null && a.drawnPos !== pos;
   a.drawnPos = pos;
   /* the label (2.1) after the marks svg, placed on the board as drawn */
-  var lb = frameLabel(a, f, boardPx(bw), deskLabels()), lh = labelHtml(lb, labelFresh(a, lb));
+  var lb = frameLabel(a, f, boardPx(bw), deskLabels(bw)), lh = labelHtml(lb, labelFresh(a, lb));
   bw.innerHTML = boardSvg(f.st, f.opts) + '<div class="blabels" aria-hidden="true">' + lh + '</div>' + (a.pendingPromo ? promoHtml(f.st) : '') + fade;
   var lbox = bw.querySelector && bw.querySelector('.blabels');
   if (lbox) lbox.nlHtml = lh;
@@ -1748,11 +1761,13 @@ function triedSlots(a, seen) {
   return [left, { act: 'tryAgain', label: 'Try again', cls: 'btn-big' }];
 }
 /* a slot as a button: its place (data-slot) for the double-tap guard; a
-   switched-off one has no action; an empty one keeps its place */
+   switched-off one has no action; an empty one keeps its place. Its icon
+   (F3.1) is named by its action, on or off, and drawn by the stylesheet */
+var BAR_ICON = { hint: 'bulb', reveal: 'eye', tryAgain: 'rotate', seeIt: 'play', seeWhy: 'play', playIt: 'play', theirReply: 'play', next: 'arrow' };
 function barHtml(slots) {
   return slots.map(function (s, i) {
     if (s.empty) return '<span class="slot-empty" data-slot="' + i + '" aria-hidden="true"></span>';
-    return '<a class="' + s.cls + (s.off ? ' btn-off' : '') + '" data-slot="' + i + '"'
+    return '<a class="' + s.cls + (s.off ? ' btn-off' : '') + '" data-slot="' + i + '"' + (BAR_ICON[s.act] ? ' data-icon="' + BAR_ICON[s.act] + '"' : '')
       + (s.off ? ' aria-disabled="true" tabindex="-1"' : ' data-act="' + s.act + '"' + (s.k != null ? ' data-k="' + esc(s.k) + '"' : ''))
       + (s.aria ? ' aria-label="' + esc(s.aria) + '"' : '') + '>' + esc(s.label) + '</a>';
   }).join('');
@@ -1877,7 +1892,7 @@ function stripHtml(a, ss) {
   /* the first card ever queued to come back says so, once (C1) */
   var tip = retryTipOn(a) ? '<p class="story-note retry-tip">' + RETRY_TIP + '</p>' : '';
   /* settled (S0): one link to everything else (S13) */
-  return tip + (a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="btn-quiet details-link" data-act="details">Details</a></p>' : '');
+  return tip + (a.view.mode === 's0' && a.settle >= 2 ? '<p class="details-row"><a class="btn-quiet details-link" data-icon="info" data-act="details">Details</a></p>' : '');
 }
 /* the bar grows by a segment when a card is queued to come back (S16):
    on the first card ever queued (nl:tip:retry, on this device) the strip
@@ -2279,7 +2294,7 @@ function sheetHtml(kind) {
       + '<p class="sheet-sum">' + (agg.cost >= 1 ? 'Decided ' + fmtGames(agg.cost) + ' of yours. ' : '') + plur(agg.count, 'position') + ' from your games.'
         + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
       + '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(familyStep(k), playerTier())) + '</div></div>'
-      + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'family', fam: k, label: fam.name })) + '">Drill ' + plur(nDrill, 'position') + '</a>' : '')
+      + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'family', fam: k, label: fam.name })) + '">Drill ' + plur(nDrill, 'position') + '</a>' : '')
       + (focus && focus.fam === k ? '<span class="pill">Focus</span>' : '') + '</div>'
       + (rows ? '<div class="pat-list">' + rows + '</div>' : '')
       + examplesHtml({ type: 'family', fam: k });
@@ -2292,7 +2307,7 @@ function sheetHtml(kind) {
     return '<a class="sheet-back" data-act="sheet" data-k="family:' + fk.key + '">‹ ' + esc(fk.name) + '</a><h3>' + esc(info.plural) + '</h3>'
       + '<p class="sheet-sum">' + (s ? plur(s.count, 'position') + ' from your games' + (s.cost >= 1 ? ', which decided ' + fmtGames(s.cost) : '') + '.' + (s.fixed ? ' ' + s.fixed + ' learned.' : '') : 'None in your games yet.') + '</p>'
       + '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(patternStep(k), playerTier())) + '</div></div>'
-      + (s ? '<div class="acts-row sheet-acts"><a class="btn-big" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'pattern', key: k, label: info.plural })) + '">Drill ' + plur(Math.min(8, s.count), 'position') + '</a></div>' : '')
+      + (s ? '<div class="acts-row sheet-acts"><a class="btn-big" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'pattern', key: k, label: info.plural })) + '">Drill ' + plur(Math.min(8, s.count), 'position') + '</a></div>' : '')
       + examplesHtml({ type: 'pattern', key: k });
   }
   return '';

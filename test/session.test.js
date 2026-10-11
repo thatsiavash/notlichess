@@ -530,13 +530,15 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       a = openCard(it); best(a);
       ui.session.active = null; ui.session.finished = true;
       var h2 = doneHtml(ui.session), first = (/<div class="recap">([\\s\\S]*?)<\\/div>/.exec(h2) || [])[1] || '';
-      res.learned = { rec: srsRec(it).learned, moved: (/class="recap-moved">([^<]*)</.exec(h2) || [])[1], lead: /^<div class="recap-item recap-learned"/.test(first), say: ((/class="learned-say">([\\s\\S]*?)<\\/span>/.exec(h2) || [])[1] || '').replace(/<[^>]+>/g, ''), days: d1 + d2, seal: /aria-label="Learned"><i class="on"><\\/i><i class="on"><\\/i><i class="on gold"><\\/i><\\/span>/.test(first) };
+      res.learned = { rec: srsRec(it).learned, moved: (/class="recap-moved">([^<]*)</.exec(h2) || [])[1], lead: /^<div class="recap-item recap-learned"/.test(first), say: ((/class="learned-say">([\\s\\S]*?)<\\/span>/.exec(h2) || [])[1] || '').replace(/<[^>]+>/g, ''), days: d1 + d2, seal: /aria-label="Learned"><i class="on"><\\/i><i class="on"><\\/i><i class="on gold"><\\/i><\\/span>/.test(first),
+        glyph: /<span class="rg rg-learned" aria-hidden="true"><\\/span><span class="learned-say">/.test(first) };
       return JSON.stringify(res); })()`));
     eq(r.moved, '1 moved up, 1 held, 1 back to the start.', 'what moved');
     eq(JSON.stringify(r.rungs), JSON.stringify(['2 of 3 steps to learned', '1 of 3 steps to learned', '0 of 3 steps to learned']), 'the rungs: a clean find on a due day climbs, a hint holds, a miss empties them');
     ok(r.learned.rec, 'card 1 is learned');
     eq(r.learned.moved, '1 learned.', 'what moved says it');
     ok(r.learned.lead && r.learned.seal, 'the learned position leads the tiles, its third rung gold');
+    ok(r.learned.glyph, 'its tile shows the learned glyph, the honey seal (F3.1), before its words');
     eq(r.learned.say, 'Learned: Rg1, from your loss to opponent1. Found 3 times over ' + r.learned.days + ' days.', 'its words');
   });
 

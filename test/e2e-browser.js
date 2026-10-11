@@ -10,6 +10,9 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const $ = (s) => document.querySelector(s);
   const text = (s) => ($(s) ? $(s).innerText : '');
+  /* the 15-word rule's count (as test/copylint.js counts): a move in words ("rook to g1", tier 1) is one word */
+  const MOVE_WORDS = /\b(?:king|queen|rook|bishop|knight|pawn)(?: from [a-h][1-8])? (?:to|takes on) [a-h][1-8](?: to make a (?:queen|rook|bishop|knight))?|\bcastling\b/gi;
+  const countWords = (t) => String(t || '').replace(MOVE_WORDS, 'Mv').split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length;
   const ok = (name, cond, detail) => {
     if (cond) { passed++; log.push('ok   ' + name); } else { failed++; log.push('FAIL ' + name + (detail ? ': ' + detail : '')); }
     return cond;
@@ -75,7 +78,8 @@
   const focusInBar = () => { const e = document.activeElement; return !!e && !!e.closest && !!e.closest('#cbar') && e.id !== 'kbmove'; };
   const focusName = () => { const e = document.activeElement; return !e ? 'none' : e.id ? '#' + e.id : e.tagName + '[' + (e.getAttribute('data-act') || '') + '] ' + (e.textContent || '').trim(); };
   /* the band's words fit its box: no row cut short, nothing below the box (the phone check runs at 360 x 640),
-     and the box keeps the height it had when the card opened, so nothing below it moves */
+     and the box keeps the height it had when the card opened, so nothing below it moves; no bar button cuts
+     its label */
   const bandFits = (what) => {
     const bx = $('#cband .card-task'), rows = document.querySelectorAll('#cband .bd-r1, #cband .bd-r2, #cband .bd-cap');
     const cut = !bx || bx.scrollHeight > bx.clientHeight || [].some.call(rows, (r) => r.scrollWidth > r.clientWidth + 1 || r.scrollHeight > r.clientHeight + 1);
@@ -88,6 +92,8 @@
     }
     if (bx && W.h0 == null) W.h0 = bx.offsetHeight;
     else if (bx && bx.offsetHeight !== W.h0) W.fit.push(what + ': the band is ' + bx.offsetHeight + ' px tall, not ' + W.h0);
+    /* every button of the bar shows its whole label beside its icon (F3.1) */
+    [].forEach.call($$('#cbar a'), (b) => { if (b.offsetParent && b.scrollWidth > b.clientWidth + 1) W.fit.push(what + ': the button "' + b.textContent.trim() + '" is cut (' + b.scrollWidth + ' > ' + b.clientWidth + ')'); });
     layoutCheck(what);
   };
   /* the layout at this size, for every state the run reaches: on the phone grid (360 x 640, 390 x 844)
@@ -132,7 +138,7 @@
     bandFits('story ' + what);
     const sc = $('#cstrip').cloneNode(true);
     [].forEach.call(sc.querySelectorAll('.kb-move'), (x) => x.remove());
-    const words = (t) => String(t || '').split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length;
+    const words = countWords;
     const n = words(text('#cband')) + words(sc.textContent) + [].reduce.call($$('#cbar a'), (x, b) => x + words(b.textContent), 0) + words($('#bwrap .blabel') ? $('#bwrap .blabel').textContent : '');
     if (n > 15 || !text('#cband .bd-cap')) W.story.push(what + ': ' + n + ' words, ' + text('#cband') + ' / ' + sc.textContent + ' / ' + text('#cbar'));
   };
@@ -168,15 +174,16 @@
     ok('first card opens', !!c);
     if (!c) throw new Error('no card');
     ok('the first card asks for a better move, with your side to move', /Find a better move/.test(text('#main')) && T.ev('myPov(ui.session.active.it) === !!ui.session.active.st.w'), text('.card-task'));
-    const san0 = T.ev('sanOf(ui.session.active.pre, ui.session.active.played)');
-    ok('the band reads Your turn / Find a better move than the game move', text('#cband .bd-r1') === 'Your turn' && text('#cband .bd-r2') === 'Find a better move than ' + san0 + '.', text('#cband'));
+    const san0 = T.ev('sanOf(ui.session.active.pre, ui.session.active.played)'), tier0 = T.ev('ui.session.active.tier'), r20 = text('#cband .bd-r2');
+    ok('the band reads Your turn / Find a better move than the game move (tier 1: in words where they fit, never in notation)', text('#cband .bd-r1') === 'Your turn'
+      && (tier0 === 1 ? /^Find a better move/.test(r20) && r20 === T.ev('displayFor(ui.session.active).row2') && r20.indexOf(san0) < 0 : r20 === 'Find a better move than ' + san0 + '.'), text('#cband'));
     bandFits('the card opens');
     /* S18: a fresh profile's first card names the red arrow once ("Your game move"), beside it on the
        board, hidden from screen readers (the band says it), and remembers that it did */
     const lb0 = await until(() => $('#bwrap .blabel'), 3000);
     ok('the first card ever labels the game arrow "Your game move"', !!lb0 && lb0.textContent === 'Your game move' && lb0.parentNode.getAttribute('aria-hidden') === 'true', lb0 && lb0.textContent);
     ok('the label is remembered as seen', localStorage.getItem('nl:tip:game') === '1');
-    const wordsOn = () => { const w = (t) => String(t || '').split(/\s+/).filter((x) => /[A-Za-z0-9]/.test(x)).length; return w(text('#cband')) + [].reduce.call($$('#cbar a'), (x, b) => x + w(b.textContent), 0) + w(lb0 ? lb0.textContent : ''); };
+    const wordsOn = () => { const w = countWords; return w(text('#cband')) + [].reduce.call($$('#cbar a'), (x, b) => x + w(b.textContent), 0) + w(lb0 ? lb0.textContent : ''); };
     ok('with the label, at most 15 words on screen', wordsOn() <= 15, wordsOn());
     /* S20: the board's name is built from its marks, and never names the answer before it */
     const al0 = $('#bwrap svg.board').getAttribute('aria-label') || '', best0 = T.ev('sanOf(ui.session.active.st, ui.session.active.best)');
@@ -398,14 +405,17 @@
       await sleep(500);
       /* a tap on one of their pieces: outlined, the band says which side you are, nothing graded; then the task is back */
       const opp = T.ev('(function (a) { for (var q = 0; q < 64; q++) if (a.st.b[q] && isW(a.st.b[q]) !== !!a.st.w) return q; return -1; })(ui.session.active)');
+      /* at tier 1 the card may open on its First look (hint 1 drawn): the note then takes its short form, and the band goes back to the hint */
+      const before4 = text('#cband .bd-r2');
       tapSq(opp);
       await sleep(300);
-      const t4 = T.ev('CARD_COPY.T4(ui.session.active)');
-      ok('a tap on their piece says which side you are, and grades nothing', text('#cband .bd-r2') === t4 && !!$('#bwrap .marks .nope-box') && T.card().phase === 'guess' && T.card().misses === 0,
+      const t4 = T.ev('NOTE_COPY.T4(ui.session.active)');
+      /* the outline is drawn unless a hint's rings are already on the board (boardOptsFor) */
+      ok('a tap on their piece says which side you are, and grades nothing', t4.indexOf(text('#cband .bd-r2')) !== -1 && (!!$('#bwrap .marks .nope-box') || T.card().hints > 0) && T.card().phase === 'guess' && T.card().misses === 0,
         text('#cband') + ' / ' + T.card().phase + ' ' + T.card().misses);
       bandFits('T4');
       await sleep(2600);
-      ok('the task is back after it, and the outline gone', /^Find a better move/.test(text('#cband .bd-r2')) && !$('#bwrap .marks .nope-box'), text('#cband'));
+      ok('the task (or the First look\'s hint) is back after it, and the outline gone', text('#cband .bd-r2') === before4 && (/^Find a better move/.test(before4) || /^Hint 1 of 2/.test(text('#cband .bd-r1'))) && !$('#bwrap .marks .nope-box'), text('#cband'));
       await tapMove(c.played);
       await until(() => T.card().misses === 1, 4000);
       await sleep(500);
@@ -542,7 +552,7 @@
     /* a slide starts two frames after its board is drawn: words written with that board count too */
     W.writes.forEach((w) => W.slides.forEach((x) => { if (w[0] > x[0] - 60 && w[0] < (x[1] == null ? x[0] + 400 : x[1])) inSlide.push(w[1] + ' at ' + Math.round(w[0] - x[0]) + ' ms'); }));
     ok('no text is written while a piece slides', W.slides.length >= 2 && inSlide.length === 0, W.slides.length + ' slides, ' + inSlide.length + ' writes inside one: ' + inSlide.slice(0, 4).join(', '));
-    ok('the band\'s words fit its box', W.fit.length === 0, W.fit.slice(0, 3).join(' | '));
+    ok('the band\'s words fit its box, and every bar button its label', W.fit.length === 0, W.fit.slice(0, 3).join(' | '));
 
     /* ── skip, reload-resume and the recap ───────────────────────────── */
     c = await until(() => { const x = T.card(); return x.phase === 'guess' ? x : null; }, 30000);
@@ -661,6 +671,20 @@
     ok('the recap says each card in words', words.length > 0 && words.every((w) => /^(First try|Works too|After a good move|With a hint|First look|After a miss|Shown|Missed|Skipped)(, then (found|found with a hint|found after a miss|shown again|missed again))?$/.test(w)), words.join(', '));
     ok('the cards revealed to finish read Shown', words.some((w) => /^Shown/.test(w)), words.join(', '));
     ok('the card skipped after its miss reads Missed', words.indexOf('Missed') >= 0, words.join(', '));
+    /* F3.1: each tile shows its result as its glyph, just before its word and in the glyph's own colour
+       (a dark tick on the leaf disc, a honey bulb or rotate, a slate eye, a dash), never the words' */
+    const GLYPH = { 'First try': 'first', 'Works too': 'first', 'After a good move': 'good', 'With a hint': 'hint', 'First look': 'hint', 'After a miss': 'miss', 'Shown': 'shown', 'Missed': 'skip', 'Skipped': 'skip' };
+    const INK = { first: '--ink', good: '--leaf', hint: '--honey', miss: '--honey', shown: '--slate', skip: '--text-3' };
+    const probe = document.createElement('i');
+    document.body.appendChild(probe);
+    const tokenColour = (v) => { probe.style.color = 'var(' + v + ')'; return getComputedStyle(probe).color; };
+    const offGlyph = [].map.call($$('.recap-item .res'), (r) => {
+      const g = r.previousElementSibling, k = g && /\brg-(\w+)/.exec(g.className), want = GLYPH[r.textContent.split(',')[0]];
+      if (!k || k[1] !== want) return r.textContent + ': ' + (g ? g.className : 'no glyph');
+      return getComputedStyle(g).color !== tokenColour(INK[want]) ? r.textContent + ': its glyph drawn in ' + getComputedStyle(g).color : '';
+    }).filter(Boolean);
+    probe.remove();
+    ok('each tile shows its result as its glyph, before its word and in the glyph\'s own colour', words.length > 0 && offGlyph.length === 0, offGlyph.join(' | '));
     const head = text('#recap-h'), firstN = words.filter((w) => /^First try/.test(w)).length, countedN = words.filter((w) => w !== 'Skipped').length;
     const tier1 = T.ev('playerTier()') === 1;
     ok('the recap counts what it says', !countedN ? head === 'Done.' : tier1 ? new RegExp('^\\d+ of ' + countedN * 3 + ' stars$').test(head) : head === firstN + ' of ' + countedN + ' found first try.', head + ' / ' + words.join(', '));
@@ -676,6 +700,7 @@
     T.ev("setView('insights'); 'ok'");
     await until(() => $('#insightsbox .fam-row'), 8000);
     ok('Insights ranks the mistake families', !!$('#insightsbox .fam-row'));
+    layoutCheck('Insights');
     ok('no NaN, undefined or em dash in Insights', !/NaN|undefined|—/.test(text('#insightsbox')));
     click('#insightsbox [data-act=sheet]');
     await until(() => $('#overlay .sheet'), 3000);
@@ -687,6 +712,7 @@
     click('#bar [data-act=settings]');
     await until(() => $('#overlay .sheet .switch-row'), 3000);
     ok('Settings open in a sheet', !!$('#overlay .sheet .switch-row'));
+    layoutCheck('Settings');
     const sizeBefore = T.ev("sessionSize()");
     click('#overlay [data-act=size][data-k="5"]');
     ok('session size can be changed', T.ev("sessionSize()") === 5);
