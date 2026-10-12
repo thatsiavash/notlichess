@@ -149,7 +149,17 @@ def h_after_band(R, m, text):
     band = band_word(m.group(2), R.opp)
     e = ev(b.fen(), R.color, DEEP)
     note = 'after the try: player %.0f%% (%s); %s is %s' % (e['win'], ' '.join(e['pv'][:6]), m.group(1), 'their best' if e['pv'] and e['pv'][0] == x.uci() else 'not their best (%s)' % (e['pv'][0] if e['pv'] else '?'))
-    return band_verdict(e['win'], band, note)
+    v = band_verdict(e['win'], band, note)
+    # v2 slice 2: as "After X, you'd lose Y" (h_lose), the band is read after the try and the reply it
+    # names; where it holds there but their best reply leaves the player worse: misleading
+    if v[0] == 'false' and e['pv'] and e['pv'][0] != x.uci():
+        b2 = b.copy(stack=False)
+        b2.push(x)
+        e2 = ev(b2.fen(), R.color, DEEP)
+        v2 = band_verdict(e2['win'], band, 'after the try and %s: player %.0f%%' % (x.uci(), e2['win']))
+        if v2[0] == 'true':
+            return M('the band holds after the reply named, not after their best reply: ' + v2[1] + ' || ' + v[1])
+    return v
 
 
 def h_now_band(R, m, text):
@@ -197,12 +207,19 @@ def h_still_attacked(R, m, text):
         b.push(x)
     elif c[2]:
         b.push(chess.Move.from_uci(c[2]))
-    found = []
+    found, past = [], []
     for s in pieces_of(b, R.color, pt(word)):
-        if b0.piece_at(s) == b.piece_at(s) and chk.attackers_legal(b, s):
+        if b0.piece_at(s) != b.piece_at(s):
+            continue
+        if chk.attackers_legal(b, s):
             found.append(chess.square_name(s))
-    if not found:
+        elif chk.attacked_past_check(b, s):
+            # the try gave check: they cannot take it this move, and it stays attacked whatever they answer
+            past.append(chess.square_name(s))
+    if not found and not past:
         return F('no %s of yours stands attacked on the same square' % word)
+    if not found:
+        return T('attacked on %s after any answer to the check' % ','.join(past))
     danger = [s for s in found if chk.in_danger(b, chess.parse_square(s))]
     return T('attacked on %s%s' % (','.join(found), '' if danger else ' (taking it would not pay for them)'))
 

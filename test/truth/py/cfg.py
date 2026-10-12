@@ -17,13 +17,18 @@ def parser(desc):
     p = argparse.ArgumentParser(description=desc)
     p.add_argument('--root', default=os.path.dirname(os.path.dirname(OWN)), help='the checkout audited (default: this one)')
     p.add_argument('--out', required=True, help='the output folder, outside the repo')
+    p.add_argument('--reviewed', default='', help='the folder of adjudications.json and accepted.md (default: the checkout\'s test/truth, else this harness\'s)')
     return p
 
 
+REVIEWED = None
+
+
 def setup(a):
-    global ROOT, OUT
+    global ROOT, OUT, REVIEWED
     ROOT = os.path.realpath(a.root)
     OUT = os.path.realpath(a.out)
+    REVIEWED = os.path.realpath(a.reviewed) if getattr(a, 'reviewed', '') else None
     if not os.path.isdir(OUT):
         sys.exit('no output folder %s (run node test/truth/gate.js first)' % OUT)
     import sf
@@ -41,7 +46,11 @@ def engine_hash(root):
 
 
 def reviewed(name):
-    """a reviewed file (adjudications.json, accepted.md): the checkout's own, else this harness's"""
+    """a reviewed file (adjudications.json, accepted.md): --reviewed's, else the checkout's own, else this
+    harness's"""
+    if REVIEWED:
+        fn = os.path.join(REVIEWED, name)
+        return fn if os.path.exists(fn) else None
     for d in (os.path.join(ROOT, 'test', 'truth'), OWN):
         fn = os.path.join(d, name)
         if os.path.exists(fn):
@@ -64,8 +73,8 @@ def jsonl(name):
 def budget(n):
     """every node budget of the checks set to n: the modules' DEEP, MID and LIGHT, and the budgets bound
     as default arguments (two(..., nodes=DEEP), eval_side(fen, nodes=1000000), mate_lines(fen, nodes=DEEP))"""
-    import chk, claims, handlers, handlers2, handlers3, handlers_v1
-    mods = (claims, handlers, handlers2, handlers3, handlers_v1)
+    import chk, claims, handlers, handlers2, handlers3, handlers_v1, handlers_v2, handlers_gate
+    mods = (claims, handlers, handlers2, handlers3, handlers_v1, handlers_v2, handlers_gate)
     for mod in mods:
         for name in ('DEEP', 'MID', 'LIGHT'):
             if hasattr(mod, name):
@@ -100,6 +109,15 @@ def nodes_word(n):
     return ('%gM' % (n / 1e6)) if n >= 1000000 else ('%gk' % (n / 1e3))
 
 
+def repro(cid, nodes=8000000):
+    """the command that shows a claim's frame again and reruns its check: run from the checkout audited,
+    or, where the harness audited another checkout, this harness's claim.py with --root"""
+    mine = os.path.realpath(os.path.dirname(os.path.dirname(OWN))) == ROOT
+    return 'python3 %s%s%s --out %s --id %s --nodes %d' % (
+        'test/truth/py/claim.py' if mine else os.path.join(HERE, 'claim.py'), '' if mine else ' --root ' + ROOT,
+        ' --reviewed ' + REVIEWED if REVIEWED else '', OUT, cid, nodes)
+
+
 CTX_FIELDS = ('pre', 'st', 'played', 'best', 'sol', 'solIdx', 'yours', 'yoursAt', 'near', 'slips', 'revealed', 'hints', 'misses', 'view', 'settle')
 
 
@@ -111,6 +129,21 @@ def ctx_hash(r, field, text):
     st = r.get('step') or {}
     lb = next((x for x in (r.get('label0'), r.get('label1')) if x and x.get('text') == text), None) if field == 'label' else None
     key = [r.get('pass'), r.get('tier'), r.get('key'), r.get('frame'), field, text, r.get('shown'),
-           [c.get(k) for k in CTX_FIELDS], t.get('uci'), t.get('reply'), t.get('kind'), (c.get('guess') or {}).get('uci'),
+           [c.get(k) for k in CTX_FIELDS], t.get('uci'), t.get('reply'), t.get('kind'), t.get('line'), t.get('step'), (c.get('guess') or {}).get('uci'),
            st.get('i'), st.get('move'), st.get('before'), (r.get('x') or {}).get('u'), (lb or {}).get('mark')]
     return hashlib.sha1(json.dumps(key, sort_keys=True).encode()).hexdigest()[:16]
+
+
+# The strings on screen no checker reads, each a UI word with no chess claim of its own (README, "What
+# no handler reads"): by form (field | template). Any other unread form fails the gate until a handler
+# reads it or it is justified here and in the README.
+UI_WORDS = {
+    'row1 | Hint N of N': 'the hint counter',
+    'row1 | Your turn': 'the prompt on an open card',
+    'row1 | Your move': "game mode's prompt (row 2 there is the move and clock, checked)",
+    'row1 | Here is the answer': 'the label of the answer shown (its row "The answer: X" is checked)',
+    'row2 | Play the green arrow.': 'an instruction (the arrow is the answer, checked as "The answer: X")',
+    'tag | Review': "game mode's tag",
+    'tag | Practice': "a practice position's tag",
+    'tag | Lesson': "a lesson's tag",
+}

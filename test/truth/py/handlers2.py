@@ -361,8 +361,11 @@ def h_story(R, m, text):
 
 def g1_cap(R, text):
     b, x, a = step_boards(R)       # a: after the game move
-    if re.search(r', your game move\.$', text):
-        return N()
+    mg = re.match(r'^(.+), your game move\.$', text)
+    if mg:
+        # the caption names the game move: the move named, on the board before it, is the game move
+        y = parse_move(b, mg.group(1)) if b else None
+        return (T if y and R.played and y.uci() == R.played else F)('"%s" on the board before it, the game move %s' % (mg.group(1), R.played))
     mm = re.search(r'Nothing guards the ' + PIECE + r' on ([a-h][1-8])\.$', text)
     if mm:
         s = chess.parse_square(mm.group(2))
@@ -407,13 +410,15 @@ def g1_cap(R, text):
     if mm:
         t = chk.NAME[mm.group(1)]
         b0 = chess.Board(R.pre)
-        hits = [q for q in pieces_of(a, R.color, t) if b0.piece_at(q) == a.piece_at(q) and chk.attackers_legal(a, q)]
+        # a try that gave check: they cannot take it this move, but it stays attacked whatever they answer
+        n_of = lambda q: len(chk.attackers_legal(a, q)) or len(a.attackers(not R.color, q))
+        hits = [q for q in pieces_of(a, R.color, t) if b0.piece_at(q) == a.piece_at(q) and (chk.attackers_legal(a, q) or chk.attacked_past_check(a, q))]
         if not hits:
             return F('no %s of yours still attacked' % mm.group(1))
         if mm.group(3):
             n = times(mm.group(3))
-            if not any(len(chk.attackers_legal(a, q)) == n for q in hits):
-                return F('attacked %s times, not %s' % ([len(chk.attackers_legal(a, q)) for q in hits], n))
+            if not any(n_of(q) == n for q in hits):
+                return F('attacked %s times, not %s' % ([n_of(q) for q in hits], n))
         return T('attacked on %s' % [chess.square_name(q) for q in hits])
     mm = re.search(SIDE + r' has no move: a draw\.$', text)
     if mm:
@@ -634,5 +639,5 @@ FORCING = [
     (r'^' + SIDE + r' (took your \w+|gives check|played .+?)(, as expected)?\.$', h_reply_words),
     (r'^(You saw it: .+|.+ was as good as .+|Not .+: they had .+|They had .+)\.$', h_guess),
     (r'^Now their best reply\?$', h_best_reply_q),
-    (r'^(White|Black) replies next\.$', lambda R, m, t: N()),
+    (r'^(White|Black) replies next\.$', lambda R, m, t: (T if m.group(1) == R.opp else F)('the reply is %s\'s' % R.opp)),
 ]

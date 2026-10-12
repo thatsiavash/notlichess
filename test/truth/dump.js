@@ -64,7 +64,11 @@ const { quit, pool } = R;
         TA.snap(a, ${J(tag)} + ' ' + t.kind, { u: ${J(u)} });
         if (t.kind === 'miss') {
           a.reason = 2; TA.snap(a, ${J(tag)} + ' miss, reason said', { u: ${J(u)} });
-          if (t.reply) { seeIt(); a.animMove = null; TA.snap(a, ${J(tag)} + ' miss, See it landed', { u: ${J(u)} }); }
+          if (t.reply) {
+            seeIt(); a.animMove = null; TA.snap(a, ${J(tag)} + ' miss, See it landed', { u: ${J(u)} });
+            /* v2 slice 2 (V2.2): Next move steps the rest of their line, to where it settles */
+            for (var g = 0; g < 10 && typeof seeMore === 'function' && seeMore(t); g++) { seeIt(); a.animMove = null; TA.snap(a, ${J(tag)} + ' miss, See it step ' + t.step, { u: ${J(u)} }); }
+          }
         }
         return 'tried:' + t.kind;
       }
@@ -165,6 +169,8 @@ const { quit, pool } = R;
       for (const fk of fkeys) {
         ev(`window.__fp = foilLook(itemOf(${J(fk)}), true); 1`);
         await ev('window.__fp');
+        /* v2 slice 2 (V2.6): its threat, searched after the look */
+        if (ev(`!!itemOf(${J(fk)}).thP`)) await ev(`itemOf(${J(fk)}).thP`);
         const st = JSON.parse(ev(`JSON.stringify({ ok: !!itemOf(${J(fk)}).b.ok, x: itemOf(${J(fk)}).b.x || null })`));
         stats.foils[st.ok ? 'ok' : 'x:' + st.x] = (stats.foils[st.ok ? 'ok' : 'x:' + st.x] || 0) + 1;
         if (!st.ok) { walk.setAside[fk] = st.x; continue; }

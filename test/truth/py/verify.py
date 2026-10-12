@@ -13,12 +13,38 @@ import chess
 import cfg, chk, sf, gamedata
 from claims import Rec, T, F, M, U, N
 import handlers as H1, handlers2 as H2, handlers3 as H3
-import handlers_v1 as HV
+import handlers_v1 as HV, handlers_v2 as HV2, handlers_gate as HG
 # v2 slice 1's forms, read before the older ones
 H2.SETTLED[:0] = HV.SETTLED
 H1.VERDICT[:0] = HV.VERDICT
 H2.FORCING[:0] = HV.FORCING
 H3.DETAILS[:0] = HV.DETAILS
+# v2 slice 2's forms (words from the facts), read first
+H1.REASON[:0] = HV2.REASON
+H1.HINT[:0] = HV2.HINT
+H2.SETTLED[:0] = HV2.SETTLED
+H3.DETAILS[:0] = HV2.DETAILS
+H3.FOIL[:0] = HV2.FOIL
+_story0 = H2.h_story
+
+
+def _story(R, m, text):
+    v = HV2.story_v2(R, m, text)
+    return v if v is not None else _story0(R, m, text)
+
+
+H2.STORY[:] = [(r'^.+$', _story)]
+_label0 = H3.h_label
+
+
+def _label(R, text, lb):
+    # See it's still marks (V2.2): the event arrow's label and "you take back"
+    if ((lb.get('mark') or {}).get('kind')) in ('event', 'back'):
+        return HV2.h_event_label(R, text, lb)
+    return _label0(R, text, lb)
+
+
+H3.h_label = _label
 
 _games = []
 
@@ -39,7 +65,7 @@ def table(tbl, text):
 
 def family(frame):
     f = frame
-    for a, b in [(r' miss, reason said$', ' miss'), (r' miss, See it landed$', ' miss'), (r' miss$', ' miss'), (r', reason (drawn|said)$', ''), (r', See it landed$', ''), (r' See it landed$', '')]:
+    for a, b in [(r' miss, reason said$', ' miss'), (r' miss, See it landed$', ' miss'), (r' miss, See it step \d+$', ' miss'), (r' miss$', ' miss'), (r', reason (drawn|said)$', ''), (r', See it landed$', ''), (r', See it step \d+$', ''), (r' See it landed$', '')]:
         f = re.sub(a, b, f)
     return f
 
@@ -52,6 +78,8 @@ def classify(R, field, text):
     if field == 'row1':
         if text in ('Not this one', 'Good move', 'That works too'):
             return ('verdict', H1.VERDICT)
+        if text in ('Found it', 'Your game move again', 'As in your game', 'Right'):
+            return ('verdict', HG.VERDICT_WORDS)
         if text in ('Good, nothing to fix', 'Playable'):
             return ('foil verdict', H3.FOIL)
         if text.startswith('The answer: '):
@@ -81,6 +109,8 @@ def classify(R, field, text):
                 return ('practice task', H3.PRAC_ASK)
             return (None, None)
         if foil:
+            if re.match(r'^Move \d+', text):
+                return ('game row', H3.GAME)
             if 'hint' in fr:
                 return ('foil hint', H1.HINT)
             if re.search(r'settled|found|game move', fr):
@@ -88,7 +118,7 @@ def classify(R, field, text):
             if ' miss' in fr:
                 return ('reason', H1.REASON)
             return (None, None)
-        if re.search(r'(miss, reason said|miss, See it landed|game move again, reason said|game move again, See it landed|game game move, reason said|game game move, See it landed)$', fr) or re.search(r' miss(, reason said|, See it landed)?$', fr):
+        if re.search(r'(miss, reason said|miss, See it landed|game move again, reason said|game move again, See it landed|game game move, reason said|game game move, See it landed|See it step \d+)$', fr) or re.search(r' miss(, reason said|, See it landed|, See it step \d+)?$', fr):
             return ('reason', H1.REASON)
         if re.search(r' close$', fr):
             return ('verdict', H1.VERDICT)
@@ -104,6 +134,8 @@ def classify(R, field, text):
             return ('settled', H2.SETTLED)
         if text.startswith('Find a better move than '):
             return ('task', [(r'^Find a better move than (.+)\.$', h_task)])
+        if text == 'Find a better move.':
+            return ('task', HG.TASK_T1)
         return (None, None)
     return (None, None)
 
@@ -158,6 +190,8 @@ def h_tag(R, m, text):
 
 def h_chip(R, m, text):
     t = R.tried
+    if text == 'Your chances' and (not t or not t.get('reply')):
+        return N('the label of the figures beside it (V2.5)')
     if not t or not t.get('reply'):
         return U('no reply')
     b0 = chess.Board(R.st)
@@ -227,6 +261,9 @@ def claims_of(r, games, unread=None):
         text = r.get(field) or ''
         if not text:
             continue
+        if HG.BROKEN.search(text):
+            out.append((R, field, text, 'broken words', HG.h_broken, None))
+            continue
         typ, tbl = classify(R, field, text)
         if not typ:
             if unread is not None:
@@ -239,6 +276,9 @@ def claims_of(r, games, unread=None):
         if lb and lb.get('text'):
             out.append((R, 'label', lb['text'], 'label', ('LABEL', lb), None))
     for d in r.get('details') or []:
+        if HG.BROKEN.search(d):
+            out.append((R, 'details', d, 'broken words', HG.h_broken, None))
+            continue
         if (R.key or '').startswith('pk:'):
             fn, m = table(H3.PRAC_DETAILS, d)
             if fn:
@@ -246,7 +286,11 @@ def claims_of(r, games, unread=None):
             elif unread is not None and not H3.DETAIL_SKIP.match(d):
                 unread.append(('details', d))
             continue
-        typ, fn, m = details_handler(R, d)
+        # v2 slice 2 (V2.5): the figures are labelled; the older checks read them as "(N% to M%)"
+        d2 = re.sub(r'\. Your chances: (\d+)% before, (\d+)% after\.', r' (\1% to \2%).', d)
+        typ, fn, m = details_handler(R, d2)
+        if typ and d2 != d and callable(fn):
+            fn = (lambda f0, t2: (lambda R_, m_, t_: f0(R_, m_, t2)))(fn, d2)
         if typ:
             out.append((R, 'details', d, typ, fn, m))
         elif unread is not None and not H3.DETAIL_SKIP.match(d):
@@ -265,7 +309,7 @@ def sig(R, field, text, typ):
     fam = family(R.frame)
     if typ in ('reason', 'practice reason', 'verdict'):
         fam = re.sub(r'^(two tries: |game )', '', fam)
-    return (R.r.get('pass'), R.tier, R.key, typ, field, text, t, g, st, c.get('solIdx'), lb, R.x.get('u'), fam if typ in ('settled', 'foil line', 'details', 'hint 1', 'hint 2', 'hint 3', 'game hint 1', 'game hint 2', 'forcing line', 'answer') else '')
+    return (R.r.get('pass'), R.tier, R.key, typ, field, text, t, g, st, c.get('solIdx'), lb, R.x.get('u'), fam if typ in ('settled', 'foil line', 'details', 'broken words', 'hint 1', 'hint 2', 'hint 3', 'game hint 1', 'game hint 2', 'forcing line', 'answer') else '')
 
 
 def run_one(item):

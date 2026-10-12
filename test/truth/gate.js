@@ -10,7 +10,8 @@
 // 2), --keys k1,k2 (only these cards, foil:<key> foils and pk:<id> positions: a partial run, never a gate
 // verdict), --nodes N (the first pass, default 1000000), --recheck N,M (default 4000000,8000000), --from
 // prep|dump|verify|recheck (reuse what DIR already holds before that step), --until dump|verify|recheck
-// (stop after it), --fresh (forget the engine caches in DIR).
+// (stop after it), --fresh (forget the engine caches in DIR), --reviewed DIR (where adjudications.json and
+// accepted.md are read; default the checkout's test/truth, else this harness's).
 // DIR must be outside the repo: the dumps run to tens of MB and are never committed. Exit 0 when the gate
 // passes, 1 when it fails or the run is partial. See test/truth/README.md.
 const fs = require('fs'), path = require('path');
@@ -81,7 +82,7 @@ function step(name, cmd, args) {
 
 const node = process.execPath, py = 'python3';
 process.env.PYTHONDONTWRITEBYTECODE = '1';
-const common = ['--root', ROOT, '--out', OUT];
+const common = ['--root', ROOT, '--out', OUT].concat(typeof o.reviewed === 'string' ? ['--reviewed', path.resolve(o.reviewed)] : []);
 const keyArg = (p) => (keys ? ['--keys', keysFor(p).join(',') || 'none'] : []);
 
 if (o.fresh) {

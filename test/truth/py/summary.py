@@ -34,9 +34,21 @@ def accepted_lines():
         return [norm(l) for l in f], fn
 
 
-def is_accepted(r, lines):
+def accepted_line(r, lines):
+    """the line of accepted.md that lists the claim (its card key and its exact text), or None"""
     t, k = norm(r['text']), r['key'] or ''
-    return any(k in l and t in l for l in lines)
+    return next((l for l in lines if k in l and t in l), None)
+
+
+def is_accepted(r, lines):
+    return accepted_line(r, lines) is not None
+
+
+def seat_of(line):
+    """the seat that accepts it: the table row's last cell ('' or 'to confirm' when none has yet)"""
+    cells = [c.strip() for c in line.strip().strip('|').split('|')]
+    seat = cells[-1] if len(cells) >= 2 else ''
+    return '' if not seat or 'to confirm' in seat.lower() else seat
 
 
 def main():
@@ -127,6 +139,7 @@ def main():
     share = 100.0 * len(mis) / max(1, len(claims))
     on_today = [r for r in mis + amis if r['key'] in today]
     not_listed = [r for r in mis + amis if acc is None or not is_accepted(r, acc)]
+    no_seat = [r for r in mis + amis if acc is not None and is_accepted(r, acc) and not seat_of(accepted_line(r, acc))]
     full = all(p in res for p in cfg.PASSES) and not any(run.get('passes', {}).get(p, {}).get('keys') for p in cfg.PASSES)
     # every card (and foil) the fixture deals walked at every tier: a card the walk could not open would
     # otherwise leave no claim behind and no trace
@@ -179,6 +192,7 @@ def main():
                 if miss:
                     walked_ok = False
                     walk_notes.append('practice tier %d: %d positions not walked (%s)' % (t, len(miss), ' '.join(sorted(miss)[:6])))
+    unread_bad = sorted(set('%s %s' % (pas, k) for pas in res for k in load_json('unread-%s.json' % pas, {}) if k not in cfg.UI_WORDS))
     import hashlib
     with open(os.path.join(cfg.ROOT, 'index.html'), 'rb') as f:
         built = hashlib.sha1(f.read()).hexdigest()[:12]
@@ -191,9 +205,10 @@ def main():
         (not false and not afalse, '0 false claims: %d on cards (%s), %d board descriptions (%d more the board check cannot read: "after both your tries", listed below)' % (len(false), ', '.join('%s %d' % (p, sum(1 for r in false if pass_of(r) == p)) for p in res), len(afalse), len(auntest))),
         (share < SHARE, 'misleading under %.1f%% of the chess claims: %.3f%% (%d of %d; board descriptions %d more)' % (SHARE, share, len(mis), len(claims), len(amis))),
         (not on_today, 'no misleading claim on Today\'s first set: %d' % len(on_today)),
-        (not not_listed, 'every misleading claim listed in accepted.md: %d not listed%s' % (len(not_listed), '' if acc is not None else ' (no accepted.md)')),
+        (not not_listed and not no_seat, 'every misleading claim listed in accepted.md with the seat that accepts it: %d not listed, %d listed with no seat yet%s' % (len(not_listed), len(no_seat), '' if acc is not None else ' (no accepted.md)')),
         (not errors, 'no check that failed to run: %d errors' % len(errors)),
         (not unchecked, 'every claim checked (a form no checker reads needs an adjudication): %d unchecked' % len(unchecked)),
+        (not unread_bad, 'every string on screen read by a checker or a justified UI word: %d forms not read%s' % (len(unread_bad), (' (' + '; '.join(unread_bad[:4]) + ')') if unread_bad else '')),
         (full, 'a full run: every pass, every card' + ('' if full else ' (partial: not a gate verdict)')),
         (walked_ok, 'every card dealt and every foil walked at every tier%s' % (': ' + '; '.join(walk_notes) if walk_notes else '')),
         (same, 'the run is of the checkout\'s current build (index.html %s; the run read %s)' % (built, run.get('index', '?'))),
@@ -211,7 +226,7 @@ def main():
         P('  "%s"' % r['text'])
         P('  board %s%s' % (r.get('shown') or r.get('st') or r.get('pre'), ('  try %s, their reply %s' % (r['tried'], r.get('reply'))) if r.get('tried') else ''))
         P('  check %s%s: %s' % (stages, ' then adjudicated (the check said %s)' % r['checked'] if r.get('adjudicated') else '', str(r['note'])[:600]))
-        P('  repro python3 test/truth/py/claim.py --out %s --id %s --nodes 8000000' % (cfg.OUT, r['id']))
+        P('  repro ' + cfg.repro(r['id']))
 
     order = lambda r: (cfg.PASSES.index(pass_of(r)), r['key'] or '', r['tier'], r['frame'])
     if false or afalse:
@@ -225,7 +240,10 @@ def main():
         P('')
         P('== misleading claims (%d on cards, %d board descriptions)' % (len(mis), len(amis)))
         for r in sorted(mis, key=order):
-            show(r, (' | TODAY\'S FIRST SET' if r['key'] in today else '') + (' | listed in accepted.md' if acc is not None and is_accepted(r, acc) else ' | not in accepted.md'))
+            al = accepted_line(r, acc) if acc is not None else None
+            show(r, (' | TODAY\'S FIRST SET' if r['key'] in today else '') + ((' | accepted.md: %s' % ('seat ' + seat_of(al) if seat_of(al) else 'listed, no seat yet')) if al else ' | not in accepted.md'))
+            if al:
+                P('  accepted.md: %s' % al[:300])
         for r in amis:
             P('[misleading] board description %s t%s %s | %s: "%s" on %s (%s; ctx %s)%s' % (r['pass'], r['tier'], r['key'], r['frame'], r['text'], r['shown'], r['note'], r.get('ctx'),
               (' | TODAY\'S FIRST SET' if r['key'] in today else '') + (' | listed in accepted.md' if acc is not None and is_accepted(r, acc) else ' | not in accepted.md')))
@@ -272,13 +290,13 @@ def main():
         P('')
         P('== the summary, Today and Insights: the recount beside the screens\' numbers is in %s (read side by side)' % cfg.out('screens-recount.txt'))
     P('')
-    P('== strings on screen no checker reads, by form (pass | field | form: count, one example)')
+    P('== strings on screen no checker reads, by form (pass | field | form: count, one example; a UI word justified in cfg.UI_WORDS and the README, else NOT READ)')
     for pas in res:
         cov = load_json('unread-%s.json' % pas, {})
         items = sorted(cov.items(), key=lambda kv: -kv[1]['n'])
         P('%s: %d forms, %d strings' % (pas, len(items), sum(v['n'] for k, v in items)))
         for k, v in items[:40]:
-            P('  %6d  %s   e.g. "%s" (%s t%s, %s)' % (v['n'], k[:90], v['example'][:80], v['key'], v['tier'], v['frame'][:40]))
+            P('  %6d  %s   e.g. "%s" (%s t%s, %s): %s' % (v['n'], k[:90], v['example'][:80], v['key'], v['tier'], v['frame'][:40], cfg.UI_WORDS.get(k, 'NOT READ')))
         if len(items) > 40:
             P('  ... %d more forms in unread-%s.json' % (len(items) - 40, pas))
     P('')

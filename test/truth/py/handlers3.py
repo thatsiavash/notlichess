@@ -245,6 +245,33 @@ def h_stops(R, m, text):
     return T('')
 
 
+def fork_line_holds(R, a, ucis):
+    """a fork in a line ("X allows A B, and then C forks both your knights.", "X allows C, forking your
+    king and rook.") from `a`, the board after the game move: None where it holds, else the verdict. The
+    player's own moves in it may not be more than 5 points below their best there (10 or more:
+    misleading, they need not walk into it; between: noise), and the forking piece may not be taken at a
+    profit. Their moves may be weaker than their best: that understates the game move's cost."""
+    y = a.copy()
+    for u in ucis:
+        if y.turn == R.color:
+            e = ev(y.fen(), R.color, DEEP)
+            best = e['pv'][0] if e['pv'] else None
+            if best and best != u:
+                wm, wb = two(y.fen(), u, best, R.color)
+                note = 'in the line, %s is %.0f points below %s, the best there (%.0f%% against %.0f%%)' % (
+                    y.san(chess.Move.from_uci(u)), wb - wm, y.san(chess.Move.from_uci(best)), wm, wb)
+                if wb - wm > 10:
+                    return M(note + ': the player need not walk into the fork')
+                if wb - wm > 5:
+                    return ('noise', note)
+        y.push(chess.Move.from_uci(u))
+    to = chess.Move.from_uci(ucis[-1]).to_square
+    good = [x for x in y.legal_moves if x.to_square == to and chk.see_capture(y, x) > 0]
+    if good:
+        return M('the forking piece can be taken at a profit: %s' % y.san(good[0]))
+    return None
+
+
 def h_classifier(R, m, text):
     """the classifier's sentence about the game move (Details' first line): its claims read one by one"""
     t = text
@@ -280,13 +307,15 @@ def h_classifier(R, m, text):
         if g:
             return F('the %s on %s is guarded by %s' % (mm.group(1), mm.group(2), [chess.square_name(q) for q in g]))
         notes.append('undefended')
-    ma = re.search(r' allows ((?:\S+ )*\S+), and then (\S+) forks your (\w+) and (\w+)', t)
+    ma = re.search(r' allows ((?:\S+ )*\S+), and then (\S+) forks (?:your (\w+) and (\w+)|both your (\w+)s)\b', t)
     if ma:
         y = a.copy()
+        line = []
         for san in ma.group(1).split():
             z = parse_move(y, san)
             if not z:
                 return F('%s is not legal in the line' % san)
+            line.append(z.uci())
             y.push(z)
         z = parse_move(y, ma.group(2))
         if not z:
@@ -295,8 +324,15 @@ def h_classifier(R, m, text):
         w = y.copy()
         w.push(z)
         names = sorted(PNAME[w.piece_at(q).piece_type] for q in fk)
-        if not (ma.group(3) in names and ma.group(4) in names):
+        if ma.group(5):
+            # "forks both your knights": two pieces of the one kind
+            if names.count(ma.group(5)) < 2:
+                return F('%s hits %s' % (ma.group(2), names))
+        elif not (ma.group(3) in names and ma.group(4) in names):
             return F('%s hits %s' % (ma.group(2), names))
+        v = fork_line_holds(R, a, line + [z.uci()])
+        if v:
+            return v
         notes.append('fork in the line')
     mm = re.search(r' allows (\S+), forking your (\w+) and (\w+)', t)
     if mm:
@@ -309,6 +345,9 @@ def h_classifier(R, m, text):
         names = sorted(PNAME[y.piece_at(q).piece_type] for q in fk)
         if not (mm.group(2) in names and mm.group(3) in names):
             return F('%s hits %s' % (mm.group(1), names))
+        v = fork_line_holds(R, a, [x.uci()])
+        if v:
+            return v
         notes.append('fork')
     mm = re.search(r'(?:You|White|Black) (?:could )?(?:lose|loses) (.+?)\.$', t)
     mm2 = re.search(r' (loses|could lose) (.+?)( after .+)?\.$', t)
@@ -515,9 +554,20 @@ def h_best_sentence(R, m, text):
         a = after(pre, x.uci())
         e = ev(a.fen(), R.color, DEEP)
         return (T if not ((e['mate'] or 0) < 0) else F)('mate after it: %s' % e['mate'])
-    mm = re.match(r'^(\S+) was the better move\.$', t)
+    mm = re.match(r'^(.+) was the better move\.$', t)
     if mm:
-        return N()
+        # V2.1's fallback ("Ne4 was the better move."): the move named, on the card's board, against the
+        # game move, side by side (the card's own premise, as the task line's check reads it)
+        x = parse_move(b, mm.group(1))
+        if not x:
+            return F('"%s" is not a legal move on the card\'s board' % mm.group(1))
+        if not R.played or x.uci() == R.played:
+            return F('"%s" is the game move itself' % mm.group(1))
+        wx, wg = two(pre, x.uci(), R.played, R.color)
+        note = '%s %.0f%%, the game move %s %.0f%% (gap %.0f)' % (x.uci(), wx, R.played, wg, wx - wg)
+        if wx - wg >= 8:
+            return T(note)
+        return ('noise', note) if wx - wg >= 3 else M(note)
     mm = re.match(r'^(\S+) also holds\.$', t)
     if mm:
         return h_also_holds(R, mm, t)
@@ -621,7 +671,8 @@ def foil_gap(R, u):
 def h_foil_verdict(R, m, text):
     u = R.ctx.get('lastMove')
     # the move played on this foil: the game move, or the try kept in x.u
-    mv_ = R.x.get('u') or try_of_frame(R) or (R.played if 'game move' in R.frame else None)
+    # (the walk's "foil try X then game move, settled" grades the game move)
+    mv_ = R.played if 'then game move' in R.frame else (R.x.get('u') or try_of_frame(R) or (R.played if 'game move' in R.frame else None))
     if not mv_:
         return U('move not kept')
     wu, wb, best = foil_gap(R, mv_)

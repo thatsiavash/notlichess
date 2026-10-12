@@ -8,7 +8,7 @@ python3 test/truth/py/final.py --out DIR [--root DIR] [--pass live|stored|practi
 import json, os, re, sys
 sys.dont_write_bytecode = True  # keep the checkout clean
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import cfg, recheck
+import cfg, recheck, t1words
 
 INSTR = {'Play the green arrow.', 'Now find it in your games.'}
 ADJ_KEY = ('pass', 'tier', 'key', 'frame', 'field', 'text', 'ctx')
@@ -38,6 +38,7 @@ def finalize(pas, adj=None):
     idx = adj_index(adj)
     used = set()
     out = []
+    staged = []
     for r in rows:
         r = dict(r, first=r['verdict'], stages=[[cfg_nodes(), r['verdict']]])
         for n, st in stages:
@@ -47,6 +48,10 @@ def finalize(pas, adj=None):
                 r['verdict'], r['note'] = d['verdict'], '%s: %s' % (cfg.nodes_word(n), d['note'])
                 r['stages'].append([n, d['verdict']])
                 r['rechecked'] = n
+        staged.append(r)
+    # tier 1's Details lines no checker reads take their tier 2 line's final verdict (t1words.py)
+    t1words.pair(staged)
+    for r in staged:
         if r['text'] in INSTR:
             r['verdict'], r['note'] = 'none', 'an instruction, no claim'
         m = re.search(r'player has (\d+)%.*\(opp better\).*\((\d+) points outside the band\)', str(r['note'])) or \

@@ -35,7 +35,11 @@ TA.cardSync = function (key) {
   gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
   if (a.phase === 'tried') {
     TA.snap(a, 'game move again'); a.reason = 1; TA.snap(a, 'game move again, reason drawn'); a.reason = 2; TA.snap(a, 'game move again, reason said');
-    if (a.tried.reply) { seeIt(); a.animMove = null; TA.snap(a, 'game move again, See it landed'); }
+    if (a.tried.reply) {
+      seeIt(); a.animMove = null; TA.snap(a, 'game move again, See it landed');
+      /* v2 slice 2 (V2.2): Next move steps the rest of their line */
+      for (var g0 = 0; g0 < 10 && typeof seeMore === 'function' && seeMore(a.tried); g0++) { seeIt(); a.animMove = null; TA.snap(a, 'game move again, See it step ' + a.tried.step); }
+    }
     tryAgain(); a.triedHold = false; TA.snap(a, 'game move again, after Try again');
   }
   /* solved: the card's own answer (a forcing line played through) */
@@ -95,7 +99,10 @@ TA.gameSync = function (key) {
   a = TA.open(key, true); a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
   if (a.phase === 'tried') {
     a.reason = 2; TA.snap(a, 'game game move, reason said');
-    if (a.tried.reply) { seeIt(); a.animMove = null; TA.snap(a, 'game game move, See it landed'); }
+    if (a.tried.reply) {
+      seeIt(); a.animMove = null; TA.snap(a, 'game game move, See it landed');
+      for (var g1 = 0; g1 < 10 && typeof seeMore === 'function' && seeMore(a.tried); g1++) { seeIt(); a.animMove = null; TA.snap(a, 'game game move, See it step ' + a.tried.step); }
+    }
     tryAgain(); a.triedHold = false; TA.snap(a, 'game game move, after Try again');
     a.hints = 1; a.hintAt = a.misses; a.hintAfter = true; TA.snap(a, 'game after a miss, hint 1'); a.hints = 2; TA.snap(a, 'game after a miss, hint 2');
   }

@@ -8,7 +8,7 @@ python3 test/truth/py/adjudicate.py --out DIR --pass live --key KEY --text "exac
        [--tier N] [--frame FRAME] [--try UCI] [--file PATH] [--dry]
        [--aria]   (a sentence of the board's description, as aria.py reads it)
 python3 test/truth/py/adjudicate.py --out DIR --prune [--file PATH]   (drop the entries no claim of DIR matches)
-The file is the checkout's test/truth/adjudications.json unless --file names another."""
+The file is --reviewed's adjudications.json, else the checkout's test/truth one, unless --file names another."""
 import json, os, sys
 sys.dont_write_bytecode = True  # keep the checkout clean
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -59,7 +59,7 @@ def main():
     p.add_argument('--prune', action='store_true')
     p.add_argument('--aria', action='store_true', help='a sentence of the board\'s description')
     a = cfg.setup(p.parse_args())
-    fn = a.file or os.path.join(cfg.ROOT, 'test', 'truth', 'adjudications.json')
+    fn = a.file or os.path.join(cfg.REVIEWED or os.path.join(cfg.ROOT, 'test', 'truth'), 'adjudications.json')
     d = load(fn)
     if a.prune:
         keep, drop = [], []

@@ -91,6 +91,22 @@ def in_danger(b, sq):
     return see_square(x, sq) > 0
 
 
+def attacked_past_check(b, sq):
+    """the piece on sq cannot be taken at once only because its opponent, to move, is in check: every
+    legal answer to the check leaves it on sq, still attacked by them (pk:m41a's Qa5+: the bishop on d3
+    attacks the knight on e4 whatever White answers)"""
+    p = b.piece_at(sq)
+    if not p or b.turn == p.color or not b.is_check():
+        return False
+    answers = list(b.legal_moves)
+    for y in answers:
+        x = b.copy(stack=False)
+        x.push(y)
+        if x.piece_at(sq) != p or not x.attackers(b.turn, sq):
+            return False
+    return bool(answers)
+
+
 def mates_in_one(b):
     out = []
     for m in b.legal_moves:
@@ -113,6 +129,10 @@ def parse_move(b, text):
     except Exception:
         pass
     m = re.match(r'^(king|queen|rook|bishop|knight|pawn)(?: from ([a-h][1-8]))? (to|takes on) ([a-h][1-8])(?: to make a (queen|rook|bishop|knight))?$', t, re.I)
+    mc = re.match(r"^castling on the (king|queen)'s side$", t, re.I)
+    if mc:
+        c = [x for x in b.legal_moves if b.is_castling(x) and (chess.square_file(x.to_square) > 4) == (mc.group(1).lower() == 'king')]
+        return c[0] if c else None
     if t.lower() == 'castling':
         c = [x for x in b.legal_moves if b.is_castling(x)]
         if len(c) > 1:

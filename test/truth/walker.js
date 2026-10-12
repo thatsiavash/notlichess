@@ -58,7 +58,7 @@ TA.snap = function (a, frame, extra) {
       hints: a.hints, misses: a.misses, game: !!a.game, foil: !!a.foil, prac: !!a.prac, revealed: !!a.revealed, alt: a.alt ? { win: a.alt.win, best: a.alt.best } : null,
       yours: a.yours ? a.yours.uci : null, yoursAt: a.yours ? a.yours.at || 0 : null, near: a.near ? { win: a.near.win, best: a.near.best, deep: !!a.near.deep } : null, own: !!a.own, slips: a.slips || 0, slipSan: a.slipSan || '',
       view: a.view ? { mode: a.view.mode, i: a.view.i } : null, settle: a.settle || 0,
-      tried: a.tried ? { uci: a.tried.uci, kind: a.tried.kind, reply: a.tried.reply, seen: !!a.tried.seen, chip: a.tried.chip || '' } : null,
+      tried: a.tried ? { uci: a.tried.uci, kind: a.tried.kind, reply: a.tried.reply, seen: !!a.tried.seen, chip: a.tried.chip || '', line: a.tried.line || null, step: a.tried.step || 0, ev: a.tried.ev || null } : null,
       guess: a.guess ? { uci: a.guess.uci || null, v: a.guess.v || null, skip: !!a.guess.skip, san: a.guess.san || null } : null,
       lastMove: a.lastMove ? [TA.sq(a.lastMove[0]), TA.sq(a.lastMove[1])] : null,
       lessonMove: TA.lessonMove(a)

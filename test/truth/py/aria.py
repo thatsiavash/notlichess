@@ -24,6 +24,8 @@ def _mates(b, y):
 
 def check_sentence(s, b, r):
     c = r.get('ctx') or {}
+    if re.search(r'\b(?:null|undefined|NaN)\b|\[object ', s):
+        return 'false', 'the sentence shows a program value: a word of it is missing'
     white = c.get('white')
     me = chess.WHITE if white else chess.BLACK
     m = re.match(r'^(White|Black) to move\.$', s)
