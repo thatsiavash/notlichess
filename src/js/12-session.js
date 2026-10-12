@@ -184,10 +184,12 @@ function buildCandidates(n, spec, fill, o) {
   while (fill && out.length < n && fi < mine.length) out.push(mine[fi++]);
   return out;
 }
-/* the positions due, the most valuable first: by the end of the next 12
-   hours, now or, with o (todayPlan's context), at o.at in records o.srs */
+/* the positions due, the most valuable first: those whose date has come
+   (C2: due from that day's midnight, never within 8 hours of the last
+   answer, so a set looks no hours ahead), now or, with o (todayPlan's
+   context), at o.at in records o.srs */
 function dueCards(spec, o) {
-  var srs = (o && o.srs) || srsLoad(), end = ((o && o.at) || Date.now()) + 12 * 3600 * 1000;
+  var srs = (o && o.srs) || srsLoad(), end = (o && o.at) || Date.now();
   var filter = spec ? specFilter(spec) : null;
   return allMistakes().filter(function (it) {
     var r = srs[it.key];
@@ -225,26 +227,22 @@ function spreadCards() {
    to the queue (no date, their history kept: they return as new when
    there is room); of the rest, the most valuable set's worth stays due and
    the others spread over the next 21 days, each onto the first day with
-   room, no day above one set. Due here: by the end of the day, or within
-   the 12 hours a set looks ahead, whichever is later */
+   room, no day above one set. Due here: by the end of the day (C2: a date,
+   so one answered late last night and due this morning counts) */
 var SPREAD_DAYS = 21;
-/* local midnight of the day ms falls on, k days later (DST-safe) */
-function dayStart(ms, k) { var d = new Date(ms); d.setHours(0, 0, 0, 0); if (k) d.setDate(d.getDate() + k); return d.getTime(); }
-/* whole calendar days from the day of a to the day of b */
-function daysFrom(a, b) { return Math.round((dayStart(b) - dayStart(a)) / DAY); }
 /* what the day's first opening at time at would do, without doing it:
    { due, keep, queue, spread [{ it, day }], left (due for want of room) };
    srs0: the records to read (a copy, for a later day's set: planOn). A
    paused set keeps its positions out only today: it is gone by tomorrow */
 function absorbPlan(at, srs0) {
   var srs = srs0 || srsLoad(), m = model(), size = sessionSize(), f = currentFocus(), fam = f && f.fam;
-  var horizon = Math.max(dayStart(at, 1), at + 12 * 3600 * 1000), due = [], perDay = {};
+  var horizon = dayStart(at, 1), due = [], perDay = {};
   var paused = dayStamp(new Date(at)) === dayStamp() ? savedSession() : null, skip = {};
   if (paused) paused.keys.forEach(function (k) { skip[k] = 1; });
   Object.keys(srs).forEach(function (k) {
     var r = srs[k], it = m.byKey[k];
     if (!r || r.hidden || r.due == null || !it || !trainable(it)) return;
-    if (r.due <= horizon) { if (!skip[k]) due.push(it); return; }
+    if (r.due < horizon) { if (!skip[k]) due.push(it); return; }
     var d = daysFrom(at, r.due);
     if (d <= SPREAD_DAYS) perDay[d] = (perDay[d] || 0) + 1;
   });
@@ -274,8 +272,8 @@ function absorbOpen() {
   if (!cfg.user || absorbToday()) return null;
   var now = Date.now(), od = overdueCount(), p = absorbPlan(now), srs = srsLoad(), prev = store.get(absorbKey(), null);
   p.queue.forEach(function (it) { var r = srs[it.key]; r.q = now; r.due = null; delete r.sp; });
-  /* a spread position comes due at noon of its day: all that day */
-  p.spread.forEach(function (x) { var r = srs[x.it.key]; r.sp = now; r.due = dayStart(now, x.day) + 12 * 3600 * 1000; });
+  /* a spread position comes due on its day, from its midnight (C2) */
+  p.spread.forEach(function (x) { var r = srs[x.it.key]; r.sp = now; r.due = dayStart(now, x.day); });
   if (p.queue.length || p.spread.length) srsSave(srs);
   var s = { d: dayStamp(), due: p.due, sp: p.spread.length, q: p.queue.length, left: p.left.length };
   store.set(absorbKey(), s);
@@ -366,7 +364,7 @@ function todayPlan(o) {
 function planOn(d) {
   var at = dayStart(Date.now(), d) + 12 * 3600 * 1000, srs = JSON.parse(JSON.stringify(srsLoad())), p = absorbPlan(at, srs);
   p.queue.forEach(function (it) { var r = srs[it.key]; r.q = at; r.due = null; delete r.sp; });
-  p.spread.forEach(function (x) { var r = srs[x.it.key]; r.sp = at; r.due = dayStart(at, x.day) + 12 * 3600 * 1000; });
+  p.spread.forEach(function (x) { var r = srs[x.it.key]; r.sp = at; r.due = dayStart(at, x.day); });
   var plan = todayPlan({ at: at, srs: srs, day: {} });
   plan.absorb = p;
   return plan;
@@ -412,7 +410,7 @@ function reviewKeys(keys) {
    practice positions and lessons: F9.3, F9.4), how many positions are
    overdue and whether the day's load is healthy */
 function logSet(mode, keys) {
-  var srs = srsLoad(), end = Date.now() + 12 * 3600 * 1000, due = 0, fresh = 0, q = 0, sp = 0, fo = 0, pk = 0, seen = {}, n = 0;
+  var srs = srsLoad(), end = Date.now(), due = 0, fresh = 0, q = 0, sp = 0, fo = 0, pk = 0, seen = {}, n = 0;
   keys.forEach(function (k) {
     if (seen[k]) return;
     seen[k] = 1; n++;
@@ -479,8 +477,8 @@ function nextSetSize() {
   var max = sessionSize();
   return Math.max(Math.min(5, max), Math.min(max, store.get('nl:setSize', max)));
 }
-function morePracticeKeys() {
-  var size = nextSetSize(), srs = srsLoad(), now = Date.now(), recent = 3 * 3600 * 1000, keys = [];
+function morePracticeKeys(n) {
+  var size = n || nextSetSize(), srs = srsLoad(), now = Date.now(), recent = 3 * 3600 * 1000, keys = [];
   var add = function (it) { if (keys.length < size && keys.indexOf(it.key) < 0) keys.push(it.key); };
   dueCards().forEach(add);
   if (keys.length < size) spreadCards().forEach(add);
@@ -501,6 +499,46 @@ function keepGoing() {
   var keys = morePracticeKeys();
   if (!keys.length) { notice('You have practised every position from your games so far.'); return; }
   startSession('more', withPractice(withFoils(keys, 'more'), 'more'), 'Next set');
+}
+/* a position taken out of a set before it was answered (loadCard and
+   factsSwap: the deeper look found no real mistake, or nothing it could
+   ask) gives its slot to the next one the set would deal (C1), so a set
+   keeps its size ("Position 5 of 5"): Today's set the next due position,
+   else the next new one; a next set the next of its own order
+   (morePracticeKeys); a drill the next of its kind. The others move up a
+   place, as before, and the one that joins comes last among the set's own
+   positions (before the ones back for another try), so a first set keeps
+   its head (keepFirstThree). A game's walk-through, one position from a
+   summary, a pack, a foil and a practice position give up their slot */
+function setAside(ss) {
+  var fill = setFill(ss, ss.keys[ss.idx]);
+  ss.keys.splice(ss.idx, 1);
+  if (fill) {
+    var seen = {}, at = ss.keys.length;
+    for (var i = 0; i < ss.keys.length; i++) {
+      var k = ss.keys[i];
+      if (seen[k] && ss.relearnOf && ss.relearnOf[k]) { at = i; break; }
+      seen[k] = 1;
+    }
+    ss.keys.splice(Math.max(at, ss.idx), 0, fill);
+    /* a review that joins counts as one in the recall after a break (V4.4) */
+    if (ss.rev && reviewKeys([fill])[fill]) ss.rev[fill] = 1;
+  }
+  keepFirstThree(ss);
+  saveSession();
+}
+function setFill(ss, gone) {
+  var sp = ss.spec || {}, have = {};
+  /* only a position of the set's own, unanswered: never one back for
+     another try, nor a foil, a practice position or a lesson */
+  if (!gone || isFoilKey(gone) || isPracKey(gone) || isLessonKey(gone) || (ss.results && ss.results[gone]) || ss.keys.indexOf(gone) !== ss.idx) return null;
+  if (ss.mode !== 'today' && ss.mode !== 'more' && !(ss.mode === 'drill' && sp.type && sp.type !== 'game' && sp.type !== 'one')) return null;
+  ss.keys.concat(ss.relearn || []).forEach(function (k) { have[k] = 1; });
+  var ok = function (it) { return !!it && !have[it.key] && dealable(it); }, pick;
+  if (ss.mode === 'drill') pick = drillItems(sp, ss.keys.length + 40).filter(ok)[0];
+  else if (ss.mode === 'more') pick = morePracticeKeys(ss.keys.length + 40).map(itemOf).filter(ok)[0];
+  else pick = dueCards().filter(ok)[0] || buildCandidates(ss.keys.length + 20).filter(ok)[0];
+  return pick ? pick.key : null;
 }
 function resumeSession() {
   var s = savedSession();
@@ -653,10 +691,16 @@ function finishSession() {
      player's own positions: Today's set and "since you started" wait */
   if (triedEnough(ss, 0)) { countDay(ss, 0); day = dayLoad(); if (!pack) day.sessions = (day.sessions || 0) + 1; }
   else if (!pack) day.short = 1;
-  daySave(day);
-  /* the day's first set after 7 or more days away: its summary says what was
-     remembered (V4.4) and may ask for a backup (V4.5) */
+  /* the day's first set after 7 or more days away may ask for a backup
+     (V4.5); the day's first summary of Today's set or a next set with
+     reviews after such a break says what was remembered (V4.4), once, and
+     never a drill's (C4) */
   if (!pack && day.sessions === 1) ss.away = daysAway();
+  if ((ss.mode === 'today' || ss.mode === 'more') && !day.recall && recallOf(ss, ss.keys, playerTier()).n) {
+    ss.recall = daysAway();
+    if (ss.recall) day.recall = 1;
+  }
+  daySave(day);
   /* the first finished set starts "since you started" (F6.2) */
   if (day.sessions) noteStart();
   /* the routine line, once, on a first summary at tiers 2 and 3 (F2.3) */

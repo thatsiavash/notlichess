@@ -165,15 +165,16 @@ function loadCard() {
     return;
   }
   /* a foil goes too with the engine down: its game move cannot be checked;
-     so does a position with no fact sheet (V1.1: only keyed cards then) */
-  if (!it || (it.foil ? SF.state === 'failed' : !dealable(it)) || it.b.x) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
+     so does a position with no fact sheet (V1.1: only keyed cards then).
+     A position taken out gives its slot to the next one (C1, setAside) */
+  if (!it || (it.foil ? SF.state === 'failed' : !dealable(it)) || it.b.x) { setAside(ss); loadCard(); return; }
   var myGen = gen, key = it.key;
   var go = function () {
     if (ss.loadingKey === key) ss.loadingKey = null;
     if (stale(myGen) || ui.session !== ss || ss.keys[ss.idx] !== key) return;
-    if (it.b.x || (it.foil && !foilReady(it))) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
+    if (it.b.x || (it.foil && !foilReady(it))) { setAside(ss); loadCard(); return; }
     var a = cardFor(it);
-    if (!a) { it.b.x = 'moves'; ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
+    if (!a) { it.b.x = 'moves'; setAside(ss); loadCard(); return; }
     /* a first session's head card that the deeper look turned into a
        forcing line goes back behind one that asks for one move, if any */
     if (a.sol && ss.firstTime && ss.idx < 3) {
@@ -254,7 +255,7 @@ function factsSwap(a) {
   a.keyDue = false;
   var it = a.it;
   if (it.b.x) {
-    ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); stageReset();
+    setAside(ss); stageReset();
     notice('On a deeper look that position was not a real mistake, so it was removed.');
     loadCard();
     return true;
@@ -2142,7 +2143,7 @@ function noteResult(ss, a, result, again, prev, left) {
   if (!again) {
     var rec = a.rec || srsRec(a.it);
     e.m = ladderMove(cat, prev, rec, a.held); e.p = rungsOf(rec);
-    if (e.m === 'learned') { e.n = rec.streak || 3; if (rec.rs) e.d = Math.round((Date.now() - rec.rs) / DAY); }
+    if (e.m === 'learned') { e.n = rec.streak || 3; if (rec.rs) e.d = daysFrom(rec.rs, Date.now()); }
   }
   (ss.sum = ss.sum || {})[k] = e;
 }
@@ -2153,7 +2154,7 @@ function logPrev(a) {
   /* why it was in the set (F7.1): spread to a later day, back from the
      queue (its ladder starting again), or practice before its due date */
   return r ? { n: r.n, last: r.last, lf: r.lf, streak: r.q ? 0 : r.streak || 0, learned: !r.q && !!r.learned, sp: !!r.sp, q: !!r.q,
-               pr: !r.sp && !r.q && r.due != null && r.due > Date.now() + 12 * 3600 * 1000 } : null;
+               pr: !r.sp && !r.q && r.due != null && r.due > Date.now() } : null;
 }
 /* one card answered, in the practice log (08-srs.js): its mode, 'cued',
    'game' (F8.1) or 'foil' (F8.2, with its verdict fv: good or playable);

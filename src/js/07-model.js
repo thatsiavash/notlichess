@@ -203,8 +203,9 @@ function patternStats() {
     s.pts += Math.max(0, it.b.wb - it.b.wa) / 100;
     s.items.push(it);
     var rec = srs[it.key];
-    /* one back in the queue (F7.1) is to go again */
-    if (!rec || rec.q) s.fresh++;
+    /* "not started" is never shown (C3): one back in the queue (F7.1) was
+       practised, so it stays in practice, its steps at 0 (skillSteps) */
+    if (!rec) s.fresh++;
     else if (isLearned(rec)) s.fixed++;
     else { s.practising++; if (rec.due == null || rec.due <= now) s.due++; }
     var age = (now - it.g.ts) / 864e5;

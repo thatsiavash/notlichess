@@ -168,6 +168,22 @@ function analysisLine(n) {
   return '<span>Stockfish is still reading your games: ' + n.covered + ' of ' + n.total + '.</span>';
 }
 function renderEngineState() { renderAnalysisStatus(); }
+/* the background check moved on (C1): the screen whose counts it can
+   change is drawn again, "Checking 12 more positions…" beside them, and
+   once it is done drawn settled, without the line: Today, Insights, or a
+   summary's report card (in place). Never a card on screen; the keyboard
+   stays on the control it was on */
+function checkingPaint() {
+  var ss = ui.session;
+  if (!cfg.user || (ss && !ss.finished)) return;
+  var foc = document.activeElement, fk = foc && foc.getAttribute ? (foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || '') : '';
+  if (ui.view === 'insights') renderInsights();
+  else if (ss) { var dg = el('recap-diag'); if (dg) dg.innerHTML = diagHtml(ss, playerTier()); }
+  else renderTrain();
+  if (!fk || fk === '|' || (document.body.contains && document.body.contains(foc))) return;
+  var p = fk.split('|'), back = p[0] && document.querySelector('[data-act="' + p[0] + '"]' + (p[1] ? '[data-k="' + p[1] + '"]' : ''));
+  if (back && back.focus) back.focus({ preventScroll: true });
+}
 
 /* ── Today ───────────────────────────────────────────────────────────────── */
 function renderTrain() {
@@ -201,10 +217,12 @@ function renderTrain() {
   var fh = focusHtml();
   lastTodaySig = plan.keys.join(',') + '|' + fh;
   /* the hero, why these positions (F5.2), the focus, then the games; two
-     columns on a wide screen, the games beside the rest */
+     columns on a wide screen, the games beside the rest. While the
+     background check runs, "Checking 12 more positions…" between why these
+     and the focus card, beside the counts of both (C1) */
   box.innerHTML = '<div class="today today-grid"><div class="today-main">' + since
     + (saved ? resumeHtml(saved) : (doneToday ? doneTodayHtml() : heroHtml(plan) + whyTheseHtml(plan)))
-    + fh
+    + (fh ? checkingHtml('focus-check') : '') + fh
     + '<p class="status" id="astat">' + analysisLine(n) + '</p>'
     + '</div>' + latestGamesHtml() + '</div>';
   /* the due count in the tab, once the day's opening has run (F5.4) */
@@ -269,10 +287,12 @@ function latestGamesHtml() {
       + '<small>' + esc(upFirst(perfLabel(g.perf || ''))) + ' · ' + gameDayWord(g.ts) + ' · ' + upFirst(g.color) + '</small></span>'
       + right.replace(/^<span class="([^"]*)"/, '<span class="$1" aria-hidden="true"') + '</' + tag + '>';
   }).join('');
-  /* a check for new games that failed says so here, under the games' head (F10) */
+  /* a check for new games that failed says so here, under the games' head
+     (F10); a row's counts may still change while the background check
+     runs (C1) */
   return '<aside class="latest" id="latest"><div class="latest-head"><div class="kicker">Your latest games</div>'
     + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>'
-    + (data.refreshErr ? '<p class="lg-note" role="status">' + esc(refreshWords(data.refreshErr)) + '</p>' : '') + rows
+    + (data.refreshErr ? '<p class="lg-note" role="status">' + esc(refreshWords(data.refreshErr)) + '</p>' : '') + checkingHtml('lg-check') + rows
     + (all.length > games.length ? '<a class="btn-quiet lg-all" data-act="allGames">All games</a>' : '')
     + '<p class="lg-foot dim">' + tapWord() + ' a game to see its mistakes in the order played.</p></aside>';
 }
@@ -300,21 +320,14 @@ function cleanLineHtml() {
   }
   return data.cleanLine ? '<p class="clean-line">' + data.cleanLine + '</p>' : '';
 }
-/* back after a break (V4.4), on Today, once: "Welcome back. Your practice
-   waited where you left it." when the last practice day is 7 or more days
-   ago. nl:welcome:<player> keeps the day of the practice it greeted after,
-   so a reload says it no more; this page load keeps it until a day counts */
+/* back after a break (V4.4), on Today: "Welcome back. Your practice waited
+   where you left it." when the last practice day before today is 7 or more
+   days ago (daysAway), all through the return day until that day's first
+   set ends (C4: a reload or a redraw never uses it up) */
 var WELCOME = 'Welcome back. Your practice waited where you left it.';
 function welcomeHtml() {
-  var key = 'nl:welcome:' + playerId(), days = countedDays(), last = days[days.length - 1], now0 = new Date();
-  now0.setHours(0, 0, 0, 0);
-  var gap = last != null && last < now0.getTime() && daysFrom(last, Date.now()) >= 7 ? dayStamp(new Date(last)) : '';
-  if (data.welcomeFor !== key + '|' + gap) {
-    data.welcomeFor = key + '|' + gap;
-    data.welcome = !!gap && store.get(key, '') !== gap;
-    if (data.welcome) store.set(key, gap);
-  }
-  return data.welcome && gap ? '<p class="welcome-line">' + WELCOME + '</p>' : '';
+  var day = dayLoad();
+  return daysAway() && !(day.sessions > 0 || day.short) ? '<p class="welcome-line">' + WELCOME + '</p>' : '';
 }
 /* the week (F5.1): Monday to Sunday, a day that counted filled with a
    tick, today ringed, and the medal glyph at the goal, honey once it is met;
@@ -450,11 +463,12 @@ function paintTitle() {
    brackets only when the set holds both), fewer "Tomorrow: 3 positions,
    about 2 minutes."; when that opening spreads positions, "... 13 more over
    the next 3 weeks.", and where it finds no room "... 23 due in all."
-   (F7.2). Positions still due today come first: "1 more is ready in the
-   next set." ("13 more are ready for your next sets. Each set takes the
-   most important first." when tomorrow's opening would leave some due,
-   "...; any left spread over the next 3 weeks." when it would spread all
-   it cannot deal), never
+   (F7.2). Positions still due today come first: "Your next set starts
+   with the 2 still due." (C4: never "2 more are ready in the next set"
+   above [Next set of 10], read as a set of 2; "13 more are ready for your
+   next sets. Each set takes the most important first." when tomorrow's
+   opening would leave some due, "...; any left spread over the next 3
+   weeks." when it would spread all it cannot deal), never
    "due today" under "Today's set is done". With no set tomorrow (nothing
    new left), the first day that has one */
 var SPREAD_SAY = 'over the next 3 weeks';
@@ -470,7 +484,7 @@ function nextDueHtml() {
   };
   var p1 = planOn(1);
   if (left) {
-    lead = left <= size ? plur(left, 'more is', 'more are') + ' ready in the next set.' : left + ' more are ready for your next sets.';
+    lead = left <= size ? 'Your next set starts with the ' + (left === 1 ? 'one' : left) + ' still due.' : left + ' more are ready for your next sets.';
     if (p1.absorb.left.length) return lead + ' Each set takes the most important first.';
     if (p1.absorb.spread.length) return lead.slice(0, -1) + '; any left spread ' + SPREAD_SAY + '.';
   }
@@ -494,8 +508,9 @@ function doneTodayHtml() {
     + (more ? '<div class="acts"><a class="btn-big" data-icon="arrow" data-act="keepGoing">' + nextSetWords(more) + '</a></div>'
       : '<p class="why">You have practised every position from your games so far.</p>') + packOfferHtml() + weekHtml() + '</div>';
 }
+/* when a position comes back, by date (C2: as the summary says it) */
 function dueWhen(ts) {
-  var days = Math.round((ts - Date.now()) / DAY);
+  var days = daysFrom(Date.now(), ts);
   if (days <= 0) return 'later today';
   if (days === 1) return 'tomorrow';
   return 'in ' + days + ' days';
@@ -551,7 +566,8 @@ function findingHtml(n) {
    one job, Start) that opens the skill's sheet, with its chevron: the
    skill's glyph and name, its check line, and one meter, its own positions
    (by steps, "3 learned · 12 in practice · 29 not started", zero parts
-   dropped: V4.8) */
+   dropped: V4.8); while the background check can still change them,
+   renderTrain says so just above it (C1) */
 function focusHtml() {
   var f = currentFocus();
   if (!f) return '';
@@ -625,8 +641,17 @@ function sumOf(ss, k) {
    found it.", "You found both." for one or two) / "4 took
    more than one try, 1 was shown.", never "of 15". Counted: every position
    answered, a skip too at tier 1 (one of the set it did not find); a foil
-   and a practice position apart */
+   and a practice position apart. At tier 1 a find on its one more try
+   counts as found, one that took more than one try (C3: shown, then found,
+   is "You found it.") */
 var FOUND = { first: 1, alt: 1, good: 1, hint: 1, look: 1, miss: 1 };
+/* found as tier 1's headline counts it: on the first showing, or on its
+   one more try (C3) */
+function foundT1(ss, k, e) {
+  if (FOUND[e.c]) return true;
+  var e2 = ss.results && ss.results[k + '#r'] ? sumOf(ss, k + '#r') : null;
+  return !!(e2 && FOUND[e2.c]);
+}
 function recapScore(ss, keys, tier) {
   var n = 0, first = 0, found = 0, skipped = 0, by = {};
   keys.forEach(function (k) {
@@ -636,8 +661,9 @@ function recapScore(ss, keys, tier) {
     if (!e || e.foil || e.prac || e.lesson) return;
     if (e.c === 'skip') { skipped++; return; }
     n++;
-    if (FOUND[e.c]) found++;
-    if (e.c === 'first') first++; else by[e.c] = (by[e.c] || 0) + 1;
+    var c = tier === 1 && !FOUND[e.c] && foundT1(ss, k, e) ? 'miss' : e.c;
+    if (FOUND[c]) found++;
+    if (c === 'first') first++; else by[c] = (by[c] || 0) + 1;
   });
   if (!n) return { head: 'Done.', then: '' };
   if (tier === 1) return { head: found === n + skipped ? (found === 1 ? 'You found it.' : found === 2 ? 'You found both.' : 'You found all ' + found + '.') : 'You found ' + found + ' of ' + (n + skipped) + '.', then: foundWords(by, skipped) };
@@ -770,18 +796,25 @@ function starRowHtml(counts, fx) {
    away, you found 7 of 9 reviews first try." (tier 1 "After 14 days away,
    you found 7 of 9.", found as its headline counts it); under half, "They
    come back sooner now." Reviews only: positions answered before the set
-   began (ss.rev), each first showing once */
-function recallHtml(ss, keys, tier) {
-  if (!ss.away || !ss.rev) return '';
-  var n = 0, f = 0;
+   began (ss.rev), each first showing once. Only Today's set or a next set
+   with reviews says it, the day's first (ss.recall, finishSession), never
+   a drill's (C4) */
+function recallOf(ss, keys, tier) {
+  var n = 0, f = 0, seen = {};
   keys.forEach(function (k) {
     var e = ss.sum && ss.sum[k];
-    if (!ss.rev[k] || !e || e.c === 'skip' || e.foil || e.prac || e.lesson) return;
+    if (seen[k] || !ss.rev || !ss.rev[k] || !e || e.c === 'skip' || e.foil || e.prac || e.lesson) return;
+    seen[k] = 1;
     n++;
-    if (tier === 1 ? FOUND[e.c] : e.c === 'first') f++;
+    if (tier === 1 ? foundT1(ss, k, e) : e.c === 'first') f++;
   });
+  return { n: n, f: f };
+}
+function recallHtml(ss, keys, tier) {
+  if (!ss.recall || !ss.rev) return '';
+  var rc = recallOf(ss, keys, tier), n = rc.n, f = rc.f;
   if (!n) return '';
-  return '<p class="recall">After ' + plur(ss.away, 'day') + ' away, you found ' + f + ' of ' + n + (tier === 1 ? '' : ' reviews first try') + '.'
+  return '<p class="recall">After ' + plur(ss.recall, 'day') + ' away, you found ' + f + ' of ' + n + (tier === 1 ? '' : ' reviews first try') + '.'
     + (f * 2 < n ? ' They come back sooner now.' : '') + '</p>';
 }
 /* a position just learned leads the tiles (F2.2): "Learned: Rg1, from
@@ -869,7 +902,7 @@ function doneHtml(ss) {
      4) */
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
-    + diagHtml(ss, tier)
+    + '<div id="recap-diag">' + diagHtml(ss, tier) + '</div>'
     + recallHtml(ss, uniq, tier)
     + (sr ? '<div class="result-row star-row' + (lag ? ' fx' : '') + '" aria-hidden="true">' + sr.html + '</div>' : row ? '<div class="result-row" aria-hidden="true">' + row + '</div>' : '')
     + '<h2 class="done-big" id="recap-h" tabindex="-1">' + sc.head + '</h2>'
@@ -960,25 +993,28 @@ function cueSave(c) { store.set(cueKey(), c); }
    report builds as you practise: 12 of 40 games read.". Once it has shown
    in full, one line on the focus skill (else the biggest): "Piece safety: 3
    learned · 12 in practice · 29 not started.". Decided once a summary (ss.dx), so
-   drawing it again says the same */
+   drawing it again says the same kind of card; its counts are read as it
+   is drawn, with "Checking 12 more positions…" while the background check
+   can still change them, and drawn again as it moves on (C1,
+   checkingPaint) */
 function diagHtml(ss, tier) {
   if (!ss.dx) {
     var cov = coverage(), over = readOver(), fams = insightReport().families;
     if (!fams.length) ss.dx = { k: 'none' };
     else if (cueLoad().rv) ss.dx = { k: 'line' };
-    else ss.dx = { k: 'card', full: (over || cov.covered >= 30) && (cov.losses >= 5 || over), cov: cov };
+    else ss.dx = { k: 'card', full: (over || cov.covered >= 30) && (cov.losses >= 5 || over), cov: cov, live: 1 };
   }
   var d = ss.dx, fams2 = insightReport().families, t1 = tier === 1;
   if (d.k === 'none' || !fams2.length) return '';
   var f = currentFocus(), top = (f && fams2.filter(function (a) { return a.fam.key === f.fam; })[0]) || fams2[0];
   if (d.k === 'line') return '<p class="diag-line"><span class="sk-glyph" data-icon="' + ((SKILL[top.fam.key] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
-    + '<span>' + esc(top.fam.name) + ': ' + progressWords(top) + '.</span></p>';
-  var cv = d.cov, turned = ', one move ' + (t1 ? 'cost you the game.' : 'turned the game for good.');
+    + '<span>' + esc(top.fam.name) + ': ' + progressWords(top) + '.</span></p>' + checkingHtml('diag-check');
+  var cv = d.live ? coverage() : d.cov, turned = ', one move ' + (t1 ? 'cost you the game.' : 'turned the game for good.');
   var link = '<a class="btn-quiet diag-go" data-act="reportOpen">See your report ›</a>';
   if (!d.full) {
     return '<section class="diag" aria-label="Your games, read"><div class="kicker">Your games, read</div><p class="diag-so">'
       + (cv.losses >= 5 ? 'So far: in ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your report builds as you practise: ' + cv.covered + ' of ' + plur(cv.total, 'game') + ' read.')
-      + '</p>' + link + '</section>';
+      + '</p>' + checkingHtml('diag-check') + link + '</section>';
   }
   var big = fams2[0], tie = fams2[1] && fams2[1].lost === big.lost;
   var rows = fams2.filter(function (a) { return a.lost > 0; }).slice(0, 3).map(function (a) {
@@ -993,7 +1029,7 @@ function diagHtml(ss, tier) {
     + '<h2 class="diag-h">' + (cv.losses >= 5 ? 'In ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your mistakes, grouped by the skill that would prevent them.') + '</h2>'
     + (rows ? '<div class="dg-rows">' + rows + '</div>' : '')
     + (started ? '<p class="diag-start">' + (t1 ? 'Your first skill: ' : 'You started on the biggest: ') + esc(big.fam.name) + '.</p>' : '')
-    + link + '</section>';
+    + checkingHtml('diag-check') + link + '</section>';
 }
 /* the reminder (F5.4), on the summary after the habit card, never in the
    sticky bar: once, on the first summary (and that day's others until it
@@ -3268,9 +3304,10 @@ function renderInsights() {
     lead = tier === 1 ? who + ' cost you the most games: ' + top.lost + (tie ? ' each.' : '.')
       : who + ' decided the most: ' + fmtGames(top.lost) + (tie ? ' each.' : '.');
   }
-  /* while the background check runs, counts may still shrink: it says so */
-  var ck = checkingLeft();
-  h += '<h2>' + head + '</h2>' + (lead ? '<p class="lead">' + lead + '</p>' : '') + (ck ? '<p class="ins-checking">Checking ' + plur(ck, 'more position') + '…</p>' : '') + tiles;
+  /* while the background check runs, counts may still shrink: it says so
+     beside each block of them (C1): the headline and lead, the skills, the
+     clock, since you started */
+  h += '<h2>' + head + '</h2>' + (lead ? '<p class="lead">' + lead + '</p>' : '') + checkingHtml('ins-checking') + tiles;
   /* how your games are decided (F10.3), at tier 3 under the headline */
   if (tier >= 3) h += decidedHtml(decidedReport());
   /* since you started (F6.2), once a set is finished */
@@ -3284,7 +3321,7 @@ function renderInsights() {
   var focus = currentFocus(), main = r.families.filter(function (a) { return a.lost >= ALSO_SEEN || (focus && focus.fam === a.fam.key); });
   var also = r.families.filter(function (a) { return main.indexOf(a) === -1; });
   if (!main.length) { main = also; also = []; }
-  h += '<h3 class="ins-h">' + (tier === 1 ? 'What cost you games' : 'What decided your games') + '</h3>' + skillRowsHtml(main, focus, tier)
+  h += '<h3 class="ins-h">' + (tier === 1 ? 'What cost you games' : 'What decided your games') + '</h3>' + checkingHtml('ins-checking') + skillRowsHtml(main, focus, tier)
     + (also.length ? '<h3 class="ins-h ins-also">Also seen</h3>' + skillRowsHtml(also, focus, tier) : '');
   /* the routine, at tiers 2 and 3 (F2.3) */
   if (tier >= 2) h += '<p class="routine">' + ROUTINE_LINE + '</p>';
@@ -3337,7 +3374,9 @@ function skillRowsHtml(list, focus, tier) {
    on both sides) and the opponents' level when it moved 100 points or more */
 function startPanelHtml(st) {
   var B = st.before, S = st.since, d1 = function (x) { return (Math.round(x * 10) / 10).toFixed(1); };
-  var h = '<section class="since" aria-label="Since you started"><h3 class="since-h">Since you started, ' + gameDateLine({ ts: st.t }) + '</h3>';
+  /* its before count may still change, and a game since waits for the
+     background check (C1) */
+  var h = '<section class="since" aria-label="Since you started"><h3 class="since-h">Since you started, ' + gameDateLine({ ts: st.t }) + '</h3>' + (st.unchecked ? checkingHtml('ins-checking') : '');
   if (st.verdict === 'wait') {
     h += '<p>Big mistakes per game before: ' + d1(B.mean) + ' (' + plur(B.n, 'game') + ').</p>';
     if (st.need) return h + '<p class="since-wait">Your next ' + (st.need === 1 ? 'game completes' : st.need + ' games complete') + ' the before count; the comparison comes '
@@ -3398,7 +3437,7 @@ function clockHtml(c, tier) {
     var others = c.other ? ' (' + (c.otherFast ? c.otherFast + ' of your ' + plur(c.other, 'other big mistake') + ' did too' : 'none of your ' + plur(c.other, 'other big mistake') + ' did') + ')' : '';
     rows.push(c.fast + ' of ' + c.dec + ' deciding moves took under 10 s' + others + '.');
   }
-  return '<h3 class="ins-h">Your clock</h3><div class="clock-rows">' + rows.map(function (x) { return '<p>' + x + '</p>'; }).join('') + '</div>';
+  return '<h3 class="ins-h">Your clock</h3>' + checkingHtml('ins-checking') + '<div class="clock-rows">' + rows.map(function (x) { return '<p>' + x + '</p>'; }).join('') + '</div>';
 }
 /* how your games are decided (F10.3): the rows decidedReport supports,
    each its count in one sentence ("Converting wins: won 21 of 30 games
@@ -3424,17 +3463,18 @@ function decidedHtml(d) {
    threshold frozen on the start day (sinceLine) */
 function countHtml() {
   var t = playerTier(), lines, st = sinceStats(), since = st && st.before.n ? sinceLine(st, t) : '';
-  /* (V4.8) a position learned, in words the player can check; a decided
-     game is a loss, each counted once, as the headline and the rows count
-     them */
-  if (t === 1) lines = ['A big mistake: a move that made your position much worse.', since, 'A move cost you the game if you never came back from it.', 'Find a position on 3 different days and it is learned.'];
+  /* (V4.8) a position learned, in words the player can check (C3: the
+     rule as srsRecord keeps it, the game view's time at tiers 2 and 3:
+     F8.3); a decided game is a loss, each counted once, as the headline and
+     the rows count them */
+  if (t === 1) lines = ['A big mistake: a move that made your position much worse.', since, 'A move cost you the game if you never came back from it.', 'Find it first try 3 times in a row, over 3 weeks or more, and it is learned.'];
   else {
     var g = realGames().filter(function (x) { return x.myR; }).sort(function (x, y) { return y.ts - x.ts; })[0];
     var thr = g ? mistakeMinFor(g) : (t >= 3 ? 12 : 15);
     lines = ['A big mistake cut your winning chances by ' + thr + ' points or more (' + { 20: '15 from 1200, 12 at 1800+', 15: '20 under 1200, 12 at 1800+', 12: '15 under 1800, 20 under 1200' }[thr] + ').',
       since,
       'A move decided a game if it lost a game you could still play and you never came back.',
-      'Each find on a later day climbs a step; three steps and it is learned. A miss sends it back.'];
+      'Three first-try finds in a row make it learned if the last comes 16 days or more after the one before, in game view within 30 seconds (60 at Less help). A miss starts it again.'];
     /* tier 3's rows on how games are decided (F10.3): what +2 means, and
        where the peer figures come from */
     var dr = t >= 3 ? decidedReport() : null;

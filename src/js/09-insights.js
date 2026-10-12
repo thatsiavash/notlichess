@@ -188,8 +188,8 @@ function fmtGames(x) {
    One per family of 08-srs.js: a glyph (Lucide) and one plain line, tier 1
    first, then tiers 2 and 3. A skill's bar fills by steps (V4.8: each of
    its positions its rungs out of 3); its words count the positions:
-   learned, in practice (practised, not learned yet), not started (never
-   practised, or back in the queue) */
+   learned, in practice (shown, not learned yet: one back in the queue
+   too), not started (never shown: C3) */
 var SKILL = {
   safety: { glyph: 'shield', line: ['Moves that let them take your pieces.', 'Moves that let them win material.'] },
   king: { glyph: 'crown', line: ['Moves that put your king in danger.', 'Moves that exposed your king or allowed mate.'] },
@@ -238,13 +238,29 @@ function decidedWords(lost, tier) {
   if (!(lost > 0)) return tier === 1 ? 'cost you no games' : 'decided no games';
   return (tier === 1 ? 'cost you ' : 'decided ') + fmtGames(lost);
 }
-/* the positions the background check still has to look at, while it runs
-   (V4.8: Insights says so, as counts may shrink when a look takes one out):
-   the deeper look's queue (V1.1's fact sheets, once they run in the
-   background, count here instead) */
+/* the positions the background check (V1.1's fact sheets) still has to
+   look at, once it has started and while the engine can run it: every
+   position without its key, as enrichTargets queues them (C1: a count it
+   can change says "Checking 12 more positions…" beside it, and settles
+   before it is shown without). 0 with the engine down, where nothing more
+   is checked and nothing changes */
 function checkingLeft() {
-  if (SF.state === 'failed') return 0;
-  return enrichState.running ? enrichTargets().length : 0;
+  if (SF.state === 'failed' || !(enrichState.running || enrichState.done > 0)) return 0;
+  return allMistakes().filter(function (it) { return trainable(it) && !factsOf(it.b) && !factsState.failed[it.key]; }).length;
+}
+/* "Checking 12 more positions…" while the check runs, beside the counts it
+   can change (C1); cls: the line's own class */
+function checkingHtml(cls) {
+  var n = checkingLeft();
+  return n ? '<p class="checking-line' + (cls ? ' ' + cls : '') + '">Checking ' + plur(n, 'more position') + '…</p>' : '';
+}
+/* a game whose positions the check has all looked at (C1: since you
+   started counts these only): each one keyed, set aside, or one it cannot
+   read; with the engine down, or a game it never reads (out of the window,
+   no moves), nothing more will change */
+function gameChecked(g) {
+  if (SF.state === 'failed' || !g.bl || !g.mv || !inScope(g)) return true;
+  return g.bl.every(function (b) { return b.x || !b.bu || (b.sc && !b.d) || !!factsOf(b) || !!factsState.failed[mKey(g, b)]; });
 }
 /* the window as dates: "21 to 27 Sept 2026", "28 Aug to 3 Sept 2026",
    "3 Nov 2025 to 27 Sept 2026" */
@@ -264,9 +280,12 @@ function dateSpan(t0, t1) {
    stored series at that threshold. Before: the format's games with a
    series before the start (its 12 months, and at least its newest 150), 20
    at least, else the first games after the start fill it; since: the games
-   after those. Counts always; a verdict only from 10 games since, by
-   learning's calibrated rule (sinceVerdict). b keeps the before numbers for
-   when those games have left this browser (the cache keeps the newest) */
+   after those, each once the background check has looked at all its
+   positions (C1, gameChecked: a game waiting for it would count positions
+   the check may yet take out, so the comparison waits for it). Counts
+   always; a verdict only from 10 games since, by learning's calibrated
+   rule (sinceVerdict). b keeps the before numbers for when those games
+   have left this browser (the cache keeps the newest) */
 var SINCE_MIN = 10, BASE_MIN = 20;
 function startKey() { return 'nl:start:' + playerId(); }
 /* the first finished set notes the start (at: a time, for testing and for
@@ -351,9 +370,10 @@ function skillVerdict(B, S, f) {
 }
 /* the before and since numbers: { t, thr, before: { n, mean, v, clean, fam,
    fsq, famN, opp }, since: { n, total, mean, clean, fam, fsq, famN, opp },
-   need, verdict } (verdict a key of SINCE_SAY, 'wait' under 10 games
-   since; need the games still to come before the before count has its 20);
-   null before the start */
+   need, verdict, unchecked } (verdict a key of SINCE_SAY, 'wait' under 10
+   games since; need the games still to come before the before count has
+   its 20; unchecked the games before or since the check has still to
+   finish, C1); null before the start */
 function sinceStats() {
   var s = startLoad();
   if (!s) return null;
@@ -363,7 +383,10 @@ function sinceStats() {
   var year = s.t - 365 * DAY;
   var pre = games.filter(function (g) { return g.ts <= s.t; }).sort(function (x, y) { return y.ts - x.ts; })
     .filter(function (g, i) { return i < 150 || g.ts >= year; });
-  var post = games.filter(function (g) { return g.ts > s.t; }).sort(function (x, y) { return x.ts - y.ts || (x.id < y.id ? -1 : 1); });
+  var post = games.filter(function (g) { return g.ts > s.t && gameChecked(g); }).sort(function (x, y) { return x.ts - y.ts || (x.id < y.id ? -1 : 1); });
+  /* the games the check has still to finish: a game since waits for it,
+     and a game before may still lose a position to it */
+  var unchecked = games.filter(function (g) { return (g.ts > s.t || pre.indexOf(g) >= 0) && !gameChecked(g); }).length;
   /* one count over the positions Insights shows (V4.8: the per-game figure
      is the deciding and the other big mistakes over the games), each skill's
      its own positions, in the games whose positions reach down to the
@@ -396,7 +419,7 @@ function sinceStats() {
   B.mean = B.n ? B.total / B.n : 0;
   B.v = B.n > 1 ? (B.sq - B.n * B.mean * B.mean) / (B.n - 1) : 0;
   S.mean = S.n ? S.total / S.n : 0;
-  return { t: s.t, thr: thr, before: B, since: S, need: Math.max(0, BASE_MIN - B.n), verdict: S.n < SINCE_MIN ? 'wait' : sinceVerdict(B, S) };
+  return { t: s.t, thr: thr, before: B, since: S, need: Math.max(0, BASE_MIN - B.n), verdict: S.n < SINCE_MIN ? 'wait' : sinceVerdict(B, S), unchecked: unchecked };
 }
 /* the standard normal's distribution function (Abramowitz and Stegun 26.2.17) */
 function normCdf(z) {
@@ -422,12 +445,12 @@ var SINCE_SAY = { fewer: 'Fewer than before.', probably_fewer: 'Probably fewer. 
    their big mistakes against what as many games had before practice
    started (the before count, the only usual there is), "Since your last
    visit: 3 games, 4 big mistakes (before you started: about 6)." Only once
-   every one of those games is read; '' otherwise */
+   every one of those games is read and checked (C1); '' otherwise */
 function sinceVisitWords(fresh) {
   var tp = trackedPerfs();
   fresh = fresh.filter(function (g) { return tp.indexOf(g.perf) !== -1; });
   var st = fresh.length ? sinceStats() : null;
-  if (!st || st.since.n < SINCE_MIN || !st.before.n || fresh.some(function (g) { return !g.wp || !st.thr[g.perf]; })) return '';
+  if (!st || st.since.n < SINCE_MIN || !st.before.n || fresh.some(function (g) { return !g.wp || !st.thr[g.perf] || !gameChecked(g); })) return '';
   var n = 0;
   fresh.forEach(function (g) { n += bigCardsAt(g, st.thr[g.perf]).n; });
   return 'Since your last visit: ' + plur(fresh.length, 'game') + ', ' + (n ? plur(n, 'big mistake') : 'no big mistakes') + ' (before you started: about ' + Math.round(st.before.mean * fresh.length) + ').';

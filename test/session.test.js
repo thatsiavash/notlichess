@@ -357,7 +357,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.d, 1, 'fresh count');
   });
 
-  await test('a card that came back for one more try reads both showings ("Shown, then found"); the score counts first showings (F2.1: tier 1 in stars); a first look needs no miss; a card skipped untouched gives no check line (T10, slice 14 nits, F2.3)', () => {
+  await test('a card that came back for one more try reads both showings ("Shown, then found"); the score counts first showings (F2.1: tier 1 in stars), and at tier 1 a find on the one more try too (C3: shown, then found, took more than one try); a first look needs no miss; a card skipped untouched gives no check line (T10, slice 14 nits, F2.3)', () => {
     const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
     const r = JSON.parse(A.ev(`(function () {
       playerTier = function () { return 1; };
@@ -393,8 +393,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         habits: habits, want: want, odd: !!odd, oddLine: oddLine && want.indexOf(oddLine) < 0 ? oddLine : null, skip: ss.sum[pick[4].key] }); })()`));
     eq(r.words.join(' | '), 'Shown, then found | After a miss, then shown again | Shown | After a miss | Skipped', 'the words: ' + JSON.stringify(r.notes));
     eq(r.note3, null, 'a worked example missed first is no first look');
-    eq(r.head, 'You found 2 of 5.', 'tier 1 (V4.3): the first showings found, of the set (the skip one it did not find), never "of 15"');
-    eq(r.then, '2 took more than one try, 2 were shown, 1 was skipped.', 'the others in one line, never starting "Then"');
+    eq(r.head, 'You found 3 of 5.', 'tier 1 (V4.3): the first showings found and the one found on its one more try (C3), of the set (the skip one it did not find), never "of 15"');
+    eq(r.then, '3 took more than one try, 1 was shown, 1 was skipped.', 'the others in one line, never starting "Then"; shown, then found, took more than one try');
     ok(r.odd, 'a card of another family');
     eq(JSON.stringify(r.habits), JSON.stringify(r.want), 'the check lines of the cards played only');
     ok(r.skip && r.skip.c === 'skip' && !r.skip.l, 'a card skipped untouched has no check line');
@@ -651,7 +651,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         logSet('more', keys);
         res.practice = keys.map(function (k, i) {
           var rec = srsRecord(model().byKey[k], i ? 'first' : 'retry', { ms: 9000, attempted: true });
-          return i ? JSON.stringify([rec.due, rec.box, rec.streak, rec.ls]) === before[i] : rec.due - Date.now() === DAY;
+          return i ? JSON.stringify([rec.due, rec.box, rec.streak, rec.ls]) === before[i] : rec.due === dayStart(Date.now(), 1);
         });
         break;
       }
@@ -715,7 +715,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       res.dueKeys = dueCards().map(key).sort().join() === D.map(key).sort().join();
       var spread = KF.concat(KL), perDay = {};
       res.spreadAll = spread.every(function (x) { var d = daysFrom(Date.now(), map[x.key].due); return map[x.key].sp > 0 && d >= 1 && d <= 21; });
-      Object.keys(map).forEach(function (k) { var r = map[k]; if (r.due != null && r.due > Date.now() + 12 * 3600e3) { var d = daysFrom(Date.now(), r.due); perDay[d] = (perDay[d] || 0) + 1; } });
+      Object.keys(map).forEach(function (k) { var r = map[k]; if (r.due != null && daysFrom(Date.now(), r.due) >= 1) { var d = daysFrom(Date.now(), r.due); perDay[d] = (perDay[d] || 0) + 1; } });
       res.perDay = perDay;
       res.hero = heroWords();
       res.notes = notes.slice();
@@ -731,7 +731,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       var sp = model().byKey[k2.filter(function (k) { var c = cardFor(model().byKey[k]); return c && !c.sol; })[0]], rec0 = JSON.parse(JSON.stringify(srsLoad()[sp.key]));
       var a = openCard(sp); solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
       var rec1 = srsLoad()[sp.key];
-      res.up = { box: [rec0.box, rec1.box], streak: [rec0.streak, rec1.streak], sp: rec1.sp === undefined, moved: ui.session.sum[sp.key].m, due: Math.round((rec1.due - Date.now()) / DAY) };
+      res.up = { box: [rec0.box, rec1.box], streak: [rec0.streak, rec1.streak], sp: rec1.sp === undefined, moved: ui.session.sum[sp.key].m, due: daysFrom(Date.now(), rec1.due) };
       k2.forEach(function (k) { if (k !== sp.key) srsRecord(model().byKey[k], 'first', { ms: 30000, attempted: true }); });
       var k3 = morePracticeKeys(), m3 = srsLoad();
       res.third = [k3.filter(function (k) { return m3[k] && m3[k].sp; }).length, k3.filter(function (k) { return !m3[k] || m3[k].q; }).length];
@@ -2269,7 +2269,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.lostLeads, true, 'the latest loss leads'); ok(r.forcingLostAt < 0 || r.forcingLostAt >= 2, 'a forcing latest loss pulled forward, card ' + (r.forcingLostAt + 1));
   });
 
-  await test('a first session keeps its head when a card drops out before it is shown: card 1 asks for one move, at most one of the first three a forcing line', () => {
+  await test('a first session keeps its head when a card drops out before it is shown: card 1 asks for one move, at most one of the first three a forcing line; the set keeps its size, the next new position joining at its end (C1)', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       playerTier = function () { return 2; };
@@ -2282,7 +2282,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       ui.session = { mode: 'today', label: 'Today', keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, notes: {}, firstTime: true };
       plain[0].b.x = 'deep';
       ui.session.active = null; loadCard();
-      var ss = ui.session, a = ss.active, res = { lead: a && a.key, sol: !!(a && a.sol), three: ss.keys.slice(0, 3).filter(function (k) { return asks(m.byKey[k]); }).length, n: ss.keys.length };
+      var ss = ui.session, a = ss.active, res = { lead: a && a.key, sol: !!(a && a.sol), three: ss.keys.slice(0, 3).filter(function (k) { return asks(m.byKey[k]); }).length, n: ss.keys.length,
+        joined: keys.indexOf(ss.keys[4]) < 0 && !srsLoad()[ss.keys[4]], gone: ss.keys.indexOf(plain[0].key) < 0 };
       res.want = plain[1].key;
       /* saved and read back with it */
       saveSession(); res.saved = !!savedSession().firstTime;
@@ -2294,7 +2295,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       plain[0].b.x = null;
       return JSON.stringify(res); })()`));
     eq(r.lead, r.want, 'the next one-move card leads'); eq(r.sol, false, 'card 1 asks for one move');
-    ok(r.three <= 1, r.three + ' forcing in the first three'); eq(r.n, 4, 'one card fewer');
+    ok(r.three <= 1, r.three + ' forcing in the first three'); eq(r.n, 5, 'the set keeps its size (C1)');
+    ok(r.joined && r.gone, 'the card dropped is gone, and a new position joined at the end');
     eq(r.saved, true, 'the session remembers it is a first one');
     ok(r.other && r.other !== r.want, 'a later session keeps its order: ' + r.other);
   });
@@ -2814,7 +2816,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         var h = insAt(t);
         out[t] = { w: insText(h).slice(0, 4), rows: insRows(h), count: insText(sheetHtml('count')), routine: /class="routine"/.test(h), since: /class="since"/.test(h), link: /data-act="sheet" data-k="count"/.test(h) };
       });
-      /* practice: Piece safety 3 learned, 12 climbing and one back in the queue; one clean find in Spotting chances */
+      /* practice: Piece safety 3 learned, 12 climbing and one back in the queue (C3: shown, so in practice); one clean find in Spotting chances */
       var srs = srsLoad(), now = Date.now(), fam = function (k) { return allMistakes().filter(function (it) { return trainable(it) && familyOf(patternOf(it.b)).key === k; }); };
       fam('safety').slice(0, 16).forEach(function (it, i) {
         srs[it.key] = i < 3 ? { box: 5, streak: 3, due: now + 90 * DAY, last: now, learned: true, lapses: 0 } : { box: 2, streak: 1, due: now + 7 * DAY, last: now, lapses: 0 };
@@ -2858,13 +2860,13 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(col(2, 'prog')), JSON.stringify(['38 not started', '7 not started', '27 not started', '10 not started', '9 not started']), 'nothing practised yet: all not started');
     eq(JSON.stringify(col(2, 'bar')), JSON.stringify(['g114', 'g21', 'g81', 'g30', 'g27']), 'every skill a bar of its positions\' steps, 3 each, "Also seen" too');
     const pr = r.practised.filter((x) => /Piece safety|Spotting chances/.test(x.name)).map((x) => [x.name, x.prog, x.bar]);
-    eq(JSON.stringify(pr), JSON.stringify([['Piece safety', '3 learned · 12 in practice · 23 not started', 'l9 c12 g93'], ['Spotting chances', '1 in practice · 9 not started', 'c1 g29']]), 'learned (3 steps each), in practice (its rungs: one back in the queue starts again at 0), and one clean find (a step)');
+    eq(JSON.stringify(pr), JSON.stringify([['Piece safety', '3 learned · 13 in practice · 22 not started', 'l9 c12 g93'], ['Spotting chances', '1 in practice · 9 not started', 'c1 g29']]), 'learned (3 steps each), in practice (its rungs: one back in the queue starts again at 0, and stays in practice: "not started" is never shown, C3), and one clean find (a step)');
     eq(r.zero, false, 'never "0 learned", nor any zero part');
     eq(JSON.stringify([r[1].routine, r[2].routine, r[3].routine]), '[false,true,true]', 'the routine line from tier 2');
     eq(JSON.stringify([r[1].since, r[2].since, r[3].since]), '[false,false,false]', 'no "since you started" before a set is finished');
     ok(r[1].link && r[2].link && r[3].link, 'how we count, a sheet');
-    eq(JSON.stringify(r[1].count), JSON.stringify(['Insights', 'How we count', 'A big mistake: a move that made your position much worse.', 'A move cost you the game if you never came back from it.', 'Find a position on 3 different days and it is learned.']), 'how we count, tier 1 (a big mistake, as the app says it everywhere; learned in plain words, V4.8)');
-    eq(JSON.stringify(r[2].count), JSON.stringify(['Insights', 'How we count', 'A big mistake cut your winning chances by 15 points or more (20 under 1200, 12 at 1800+).', 'A move decided a game if it lost a game you could still play and you never came back.', 'Each find on a later day climbs a step; three steps and it is learned. A miss sends it back.']), 'how we count, tier 2 (V4.8)');
+    eq(JSON.stringify(r[1].count), JSON.stringify(['Insights', 'How we count', 'A big mistake: a move that made your position much worse.', 'A move cost you the game if you never came back from it.', 'Find it first try 3 times in a row, over 3 weeks or more, and it is learned.']), 'how we count, tier 1 (a big mistake, as the app says it everywhere; learned in plain words, as the ladder keeps it: C3)');
+    eq(JSON.stringify(r[2].count), JSON.stringify(['Insights', 'How we count', 'A big mistake cut your winning chances by 15 points or more (20 under 1200, 12 at 1800+).', 'A move decided a game if it lost a game you could still play and you never came back.', 'Three first-try finds in a row make it learned if the last comes 16 days or more after the one before, in game view within 30 seconds (60 at Less help). A miss starts it again.']), 'how we count, tier 2 (V4.8; learned as the ladder keeps it, C3)');
     /* tier 3 adds what its rows on how games are decided count (F10.3): +2, and the peer figures' source */
     eq(JSON.stringify(r[3].count), JSON.stringify(r[2].count.concat(DECIDED_COUNT)), 'tier 3 names the threshold its games are counted at (15 for the fixture\'s 1350s)');
     eq(r.few[0], 'Your mistakes, grouped by the skill that would prevent them.', 'under 5 losses: the fallback headline');
@@ -3316,7 +3318,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       playerTier = function () { return 2; };
       var its = allMistakes().filter(trainable).filter(function (x) { var a = cardFor(x); return a && !a.sol; }), now = Date.now(), srs = srsLoad(), out = {};
       var when = function () { return (/<span class="when">([^<]*)</.exec(detailsHtml()) || [])[1]; };
-      var days = function (it) { return Math.round((srsRec(it).due - Date.now()) / DAY); };
+      var days = function (it) { return daysFrom(Date.now(), srsRec(it).due); };
       var best = function (a) { a.attempts = Math.max(1, a.attempts); solved(uciToMove(a.st, a.bestUci), a.bestUci, null); };
       srs[its[0].key] = { box: 3, streak: 2, due: now - 3600e3, last: now - 16 * DAY, ls: now - 16 * DAY, lapses: 0 };
       srs[its[1].key] = { box: 2, streak: 1, due: now - 3600e3, last: now - 7 * DAY, ls: now - 7 * DAY, lapses: 0 };
@@ -3334,7 +3336,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       return JSON.stringify(out); })()`));
     eq(r.miss, 'Back to the start · back in 3 days', 'a miss on a box-3 card');
     eq(r.step, 'Step 2 of 3 · back in ' + r.stepDays + ' days', 'a due clean find on box 2, with the real interval');
-    ok(r.stepDays >= 13 && r.stepDays <= 19, 'about 16 days: ' + r.stepDays);
+    ok(r.stepDays >= 16 && r.stepDays <= 18, 'the step before learned: 16 to 18 days, never fewer (C3): ' + r.stepDays);
     ok(r.isLearned, 'the third clean find 16 days on is learned');
     eq(r.learned, 'Learned · one last check in ' + r.learnedDays + ' days', 'learned, with its one last check');
     eq(r.hint, 'Starting out · back tomorrow', 'one day reads "tomorrow"');
@@ -3941,7 +3943,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     nextCard();
   }
 }`;
-  await test('V4.1: "Tomorrow" is the set Today will deal: after Today and one more set (a third of the cards missed first), at sizes 10 and 5, the summary\'s Tomorrow count is the set the next day deals; 9 due at size 10: all 9 in the set (the new slot is kept for a new position only while fewer than a set\'s worth are due), and nothing "more due today" after it; one left reads "1 more is ready in the next set."', () => {
+  await test('V4.1: "Tomorrow" is the set Today will deal: after Today and one more set (a third of the cards missed first), at sizes 10 and 5, the summary\'s Tomorrow count is the set the next day deals; 9 due at size 10: all 9 in the set (the new slot is kept for a new position only while fewer than a set\'s worth are due), and nothing "more due today" after it; one left reads "Your next set starts with the one still due." (C4: never "1 more is ready in the next set" above the next set\'s button)', () => {
     const run = (size) => JSON.parse(boot().ev(`(function () { ${PLAYSET}
       playerTier = function () { return 2; }; SF.state = 'failed'; store.set('nl:sessionSize', ${size});
       var out = {}, miss = function (a, i) { return i % 3 === 1; };
@@ -3976,7 +3978,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(q.plan), '[true,9,1,10]', '9 due at size 10: all 9 in the plan, and one new position');
     eq(q.dealt, true, 'and in the set dealt');
     ok(q.left === 0 && /^Tomorrow: /.test(q.after) && !/due today|more (is|are) ready/.test(q.after), 'after it nothing is left due today, so the summary goes on to tomorrow: ' + q.after);
-    ok(/^1 more is ready in the next set\. Tomorrow: /.test(q.one), 'one due left: ' + q.one);
+    ok(/^Your next set starts with the one still due\. Tomorrow: /.test(q.one), 'one due left: ' + q.one);
   });
 
   await test('V4.3: tier 1\'s summary: the kid\'s day 1 at 700 (four found after misses, one shown) reads "You found 4 of 5." then "4 took more than one try, 1 was shown.", 5 filled stars across 5 groups leading the page; the earned stars fill in order, at most 80 ms apart and 1.2 s in all, then the seal (a position learned) or the medal (the goal met), never with them; under reduced motion the end state at once; tiers 2 and 3 "2 of 5 found first try." then "2 after a miss · 1 shown"', () => {
@@ -4083,7 +4085,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(/\.bd-stars\.fx \.st:nth-child\(2\)::after\{animation-delay:80ms\}/.test(css) && /\.bd-stars\.fx \.st:nth-child\(3\)::after\{animation-delay:160ms\}/.test(css), 'the band\'s stars fill 80 ms apart');
   });
 
-  await test('V4.4: coming back after a break (three practice days, then 14 days to a Sunday): Today welcomes once ("Welcome back. Your practice waited where you left it.") and reads "0 of 1 day this week (since you came back)", as Settings does ("This week has 1 day. From Monday: 4."); after one set "Goal met: 1 of 1 day since you came back." and, above the headline, "After 14 days away, you found F of N reviews first try." (tier 1 "After 14 days away, you found F of N."), with the backup prompt (V4.5: nothing saved in 14 days), neither on the next set; a new day opens on Today', () => {
+  await test('V4.4, C4: coming back after a break (three practice days, then 14 days to a Sunday): Today welcomes all through the return day ("Welcome back. Your practice waited where you left it.", a reload or two before the first set ends never uses it up), and reads "0 of 1 day this week (since you came back)", as Settings does ("This week has 1 day. From Monday: 4."); after one set "Goal met: 1 of 1 day since you came back." and, above the headline, "After 14 days away, you found F of N reviews first try." (tier 1 "After 14 days away, you found F of N."), with the backup prompt (V4.5: nothing saved in 14 days), neither on the next set; a new day opens on Today', () => {
     const A = boot({ now: T0 + 6 * 864e5 });
     A.ev(`(function () { playerTier = function () { return 2; }; SF.state = 'failed'; store.set('nl:weekGoal', 4); return 1; })()`);
     const SAY = `(function () { var h = weekHtml(); return (/class="wk-say">([^<]*)</.exec(h) || [])[1]; })()`;
@@ -4101,14 +4103,17 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     const back = JSON.parse(A.ev(`JSON.stringify({ dow: new Date().getDay(), away: daysAway(), welcome: welcomeHtml(), again: welcomeHtml(), week: ${SAY}, settings: weekGoalLine() })`));
     const B = makeApp({ now: T0 + 6 * 864e5, storage: Object.assign({}, A.storage) });
     const reopen = B.ev('welcomeHtml()');
+    const C = makeApp({ now: T0 + 6 * 864e5 + 3 * 3600e3, storage: Object.assign({}, B.storage) });
+    const reopen2 = C.ev('welcomeHtml()');
     const set = day(false);
-    const after = JSON.parse(A.ev(`JSON.stringify({ week: ${SAY}, settings: weekGoalLine(), t1: recallHtml(window.__ss, window.__ss.keys, 1) })`));
+    const after = JSON.parse(A.ev(`JSON.stringify({ week: ${SAY}, settings: weekGoalLine(), t1: recallHtml(window.__ss, window.__ss.keys, 1), welcome: welcomeHtml() })`));
     const next = day(true);
     eq(JSON.stringify([d1.away, d3.backup]), '[0,true]', 'no break on the first day; the 3rd practice day\'s summary asks for a backup (answered Later)');
     eq(JSON.stringify([back.dow, back.away]), '[0,14]', 'a Sunday, 14 days after the last practice day');
     eq(back.welcome, '<p class="welcome-line">Welcome back. Your practice waited where you left it.</p>', 'the welcome on Today');
     eq(back.again, back.welcome, 'kept while the page stays');
-    eq(reopen, '', 'once: not on the next visit');
+    eq(reopen, back.welcome, 'reloaded before the first set: still there (C4: never used up when first drawn)');
+    eq(reopen2, back.welcome, 'reloaded twice, three hours on: still there');
     eq(back.week, '0 of 1 day this week (since you came back)', 'a short week, said why');
     eq(back.settings, '<p>This week has 1 day. From Monday: 4.</p>', 'Settings matches Today');
     eq(set.away, 14, 'the day\'s first set after the break');
@@ -4120,6 +4125,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(set.backup, true, 'the backup prompt on the first summary back (nothing saved in 14 days)');
     eq(after.week, '1 of 1 day this week (since you came back) · 1 week in a row', 'Today after it: the short week met counts as a week at the goal');
     eq(after.settings, back.settings, 'Settings still matches Today');
+    eq(after.welcome, '', 'the welcome goes once that day\'s first set has ended');
     ok(/^<p class="recall">After 14 days away, you found \d+ of \d+\.( They come back sooner now\.)?<\/p>$/.test(after.t1), 'tier 1: ' + after.t1);
     eq(JSON.stringify([next.away, next.recall, next.backup]), '[0,"",false]', 'the next set that day: neither the recall line nor the prompt');
     /* a new day opens on Today; the tab comes back on the day it was left */
@@ -4259,11 +4265,14 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       out.steps = [s1.l + s1.c - s0.l - s0.c, s1.n === s0.n, s1.l + s1.c - s2.l - s2.c];
       var bar = function (h) { var m = /<span class="fr-bar"[^>]*>([\\s\\S]*?)<\\/span>/.exec(h); return m ? m[1].replace(/<i class="sk-(\\w)" style="flex-grow:(\\d+)"><\\/i>/g, '$1$2 ').trim() : ''; };
       out.bar = bar(insAt(2));
-      /* while the deeper look runs: how many it has left */
-      var et = enrichTargets, st0 = SF.state; SF.state = 'idle'; enrichState.running = true; enrichTargets = function () { return new Array(12); };
-      out.checking = (/<p class="ins-checking">([^<]*)<\\/p>/.exec(insAt(2)) || [])[1] || '';
-      enrichTargets = et; enrichState.running = false; SF.state = st0;
-      out.idle = /ins-checking/.test(insAt(2));
+      /* while the background check runs: how many positions it has left (12: every other one keyed, or one it cannot read) */
+      var st0 = SF.state, all = allMistakes().filter(trainable);
+      SF.state = 'idle'; enrichState.running = true;
+      all.slice(12).forEach(function (it) { factsState.failed[it.key] = 1; });
+      out.checking = (/<p class="checking-line ins-checking">([^<]*)<\\/p>/.exec(insAt(2)) || [])[1] || '';
+      enrichState.running = false;
+      out.idle = /checking-line/.test(insAt(2));
+      all.forEach(function (it) { delete factsState.failed[it.key]; }); SF.state = st0;
       /* every pattern sheet lists the positions it counts */
       out.sheets = patternStats().filter(function (s) { return s.count > 0; }).map(function (s) { var h = sheetHtml('pattern:' + s.key); return [s.key, s.count, (h.match(/<div class="ex" /g) || []).length, (/<p class="sheet-sum">(\\d+) positions?/.exec(h) || [])[1]].join(':'); })
         .filter(function (x) { var p = x.split(':'); return !(+p[1] === +p[2] && +p[1] === +p[3]); });
@@ -4282,6 +4291,194 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(r.sheets), '[]', 'every pattern sheet lists every position it counts: ' + r.sheets.join(' | '));
     eq(String(r.rows), r.losses, 'the skill rows sum to the headline\'s games');
     eq(r.perGame[0], r.perGame[1], 'the per-game figure is (deciding + other) / games: ' + r.perGame.join(', '));
+  });
+
+  /* ── release 2, slice C: counts that settle, due dates by whole days, the ladder's words, the way back ── */
+  const FACTS = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'facts-fixture.json'), 'utf8'));
+  await test('C1: counts settle before they are shown: on a first visit, while the background check runs, Today (beside the focus card\'s counts and the games\' rows), the first summary\'s report and Insights (under the lead, the skills, the clock) say "Checking N more positions…"; as the keys land in the check\'s own order, every screen whose counts are not yet the settled ones says it, and once the last is in, none does', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS}
+      var cards = ${JSON.stringify(FACTS.cards)};
+      SF.state = 'ready'; enrichState.running = true;
+      var strip = function (h) { return String(h).replace(/<p class="checking-line[^"]*">[^<]*<\\/p>/g, ''); };
+      var lines = function (h) { return (String(h).match(/<p class="checking-line[^"]*">Checking \\d+ more positions?…<\\/p>/g) || []).length; };
+      var ss = { mode: 'today', label: 'Today', keys: [], idx: 0, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true, sum: {} };
+      var todayAt = function () { var box = { innerHTML: '', dataset: {} }, el0 = el; el = function (id) { return id === 'trainbox' ? box : el0(id); }; renderTrain(); el = el0; return box.innerHTML; };
+      var screens = function () { return { today: todayAt(), summary: diagHtml(ss, 2), ins: insAt(2) }; };
+      var states = [screens()], first = checkingLeft(), order = enrichTargets();
+      for (var i = 0; i < order.length; i += 20) {
+        order.slice(i, i + 20).forEach(function (it) { var c = cards[it.key]; if (c) { it.b.k = c; delete it.b.kp; } else factsState.failed[it.key] = 1; });
+        modelDirty();
+        states.push(screens());
+      }
+      var fin = states[states.length - 1], out = { first: first, n: states.length, left: checkingLeft(), bad: [], moved: [] };
+      out.lines0 = { focus: /focus-check/.test(states[0].today), rail: /lg-check/.test(states[0].today), summary: lines(states[0].summary), ins: lines(states[0].ins) };
+      var t0 = states[0].today; out.order = t0.indexOf('class="why-these"') < t0.indexOf('focus-check') && t0.indexOf('focus-check') < t0.indexOf('class="focus focus-go"');
+      out.linesEnd = lines(fin.today) + lines(fin.summary) + lines(fin.ins);
+      states.forEach(function (s, j) { ['today', 'summary', 'ins'].forEach(function (w) {
+        if (strip(s[w]) !== strip(fin[w])) { out.moved.push(w); if (!lines(s[w])) out.bad.push(j + ':' + w); } }); });
+      return JSON.stringify(out); })()`));
+    ok(r.first > 50, 'a first visit: every position waits for the check: ' + r.first);
+    eq(JSON.stringify(r.lines0), JSON.stringify({ focus: true, rail: true, summary: 1, ins: 3 }), 'the line beside each block of counts: why these and the focus card, the games, the report, Insights\' lead, skills and clock');
+    ok(r.order, 'on Today it sits between why these and the focus card');
+    ok(r.moved.indexOf('today') >= 0 && r.moved.indexOf('summary') >= 0 && r.moved.indexOf('ins') >= 0, 'the check does change counts on all three screens: ' + r.moved.join(','));
+    eq(JSON.stringify(r.bad), '[]', 'no screen shows a count the check will change without the line');
+    eq(r.left + r.linesEnd, 0, 'every key in: nothing left, no line');
+  });
+  await test('C1: a position set aside before it is shown gives its slot to the next new one, so a set keeps its size: a set of 5 with its 3rd position taken out by the deeper look, and its 4th on screen by its key, still ends "Position 5 of 5", never "of 4" or "of 3"; one position from a summary gives up its slot', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${PLAYSET}
+      playerTier = function () { return 2; }; SF.state = 'failed'; store.set('nl:sessionSize', 5);
+      startToday();
+      var ss = ui.session, keys0 = ss.keys.slice(), said = [], where = function () { return (/class="sr-only">(Position [^<]*)</.exec(sessionBarHtml(ss, ss.active)) || [])[1]; };
+      itemOf(keys0[2]).b.x = 'deep'; modelDirty();
+      for (var i = 0; i < 40 && !ss.finished; i++) {
+        var a = ss.active;
+        if (!a) { loadCard(); a = ss.active; if (!a) break; }
+        said.push(where());
+        /* the 4th position on screen, asking: its key lands and sets it aside (factsSwap) */
+        if (a.key === keys0[3] && !a.it.b.x) { a.it.b.x = 'deep'; modelDirty(); a.keyDue = true; motionUntil = 0; factsSwap(a); continue; }
+        if (a.sol) { while (a.solIdx < a.sol.length) { var lm = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, lm); a.solIdx++; } finishCard('first'); }
+        else { a.attempts = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); if (a.phase !== 'done') finishCard('first'); }
+        nextCard();
+      }
+      var out = { said: said, n: ss.keys.length, gone: ss.keys.indexOf(keys0[2]) < 0 && ss.keys.indexOf(keys0[3]) < 0, joined: ss.keys.filter(function (k) { return keys0.indexOf(k) < 0; }).length, end: where() };
+      /* one position opened from a summary: nothing takes its place */
+      var it = allMistakes().filter(trainable)[0];
+      ui.session = { mode: 'drill', label: 'One position', keys: [it.key], idx: 0, results: {}, relearn: [], relearnOf: {}, spec: { type: 'one', key: it.key } };
+      out.one = setFill(ui.session, it.key);
+      return JSON.stringify(out); })()`));
+    ok(r.said.length >= 5 && r.said.every((x) => / of 5$/.test(x)), 'every place reads "of 5": ' + r.said.join(' | '));
+    eq(r.end, 'Position 5 of 5', 'and the set ends "Position 5 of 5"');
+    eq(JSON.stringify([r.n, r.gone, r.joined]), '[5,true,2]', 'both taken out, two new positions joined: still 5');
+    eq(r.one, null, 'one position from a summary: no other takes its place');
+  });
+  await test('C1: since you started counts checked games only: with the games since the start not yet checked, the comparison waits ("2 of 10 new games so far": only the clean ones count), and once the check has looked at them it is made; the card says "Checking N more positions…" while its games wait', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS}
+      playerTier = function () { return 2; }; SF.state = 'ready'; enrichState.running = true;
+      var gs = data.games.slice().sort(function (x, y) { return y.ts - x.ts; }), since = gs.slice(0, 14);
+      noteStart(gs[14].ts);
+      var open = function (g) { return (g.bl || []).filter(function (b) { return !b.x && b.bu && !(b.sc && !b.d); }); };
+      var clean = since.filter(function (g) { return !open(g).length; }).length, out = { clean: clean };
+      var st = sinceStats(), h = insAt(2);
+      out.wait = [st.since.n, st.verdict, (sinceText(h) || []).filter(function (x) { return /new games so far/.test(x); })[0] || '', /class="since"[\\s\\S]*?checking-line/.test(h)];
+      since.forEach(function (g) { (g.bl || []).forEach(function (b) { factsState.failed[mKey(g, b)] = 1; }); });
+      st = sinceStats();
+      out.made = [st.since.n, st.verdict];
+      return JSON.stringify(out); })()`));
+    ok(r.clean < 10, 'fewer than 10 of the 14 games since are clean: ' + r.clean);
+    eq(JSON.stringify(r.wait), JSON.stringify([r.clean, 'wait', 'Comparison from 10 games since you started: ' + r.clean + ' of 10 new games so far.', true]), 'the unchecked games wait; the card says the check runs');
+    ok(r.made[0] === 14 && r.made[1] !== 'wait', 'checked, all 14 count and the comparison is made: ' + JSON.stringify(r.made));
+  });
+  await test('C2: due dates by whole days (shiftDays): a 3-day find at 9 pm reads "back in 3 days" in Details and "Back in 3 days" on the summary, is dealt at 7 am on that date and climbs; "Tomorrow" (3 due tomorrow, 3 due at 5 am the day after) is the set dealt the next day at 7 am and at 10 pm', () => {
+    const A = boot({ now: T0 + 7 * 3600e3 });                         /* Monday 9 pm */
+    const r = JSON.parse(A.ev(`(function () { ${PLAYSET}
+      playerTier = function () { return 2; }; SF.state = 'failed'; store.set('nl:sessionSize', 10);
+      var its = allMistakes().filter(trainable), srs = {}, now = Date.now(), out = {};
+      /* due tomorrow at 3 pm and the day after at 5 am, as release 1 kept them (to the hour) */
+      its.slice(0, 3).forEach(function (x) { srs[x.key] = { box: 1, streak: 1, due: dayStart(now, 1) + 15 * 3600e3, last: now - 2 * DAY, ls: now - 2 * DAY, lapses: 0, n: 1 }; });
+      its.slice(3, 6).forEach(function (x) { srs[x.key] = { box: 1, streak: 1, due: dayStart(now, 2) + 5 * 3600e3, last: now - 2 * DAY, ls: now - 2 * DAY, lapses: 0, n: 1 }; });
+      srsSave(srs);
+      out.read = [daysFrom(now, srsLoad()[its[0].key].due), srsLoad()[its[0].key].due === dayStart(now, 1), srsLoad()[its[3].key].due === dayStart(now, 2)];
+      startToday();
+      var ss = ui.session, a = ss.active || (loadCard(), ss.active);
+      out.key = a.key;
+      a.t0 = Date.now() - 30000; a.attempts = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+      out.details = scheduleWords(srsRec(a.it), a);
+      nextCard(); playSet();
+      var h = doneHtml(ss);
+      out.moved = (/class="recap-moved">([^<]*)</.exec(h) || [])[1] || '';
+      out.next = (/class="recap-next">([^<]*)</.exec(h) || [])[1] || '';
+      ui.session = null;
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.read), '[1,true,true]', 'a due time kept to the hour reads as its date, from midnight');
+    eq(r.details, 'Step 1 of 3 · back in 3 days', 'Details: back in 3 days');
+    ok(/Back in 3 days: 1\./.test(r.moved), 'the summary: ' + r.moved);
+    const m = /^Tomorrow: (\d+) positions?, about \d+ minutes? \((\d+) back, (\d+) new\)\.$/.exec(r.next) || [];
+    eq(JSON.stringify([+m[1], +m[2]]), '[7,3]', 'Tomorrow: the 3 due tomorrow and 4 new, not the day after\'s: ' + r.next);
+    const dealt = (at) => {
+      const B = makeApp({ now: T0 + 7 * 3600e3, storage: Object.assign({}, A.storage) });
+      B.ev('window.__nlTest.shiftDays(1); 1');
+      B.setNow(T0 - 14 * 3600e3 + at * 3600e3);                        /* Monday's midnight, then the hour */
+      return JSON.parse(B.ev(`(function () { playerTier = function () { return 2; }; SF.state = 'failed'; startToday(); return JSON.stringify([ui.session.keys.length, new Date().getHours()]); })()`));
+    };
+    eq(JSON.stringify(dealt(7)), '[7,7]', 'the next day at 7 am: the set of 7');
+    eq(JSON.stringify(dealt(22)), '[7,22]', 'and at 10 pm: the same 7');
+    /* three days on, at 7 am: dealt, and found it climbs */
+    const C = makeApp({ now: T0 + 7 * 3600e3, storage: Object.assign({}, A.storage) });
+    C.ev('window.__nlTest.shiftDays(3); 1');
+    C.setNow(T0 - 7 * 3600e3);                                          /* Monday 7 am, three days after the find */
+    const t = JSON.parse(C.ev(`(function () { playerTier = function () { return 2; }; SF.state = 'failed'; startToday();
+      var ss = ui.session, k = ${JSON.stringify(r.key)}, at = ss.keys.indexOf(k), out = { dealt: at >= 0, box0: srsLoad()[k].box };
+      if (at >= 0) { ss.idx = at; ss.active = null; loadCard(); var a = ss.active; a.attempts = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); out.box1 = srsLoad()[k].box; }
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(t), JSON.stringify({ dealt: true, box0: 1, box1: 2 }), 'its date at 7 am: dealt, and found it climbs');
+  });
+  await test('C3: ladder words: at tier 1 a find on the one more try counts in "You found N of M" (kid550\'s drill of one, shown then found on its retry: "You found it."; kid550\'s day 2, a lesson in slot 2 and 9 positions, one of them shown then found on its retry: "You found all 9.", with slice A\'s lesson never skipped); positions back in the queue stay "in practice" ("not started" never rises: club1550\'s 29 to 31)', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      data.user = { perfs: { rapid: { rating: 700 } } }; SF.state = 'failed';
+      var its = allMistakes().filter(trainable), out = { tier: playerTier() };
+      var mk = function (n, shownThenFound, lesson) { var ks = its.slice(0, n).map(function (x) { return x.key; }), ss = { mode: 'today', label: 'Today', keys: ks.slice(), idx: n, results: {}, notes: {}, sum: {}, relearn: [], relearnOf: {}, finished: true };
+        ks.forEach(function (k, i) { var c = i === shownThenFound ? 'shown' : i % 3 ? 'first' : 'miss'; ss.results[k] = c === 'shown' ? 'fail' : c === 'first' ? 'first' : 'retry'; ss.sum[k] = { c: c, s: c === 'first' ? 3 : c === 'miss' ? 2 : 0 }; });
+        /* a lesson in slot 2 (F9.3), seen to its end */
+        if (lesson) { ss.keys.splice(1, 0, 'ls:free'); ss.results['ls:free'] = 'lesson'; }
+        if (shownThenFound != null) { var k = ks[shownThenFound]; ss.keys.push(k); ss.relearnOf[k] = 1; ss.results[k + '#r'] = 'first'; ss.sum[k + '#r'] = { c: 'first', s: 3 }; }
+        ss.idx = ss.keys.length;
+        return ss; };
+      var words = function (ss) { var h = doneHtml(ss); return [(/<h2 class="done-big"[^>]*>([^<]*)</.exec(h) || [])[1], (/<p class="recap-then">([^<]*)</.exec(h) || [])[1] || '']; };
+      out.drill = words(mk(1, 0));
+      out.day = words(mk(9, 4, true));
+      /* two practised positions go back to the queue (F7.1): still in practice */
+      var fam = function () { return insightReport().families.filter(function (a) { return a.fam.key === 'safety'; })[0]; };
+      var safe = its.filter(function (it) { return familyOf(patternOf(it.b)).key === 'safety'; }), srs = srsLoad(), now = Date.now();
+      safe.slice(0, 4).forEach(function (it) { srs[it.key] = { box: 2, streak: 1, due: now + 5 * DAY, last: now - DAY, ls: now - DAY, lapses: 0, n: 1 }; });
+      srsSave(srs);
+      out.before = progressWords(fam());
+      srs = srsLoad(); safe.slice(0, 2).forEach(function (it) { srs[it.key].q = now; srs[it.key].due = null; }); srsSave(srs);
+      out.queued = progressWords(fam());
+      return JSON.stringify(out); })()`));
+    eq(r.tier, 1, 'a 700 player is at tier 1');
+    eq(JSON.stringify(r.drill), JSON.stringify(['You found it.', '1 took more than one try.']), 'a drill of one, shown then found on its retry: found');
+    eq(r.day[0], 'You found all 9.', 'a lesson and 9 positions, one shown then found on its retry: all 9');
+    ok(!/shown|skipped/.test(r.day[1]), 'nothing reads shown or skipped: ' + r.day[1]);
+    eq(r.queued, r.before, 'two positions back in the queue: the words do not move (' + r.before + ')');
+  });
+  await test('C4: the way back: a game drill after a break has no recall line, Today\'s set after it has; a remainder reads "Your next set starts with the 2 still due." above [Next set of 10]; a first practice on a Thursday reads "0 of 4 days this week (your first week)"', () => {
+    const A = boot({ now: T0 + 6 * 864e5 });
+    const r = JSON.parse(A.ev(`(function () { ${PLAYSET}
+      playerTier = function () { return 2; }; SF.state = 'failed'; store.set('nl:sessionSize', 10); store.set('nl:weekGoal', 4);
+      var its = allMistakes().filter(trainable), srs = {}, now = Date.now(), out = {};
+      /* practised 14 days ago, every position due now */
+      its.forEach(function (x) { srs[x.key] = { box: 1, streak: 1, due: now - 3600e3, last: now - 14 * DAY, ls: now - 14 * DAY, lapses: 0, n: 1 }; });
+      srsSave(srs);
+      for (var d = 14; d < 17; d++) store.set(dayKeyFor(new Date(now - d * DAY)), { counted: 1, sessions: 1 });
+      out.away = daysAway();
+      var g = its[0].g;
+      startDrill({ type: 'game', id: g.id, label: 'Game vs ' + g.opp }); playSet();
+      out.drill = [ui.session.mode, /class="recall"/.test(doneHtml(ui.session))];
+      ui.session = null; absorbOpen(); startToday(); playSet();
+      out.today = (/<p class="recall">([^<]*)</.exec(doneHtml(ui.session)) || [])[1] || '';
+      ui.session = null;
+      return JSON.stringify(out); })()`));
+    eq(r.away, 14, '14 days away');
+    eq(JSON.stringify(r.drill), '["drill",false]', 'a game drill\'s summary: no recall line');
+    ok(/^After 14 days away, you found \d+ of \d+ reviews first try\./.test(r.today), 'Today\'s set after it: ' + r.today);
+    const B = boot();
+    const left = B.ev(`(function () { ${PLAYSET}
+      playerTier = function () { return 2; }; SF.state = 'failed'; store.set('nl:sessionSize', 10);
+      var its = allMistakes().filter(trainable).filter(function (x) { return !x.b.d; }), srs = {}, now = Date.now();
+      its.slice(0, 12).forEach(function (x) { srs[x.key] = { box: 2, streak: 1, due: now - 3600e3, last: now - 7 * DAY, ls: now - 7 * DAY, lapses: 0, n: 1 }; });
+      srsSave(srs); store.set(absorbKey(), { d: dayStamp(), due: 0, sp: 0, q: 0, left: 0 });
+      startToday(); playSet();
+      var h = doneHtml(ui.session);
+      return JSON.stringify([(/class="recap-next">([^<]*)</.exec(h) || [])[1], (/data-act="keepGoing">([^<]*)</.exec(h) || [])[1]]); })()`);
+    const lw = JSON.parse(left);
+    ok(/^Your next set starts with the 2 still due\./.test(lw[0]), 'the remainder: ' + lw[0]);
+    eq(lw[1], 'Next set of 10', 'above the next set of 10');
+    const thu = boot({ now: T0 + 3 * 864e5 }).ev(`(function () { store.set('nl:weekGoal', 4); return (/class="wk-say">([^<]*)</.exec(weekHtml()) || [])[1] + '|' + new Date().getDay(); })()`);
+    eq(thu, '0 of 4 days this week (your first week)|4', 'a first practice on a Thursday');
   });
 
   /* ── beginner teaching (F9.1 to F9.5): its tests in test/practice.js ── */

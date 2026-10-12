@@ -202,7 +202,7 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
        iPhone, the last save and the Reset block armed */
     screen(tier, 'card', '<p>' + RETRY_NOTE + '</p>');
     screen(tier, 'today', '<p>' + WELCOME + '</p>');
-    var rs = { away: 14, rev: {}, sum: {} };
+    var rs = { recall: 14, rev: {}, sum: {} };
     ks.forEach(function (k, i) { rs.rev[k] = 1; rs.sum[k] = { c: i < 3 ? 'first' : 'miss' }; });
     screen(tier, 'summary', recallHtml(rs, ks, tier));
     ks.forEach(function (k) { rs.sum[k] = { c: 'shown' }; });

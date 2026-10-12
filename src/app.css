@@ -449,7 +449,7 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
   .today-grid .today-main{display:contents}
   .today-grid .welcome-line,.today-grid .since,.today-grid .clean-line{order:0}
   .today-grid .hero{order:1}
-  .today-grid .why-these{order:2}
+  .today-grid .why-these,.today-grid .focus-check{order:2}
   /* the focus card above the games (F5.1) */
   .today-grid .focus{order:3;margin-top:16px}
   .today-grid .latest{order:4;margin-top:16px}
@@ -1052,8 +1052,16 @@ body.in-session{padding-bottom:0}
 .ins > .kicker{color:var(--text-3)}
 .ins h2{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);max-width:20em;margin:8px 0 10px;font-variant-numeric:lining-nums tabular-nums}
 .ins .lead{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-2);margin:0;max-width:40em}
-/* while the background check runs, its count (V4.8: counts may still shrink) */
-.ins-checking{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:6px 0 0}
+/* while the background check runs, its count (V4.8: counts may still
+   shrink), beside every count it can change (C1): under the lead, a
+   section's heading, Today's focus card and games, the summary's report */
+.ins-checking,.checking-line{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:6px 0 0}
+.ins-h + .ins-checking,.since-h + .ins-checking{margin:-4px 0 12px}
+.today-main .focus-check{margin:12px 0 0}
+.today-main .focus-check + .focus{margin-top:8px}
+.latest .lg-check{margin:0 0 6px}
+.diag .diag-check{margin:0 0 8px}
+.diag-line + .diag-check{margin:-8px 0 16px}
 /* the games this browser had no room for (F8): said under the window's line */
 .ins-gone{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:4px 0 0;max-width:40em}
 .ins-h{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:32px 0 12px}

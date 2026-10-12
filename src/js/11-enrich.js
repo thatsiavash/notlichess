@@ -176,13 +176,18 @@ function autoEnrich() {
   if (scanState.running && ui.session) { setTimeout(autoEnrich, 4000); return; }
   var next = enrichTargets()[0];
   if (!next) return;
+  /* the first card of a run: the counts it can change say so (C1) */
+  var first = !enrichState.running && !enrichState.done;
   enrichState.running = true;
+  if (first) checkingPaint();
   ensureFacts(next, false).then(function () {
     enrichState.running = false;
     enrichState.done++;
     var rl = el('recheck-line');
     if (rl) rl.textContent = recheckText(recheckCount());
     scheduleSave();
+    /* each key in: those counts are drawn again, settled once none is left */
+    checkingPaint();
     setTimeout(autoEnrich, 200);
   });
 }

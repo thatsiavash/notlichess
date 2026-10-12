@@ -6,17 +6,35 @@
    (their best reply guessed right once, F10.1) }.
    The ladder (days): 1, 3, 7, 16, 35, 90. A position is Learned after its
    third clean solve in a row, the last one 16 or more days after the one
-   before (at tiers 2 and 3 that one in game mode, under 30 s or 60 s at
-   tier 3: F8.3; at tier 3 a forcing card also needs their best reply
-   guessed right once: F10.1); it then returns once, 90 days later, as a
-   spot check, and a clean spot check retires it. Intervals of three days
-   or more are spread by up to 15% either way, fixed per position, so one
-   busy day does not come back as one busy day. An answer before the due
-   date never moves the date later (a clean find changes nothing; a hint or
-   a miss may bring it sooner). */
+   before, counted by date (at tiers 2 and 3 that one in game mode, under
+   30 s or 60 s at tier 3: F8.3; at tier 3 a forcing card also needs their
+   best reply guessed right once: F10.1); it then returns once, 90 days
+   later, as a spot check, and a clean spot check retires it. Intervals of
+   three days or more are spread by up to 15% either way, in whole days and
+   fixed per position, so one busy day does not come back as one busy day;
+   the 16-day step only ever later (C3). A position is due on a date (C2,
+   dueOn): the day of its answer plus its interval, from local midnight,
+   never within 8 hours of the answer; the set, the grade, "Tomorrow", the
+   learned test and the day words all read that date. An answer before the
+   due date never moves the date later (a clean find changes nothing; a
+   hint or a miss may bring it sooner). */
 
 var SRS_DAYS = [1, 3, 7, 16, 35, 90];
 var DAY = 864e5;
+/* local midnight of the day ms falls on, k days later (DST-safe) */
+function dayStart(ms, k) { var d = new Date(ms); d.setHours(0, 0, 0, 0); if (k) d.setDate(d.getDate() + k); return d.getTime(); }
+/* whole calendar days from the day of a to the day of b */
+function daysFrom(a, b) { return Math.round((dayStart(b) - dayStart(a)) / DAY); }
+/* the due date of an answer at time at with an interval of days (C2): that
+   day plus the interval in whole days, from local midnight, and never
+   within 8 hours of the answer (a find at 11 pm is not due again at
+   midnight, but at 7 am) */
+var DUE_GAP = 8 * 3600 * 1000;
+function dueOn(at, days) { return Math.max(dayStart(at, Math.max(1, Math.round(days))), at + DUE_GAP); }
+/* the gap the find that makes a position learned needs, in days by date:
+   the step before learned (16 days) is never spread below it (C3) */
+var LEARN_GAP = 16;
+function learnGapMet(rec, now) { return !!rec.ls && daysFrom(rec.ls, now) >= LEARN_GAP; }
 var srsRevision = 0;
 var srsMem = null;
 /* progress is kept per site and player: one handle on two sites is two people */
@@ -24,9 +42,19 @@ function playerId() { return (typeof isCC === 'function' && isCC() ? 'cc:' : '')
 function srsKey() { return 'nl:srs:' + playerId(); }
 function srsLoad() {
   if (srsMem && srsMem.key === srsKey()) return srsMem.map;
-  srsMem = { key: srsKey(), map: store.get(srsKey(), {}) };
+  srsMem = { key: srsKey(), map: srsDays(store.get(srsKey(), {})) };
   return srsMem.map;
 }
+/* a due time read as its date (C2): from that day's midnight, never within
+   8 hours of the last answer. A record kept before due dates were whole
+   days (release 1: its answer plus its interval, to the hour, and a 12-hour
+   look-ahead) comes due on the day it named; a date already whole stays as
+   it is */
+function srsDay(r) {
+  if (r && typeof r.due === 'number') r.due = Math.max(dayStart(r.due), (r.last || 0) + DUE_GAP);
+  return r;
+}
+function srsDays(map) { Object.keys(map || {}).forEach(function (k) { srsDay(map[k]); }); return map || {}; }
 /* when a record last changed: answered, spread or queued (F7.1) */
 function srsTouched(r) { return Math.max(r.last || 0, r.sp || 0, r.q || 0); }
 function srsSave(map) {
@@ -38,6 +66,7 @@ function srsSave(map) {
     var d = disk[k], m = map[k];
     if (!m || srsTouched(d) > srsTouched(m)) map[k] = d;
   });
+  srsDays(map);
   srsMem = { key: srsKey(), map: map };
   practiceWrite(srsKey(), map);
   srsRevision++;
@@ -71,11 +100,17 @@ function isLearned(rec) { return !!(rec && rec.learned); }
    long (F8.3: 30 s, 60 s at tier 3) */
 var LEARN_MS = 30000, LEARN_MS_T3 = 60000;
 function learnMs(tier) { return tier >= 3 ? LEARN_MS_T3 : LEARN_MS; }
+/* an interval spread by up to 15% either way, fixed per position, in whole
+   days. The step before learned (16 days and more) never comes back sooner
+   than 16 days (C3): a find before its 16th day could not make the
+   position learned, and it would wait 35 days more (40% to 47% of them
+   did) */
 function spreadDays(days, key) {
   if (days < 3) return days;
   var h = 0, s = String(key);
   for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return days * (0.85 + (Math.abs(h) % 1000) / 1000 * 0.3);
+  var d = Math.round(days * (0.85 + (Math.abs(h) % 1000) / 1000 * 0.3));
+  return days >= LEARN_GAP ? Math.max(LEARN_GAP, d) : d;
 }
 /* result: 'first' (no miss, no hint), 'hint' (a hint, or good-then-best),
    'retry' (solved after a miss), 'fail' (shown the answer), 'skip'.
@@ -95,24 +130,27 @@ function srsRecord(it, result, info) {
   var anew = fresh || !!rec.q;
   if (rec.q) { rec.box = 0; rec.streak = 0; rec.due = null; rec.learned = false; delete rec.rs; delete rec.retired; delete rec.q; }
   var wasLearned = !!rec.learned;
-  /* a spread position is graded as due, so it still climbs (F7.1) */
-  var dueNow = anew || !!rec.sp || rec.due == null || rec.due <= now + 12 * 3600 * 1000;
-  var prevGap = rec.ls ? now - rec.ls : 0;
+  /* due by its date (C2: from its day's midnight, never within 8 hours of
+     its last answer); a spread position is graded as due, so it still
+     climbs (F7.1) */
+  var dueNow = anew || !!rec.sp || rec.due == null || rec.due <= now;
+  /* the last find came 16 days or more before this one, by date (C3) */
+  var gapMet = learnGapMet(rec, now);
   /* their best reply guessed right, on any showing (F10.1): kept for good */
   if (info.guessRight) rec.pg = 1;
   if (result === 'skip') {
     rec.skips = (rec.skips || 0) + 1;
-    if (dueNow) rec.due = now + DAY;
+    if (dueNow) rec.due = dueOn(now, 1);
   } else if (!dueNow && result !== 'retry' && result !== 'fail') {
     /* found before its due date (practice, a drill): never an early
        review that moves the date (F7.1). A clean find changes nothing; a
        hint brings it back no later than a hint would */
-    if (result === 'hint') rec.due = Math.min(rec.due, now + spreadDays(Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)), it.key) * DAY);
+    if (result === 'hint') rec.due = Math.min(rec.due, dueOn(now, spreadDays(Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)), it.key)));
   } else if (result === 'first' && info.alt) {
     /* a move that works too is a pass, not the lesson: sooner, like a hint */
-    rec.due = now + Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)) * DAY;
+    rec.due = dueOn(now, Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)));
     rec.ls = now;
-  } else if (result === 'first' && info.tier >= 2 && !anew && !rec.learned && prevGap >= 15.5 * DAY && (rec.streak || 0) >= 2
+  } else if (result === 'first' && info.tier >= 2 && !anew && !rec.learned && gapMet && (rec.streak || 0) >= 2
              && !(info.game && info.ms != null && info.ms < learnMs(info.tier))) {
     /* F8.3: at tiers 2 and 3 the find that would make a position learned
        must be clean in game mode and quick (learnMs); a slower one, or one
@@ -120,15 +158,15 @@ function srsRecord(it, result, info) {
        as it was (info.held says why, for Details and what moved). Its reason
        comes first where F10.1 would hold it too */
     info.held = info.game ? 'slow' : 'cued';
-    rec.due = now + spreadDays(SRS_DAYS[rec.box], it.key) * DAY;
+    rec.due = dueOn(now, spreadDays(SRS_DAYS[rec.box], it.key));
     rec.ls = now;
-  } else if (result === 'first' && info.guess && !rec.pg && !anew && !rec.learned && prevGap >= 15.5 * DAY && (rec.streak || 0) >= 2) {
+  } else if (result === 'first' && info.guess && !rec.pg && !anew && !rec.learned && gapMet && (rec.streak || 0) >= 2) {
     /* F10.1: at tier 3 a forcing card is learned only once their best reply
        was guessed right; until then the find that would make it learned
        holds its step: the same interval again, its run as it was (info.held
        says why, for Details and what moved) */
     info.held = 'guess';
-    rec.due = now + spreadDays(SRS_DAYS[rec.box], it.key) * DAY;
+    rec.due = dueOn(now, spreadDays(SRS_DAYS[rec.box], it.key));
     rec.ls = now;
   } else if (result === 'first') {
     /* a first sighting solved fast may still be a lucky guess: a week, not 16 days */
@@ -138,13 +176,13 @@ function srsRecord(it, result, info) {
     /* the run's first clean find, for "Found 3 times over 23 days." */
     if (!(rec.streak > 0)) rec.rs = now;
     rec.streak = (rec.streak || 0) + 1;
-    if (!anew && prevGap >= 15.5 * DAY && rec.streak >= 3) rec.learned = true;
+    if (!anew && gapMet && rec.streak >= 3) rec.learned = true;
     if (spotCheck) { rec.retired = 1; rec.due = null; }
-    else rec.due = now + spreadDays(rec.learned ? SRS_DAYS[SRS_DAYS.length - 1] : SRS_DAYS[rec.box], it.key) * DAY;
+    else rec.due = dueOn(now, spreadDays(rec.learned ? SRS_DAYS[SRS_DAYS.length - 1] : SRS_DAYS[rec.box], it.key));
     rec.ls = now;
   } else if (result === 'hint') {
     /* hard, not failed: the schedule holds its place, a little sooner */
-    rec.due = now + spreadDays(Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)), it.key) * DAY;
+    rec.due = dueOn(now, spreadDays(Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)), it.key));
     rec.ls = now;
   } else if (result === 'retry') {
     rec.streak = 0;
@@ -152,7 +190,7 @@ function srsRecord(it, result, info) {
     delete rec.retired;
     delete rec.rs;
     rec.box = Math.max(0, rec.box - 2);
-    rec.due = now + SRS_DAYS[rec.box] * DAY;
+    rec.due = dueOn(now, SRS_DAYS[rec.box]);
   } else {
     rec.lapses = (rec.lapses || 0) + 1;
     rec.streak = 0;
@@ -160,11 +198,11 @@ function srsRecord(it, result, info) {
     delete rec.retired;
     delete rec.rs;
     rec.box = rec.box >= 3 ? 1 : 0;
-    rec.due = now + SRS_DAYS[rec.box] * DAY;
+    rec.due = dueOn(now, SRS_DAYS[rec.box]);
   }
   /* a miss before its due date brings it back tomorrow (F7.1) */
-  if (!dueNow && (result === 'retry' || result === 'fail')) rec.due = Math.min(rec.due, now + DAY);
-  if (info.gameMove) { rec.box = 0; rec.due = now + DAY; rec.learned = false; }
+  if (!dueNow && (result === 'retry' || result === 'fail')) rec.due = Math.min(rec.due, dueOn(now, 1));
+  if (info.gameMove) { rec.box = 0; rec.due = dueOn(now, 1); rec.learned = false; }
   /* answered: back on its own schedule */
   if (result !== 'skip') delete rec.sp;
   if ((rec.lapses || 0) >= 4) rec.tricky = 1;
@@ -176,6 +214,7 @@ function srsRecord(it, result, info) {
      practice log's review number */
   if (result !== 'skip') rec.n = (rec.n || 0) + 1;
   rec.last = now;
+  srsDay(rec);
   map[it.key] = rec;
   srsSave(map);
   dayBump(result, anew, info.attempted);
@@ -317,9 +356,11 @@ function practiceDays() { return countedDays().length; }
    week, and a week whose first practice follows 7 or more days without one
    (a return). The week under way takes today as its first practice day
    while none has counted yet, so a Saturday starter reads "1 of 2 days this
-   week" and a Sunday return "0 of 1 day". ms: a time in the week; days:
-   the counted days (countedDays). { goal, cut: 'first', 'back' or '' (the
-   goal stood) } */
+   week" and a Sunday return "0 of 1 day". A short week with exactly the
+   goal's days left says why too (C4: a first practice on a Thursday with
+   goal 4 reads "0 of 4 days this week (your first week)"). ms: a time in
+   the week; days: the counted days (countedDays). { goal, cut: 'first',
+   'back' or '' (the goal stood) } */
 function weekGoalInfo(ms, days) {
   days = days || countedDays();
   var mon = mondayOf(ms), g = weekGoalAt(ms), now0 = new Date(); now0.setHours(0, 0, 0, 0);
@@ -329,7 +370,7 @@ function weekGoalInfo(ms, days) {
   var prev = days.filter(function (t) { return t < first; }).pop();
   var kind = prev == null ? 'first' : Math.round((first - prev) / DAY) >= 7 ? 'back' : '';
   var left = 7 - (new Date(first).getDay() + 6) % 7;
-  return kind && left < g ? { goal: left, cut: kind } : { goal: g, cut: '' };
+  return kind && left <= g ? { goal: left, cut: kind } : { goal: g, cut: '' };
 }
 /* consistency counted in weeks: the run of Monday-to-Sunday weeks that met
    the goal (a short week its own, V4.4), this week included once it is
