@@ -41,7 +41,7 @@ const T1 = [['material', /\bmaterial\b/i], ['balanced', /\bbalanced\b/i], ['leve
 const SAN = /(?:\b[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|\b[a-h]x[a-h][1-8]|\b[a-h][18]=[QRBN]|\bO-O(?:-O)?)[+#]?/;
 const T1_BAND = [['tactic', /\btactic(s|al)?\b/i], ['decided', /\bdecided\b/i], ['notation', SAN]];
 const BAND = { row1: 1, row2: 1, chip: 1, tag: 1, cap: 1 };
-const MOVE_WORDS = /\b(?:king|queen|rook|bishop|knight|pawn)(?: from [a-h][1-8])? (?:to|takes on) [a-h][1-8](?: to make a (?:queen|rook|bishop|knight))?|\bcastling\b/gi;
+const MOVE_WORDS = /\b(?:king|queen|rook|bishop|knight|pawn)(?: from [a-h][1-8])? (?:to|takes on) [a-h][1-8](?: to make a (?:queen|rook|bishop|knight))?|\bcastling(?: on the (?:king|queen)'s side)?/gi;
 const words = (s) => String(s || '').replace(MOVE_WORDS, 'Mv').split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length;
 /* a row's length, each of the piece ledger's symbols (F1.2, F1.4) taking two characters */
 const len = (s) => String(s).length + (String(s).match(/[\u2654-\u265f]/g) || []).length;
@@ -277,24 +277,30 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
 
 /* the banned-word rules one string breaks, by tier and where it shows (V4.3's and V4.8's acceptance
    reads them too): every tier's, a summary line starting "Then", tier 1's, and tier 1's in the band */
-function rulesOf(tier, where, s) {
+function rulesOf(tier, where, s, chip) {
   const out = [];
   EVERY.forEach(([n, re]) => { if (re.test(s)) out.push(n); });
   if (where === 'summary' && /^Then\b/.test(s)) out.push('then');
+  /* V2.5: every percentage on a card or in Details is labelled ("Your chances: 49% before, 35%
+     after.", or the chip "Your chances" beside a tier 3 frame's figures) */
+  if ((BAND[where] || where === 'details') && /\d\s?%/.test(s) && !/chances/i.test(s) && chip !== FIG_CHIP) out.push('unlabelled %');
   if (tier !== 1) return out;
   T1.forEach(([n, re]) => { if (re.test(s)) out.push(n); });
   if (BAND[where]) T1_BAND.forEach(([n, re]) => { if (re.test(s)) out.push(n); });
+  /* V2.5: tier 1's Details in words: no notation there either (a square alone is none) */
+  if (where === 'details' && SAN.test(s)) out.push('notation');
   return out;
 }
+const FIG_CHIP = 'Your chances';
 
 module.exports = function copyLint(A, OPEN, FRAMES) {
   const r = JSON.parse(A.ev(COLLECT(OPEN, FRAMES)));
   const found = new Set(), habit = new Set(), routine = new Set();
   const add = (tier, rule, where, s) => found.add(tier + '|' + rule + '|' + where + '|' + generic(s));
-  const check = (tier, where, s) => {
+  const check = (tier, where, s, chip) => {
     if (OLD_HABITS.some((h) => s.indexOf(h) >= 0) || OLD_ASK.test(s)) habit.add(tier + '|' + where + '|' + s);
     if (tier === 1 && s.indexOf(ROUTINE) >= 0) routine.add(where + '|' + s);
-    rulesOf(tier, where, s).forEach((n) => add(tier, n, where, s));
+    rulesOf(tier, where, s, chip).forEach((n) => add(tier, n, where, s));
   };
   let strings = 0;
   r.frames.forEach(([tier, key, what, row1, row2, cap, chip, buttons, strip, label, tag]) => {
@@ -303,7 +309,7 @@ module.exports = function copyLint(A, OPEN, FRAMES) {
     Object.keys(parts).forEach((w) => {
       if (!parts[w]) return;
       strings++;
-      check(tier, w, parts[w]);
+      check(tier, w, parts[w], chip);
       const cap = CAPS[w];
       if (cap && (len(parts[w]) > cap[0] || words(parts[w]) > cap[1])) add(tier, 'caps', w, parts[w]);
     });

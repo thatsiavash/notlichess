@@ -249,8 +249,11 @@ function sideCp(line, w) { return w ? line.cp : -line.cp; }
 function xpClaim(st, ucis, cp) {
   var mover = !!st.w, line = ucis && ucis.length ? buildLine(st, '0000', ucis, mover) : null;
   if (!line || line.nodes.length < 2) return null;
-  var k = settleIndex(line);
-  if (k < 1 || !settledAt(line, k)) return null;
+  /* V2.1: counted where the line settles by the fact sheet's rule (two
+     quiet plies with nothing en prise, settleLine), never on a capture
+     still to be answered: card 2's f5 gives up no pawns */
+  var sl = settleLine(st, ucis), k = sl.k;
+  if (!sl.ok || k < 1 || k >= line.nodes.length || !settledAt(line, k)) return null;
   for (var i = 1; i <= k; i++) if (line.nodes[i].move.promo) return null;
   var base = matDiff(line.nodes[0].after.b, mover), n = matDiff(line.nodes[k].after.b, mover) - base;
   if (Math.abs(n) < 1) return null;
@@ -443,6 +446,37 @@ function xpVerdict(a, ex, at) {
 /* what the prompt line (phone) and the say line (desktop) show at a node:
    the same string, 80 characters at most */
 function sayAt(a, ex, at) {
+  var s = sayAt0(a, ex, at);
+  return a.tier === 1 ? xpWords(a, ex, at, s) : s;
+}
+/* V2.5: tier 1's sentence in words: each move named in it, read on the
+   position it was played from (the move on screen, the moves Stockfish
+   gives at the position before and after it); a sentence left with
+   notation in it says only where the move stands */
+function xpWords(a, ex, at, s) {
+  var map = {}, pov = myPov(a.it), add = function (st) {
+    if (!st) return;
+    legalMoves(st).forEach(function (m) { var sn = sanOf(st, m), x = { w: moveWords(st, m), p: pType(st.b[m.from]), mine: !!st.w === pov }; map[sn] = x; map[sn.replace(/[+#]$/, '')] = x; });
+  };
+  add(ex.nodes[at] && ex.nodes[at].st);
+  if (at > 0) add(ex.nodes[at - 1].st);
+  /* as Details says it (wordsWith: "their pawn takes your bishop", "their
+     threat"), within the line's 80 characters: the later sentences go
+     first, then all but the first clause */
+  var o = {}, out = wordsWith(a, s, map, o);
+  if (!o.left && out.length > LINE_MAX) {
+    var parts = out.match(/[^.!?\u2026]+[.!?\u2026]+(?:\s+|$)/g) || [out];
+    while (parts.length > 1 && parts.join('').trim().length > LINE_MAX) parts.pop();
+    out = parts.join('').trim();
+    if (out.length > LINE_MAX) out = firstClause(out);
+  }
+  if (o.left || out.length > LINE_MAX) {
+    var n = ex.nodes[at], P = at > 0 ? ex.nodes[at - 1] : null, mv = n && n.mv && P ? uciToMove(P.st, n.mv.uci) : null;
+    return mv ? upFirst(moveWords(P.st, mv)) + ' is played. ' + xpWho(a, true) + ' rates each move.' : xpWho(a, true) + ' rates each move.';
+  }
+  return out;
+}
+function sayAt0(a, ex, at) {
   var n = ex.nodes[at];
   if (ex.flash && !xpGameOver(n.st)) return ex.flash;
   if (xpGameOver(n.st)) {
@@ -483,7 +517,7 @@ function xpNum(st, i) {
   return ply % 2 === 0 ? full + '.' : full + '…';
 }
 function xpRowWords(a, n, line, best) {
-  var w = n.st.w, m0 = line.pv[0];
+  var w = n.st.w, m0 = line.pv[0], t1 = a.tier === 1;
   var mateFor = line.mate != null ? (w ? line.mate : -line.mate) : null;
   if (mateFor != null && mateFor > 0) return 'mates in ' + mateFor;
   if (mateFor != null && mateFor < 0) return 'allows mate in ' + (-mateFor);
@@ -500,14 +534,15 @@ function xpRowWords(a, n, line, best) {
     if (cl) return (cl.n > 0 ? 'wins ' : 'gives up ') + cl.w;
   } else {
     var g = c.gameLine, r1 = g && g.nodes[1], rSan = r1 && r1.move ? sanOf(r1.before, r1.move) : '';
-    if (c.t === 'forkAllowed' && c.allowed.fork) { var fm = g.nodes[c.allowed.fork.ply]; return 'allows a fork: ' + sanOf(fm.before, fm.move); }
+    /* (tier 1 names no move: V2.5) */
+    if (c.t === 'forkAllowed' && c.allowed.fork) { var fm = g.nodes[c.allowed.fork.ply]; return t1 ? 'allows a fork' : 'allows a fork: ' + sanOf(fm.before, fm.move); }
     if (c.t === 'pinAllowed') return 'walks into a pin';
     if (c.t === 'discoveredAllowed') return 'allows a hidden attack';
     if (c.t === 'mateAllowed') return 'allows mate in ' + (c.mateAgainst || 2);
     /* only when what the line loses, counted where it settles, is that piece */
     if (['threat', 'hung', 'badTrade', 'material'].indexOf(c.t) !== -1 && r1 && r1.captured && cl && cl.n <= -1 && cl.w === 'the ' + PIECE_WORD[pType(r1.captured)])
-      return 'loses ' + cl.w + ' to ' + rSan;
-    if (XP_MISSED.indexOf(c.t) !== -1) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return 'misses ' + bs; }
+      return t1 ? 'loses ' + cl.w : 'loses ' + cl.w + ' to ' + rSan;
+    if (XP_MISSED.indexOf(c.t) !== -1) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return t1 ? 'misses a stronger move' : 'misses ' + bs; }
   }
   return CARD_COPY.X3(a, winPct(myPov(a.it) ? line.cp : -line.cp));
 }
@@ -537,8 +572,11 @@ function xpRows(a, ex) {
     var first = sans[0] || l.pv[0];
     var row = { uci: l.pv[0], first: first, num: xpNum(n.st, 0), li: li };
     if (tier === 1) {
+      /* V2.5: tier 1's rows in words, no notation */
+      var m0 = uciToMove(n.st, l.pv[0]);
+      if (m0) row.first = upFirst(moveWords(n.st, m0));
       row.words = ws[li];
-      row.label = first + ', ' + row.words + '.';
+      row.label = row.first + ', ' + row.words + '.';
       return row;
     }
     var myMate = l.mate != null ? (me ? l.mate : -l.mate) : null, drawn = myMate == null && xpDrawn(n.st, l);

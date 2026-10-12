@@ -168,33 +168,98 @@ function foilLook(it, prio) {
   var p = ev({ multipv: 3, tag: key }).then(function (r1) {
     var best = r1.bestUci, bl = lineOf(r1, best) || { cp: r1.cp, mate: r1.mate, pv: r1.pv && r1.pv.length ? r1.pv : [best] }, gl = best === gu ? bl : lineOf(r1, gu);
     if (!best) throw { none: true };
-    if (gl) return { best: best, bl: bl, gl: gl };
-    return ev({ searchmoves: [gu, best], multipv: 2, tag: key }).then(function (r2) { return { best: best, bl: lineOf(r2, best) || bl, gl: lineOf(r2, gu) }; });
+    if (gl) return { best: best, bl: bl, gl: gl, r1: r1 };
+    return ev({ searchmoves: [gu, best], multipv: 2, tag: key }).then(function (r2) { return { best: best, bl: lineOf(r2, best) || bl, gl: lineOf(r2, gu), r1: r1 }; });
   }).then(function (x) {
     if (stale(myGen) || b.ok || b.x || !x.gl) return;
     var wBest = winPct(sign * x.bl.cp), wGame = winPct(sign * x.gl.cp);
     if (wGame > wBest) wBest = wGame;
     if (!(wBest - wGame < FOIL_LOSS)) { foilSetAside(it); return; }
-    b.bu = x.best; b.lu = packUci(x.bl.pv); b.eb = sign * x.bl.cp; b.mb = x.bl.mate != null ? sign * x.bl.mate : null;
-    b.ea = sign * x.gl.cp; b.ma = x.gl.mate != null ? sign * x.gl.mate : null; b.ru = packUci((x.gl.pv || []).slice(1, 9));
-    b.wb = wBest; b.wa = wGame; b.fl = Math.round((wBest - wGame) * 10) / 10; b.ok = 1;
+    /* V2.6: the only move, when the game move is the best and the search's
+       next line is 10 or more points worse */
+    var second = (x.r1.lines || []).filter(function (l) { return l && l.pv && l.pv[0] && l.pv[0] !== x.best; })[0];
+    var om = x.best === gu && second && wBest - winPct(sign * second.cp) >= 10 ? 1 : 0;
+    var fields = { bu: x.best, lu: packUci(x.bl.pv), eb: sign * x.bl.cp, mb: x.bl.mate != null ? sign * x.bl.mate : null,
+                   ea: sign * x.gl.cp, ma: x.gl.mate != null ? sign * x.gl.mate : null, ru: packUci((x.gl.pv || []).slice(1, 9)),
+                   wb: wBest, wa: wGame, fl: Math.round((wBest - wGame) * 10) / 10, om: om };
+    /* V2.6: their threat, from a null-move search (them to move): a mate,
+       a capture by what it nets, a quiet move only when a search of its own
+       confirms what it wins where its line settles; [uci, mate, gain, the
+       piece it wins] */
+    Object.keys(fields).forEach(function (f) { b[f] = fields[f]; });
+    b.ok = 1;
+    /* the threat comes after, never holding the card: Hint 2 reads it once
+       it is in (until then the board's own attacks) */
+    it.thP = foilThreat(pre, sign > 0, false, key).then(function (th) { if (!stale(myGen) && th !== undefined) b.th = th; });
   });
   foilPending[key] = p.then(function () { delete foilPending[key]; return it; }, function () { delete foilPending[key]; return it; });
   return foilPending[key];
 }
-/* the danger on a foil's board, for its Hint 2 (F8.1): the check, their
-   mate in one were it their move, else the player's pieces taking would win
-   for them (dangerAttacked: the static exchange), as F1.1's danger hint
-   draws them; none: "No danger here." No mark on the answer's to-square nor
-   on the game move's (a fine answer too). {kind, rings, arrows, ...} */
+/* a foil's threat (V2.6): the null-move position searched (two lines,
+   250,000 nodes), read by the fact sheet's rule (factsThreats); a quiet
+   move kept only when a search from after it confirms what it wins where
+   its line settles. Resolves with [uci, mate, gain, piece won] or null (none,
+   or the player in check); undefined when no search could run */
+function foilThreat(pre, pov, prio, key) {
+  if (checkersOf(pre).length) return Promise.resolve(null);
+  var nst = dzNullState(pre), fen = stateFen(nst);
+  var settleWins = function (ucis) {
+    var s = settleLine(nst, ucis), lost = lineNodes(nst, ucis.slice(0, s.k)).filter(function (x) { return x.cap && colorW(x.cap) === pov; }).map(function (x) { return pType(x.cap); });
+    var won = lineNodes(nst, ucis.slice(0, s.k)).filter(function (x) { return x.cap && colorW(x.cap) !== pov; }).map(function (x) { return pType(x.cap); });
+    won.forEach(function (w) { var j = lost.indexOf(w); if (j >= 0) lost.splice(j, 1); });
+    lost.sort(function (x, y) { return MOTIF_VAL[y] - MOTIF_VAL[x]; });
+    return { gain: pov ? s.w - s.b : s.b - s.w, wins: lost[0] || null };
+  };
+  return engineEval(fen, { nodes: DEEP_NODES }, prio, { multipv: 2, tag: key }).then(function (r) {
+    if (!r || r.stopped) return undefined;
+    var lines = r.lines && r.lines.length ? r.lines : [{ cp: r.cp, mate: r.mate, pv: r.pv || [] }];
+    var c = factsThreats(pre, lines, pov, true)[0];
+    if (!c) return null;
+    var m = uciToMove(nst, c.u);
+    if (!m) return null;
+    if (c.mate) return [c.u, c.mate, 0, null];
+    /* a capture is a threat only where its line nets them something (V1.5)
+       and the exchange on its square pays (a 250,000-node line can miss
+       the answer to it: foil:184359604942:26's Bxb2) */
+    if (nst.b[m.to] && !(c.gain >= 1 && dzSeeMove(nst.b, m.from, m.to) > 0)) return null;
+    /* every threat but a mate confirmed by a search of its own from after
+       it (V1.5's quiet threats; a capture too, since a 250,000-node line can
+       miss the answer to it: foil:184359604942:26's Bxb2 runs into Nc7+) */
+    var after = cloneState(nst);
+    applyMove(after, m);
+    if (!legalMoves(after).length) return null;
+    return engineEval(stateFen(after), { nodes: DEEP_NODES }, prio, { tag: key }).then(function (r2) {
+      if (!r2 || r2.stopped) return null;
+      var sw = settleWins([c.u].concat(r2.pv || []));
+      /* the gain is theirs: the player's loss, the piece it wins */
+      return -sw.gain >= 1 && sw.wins ? [c.u, 0, -sw.gain, sw.wins] : null;
+    }, function () { return null; });
+  }, function () { return undefined; });
+}
+/* the danger on a foil's board, for its Hint 2 (F8.1, V2.6): the check;
+   their mate in one were it their move; their threat from the foil's look
+   (a capture, or a quiet move that wins a piece); the only move when its
+   search's next line is 10 points worse ("Only one move holds here."); the
+   player's pieces taking would win for them (dangerAttacked) where no
+   search ran; none: "Any good move passes here." No mark on the answer's
+   to-square nor on the game move's (a fine answer too). {kind, rings,
+   arrows, ...} */
 function foilDanger(a) {
-  var st = a.pre, pov = myPov(a.it), due = a.best, gm = a.played;
+  var st = a.pre, pov = myPov(a.it), due = a.best, gm = a.played, b = a.it.b;
   var skip = function (f, t) { return f === due.to || t === due.to || f === gm.to || t === gm.to; };
   if (checkersOf(st).length) return { kind: 'check', rings: [], arrows: [] };
   var nst = dzNullState(st), mate = legalMoves(nst).filter(function (m) { var x = cloneState(nst); applyMove(x, m); return isMate(x); })[0];
   if (mate) return { kind: 'mate', mate: { from: mate.from, to: mate.to, san: capSan(nst, mate) },
                      rings: skip(mate.to, mate.to) ? [] : [{ sq: mate.to, kind: 'attacked', mate: true }], arrows: skip(mate.from, mate.to) ? [] : [{ from: mate.from, to: mate.to, kind: 'threat', key: 'danger' }] };
-  var pk = dangerPick(dangerAttacked(st, pov).map(function (x) { return { sq: x[0], p: st.b[x[0]], by: x.slice(1) }; }), [], skip);
-  if (pk) return { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return { from: x.from, to: x.to, kind: 'threat', key: 'danger' }; }) };
+  var th = b.th, tm = th ? uciToMove(nst, th[0]) : null;
+  if (tm) {
+    var tt = { st: nst, m: tm, took: nst.b[tm.to] || null, mate: th[1] || 0, gain: th[2], wins: nst.b[tm.to] ? null : th[3] };
+    return { kind: 'threat', t: tt, rings: [], arrows: skip(tm.from, tm.to) ? [] : [{ from: tm.from, to: tm.to, kind: 'threat', key: 'danger' }] };
+  }
+  if (b.om) return { kind: 'only', rings: [], arrows: [] };
+  if (th === undefined) {
+    var pk = dangerPick(dangerAttacked(st, pov).map(function (x) { return { sq: x[0], p: st.b[x[0]], by: x.slice(1) }; }), [], skip);
+    if (pk) return { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return { from: x.from, to: x.to, kind: 'threat', key: 'danger' }; }) };
+  }
   return { kind: 'none', rings: [], arrows: [] };
 }

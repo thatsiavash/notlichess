@@ -12,7 +12,9 @@ const boot = (o) => makeApp(Object.assign({ now: T0, storage: base() }, o || {})
 
 let failed = 0, passed = 0;
 const results = [];
+/* ONLY=<words> runs the tests whose names hold them */
 async function test(name, fn) {
+  if (process.env.ONLY && name.indexOf(process.env.ONLY) < 0) return;
   try { await fn(); passed++; } catch (e) { failed++; results.push('FAIL ' + name + ': ' + e.message); }
 }
 function eq(a, b, what) { if (a !== b) throw new Error((what || 'value') + ' expected ' + JSON.stringify(b) + ', got ' + JSON.stringify(a)); }
@@ -449,6 +451,24 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
               var t = lb.text, mk = lb.mark, at = 'tier ' + tier + ' ' + it.key + ' ' + what + ', "' + t + '"', bad = function (x) { out.push(at + ': ' + x); };
               by[t.replace(/^(White|Black) /, '').replace(/^free \\w+/, 'free').replace(/^\\S+ in your game/, 'ghost')] = 1;
               var opp = myPov(a.it) ? 'Black' : 'White';
+              /* V2.2: See it's still marks, on the line it plays: the event (its move at its ply of the
+                 line: "takes" a piece of yours, "fork" where the motif code finds one, "mate", or the
+                 piece a pawn becomes) and your take-back before it */
+              if (mk.kind === 'event' || mk.kind === 'back') {
+                var ev = a.tried && a.tried.ev, er = arrowOf(f, mk);
+                if (!er || !ev || a.phase !== 'tried' || !a.tried.seen) return bad('a line mark off See it');
+                by[mk.kind + ' ' + t] = 1;
+                var aft0 = cloneState(a.st); applyMove(aft0, uciToMove(aft0, a.tried.uci));
+                var ns = lineNodes(aft0, a.tried.line || []), at2 = mk.kind === 'event' ? ev.at : ev.backAt, nd = ns[at2 - 1];
+                if (!nd) return bad('no such ply on the line');
+                if (mk.kind === 'back') { if (t !== 'you take back' || nd.u !== ev.back || !nd.cap || colorW(nd.cap) === myPov(a.it)) bad('not your take-back'); return; }
+                if (nd.m.to !== er.to || t !== ev.say) bad('not the move of the event');
+                if (t === 'takes' && (!nd.cap || colorW(nd.cap) !== myPov(a.it))) bad('"takes" no piece of yours');
+                if (t === 'mate' && !nd.mate) bad('no mate');
+                if (t === 'fork' && !forkAt(nd)) bad('no fork');
+                if (/^(queen|rook|bishop|knight)$/.test(t) && (!nd.m.promo || PIECE_WORD[pType(nd.m.promo)] !== t)) bad('no promotion to it');
+                return;
+              }
               if (/^(takes|free |check|mate|draw|hits two|fork|stuck|pinned)|can (take|check)$/.test(t) && mk.kind !== 'prize') {
                 var ar = arrowOf(f, mk);
                 if (!ar || ar.kind !== 'threat') return bad('not on a threat arrow drawn');
@@ -822,14 +842,16 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
             if ((/aria-label="([^"]*)"/.exec(svg) || [])[1] !== lab) bad.push('the svg does not carry the label');
             if (lab.indexOf((f.st.w ? 'White' : 'Black') + ' to move.') !== 0) bad.push('who moves');
             /* each drawn mark, counted in the svg, against its words */
-            var pairs = [[/class="bad-arrow"/g, /Red arrow: your game move, /g, 'game arrow'], [/class="threat-arrow"/g, /Dashed red arrow: /g, 'threat arrow'],
+            var pairs = [[/class="bad-arrow"/g, /Red arrow: your game move, /g, 'game arrow'], [/class="threat-arrow"/g, /Dashed red arrow: (?!then )/g, 'threat arrow'],
+              /* V2.2: See it's line still to come, your take-back and the event */
+              [/class="event-arrow"/g, /Dashed red arrow: then /g, 'event arrow'], [/class="back-arrow"/g, /Dashed slate arrow: next you take back, /g, 'back arrow'],
               [/class="reply-arrow"(?![^>]*stroke-dasharray)/g, /Blue arrow: (?!your guess)/g, 'landed reply'], [/class="guess-arrow"/g, /Blue arrow: your guess of (White|Black)'s reply, /g, 'guess arrow'], [/class="good-arrow"/g, /Green arrow: /g, 'green arrow'],
               [/class="ghost-arrow"/g, /Gold arrow: /g, 'gold arrow'], [/class="hint-ring"/g, /Gold ring: /g, 'hint ring'], [/class="ring-target"/g, /Dashed gold ring: /g, 'prize ring'],
               [/token-lost/g, / was taken on |They could have taken your /g, 'lost token'], [/token-won/g, /You won a |@s0won@/g, 'won token'], [/class="guard-line"/g, /Green dots: /g, 'guard dots'],
               [/<g class="tried"/g, /Faint red line: |Red cross: a move /g, 'tried move'], [/url[(]#checkglow/g, / king is in check[.]/g, 'check'],
               [/badge-good/g, /Green tick: /g, 'tick'], [/badge-bad/g, /Red cross: your move/g, 'cross'], [/badge-close/g, /Ring with a tick: /g, 'close'], [/badge-info/g, /Grey i: /g, 'i'],
               [/badge-checking/g, /Grey dots: /g, 'checking'], [/badge-unchecked/g, /Question mark: /g, 'unchecked'],
-              [/class="ring-attacked"/g, /Red ring: (your [a-z]+ on [a-h][1-8] is in danger|they could checkmate on [a-h][1-8]|[a-h][1-8], where your piece would be in danger)[.]/g, 'danger ring']];
+              [/class="ring-attacked"/g, /Red ring: (your [a-z]+ on [a-h][1-8] is in danger|they could checkmate on [a-h][1-8]|[a-h][1-8], where your piece would be in danger|after your game move, your [a-z]+ on [a-h][1-8] can be taken)[.]/g, 'danger ring']];
             /* after a forcing line S0's won tokens are read in its one sentence (final fixes 3): each drawn one named there */
             var along = (/Along the line you took ([^.]*)[.]/.exec(lab) || [])[1] || '', lab0 = lab;
             (o.tokens || []).forEach(function (t) { if (t.s0 && along.indexOf('a ' + PIECE_WORD[pType(t.p)] + ' on ' + sqName(t.sq)) >= 0) lab0 += ' @s0won@'; });

@@ -338,8 +338,9 @@
     else { click('#ctop [data-act=menu]'); await until(() => $('#ctop [data-act=details]'), 3000); click('#ctop [data-act=details]'); }
     await until(() => $('#overlay .sheet'), 3000);
     /* both sentences as Details says them (each material claim the card face's own) */
-    const sn = T.card().sentences, snBest = sn && T.ev('(function (a) { return detailsBest(a, a.cls.sentences, a.lines.best.san[0]); })(ui.session.active)');
-    const snGame = sn && T.ev('detailsGame(ui.session.active)');
+    /* (V2.5: tier 1 says them in words, with no figure) */
+    const sn = T.card().sentences, snBest = sn && T.ev('(function (a) { var s = detailsBest(a, a.cls.sentences, a.lines.best.san[0]); return a.tier === 1 ? detailsWords(a, s) : s; })(ui.session.active)');
+    const snGame = sn && T.ev('(function (a) { var s = detailsGame(a); return a.tier === 1 ? detailsWords(a, s.replace(/ \\(\\d+% to \\d+%\\)/g, "")) : s; })(ui.session.active)');
     ok('the Details sheet holds both sentences', !!sn && text('#overlay .sheet').indexOf(snBest) !== -1 && text('#overlay .sheet').indexOf(snGame.replace(/ \(\d+% to \d+%\)/g, '')) !== -1 && !!$('#overlay .sheet .ctx'),
       text('#overlay .sheet').slice(0, 200));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -566,6 +567,11 @@
       await sleep(400);
       /* Show the answer never takes Try again's place under the keyboard (F4.1): the keyboard goes to the task */
       ok('after Try again the focus is on the task, never the typed-move field nor Show the answer', !!document.activeElement && document.activeElement.id === 'task-h', focusName());
+      /* (V2.3: at tier 1 the automatic hint comes with this Try again, after miss 1, and counts as it shows) */
+      if (T.ev('ui.session.active.tier') === 1) {
+        const c1b = T.card();
+        ok('at tier 1 the automatic hint is on after the Try again it comes with (miss 1), the band saying which', c1b.hints >= 1 && new RegExp('^Hint ' + c1b.hints + ' of [23]').test(text('#cband .bd-r1')), 'hints ' + c1b.hints + ', ' + text('#cband'));
+      }
       const others = legalOther(c);
       ok('there are other legal moves to try', others.length >= 2, String(others.length));
       /* a try that is nearly as good counts as close, not as a miss: try another */
@@ -592,7 +598,11 @@
         ok('the move just tried stays on the card, faint', !!$('#bwrap .marks .tried'));
         const tier = T.ev('ui.session.active.tier'), c2b = T.card();
         /* the automatic hint is the next one not yet shown (F1.1): Hint 2 after a First look's Hint 1 */
-        ok('the automatic hint is on after the Try again it comes with (tier 1 or 2), the band saying which', tier === 3 ? c2b.hints === 0 : c2b.hints >= 1 && new RegExp('^Hint ' + c2b.hints + ' of 2').test(text('#cband .bd-r1')), 'tier ' + tier + ', hints ' + c2b.hints + ', ' + text('#cband'));
+        /* (V2.3: it counts as it shows, here; "of 3" at tier 1, where Hint 3 follows) */
+        /* (at tier 1 it came after miss 1: a hint in words only from before the last miss gives the task back, T1) */
+        const hm0 = JSON.parse(T.ev('JSON.stringify(hintMarks(ui.session.active))')), words0 = !hm0.rings.length && !hm0.arrows.length;
+        ok('the automatic hint is on after the Try again it comes with (tier 1 or 2), the band saying which', tier === 3 ? c2b.hints === 0 : tier === 2 ? c2b.hints >= 1 && new RegExp('^Hint ' + c2b.hints + ' of 2').test(text('#cband .bd-r1'))
+          : c2b.hints >= 1 && (new RegExp('^Hint ' + c2b.hints + ' of [23]').test(text('#cband .bd-r1')) || (words0 && text('#cband .bd-r1') === 'Your turn')), 'tier ' + tier + ', hints ' + c2b.hints + ', ' + text('#cband'));
         bandFits('a hint');
         /* the hint draws what hintMarks says (the danger, F1.1 and F1.3: red rings on what is attacked or the
            mating square and dashed arrows into them; else a ring and dashed arrow for the danger the game move
@@ -621,9 +631,11 @@
            Show the answer then takes taps once its half second from the fade is over */
         const sr = $('[data-act=seeIt]') ? $('[data-act=seeIt]').getBoundingClientRect() : null;
         let hitAct = 'none';
+        /* (V2.2: Next move steps the rest of their line first, in See it's place; Show the answer comes at its end) */
+        const stepLine = async () => { for (let g = 0; g < 10 && !$('#cpanel [data-act=reveal]'); g++) { await sleep(700); if ($('#cbar [data-act=seeIt]')) click('#cbar [data-act=seeIt]'); } return $('#cpanel [data-act=reveal]'); };
         const offered = !!c3 && c3.phase === 'tried' && click('[data-act=seeIt]') && (await sleep(200), true)
           && ((hitAct = (() => { const h = sr && document.elementFromPoint(sr.x + sr.width / 2, sr.y + sr.height / 2); const x = h && h.closest && h.closest('#cbar [data-act]'); return x ? x.getAttribute('data-act') : null; })()), true)
-          && !!(await until(() => $('#cpanel [data-act=reveal]'), 3000));
+          && !!(await stepLine());
         ok('miss 3 offers Show the answer; result still null', offered && T.card().result === null, c3 && (c3.phase + ' ' + c3.result));
         if (offered) {
           ok('a second tap on See it\'s place while the bar changes reaches no button', hitAct === null && T.card().result === null && T.card().phase === 'tried', hitAct + ' ' + T.card().phase + ' ' + T.card().result);

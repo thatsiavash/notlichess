@@ -328,7 +328,9 @@ module.exports = function practiceTests(h) {
       var a = cardFor(it); ui.session.active = a;
       out.words = [inWords(a), displayFor(a).row2 === CARD_COPY.T2(a, true) || displayFor(a).row2 === 'Find a better move.'];
       gradeMove(uciToMove(a.st, a.playedUci));
-      out.hintAfterMiss = [a.misses, a.hints].join('/');
+      /* (V2.3: the hint is due at the miss and counts when it shows, on Try again) */
+      out.hintAfterMiss = [a.misses, a.hints, a.autoDue ? 1 : 0].join('/');
+      tryAgain(); out.hintAfterMiss += ' ' + a.hints;
       /* Less help at 700: notation, no automatic hint */
       data.user.perfs.rapid.rating = 700;
       setHelp('less');
@@ -346,7 +348,7 @@ module.exports = function practiceTests(h) {
     eq(r.lines1.indexOf('Set from your rating until you pick one.'), -1, 'chosen: no longer from the rating');
     eq(r.tier, 1, 'More help is tier 1');
     eq(JSON.stringify(r.words), '[true,true]', 'a 1600 player on More help: moves in words');
-    eq(r.hintAfterMiss, '1/1', 'and a hint after miss 1');
+    eq(r.hintAfterMiss, '1/0/1 1', 'and a hint after miss 1');
     eq(r.less, '3/false/true', 'Less help at 700: tier 3, notation');
     eq(r.lessHints, '2/0', 'no automatic hint');
     eq(r.lessRating, 'less 3', 'the choice outlives the rating');
@@ -521,7 +523,7 @@ module.exports = function practiceTests(h) {
       /* a miss: its verdict, then its reason */
       var m = open('pk:free-1'), off = legalMoves(m.st).filter(function (x) { return moveUci(x) === 'g1f1'; })[0];
       gradeMove(off); m.reason = 2;
-      out.miss = [displayFor(m).row1, displayFor(m).row2, m.misses, m.hints].join(' / ');
+      out.miss = [displayFor(m).row1, displayFor(m).row2, m.misses, m.hints + (m.autoDue ? 1 : 0)].join(' / ');
       /* the answer shown */
       var v = open('pk:free-2'); reveal();
       out.shown = [displayFor(v).row1, displayFor(v).row2].join(' / ');
@@ -540,6 +542,7 @@ module.exports = function practiceTests(h) {
     ok(r.menu.indexOf('Open the game ↗') < 0 && !r.menu.some((x) => /Not a real mistake/.test(x)), 'no game, nothing to dispute: ' + JSON.stringify(r.menu));
     eq(r.close, 'Good move / There\'s a stronger one.', 'a close move');
     eq(r.closeThen, 'hint / good', 'then found: after a good move');
+    /* (the hint due at the miss counts when it shows, V2.3) */
     ok(/^Not this one \/ .+ \/ 1 \/ 1$/.test(r.miss), 'a miss says why, and brings Hint 1 at More help: ' + r.miss);
     eq(r.shown, 'Here is the answer / Play the green arrow.', 'the answer shown');
     ok(/^Here is the answer \/ That wins their \w+\. \/ fail$|^The answer: .+ \/ That wins their \w+\. \/ fail$/.test(r.shownSettled), 'shown, played and settled: ' + r.shownSettled);

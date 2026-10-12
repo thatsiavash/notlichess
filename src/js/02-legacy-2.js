@@ -126,7 +126,11 @@ var MARK_ARROW = {
   explore: { color: 'rgba(182,130,53,.85)', w: 6, cls: 'ghost-arrow' },
   threat: { color: 'rgba(201,80,60,.9)', w: 5, cls: 'threat-arrow', dash: '7 5.5' },
   reply: { color: 'rgba(122,150,184,.95)', w: 5, cls: 'reply-arrow', dash: '7 5.5' },
-  guess: { color: 'rgba(122,150,184,.85)', w: 5, cls: 'guess-arrow' }
+  guess: { color: 'rgba(122,150,184,.85)', w: 5, cls: 'guess-arrow' },
+  /* V2.2: See it's still marks, the rest of the try's line: your take-back
+     (slate) and the event it comes to (red), both dashed */
+  back: { color: 'rgba(125,147,171,.95)', w: 5, cls: 'back-arrow', dash: '7 5.5' },
+  event: { color: 'rgba(201,80,60,.9)', w: 5, cls: 'event-arrow', dash: '7 5.5' }
 };
 /* a verdict, by kind: the tint under both squares of the move just made,
    and the badge on its landing square (the close badge is hollow, so it

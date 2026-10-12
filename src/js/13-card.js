@@ -346,10 +346,13 @@ function sessionClick(sq) {
     /* a piece dragged where it cannot go snaps back and says so (T5); a
        tap there puts the piece down, and a tap on a piece of theirs says
        which side you are too (T4) */
-    var dropped = pointerState.suppressClick;
+    var dropped = pointerState.suppressClick, from = a.sel;
     a.sel = -1;
     renderCardBoard();
-    if (dropped) tapNote(a, 'T5', 2000, null);
+    /* V2.7: a move the piece could make but for the check it would leave
+       its king in says so */
+    if (legalMovesPseudo(a.st, from).indexOf(sq) >= 0) tapNote(a, 'T6', 2500, dropped ? null : sq);
+    else if (dropped) tapNote(a, 'T5', 2000, null);
     else if (p && isW(p) !== a.st.w) tapNote(a, 'T4', 2500, sq);
     return;
   }
@@ -777,7 +780,9 @@ function keepProgress(a) {
   var ss = ui.session;
   if (!ss || !a) return;
   ss.progress = ss.progress || {};
-  ss.progress[a.key] = { m: a.misses, h: a.hints, g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts, p: a.predraw ? 1 : 0, au: a.autoH || 0, gm: a.game ? 1 : 0,
+  /* an automatic hint due counts as shown for a reload, which opens the
+     card asking again */
+  ss.progress[a.key] = { m: a.misses, h: a.hints + (a.autoDue ? 1 : 0), g: a.triedGameMove ? 1 : 0, f: a.foundGood || null, a: a.attempts, p: a.predraw ? 1 : 0, au: (a.autoH || 0) + (a.autoDue ? 1 : 0), gm: a.game ? 1 : 0,
                          fc: a.fc || '', tr: (a.tries || []).slice(-2).map(function (x) { return [x.d, x.u, x.took, x.mate ? 1 : 0, x.lost ? 1 : 0, x.san]; }), sl: a.slips || 0, ss: a.slipSan || '' };
   saveSession();
 }
@@ -790,9 +795,19 @@ function keepProgress(a) {
 function escalate() {
   var a = ui.session.active, autoAt = a.tier === 1 ? 1 : (a.tier === 2 ? 2 : 0);
   /* the automatic hint is counted apart: at tier 1 it comes with its miss
-     as one help step (F2.1's stars) */
-  if (autoAt && a.misses === autoAt && a.hints < hintMax(a)) { a.hints++; a.hintAt = a.misses; a.autoH = (a.autoH || 0) + 1; }
+     as one help step (F2.1's stars). V2.3: it counts when it shows (Try
+     again), not at the miss, so the bar over the try never reads "No more
+     hints" while it is unseen, and See it leaves "Hint" there */
+  if (autoAt && a.misses === autoAt && a.hints < hintMax(a)) a.autoDue = 1;
   keepProgress(a);
+}
+/* the automatic hint due, now shown: true when one was added */
+function applyAutoHint(a) {
+  if (!a.autoDue) return false;
+  a.autoDue = 0;
+  if (a.hints >= hintMax(a)) return false;
+  a.hints++; a.hintAt = a.misses; a.autoH = (a.autoH || 0) + 1;
+  return true;
 }
 /* a wrong try's check step (F1.2), as its reason found it (why.d: 3 the
    try created the loss, 1 the danger was already there, 2 a harmless try
@@ -825,6 +840,11 @@ function showTry(a, m, kind, reply, why, again) {
   a.tried = { from: m.from, to: m.to, uci: moveUci(m), san: sanOf(a.st, m), kind: kind,
               reply: r ? reply : null, seen: false, threat: (why && why.threat) || null, lost: took ? { sq: r.ep >= 0 ? r.ep : r.to, p: took } : null,
               chip: kind === 'miss' && why && why.chip && a.tier >= 2 ? why.chip : '' };
+  /* V2.2: the line See it steps through, their reply first, to where it
+     settles or to its event (8 plies at most from the try), and the event
+     its still marks point to */
+  if (r && kind === 'miss' && why && why.pv && why.pv.length >= 2 && why.pv[0] === a.tried.uci && why.pv[1] === reply) seeLine(a, a.tried, why);
+  else if (r) { a.tried.line = [reply]; a.tried.step = 0; }
   a.verdict = triedVerdict(a, a.tried, why, again);
   a.reason = 0;
   a.focusRight = true;
@@ -886,8 +906,14 @@ function triedMark(a) {
 function triedFrame(a) {
   var t = a.tried, st = cloneState(a.st), m = uciToMove(st, t.uci), last = [t.from, t.to];
   if (m) applyMove(st, m);
-  var r = t.seen && t.reply ? uciToMove(st, t.reply) : null;
-  if (r) { applyMove(st, r); last = [r.from, r.to]; }
+  /* See it played their reply, and then the line's moves one a tap (V2.2) */
+  var line = t.line || (t.reply ? [t.reply] : []), n = t.seen ? Math.max(1, t.step || 1) : 0;
+  for (var i = 0; i < n && i < line.length; i++) {
+    var r = uciToMove(st, line[i]);
+    if (!r) break;
+    applyMove(st, r);
+    last = [r.from, r.to];
+  }
   return { st: st, last: last };
 }
 /* what a tap on the board does while a try is on it: one of your pieces
@@ -934,6 +960,8 @@ function checkingPick(a, sq) {
    model part runs first for anything pressed while a try is shown */
 function clearTry(a) {
   engineStop('check');
+  /* the automatic hint this miss brought shows now (V2.3) */
+  a.autoAdded = applyAutoHint(a);
   a.phase = 'guess';
   a.tried = null;
   a.ghostMove = null;
@@ -986,17 +1014,52 @@ function tryAgain(sel) {
   var a = ui.session && ui.session.active;
   if (!a || a.phase !== 'tried') return;
   clearTry(a);
+  /* the app added a hint itself: it says so (V2.3) */
+  if (a.autoAdded) { a.autoAdded = false; notice(HINT_ADDED(a.hints), null, 3000); }
   /* a tap on a piece took it back: that piece is picked up */
   if (sel != null && sel >= 0) { a.sel = sel; snd('tap'); }
   /* a fact sheet that landed meanwhile takes the card's place now (V1.1) */
   if (a.keyDue && factsSwap(a)) return;
   renderCard();
 }
-/* See it: their reply to the try, one move, played on the player's tap */
+/* V2.2: the line See it plays, one move a tap: the try's line (why.pv,
+   the try first) to its settle ply, or on to its event where that comes
+   later (the pawn race's promotion), 8 plies at most from the try; the
+   event (why.ev) as See it's first frame draws it still: your take-back,
+   then the event's move. t.line: their reply first; t.step: the plies of it
+   on the board; t.ev: {back, move, say} the still marks' moves (uci) */
+var SEE_PLIES = 8;
+function seeLine(a, t, why) {
+  var pv = why.pv, s = settleLine(a.st, pv), ev = why.ev, end = Math.max(s.k, ev && ev.at != null ? ev.at + 1 : 0);
+  end = Math.max(2, Math.min(end, SEE_PLIES, lineNodes(a.st, pv).length));
+  t.line = pv.slice(1, end);
+  t.step = 0;
+  /* (a loss said as a count, "You'd lose the bishop.", has no one move to
+     draw: no event arrow) */
+  if (ev && ev.n && ev.t !== 'loss' && ev.at != null && ev.at < end) {
+    var say = ev.t === 'fork' || ev.t === 'backFork' ? 'fork' : ev.t === 'promo' ? PIECE_WORD[pType(ev.n.m.promo)] : ev.t === 'mate1' || ev.t === 'backMate' || ev.t === 'forced' ? 'mate' : 'takes';
+    /* a promotion is drawn as the pawn's path, from where it stands once
+       See it has played their reply to where it queens */
+    var from = ev.n.m.from, sqAt = null;
+    if (ev.t === 'promo') {
+      var ps = lineNodes(a.st, pv.slice(0, ev.at));
+      for (var i = ps.length - 1; i >= 2; i--) if (ps[i].m.to === from && pType(ps[i].before.b[ps[i].m.from]) === 'P') from = ps[i].m.from;
+      /* where the pawn stands after each move See it plays */
+      sqAt = { 1: sqName(from) };
+      for (var j = 2, cur = from; j < ps.length; j++) { if (ps[j].m.from === cur) cur = ps[j].m.to; sqAt[j] = sqName(cur); }
+    }
+    t.ev = { at: ev.at, back: ev.back ? moveUci(ev.back.m) : null, backAt: ev.back ? ev.at - 1 : -1, backP: ev.back ? pType(ev.back.before.b[ev.back.m.from]) : '',
+             move: sqName(from) + sqName(ev.n.m.to), sqAt: sqAt, p: pType(ev.n.before.b[ev.n.m.from]), say: ev.t === 'forced' && ev.at === 1 ? '' : say };
+  }
+}
+/* See it: their reply to the try, played on the player's tap; then (V2.2)
+   each further move of the line, one a tap, as See why steps */
 function seeIt() {
   var a = ui.session && ui.session.active, t = a && a.tried;
-  if (!t || a.phase !== 'tried' || !t.reply || t.seen) return;
+  if (!t || a.phase !== 'tried' || !t.reply) return;
+  if (t.seen) { seeStep(a, t); return; }
   t.seen = true;
+  t.step = 1;
   /* the reason's ring and arrow ride the slide only if already drawn */
   t.ringed = a.reason >= 1;
   /* the words about to change (the bar's See it) fade out first (2.2), then
@@ -1009,9 +1072,22 @@ function seeIt() {
      answer) as the reply lands, so the keyboard goes where Enter goes, the
      right-hand Try again (S20); a pointer's click left no focus there */
   var bar = el('cbar'), f = document.activeElement;
-  if (bar && f && bar.contains && bar.contains(f)) a.focusRight = true;
+  if (bar && f && bar.contains && bar.contains(f) && !seeMore(t)) a.focusRight = true;
   renderCard(['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text']);
 }
+/* the next move of the line See it plays (Next move ›, →), as a move the
+   app shows, to the line's last */
+function seeStep(a, t) {
+  if (!t.line || t.step >= t.line.length) return;
+  t.step++;
+  a.animMove = triedFrame(a).last;
+  a.moveCue = true;
+  var bar = el('cbar'), f = document.activeElement;
+  if (bar && f && bar.contains && bar.contains(f) && t.step >= t.line.length) a.focusRight = true;
+  renderCard(['fade', reducedMotion() ? 0 : TEXT_OUT, 'board', 'land', 'text']);
+}
+/* the line See it still has to play */
+function seeMore(t) { return !!t && t.seen && !!t.line && t.step < t.line.length; }
 /* the engine could not answer: the try stays where it is, and is not counted */
 function cannotCheck(a, m) {
   a.checkTok = ++checkSeq;
@@ -1177,8 +1253,10 @@ function applyTry(a2, m, u, inLine, v) {
   }
   /* V1.9: at More help a try that takes the attacked piece to safety,
      loses nothing new on the way and scores 10 points or more above the
-     game move is a good move (it holds: two stars) */
-  var save = a2.tier === 1 && !inLine && !a2.foil ? savingTry(a2, m, u, v) : null;
+     game move is a good move (it holds: two stars); at Normal and Less help
+     it stays a miss whose reason starts "Safe, but" (R5.4, V2.2) */
+  var save = !inLine && !a2.foil && (a2.tier === 1 || v.kind !== 'close') ? savingTry(a2, m, u, v) : null;
+  if (save && a2.tier !== 1) { miss(m, u, { cp: v.myCp, mate: v.myMate, pv: r.pv || [], win: v.wMove, wBest: v.wBest, deep: !!v.deep, save: save }, inLine); return; }
   if (v.kind === 'close' || save) {
     /* a good move that is not the best: not a miss (S5). The first one is
        remembered, so a later solve or the answer counts as help; a second
@@ -1193,7 +1271,7 @@ function applyTry(a2, m, u, inLine, v) {
     showTry(a2, m, 'close', null, save ? { save: save.p } : null, again);
     return;
   }
-  miss(m, u, { cp: v.myCp, mate: v.myMate, pv: r.pv || [], win: v.wMove }, inLine);
+  miss(m, u, { cp: v.myCp, mate: v.myMate, pv: r.pv || [], win: v.wMove, wBest: v.wBest, deep: !!v.deep }, inLine);
 }
 /* V1.9's saving move: the try moves a piece in danger on the card's own
    position (the danger facts' attacked pieces) to where it is not lost (it
@@ -1256,8 +1334,12 @@ function miss(m, u, info, inLine) {
   /* a wrong try is told in words at every level (M3). One that loses
      nothing is a close move outside a forcing line (closeTry), never a
      miss; inside one it is still a miss, and says so honestly */
+  /* the try's line read to its decisive event (V2.2): the key's line for
+     it, the re-check's, else the first search's (deep false: band words
+     then need their margin) */
   var why = missWhy(a, c, info ? info.win : null, r1 ? sanOf(r1.before, r1.move) : null,
-                    !!inLine && !concrete && !!info && info.win >= winPct(it.b.eb) - STRONGER_TOL, r1 ? moveWords(r1.before, r1.move) : null);
+                    !!inLine && !concrete && !!info && info.win >= winPct(it.b.eb) - STRONGER_TOL, r1 ? moveWords(r1.before, r1.move) : null,
+                    { pv: [u].concat(reply), deep: !!(info && info.deep), mate: info ? info.mate : null, wBest: info ? info.wBest : null, save: info ? info.save : null });
   /* the reply that punishes it is marked when it captures or checks and
      the try loses something by it */
   why.threat = concrete ? threatOf(c.gameLine, 1) : null;
@@ -1521,6 +1603,7 @@ function storyGo(a, j, play) {
    first half second of a card are the old card's. After that, each bar
    slot guards itself for half a second once it changes (slotGuarded) */
 function tooSoon(a) { return !!a && Date.now() - (a.shownAt || 0) < 450; }
+var HINT_ADDED = function (n) { return 'Hint ' + n + ' added.'; };
 function giveHint() {
   var a = ui.session && ui.session.active;
   /* no hint left (Hint 3 at More help, F9.2): nothing at all, a try on the
@@ -1530,10 +1613,13 @@ function giveHint() {
      guess bar still offers Hint (before K1): it goes first, the board
      crossfading back, the words after it */
   var cleared = a.phase === 'tried' || (a.phase === 'checking' && !a.checkSaid);
-  if (a.phase === 'tried') clearTry(a);
+  /* pressed over a try whose miss brought an automatic hint: that hint is
+     the one given (V2.3), never one more */
+  var auto = false;
+  if (a.phase === 'tried') { clearTry(a); auto = !!a.autoAdded; a.autoAdded = false; }
   else if (cleared) dropCheck(a);
   if (a.phase !== 'guess') { if (cleared) renderCard(); return; }
-  a.hints = a.hints + 1;
+  if (!auto) a.hints = a.hints + 1;
   a.hintAt = a.misses;
   a.hintAfter = true;
   keepProgress(a);
@@ -1655,6 +1741,19 @@ function dangerHint(a, now) {
       return { kind: 'mate', mate: { from: th.from, to: th.to, san: capSan(nst, uciToMove(nst, th.uci)) },
                rings: skip(th.to, th.to) ? [] : [{ sq: th.to, kind: 'attacked', mate: true }], arrows: skip(th.from, th.to) ? [] : [threat(th, 'danger')] };
     }
+    /* V2.3: their mate, which the game move stopped, beside a capture that
+       already stood (184268949378:16's Qxf2 mate and Bxc3+): both drawn,
+       as See why's danger frame draws them */
+    var tt = th && !th.stands ? twoThreats(a) : null;
+    if (tt && tt.mate) {
+      var rmv = tt.reply.move, csq = rmv.ep >= 0 ? rmv.ep : rmv.to, m2 = uciToMove(tt.nst, moveUci(rmv));
+      var trs = [], tas = [];
+      if (!skip(tt.mate.to, tt.mate.to)) trs.push({ sq: tt.mate.to, kind: 'attacked', mate: true });
+      if (!skip(csq, csq) && csq !== due.from) trs.push({ sq: csq, kind: 'attacked' });
+      if (!skip(tt.mate.from, tt.mate.to)) tas.push(threat(tt.mate, 'danger'));
+      if (!skip(rmv.from, rmv.to) && rmv.to !== due.from) tas.push(threat(rmv, 'danger'));
+      if (m2) return { kind: 'two', mate: { from: tt.mate.from, to: tt.mate.to }, mateSan: capSan(tt.nst, tt.mate), took: tt.reply.captured, san: sanOf(tt.nst, m2), rings: trs, arrows: tas };
+    }
     /* their mate, which the game move stopped: what it allows instead (the
        game line's reply that punishes it, drawn as hintDanger draws it) */
     var hd = th ? hintDanger(a) : null;
@@ -1664,6 +1763,10 @@ function dangerHint(a, now) {
   }
   if (v.step === 2) {
     if (c.mateFor && b.mb === 1) return { kind: 'mine', rings: [], arrows: [] };
+    /* V2.3: a missed win rings the piece the answer's line wins, where it
+       stands now (never on the answer's own squares: words alone then) */
+    var wt = !forcedMate(a) ? winTarget(a) : null;
+    if (wt) return { kind: 'win', p: wt.p, sq: wt.sq, loose: wt, rings: wt.sq === due.to || wt.sq === due.from ? [] : [{ sq: wt.sq, kind: 'target' }], arrows: [] };
     var pz = hintPrize(a);
     return pz && isHangingAt(a.pre.b, pz.sq) && pz.sq !== due.to ? { kind: 'loose', loose: pz, rings: [{ sq: pz.sq, kind: 'target' }], arrows: [] } : null;
   }
@@ -1684,7 +1787,7 @@ function dangerHint(a, now) {
 }
 /* a game-mode card's hint 2 (F8.1): F1.1's danger, only what stands on the
    board while its game move is not shown (dangerHint's now); a foil's own
-   (foilDanger, "No danger here." when none). null: nothing to draw */
+   (foilDanger, "Any good move passes here." when none: V2.6). null: nothing to draw */
 function gameDanger(a) { return a.foil ? foilDanger(a) : dangerHint(a, !ghostOn(a)); }
 /* F1.3: the last two wrong tries of this showing failed the same check
    (their digit) to the same capture (the same reply taking the same piece)
@@ -1730,6 +1833,35 @@ function hintPrize(a) {
     if (n.move.ep >= 0) touched[n.move.ep] = 1;
   }
   return best;
+}
+/* V2.3: the piece the answer's line wins on a missed-win card: the most
+   valuable piece of theirs its settled line takes, net of what it gives
+   back, followed back to the square it stands on now, where the line nets
+   2 or more (a pawn: 1), so a queen won for a rook is said. {sq, p} or null */
+function winTarget(a) {
+  var b = a.it.b, pov = myPov(a.it), line = unpackUci(b.lu);
+  if (!line.length || (a.sol && a.solIdx > 0)) return null;
+  var ns = lineNodes(a.pre, line), s = settleLine(a.pre, line), won = netLostOf(ns, s.k, !pov);
+  if (!won.length) return null;
+  won.sort(function (x, y) { return MOTIF_VAL[y] - MOTIF_VAL[x]; });
+  var X = won[0], net = pov ? s.w - s.b : s.b - s.w;
+  /* a win only where it leaves the player better (60% or more), as V2.4's
+     "wins" reason: the pawn race's Kxf5 and the rook ending's Rxa7 take a
+     pawn to hold a draw, which is no win to hint at */
+  if (b.eb != null && winPct(b.eb) < 60) return null;
+  if (net < needOf(X)) return null;
+  /* (and as far as the score shows it: 0.6 of a pawn a point) */
+  if (b.eb != null && b.mb == null && b.eb < 60 * Math.min(net, MOTIF_VAL[X])) return null;
+  /* each piece of theirs by the square it started on */
+  var orig = {}, sq;
+  for (sq = 0; sq < 64; sq++) if (a.pre.b[sq] && colorW(a.pre.b[sq]) !== pov) orig[sq] = sq;
+  for (var i = 0; i < s.k && i < ns.length; i++) {
+    var n = ns[i], csq = n.m.ep >= 0 ? n.m.ep : n.m.to;
+    if (n.cap && colorW(n.cap) !== pov && pType(n.cap) === X && orig[csq] != null && a.pre.b[orig[csq]] && pType(a.pre.b[orig[csq]]) === X) return { sq: orig[csq], p: X };
+    if (n.cap) delete orig[csq];
+    if (orig[n.m.from] != null) { orig[n.m.to] = orig[n.m.from]; delete orig[n.m.from]; }
+  }
+  return null;
 }
 /* S9, the worked example: a tier-1 player's first card of a pattern family
    (nl:seen:<family> still 0) opens with hint 1's marks drawn, so Hint gives

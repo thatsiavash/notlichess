@@ -709,6 +709,9 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .done-acts .xp-fwd{padding:0 10px}
 /* on the narrowest phones exploring's Continue gives its icon up, so both labels stay whole */
 @media (max-width:374px){.xp-card .done-acts [data-act=next][data-icon]::before{display:none}}
+/* and a switched-off "No more hints" beside "Show the answer" gives its icon
+   up too (360 x 640, at every help level) */
+@media (max-width:374px){#cbar .btn-off[data-icon]::before{display:none}}
 /* the keys that work now, under the bar, on the desktop only (2.0) */
 .keyline{display:none}
 #cbar a{-webkit-tap-highlight-color:transparent}

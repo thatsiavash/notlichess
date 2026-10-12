@@ -16,7 +16,9 @@ const later = (A, ms, rounds) => { A.setNow(A.getNow() + ms); A.flush(rounds || 
 
 let failed = 0, passed = 0;
 const results = [];
+/* ONLY=<words> runs the tests whose names hold them */
 async function test(name, fn) {
+  if (process.env.ONLY && name.indexOf(process.env.ONLY) < 0) return;
   try { await fn(); passed++; } catch (e) { failed++; results.push('FAIL ' + name + ': ' + e.message); }
 }
 function eq(a, b, what) { if (a !== b) throw new Error((what || 'value') + ' expected ' + JSON.stringify(b) + ', got ' + JSON.stringify(a)); }
@@ -1119,8 +1121,12 @@ const BAR = `(function () {
     if (A.ev('!!ui.session.active.tried.reply')) {
       tapBtn('seeIt');
       run(1500);
-      eq(foc(), 'cbar tryAgain@1', 'a clicked See it, whose slot turns into Hint 2: the keyboard on Try again, where Enter goes');
-      eq(keys(), 'Enter: Try again · ? hint', 'the line names Try again');
+      /* V2.2: See it's slot turns into Next move › while their line has more
+         to play: a click leaves the keyboard on the band, Enter is still the
+         honey Try again; at the line's end the slot turns into Hint 2 */
+      const more = A.ev('seeMore(ui.session.active.tried)');
+      eq(foc(), more ? 'cband task-h' : 'cbar tryAgain@1', 'a clicked See it: the keyboard on ' + (more ? 'the band' : 'Try again') + ', Enter goes to Try again');
+      eq(keys(), more ? 'Enter: Try again · → next move · ? hint' : 'Enter: Try again · ? hint', 'the line names Try again');
       A.key('Enter');
       eq(S().phase, 'guess', 'Enter takes the try back');
     }
@@ -1211,7 +1217,8 @@ const BAR = `(function () {
       });
       return JSON.stringify({ out: out, n: n, rows: rows }); })()`));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
-    ok(r.n.cards > 250 && r.n.loss > 60 && r.n.could > 20 && r.n.gain > 30 && r.n.sq > 10 && r.n.safe > 30 && r.n.swapped >= 3, JSON.stringify(r.n));
+    /* (V2.1, V2.4: "wins" only where it leaves the player better and the score shows it, else "was the better move") */
+    ok(r.n.cards > 250 && r.n.loss > 60 && r.n.could > 20 && r.n.gain > 15 && r.n.sq >= 5 && r.n.safe > 30 && r.n.swapped >= 3, JSON.stringify(r.n));
     /* the two cards the fresh eyes read: the claim in full ("for a rook"), and "could" for a blow they missed */
     ok(r.rows['184455333378:68'].indexOf('You lose a queen and a bishop for a rook. / Qe6 was the better move.') > 0, r.rows['184455333378:68']);
     ok(r.rows['184205946040:62'].indexOf('You could lose a queen and a pawn.') > 0, r.rows['184205946040:62']);
@@ -1495,6 +1502,14 @@ const BAR = `(function () {
     hold('Enter', () => inSlot(0), 700);
     s = S();
     eq(s.phase, 'tried', 'a held Enter on See it shows no answer'); eq(s.result, null, 'no result');
+    /* V2.2: while their line has more to play, Next move › holds slot 0, and
+       the held key never stepped it; at the line's end Show the answer */
+    if (A.ev('seeMore(ui.session.active.tried)')) {
+      eq(JSON.stringify(inSlot(0)), JSON.stringify({ act: 'seeIt', slot: 0 }), 'Next move › in slot 0');
+      eq(A.ev('ui.session.active.tried.step'), 1, 'the held Enter played their reply alone');
+      A.ev('(function () { var g = 0; while (seeMore(ui.session.active.tried) && g++ < 12) seeIt(); return 1; })()');
+      A.advance(1000);
+    }
     eq(JSON.stringify(inSlot(0)), JSON.stringify({ act: 'reveal', slot: 0 }), 'Show the answer took slot 0');
     /* a fresh press is a press */
     A.key('Enter', false, inSlot(0));
@@ -1571,8 +1586,24 @@ const BAR = `(function () {
     wait(1000);
     A.click('seeIt', null, 0);
     wait(700);
-    ok(/^Hint \| Try again$/.test(S().bar), 'the bar after their reply: ' + S().bar);
-    eq(A.ev('slotAct.slice(0, 2).join(" ")'), 'hint tryAgain', 'the bar painted after their reply');
+    /* V2.2: Next move › holds the slot while their line has more to play
+       (guarded as any changed slot: a click 80 ms after it is nothing), then
+       the help */
+    if (A.ev('seeMore(ui.session.active.tried)')) {
+      ok(/^Next move › \| Try again$/.test(S().bar), 'the bar after their reply: ' + S().bar);
+      A.click('seeIt', null, 0);
+      eq(A.ev('ui.session.active.tried.step'), 1, 'Next move 80 ms after its slot changed: nothing');
+      /* each press one move (the slot keeps its name, so no guard between) */
+      for (let g = 0; g < 12 && A.ev('seeMore(ui.session.active.tried)'); g++) {
+        const st = A.ev('ui.session.active.tried.step');
+        wait(500);
+        A.click('seeIt', null, 0);
+        eq(A.ev('ui.session.active.tried.step'), st + 1, 'Next move plays one move');
+      }
+      wait(700);
+    }
+    ok(/^Hint \| Try again$/.test(S().bar), 'the bar after their line: ' + S().bar);
+    eq(A.ev('slotAct.slice(0, 2).join(" ")'), 'hint tryAgain', 'the bar painted after their line');
     A.click('hint', null, 0);
     s = S();
     eq(s.phase, 'tried', 'Hint 80 ms after its slot changed'); eq(s.hints, 0, 'no hint');
@@ -1583,6 +1614,8 @@ const BAR = `(function () {
     wait(1000);
     A.click('seeIt', null, 0);
     wait(700);
+    for (let g = 0; g < 12 && A.ev('seeMore(ui.session.active.tried)'); g++) { wait(500); A.click('seeIt', null, 0); }
+    if (A.ev('ui.session.active.tried.step') > 1) wait(700);
     A.click('reveal', null, 0);
     s = S();
     eq(s.misses, 3, 'misses'); eq(s.phase, 'tried', 'miss 3, Show the answer 80 ms after it appeared'); eq(s.result, null, 'no result');
@@ -1721,14 +1754,19 @@ const BAR = `(function () {
           for (var i = 0; i < 3; i++) {
             if (a.phase === 'tried') tryAgain();
             gradeMove(uciToMove(a.st, a.playedUci));
-            seen.push(a.phase === 'tried' && a.misses === i + 1 ? a.hints : 'phase ' + a.phase + ', misses ' + a.misses);
+            /* V2.3: the automatic hint is due at the miss and counts when it
+               shows (Try again): the due one counted here */
+            seen.push(a.phase === 'tried' && a.misses === i + 1 ? a.hints + (a.autoDue ? 1 : 0) : 'phase ' + a.phase + ', misses ' + a.misses);
           }
           return seen.join(',');
         });
+        /* tier 1: shown at Try again, never at the miss */
+        if (tier === 1) { var b = openCard(its[0]); gradeMove(uciToMove(b.st, b.playedUci)); var at = b.hints + ' ' + b.autoDue; tryAgain(); out.shown = at + ' / ' + b.hints + ' ' + b.autoDue; }
       });
       return JSON.stringify(out); })()`));
     const want = { 1: '1,1,1', 2: '0,1,1', 3: '0,0,0' };
     [1, 2, 3].forEach((t) => r[t].forEach((x, i) => eq(x, want[t], 'tier ' + t + ' card ' + i + ', hints after misses 1 to 3')));
+    eq(r.shown, '0 1 / 1 0', 'tier 1: the hint due at the miss counts when Try again shows it (V2.3)');
   });
 
   await test('a try is searched with the check tag; Try again, Show the answer, Next and ending the session stop it', async () => {
@@ -1806,11 +1844,11 @@ const BAR = `(function () {
       /* Keep looking: back to the card, no miss */
       A.ev('(tryAgain(), 1)');
       eq(A.ev('ui.session.active.phase + " " + ui.session.active.misses'), 'guess 0', at + ': Keep looking');
-      /* a second close move says row 1 alone */
+      /* a second close move keeps its row 2 (V2.7) */
       A.ev(`(function (a) { window.readyEngine(); gradeMove(uciToMove(a.st, '${p.m2}')); return 1; })(ui.session.active)`);
       await tick(); await tick();
       r = JSON.parse(A.ev('(function (a) { var d = displayFor(a); return JSON.stringify({ kind: a.tried && a.tried.kind, row1: d.row1, row2: d.row2, misses: a.misses }); })(ui.session.active)'));
-      eq(r.kind, 'close', at + ': a second close move'); eq(r.row1 + '|' + r.row2, 'Good move|', at + ': row 1 alone the second time'); eq(r.misses, 0, at + ': still no miss');
+      eq(r.kind, 'close', at + ': a second close move'); eq(r.row1 + '|' + r.row2, 'Good move|There\'s a stronger one.', at + ': row 2 kept the second time (V2.7)'); eq(r.misses, 0, at + ': still no miss');
       /* then the answer: solved, with help */
       A.ev('(function (a) { window.__nlTest.play(a.bestUci); return 1; })(ui.session.active)');
       eq(A.ev('ui.session.active.result'), 'hint', at + ': a solve after a close move counts as help');
@@ -2221,12 +2259,18 @@ const BAR = `(function () {
           for (var i = 1; i <= 3; i++) {
             gradeMove(uciToMove(a.st, a.playedUci));
             [false, true].forEach(function (seen) {
-              if (seen) seeIt();
+              /* V2.2: See it, then Next move › to the line's end (the slot
+                 says so while their line has more to play) */
+              if (seen) { seeIt(); var g = 0; while (seeMore(a.tried) && g++ < 12) { var bm = bar(a); if (bm[0] !== 'seeIt:Next move ›:btn-line') out.push('tier ' + tier + ' ' + it.key + ': mid-line left slot ' + bm[0]); seeIt(); } }
               var b = bar(a), at = 'tier ' + tier + ' ' + it.key + ' miss ' + i + (seen ? ', See it' : '');
               n++;
               if (b[1] !== 'tryAgain:Try again:btn-big') out.push(at + ': right slot ' + b[1]);
+              /* V2.3: the hint a miss brings counts when it shows, so the
+                 button names the next hint while it is due, never "No more
+                 hints" */
+              var hs = a.hints;
               var left = !seen ? 'seeIt:See it:btn-line' : i >= 3 ? 'reveal:Show the answer:btn-line'
-                : a.hints >= 2 ? 'hint:No more hints:btn-line:off' : a.hints ? 'hint:Hint 2:btn-line' : 'hint:Hint:btn-line';
+                : hs >= hintMax(a) ? 'hint:No more hints:btn-line:off' : hs ? 'hint:Hint ' + (hs + 1) + ':btn-line' : 'hint:Hint:btn-line';
               if (b[0] !== left) out.push(at + ': left slot ' + b[0] + ', not ' + left);
             });
             tryAgain();
@@ -2293,7 +2337,7 @@ const BAR = `(function () {
     });
   }`;
 
-  await test('See it adds exactly one opponent ply', () => {
+  await test('See it adds exactly one opponent ply, and each Next move › one more ply of their line, to its end (V2.2: 8 plies at most from the try)', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${MISSES}
       var out = [], n = 0;
@@ -2311,8 +2355,20 @@ const BAR = `(function () {
         if (plies.length !== 1 || moveUci(plies[0]) !== t.reply) out.push(what + ': ' + plies.length + ' plies between the frames');
         if (stateFen(a.st) !== st0) out.push(what + ': the card position moved');
         if (!sameMove(boardOptsFor(a).last, [plies[0] ? plies[0].from : -1, plies[0] ? plies[0].to : -1])) out.push(what + ': their reply is not the last move drawn');
+        /* V2.2: each Next move plays one more ply of the line, to its end,
+           then the button goes */
+        var g = 0, prev = after;
+        while (seeMore(a.tried) && g++ < 12) {
+          if (!barSlots(a, ui.session).some(function (s) { return s.act === 'seeIt' && s.label === 'Next move ›'; })) out.push(what + ': Next move not offered mid-line');
+          seeIt();
+          var nx = triedFrame(a).st, one = legalMoves(prev).filter(function (m) { var x = cloneState(prev); applyMove(x, m); return stateFen(x) === stateFen(nx); });
+          if (one.length !== 1) out.push(what + ': a Next move played ' + one.length + ' plies');
+          prev = nx;
+        }
+        if (t.line.length + 1 > 8) out.push(what + ': the line runs past 8 plies');
+        if (stateFen(a.st) !== st0) out.push(what + ': the card position moved');
         seeIt();
-        if (stateFen(triedFrame(a).st) !== stateFen(after)) out.push(what + ': a second See it played more');
+        if (stateFen(triedFrame(a).st) !== stateFen(prev)) out.push(what + ': a press at the end of the line played more');
         if (barSlots(a, ui.session).some(function (s) { return s.act === 'seeIt'; })) out.push(what + ': See it still offered');
       });
       return JSON.stringify({ out: out, n: n }); })()`));
@@ -2351,7 +2407,9 @@ const BAR = `(function () {
         if (t.reply) {
           var drawn = sqs(boardOptsFor(a).opts, 'threat').length > 0;
           seeIt();
-          var f = boardOptsFor(a), held = !!(t.lost && t.lost.sq !== due.to) || drawn;
+          /* (V2.2: a piece you take back wears no token; the line's still
+             marks land with the piece too) */
+          var f = boardOptsFor(a), held = !!(t.lost && t.lost.sq !== due.to && !takenBack(a, t)) || drawn || seeMarks(a).length > 0;
           if ((f.opts.tokens || []).length) out.push(what + ': a token drawn during the slide');
           if ((sqs(f.opts, 'threat').length > 0) !== drawn) out.push(what + ': the reason marks changed as the slide started');
           if (f.land !== held) out.push(what + ': ' + (held ? 'nothing lands with the piece' : 'a landing with nothing to land'));
@@ -2362,8 +2420,8 @@ const BAR = `(function () {
           var tk = o.tokens || [];
           if (sqs(o, 'threat').length) out.push(what + ': S4 marks after See it');
           if (tk.some(function (m) { return m.sq === due.to; })) out.push(what + ': a token on the answer square');
-          if (t.lost && t.lost.sq !== due.to) { if (tk.length !== 1 || tk[0].sq !== t.lost.sq || tk[0].p !== t.lost.p || tk[0].kind !== 'lost') out.push(what + ': the token missing'); else seen.token++; }
-          else if (tk.length) out.push(what + ': a token with nothing taken');
+          if (t.lost && t.lost.sq !== due.to && !takenBack(a, t)) { if (tk.length !== 1 || tk[0].sq !== t.lost.sq || tk[0].p !== t.lost.p || tk[0].kind !== 'lost') out.push(what + ': the token missing'); else seen.token++; }
+          else if (tk.length) out.push(what + ': a token with nothing taken, or taken back');
         }
         /* Try again: the move tried, faint, once the crossfade is over; never a cross on the answer square */
         var uci = t.uci, wrong = t.uci !== a.playedUci;
@@ -2535,7 +2593,9 @@ const BAR = `(function () {
         var a = openCard(it); if (!a || a.sol || !unpackUci(it.b.ru).length) return false;
         gradeMove(uciToMove(a.st, a.playedUci));
         var t = a.tried, due = dueMove(a);
-        return t.threat && t.threat.from !== due.to && t.threat.to !== due.to && t.lost && t.lost.sq !== due.to;
+        /* (V2.2: a capture you take back wears no token: not these cards) */
+        t.seen = true; t.step = 1; var tb = !!t.lost && takenBack(a, t); t.seen = false; t.step = 0;
+        return t.threat && t.threat.from !== due.to && t.threat.to !== due.to && t.lost && t.lost.sq !== due.to && !tb;
       }).slice(0, 4).map(function (it) { return it.key; })); })()`));
     ok(keys.length === 4, 'cards ' + keys.length);
     /* the marks on screen: those of the latest board or marks write */
@@ -2574,7 +2634,9 @@ const BAR = `(function () {
           run(200);
         }
         s = S();
-        ok(/^hint tryAgain$/.test(s.acts) && !s.s0 && !s.s1 && !s.band, at + ': the new bar, nothing faded: ' + JSON.stringify(s));
+        /* (V2.2: Next move › while their line has more to play) */
+        const acts = A.ev('seeMore(ui.session.active.tried)') ? 'seeIt tryAgain' : 'hint tryAgain';
+        ok(s.acts === acts && !s.s0 && !s.s1 && !s.band, at + ': the new bar, nothing faded: ' + JSON.stringify(s));
         /* See it pressed before the reason is drawn (after the slot's 450 ms,
            before V + 600, so the reason's beat comes during the fade or the
            slide): the ring and arrow never first appear on the slide, nor
@@ -2705,7 +2767,8 @@ const BAR = `(function () {
         await tick(); await tick();
         run(1500);
         if (A.ev('ui.session.active.phase') !== 'tried' || A.ev('ui.session.active.tried.kind') !== 'miss') continue;
-        eq(A.ev('ui.session.active.hints'), how === 'pressed' ? 0 : 1, at + ': hints before Try again');
+        /* V2.3: the miss's hint is due, and counts when Try again shows it */
+        eq(A.ev('ui.session.active.hints + "+" + (ui.session.active.autoDue || 0)'), how === 'pressed' ? '0+0' : '0+1', at + ': hints before Try again (shown + due)');
         ok(!at0(0).slice(-6).some((w) => /^(board|marks)/.test(w) && / (target|hint)/.test(w)), at + ': no hint mark over the try');
         n++;
         const t0 = A.getNow();
@@ -3146,7 +3209,9 @@ const BAR = `(function () {
       ok(snd.length === 1 && snd[0].n === 'move' && snd[0].t === t0 + lead, at + ': its sound as it starts, ' + JSON.stringify(snd));
       ok(info && info.dt === lead + 370, at + ': the grey i lands with it, ' + JSON.stringify(info));
       const r4 = ws.filter((w) => w.id === 'cband' && w.r2 && w.r2 !== 'Play the green arrow.')[0];
-      ok(!ws.some((w) => w.id === 'cband' && w.dt < (r4 ? r4.dt : 1e9)), at + ': the band stays until R4, ' + JSON.stringify(ws.filter((w) => w.id === 'cband')));
+      /* V2.7: "Play the green arrow." leaves with the arrow (once played,
+         row 2 is empty until R4); nothing else changes before R4 */
+      ok(!ws.some((w) => w.id === 'cband' && w.dt < (r4 ? r4.dt : 1e9) && !(w.r2 === '' && /^The answer: /.test(w.r1))), at + ': the band stays until R4, ' + JSON.stringify(ws.filter((w) => w.id === 'cband')));
       const bars = ws.filter((w) => w.id === 'cbar'), gh = ws.filter((w) => w.id === 'bwrap' && /ghost/.test(w.v))[0];
       ok(bars[0] && /^(Continue|Finish) \| Play it$/.test(bars[0].bar) && bars[0].dt === lead + 520, at + ': the bar repainted once played, ' + JSON.stringify(bars));
       ok(gh && gh.dt === lead + 520 + 700 && /info/.test(gh.v), at + ': S0\'s marks 700 ms after, ' + JSON.stringify(gh));
@@ -3212,9 +3277,13 @@ const BAR = `(function () {
         const green = ws.filter((w) => w.id === 'bwrap' && /green/.test(w.v))[0];
         /* landed, the reply's own arrow and token give way to the green arrow (never a token under it) */
         ok(green && green.dt === 1900 && !/rsolid|rring|rdash|token/.test(green.v), at + ': the next arrow lands with it at 1900, alone, ' + JSON.stringify(green));
-        /* the words at 2050: Play it back on, and the next answer named (no write when its name is the same) */
-        const named = ws.filter((w) => w.id === 'cband' && w.dt > 0)[0], back = ws.filter((w) => w.id === 'cbar' && w.dt > 200)[0];
-        ok(back && back.dt === 2050 && /Play it/.test(back.bar) && (!named || named.dt === 2050), at + ': the words at 2050, ' + JSON.stringify([named, back]));
+        /* V2.7: "Play the green arrow." leaves with the arrow played (row 2
+           empty before the telegraph), and the words at 2050: Play it back
+           on, and the next answer named with its arrow's words */
+        const gone = ws.filter((w) => w.id === 'cband' && w.dt > 0 && w.r2 === '');
+        ok(gone.every((w) => w.dt < 600 && /^The answer: /.test(w.r1)), at + ': the arrow\'s words leave with it, ' + JSON.stringify(gone));
+        const named = ws.filter((w) => w.id === 'cband' && w.dt > 0 && w.r2 !== '')[0], back = ws.filter((w) => w.id === 'cbar' && w.dt > 200)[0];
+        ok(back && back.dt === 2050 && /Play it/.test(back.bar) && named && named.dt === 2050 && named.r2 === 'Play the green arrow.', at + ': the words at 2050, ' + JSON.stringify([named, back]));
         eq(A.ev('ui.session.active.solIdx'), idx + 2, at + ': their reply played');
         eq(A.ev('displayFor(ui.session.active).row1'), A.ev('"The answer: " + sanOf(ui.session.active.st, uciToMove(ui.session.active.st, ui.session.active.sol[ui.session.active.solIdx]))'), at + ': the next answer named');
         steps++;
@@ -4166,14 +4235,28 @@ const BAR = `(function () {
      moves to where that loss stands (no later than the refutation's end);
      else the last move really played, or (their first reply missing a blow)
      one step more, the move they could have played */
+  /* V2.2: with no mate, the game's line runs on to where it settles (the
+     settle rule, 8 plies at most) when that is past the loss */
+  function gameLoss(a) {
+    var c = a.cls;
+    if (c.mateAgainst) return c.lossAt;
+    var s = settleLine(a.pre, [a.playedUci].concat(unpackUci(a.it.b.ru)));
+    return Math.max(c.lossAt || 0, Math.min(s.k, 8) - 1);
+  }
+  /* V2.1: their reply missed a blow only where the game's series after it
+     is 8 points or more above the score after the game move */
+  function missedBlow(a) {
+    var w = wpAt(a.it.g, a.it.b.p + 1);
+    return w != null && a.it.b.wa != null && w >= a.it.b.wa + 8;
+  }
   function gameEnd(a) {
-    var c = a.cls, mi = c.mateAgainst ? mateIdx(a) : null, end = mi && isMate(mi.line.nodes[mi.k].after) ? mi : { line: c.gameLine, k: c.lossAt };
+    var c = a.cls, mi = c.mateAgainst ? mateIdx(a) : null, end = mi && isMate(mi.line.nodes[mi.k].after) ? mi : { line: c.gameLine, k: gameLoss(a) };
     var k0 = Math.min(end.k, end.line.nodes.length - 1), toks = a.it.g.mv.split(' '), st = cloneState(a.pre), real = [];
     for (var i = a.it.b.p; i < toks.length && real.length <= k0 + 2; i++) { var m = sanToMove(st, toks[i]); if (!m) break; real.push(moveUci(m)); applyMove(st, m); }
     for (var k = 1; k <= k0; k++) if (real[k] !== moveUci(end.line.nodes[k].move)) {
       var rl = k % 2 ? buildLine(a.pre, a.playedUci, real.slice(1), !myPov(a.it)) : null, rk = rl ? realLossIdx(a, rl, toks) : -1;
       if (rk >= 1 && rk <= k0) return { line: rl, k: rk, could: false, cut: true, real: real, realSeg: true };
-      var could = k === 1 && real.length > 1 && (!!c.mateAgainst || c.lossG >= 1);
+      var could = k === 1 && real.length > 1 && (!!c.mateAgainst || c.lossG >= 1) && missedBlow(a);
       return { line: end.line, k: could ? 1 : k - 1, could: could, cut: true, real: real };
     }
     return { line: end.line, k: k0, could: false, cut: false, real: real };
@@ -4264,7 +4347,7 @@ const BAR = `(function () {
             }
             var last = S.steps[S.g - 1], ln = last.line.nodes[last.k];
             if (c.mateAgainst && !e.cut && !isMate(ln.after)) out.push(at + ': the mate segment does not end in mate');
-            if (!c.mateAgainst && !e.cut && last.k !== c.lossAt) out.push(at + ': the game segment ends at ' + last.k + ', not lossAt ' + c.lossAt);
+            if (!c.mateAgainst && !e.cut && last.k !== Math.min(gameLoss(a), c.gameLine.nodes.length - 1)) out.push(at + ': the game segment ends at ' + last.k + ', not ' + gameLoss(a) + ' (lossAt ' + c.lossAt + ', or where the line settles)');
             if (G[0].line.nodes[0].move.from !== a.played.from || G[0].line.nodes[0].move.to !== a.played.to) out.push(at + ': G1 is not the game move');
             /* the move they could have played says so, and nothing comes after it */
             if (e.could && !/could take|could give|could play|would be checkmate/.test(G[1].cap)) out.push(at + ': the step they could have played reads ' + G[1].cap);
@@ -4319,7 +4402,7 @@ const BAR = `(function () {
           answered(a, 'solved');
           var S = buildStory(a);
           n.doctored = (n.doctored || 0) + 1;
-          if (S.could || S.g - (S.danger ? 1 : 0) !== Math.min(a.cls.lossAt, sans.length) + 1) out.push('doctored ' + it.key + ': ' + S.g + ' game steps with the game as the refutation, lossAt ' + a.cls.lossAt);
+          if (S.could || S.g - (S.danger ? 1 : 0) !== Math.min(gameLoss(a), a.cls.gameLine.nodes.length - 1, sans.length) + 1) out.push('doctored ' + it.key + ': ' + S.g + ' game steps with the game as the refutation, lossAt ' + a.cls.lossAt);
         } finally { it.g.mv = keep; }
       });
       return JSON.stringify({ out: out, n: n }); })()`));
@@ -4863,9 +4946,10 @@ const BAR = `(function () {
           if (fam !== 'chances') {
             var w2 = gameMoveWhy(a), k2 = c.lossG >= 1 && !c.mateAgainst ? claimAt(a, c.gameLine, c.lossAt, cpGame(it.b), 0) : -1;
             n.m2++;
+            /* (V2.2: or as its first decisive event, "Their knight takes your queen.") */
             var said2 = w2.cands.concat([w2.fall]).some(lose);
-            if (said2) n.m2Claim++;
-            if (said2 !== (k2 >= 0)) out.push(at + ' M2: ' + (said2 ? 'claims ' : 'drops a claim that holds: ') + w2.cands.join(' | '));
+            if (said2 || /takes your|forks/.test(w2.cands[0] || '')) n.m2Claim++;
+            if (said2 && k2 < 0) out.push(at + ' M2: claims ' + w2.cands.join(' | '));
           }
           a = answered(a, 'solved');
           a.view = { mode: 's0' }; a.settle = 2;
@@ -4897,9 +4981,13 @@ const BAR = `(function () {
         var ru = unpackUci(b.ru), reply = ru.length && playUci(after, ru).uci.length === ru.length ? ru : legalMoves(after).slice(0, 1).map(moveUci);
         var c = classifyMistake(a.st, t.uci, { pv: [] }, { pv: reply, mate: reply === ru ? b.ma : null }, winPct(b.eb), b.wa, b.p);
         var k = c.lossG >= 1 && !c.mateAgainst ? claimAt(a, c.gameLine, c.lossAt, cpFromWin(b.wa), a.sol && a.solIdx > 0 ? a.solIdx : 0) : -1;
-        var said = a.verdict.cands.concat([a.verdict.fall]).some(lose);
-        if (said) n.tryClaim++;
-        if (said !== (k >= 0)) out.push(what + ' M3: ' + (said ? 'claims ' : 'drops a claim that holds: ') + a.verdict.cands.join(' | '));
+        /* V2.2: the loss is said as its first decisive event where one comes
+           ("Their knight takes your queen.", "Then Rxf5 takes your queen.");
+           "You'd lose" only where the count stands, and an event only on a
+           line whose count stands or that mates or promotes */
+        var said = a.verdict.cands.concat([a.verdict.fall]).some(lose), evClaim = /takes your|forks/.test(a.verdict.cands[0] || '');
+        if (said || evClaim) n.tryClaim++;
+        if (said && k < 0) out.push(what + ' M3: claims ' + a.verdict.cands.join(' | '));
       });
       /* the settle rule's own steps: a capture two plies on, a capture or check left unanswered at the end */
       var sl = buildLine(stateFromFen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'), 'e2e4', ['d7d5', 'g1f3', 'd5e4'], false);
@@ -4931,14 +5019,27 @@ const BAR = `(function () {
            not won back at once: 3 or more net of what the try took and what your next move takes */
         var v = function (x) { return x && x.move && x.captured ? MOTIF_VAL[pType(x.captured)] : 0; }, g = c.gameLine.nodes;
         var kept = !!r1 && !!r1.captured && MOTIF_VAL[pType(r1.captured)] >= 3 && v(r1) - v(g[0]) - v(g[2]) >= 3;
+        /* V2.2: or (any piece) where that loss stands where the line settles */
+        var gl = c.gameLine, ks = -1, pov = myPov(a.it);
+        for (var q = 1; q < gl.nodes.length && ks < 0; q++) if (settledAt(gl, q)) ks = q;
+        var stood = !!r1 && !!r1.captured && ks >= 1 && matDiff(gl.nodes[0].before.b, pov) - matDiff(gl.nodes[ks].after.b, pov) >= MOTIF_VAL[pType(r1.captured)];
         if (/^You'd lose /.test(first) || cap) {
           n.plain++;
           if (cap && kept && c.lossAt !== 1) n.kept++;
-          if (!r1 || !r1.captured || (c.lossAt !== 1 && !(cap && kept))) out.push(what + ': "' + first + '" where their one reply does not take it');
+          if (cap && stood && !kept && c.lossAt !== 1) n.stood = (n.stood || 0) + 1;
+          if (!r1 || !r1.captured || (c.lossAt !== 1 && !(cap && (kept || stood)))) out.push(what + ': "' + first + '" where their one reply does not take it');
           else if (cap && (PIECE_WORD[pType(r1.captured)] !== cap[3] || (cap[1] ? PIECE_WORD[r1.piece] !== cap[1] : cap[2] !== capSan(r1.before, r1.move)))) out.push(what + ': "' + first + '" is not their reply ' + sanOf(r1.before, r1.move));
         } else if (/^After \\S+, you'd lose /.test(first)) {
           n.after++;
           if (first.indexOf('After ' + sanOf(after, uciToMove(after, t.reply)) + ',') !== 0) out.push(what + ': "' + first + '" names another reply than ' + t.reply);
+        }
+        /* V2.2: a later capture is named as See it plays it: on the line its
+           Next move steps through */
+        var lt = /^Then (?:their (\\w+)|(\\S+)) takes your (\\w+)\\.$/.exec(first);
+        if (lt) {
+          n.later = (n.later || 0) + 1;
+          var sans = playUci(after, t.line || []).san.map(function (x) { return x.replace(/[+#]$/, ''); });
+          if (lt[2] && sans.indexOf(lt[2].replace(/[+#]$/, '')) < 0) out.push(what + ': "' + first + '" is not on the line See it plays: ' + sans.join(' '));
         }
         if (!t.reply) return;
         a.reason = 2; seeIt(); a.animMove = null;
@@ -4952,7 +5053,7 @@ const BAR = `(function () {
         if (lb.length && !tk.length) out.push(what + ': "lost" with no token');
       });
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.plain >= 10 && r.n.kept >= 3 && r.n.after > 10 && r.n.seen > 150 && r.n.token > 50, JSON.stringify(r.n));
+    ok(r.n.plain >= 10 && r.n.kept >= 3 && r.n.after + r.n.later > 10 && r.n.seen > 150 && r.n.token > 50, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 4).join(' | '));
   });
 
@@ -5474,9 +5575,19 @@ const BAR = `(function () {
       A.key('ArrowRight');
       eq(A.ev('ui.session.active.tried.seen'), true, key + ': → played See it');
       run(1500);
-      ok(!/→/.test(A.ev('displayFor(ui.session.active).keys')), key + ': and no longer lists it');
+      ok(!/→ see it/.test(A.ev('displayFor(ui.session.active).keys')), key + ': and no longer lists it');
+      /* V2.2: while the line goes on, → is "Next move ›", one move a press,
+         listed only while the button is there */
+      for (let g = 0; g < 10 && /→ next move/.test(A.ev('displayFor(ui.session.active).keys')); g++) {
+        const st = A.ev('ui.session.active.tried.step');
+        A.key('ArrowRight');
+        eq(A.ev('ui.session.active.tried.step'), st + 1, key + ': → played the next move');
+        run(1500);
+      }
+      ok(!/→/.test(A.ev('displayFor(ui.session.active).keys')), key + ': at the line\'s end no → listed');
+      const st = A.ev('ui.session.active.tried.step');
       A.key('ArrowRight');
-      eq(A.ev('ui.session.active.phase'), 'tried', key + ': a second → does nothing');
+      eq(A.ev('ui.session.active.phase') + ' ' + A.ev('ui.session.active.tried.step'), 'tried ' + st, key + ': a last → does nothing');
     }
     /* the menu: ↑ ↓ move the keyboard through its items, round from either end */
     A.ev(`(function () {
@@ -6006,7 +6117,7 @@ const BAR = `(function () {
   });
 
   /* ── the review of slice 1: four hints that taught the wrong danger (the coach), and the words ── */
-  await test('review of slice 1, the danger: a piece its king guards against a lone queen is not in danger; card 7 (Bf3) is a safety check whose hint and frame say the mate it allows, never the pawn their queen eyes; card 3 (O-O) stops their mate and allows Bxc3, said so, with both threats on frame 0 and what Qf3 guards; card 12 (Rxf3) names the bishop it loses, never the plan line; card 5, in check, says the check', async () => {
+  await test('review of slice 1, the danger: a piece its king guards against a lone queen is not in danger; card 7 (Bf3) is a safety check whose hint and frame say the mate it allows, never the pawn their queen eyes; card 3 (O-O) stops their mate and allows Bxc3, its hint the two threats (V2.3), with both threats on frame 0 and what Qf3 guards; card 12 (Rxf3) names the bishop it loses, never the plan line; card 5, in check, says the check', async () => {
     const A = boot();
     /* the static exchange: g7 guarded by its king against a lone queen, then attacked twice */
     const see = JSON.parse(A.ev(`JSON.stringify([dangerAttacked(stateFromFen('6k1/6p1/8/8/8/8/1Q6/6K1 b - - 0 1'), false), dangerAttacked(stateFromFen('6k1/6p1/7B/8/8/8/1Q6/6K1 b - - 0 1'), false)])`));
@@ -6041,11 +6152,14 @@ const BAR = `(function () {
     ok(r.c7.every((x) => !x.faults.length), 'card 7: spoiler clean');
     eq(JSON.stringify(r.s7.map((x) => [x.frame, x.rings])), JSON.stringify([['Your bishop on g4 blocks their mate.', ['g4 block']], ['Your bishop on g4 blocks their mate.', ['g4 block']]]), 'card 7: See why opens on what the bishop blocked');
     /* card 3 */
-    eq(JSON.stringify(r.c3.map((x) => [x.step, x.kind, x.row2])), JSON.stringify([[1, 'parried', 'Castling stops mate. Watch your knight.'], [1, 'parried', 'O-O stops mate, allows Bxc3.']]), 'card 3: the mate O-O stopped and what it allows');
-    eq(JSON.stringify([r.c3[1].rings, r.c3[1].arrows]), JSON.stringify([['d4 threat'], ['d4c3 hint']]), 'card 3: the bishop that punishes it, drawn');
+    /* V2.3: two threats, never praise for the game move ("Castling stops
+       mate." is gone); the hint frame leaves row 2 six words, so the spec's
+       seven-word forms give way to their six-word rungs */
+    eq(JSON.stringify(r.c3.map((x) => [x.step, x.kind, x.row2])), JSON.stringify([[1, 'two', 'Stop the mate, guard your knight.'], [1, 'two', 'Two threats: Qxf2 mate and Bxc3+.']]), 'card 3: the two threats');
+    eq(JSON.stringify([r.c3[1].rings, r.c3[1].arrows]), JSON.stringify([['f2 attacked mate', 'c3 attacked'], ['f6f2 danger', 'd4c3 danger']]), 'card 3: both threats drawn');
     eq(JSON.stringify(r.s3.map((x) => [x.frame, x.row2])), JSON.stringify([['Two threats: mate on f2 and your knight.', 'Queen to f3 guards f2 and your knight.'], ['Two threats: Qxf2 mate and Bxc3+.', 'Qf3 guards f2 and your knight.'], ['Two threats: Qxf2 mate and Bxc3+.', 'Qf3 guards f2 and your knight.']]), 'card 3: frame 0 and the settled line');
     eq(JSON.stringify([r.s3[1].rings, r.s3[1].arrows]), JSON.stringify([['f2 attacked', 'c3 attacked'], ['f6f2', 'd4c3']]), 'card 3: both threats drawn on frame 0');
-    eq(JSON.stringify([r.s3[1].check, r.s3[2].check]), JSON.stringify(['Their move: what does it attack?', 'Their threat: Bxc3 takes your knight.']), 'card 3: its check line, tier 3\'s the threat that stood');
+    eq(JSON.stringify([r.s3[1].check, r.s3[2].check]), JSON.stringify(['Their move: what does it attack?', 'Their threat: Bxc3+ takes your knight.']), 'card 3: its check line, tier 3\'s the threat that stood (V2.5: with its sign)');
     /* card 12 */
     eq(JSON.stringify(r.c12.map((x) => [x.step, x.kind, x.row2, x.rings.length + x.arrows.length])), JSON.stringify([[3, 'lost', 'That lets them win your bishop.', 0], [3, 'lost', 'Rxf3 lets them win your bishop.', 0]]), 'card 12: the bishop it loses, in words');
     eq(r.s12.check, 'Before you move: their checks, captures, threats?', 'card 12: a safety check, never the plan line');
@@ -6053,7 +6167,7 @@ const BAR = `(function () {
     eq(JSON.stringify(r.c5.map((x) => [x.kind, x.row2, x.rings.length + x.arrows.length])), JSON.stringify([['check', 'In check: move, block or take?', 0], ['check', 'In check: move, block or take?', 0], ['check', 'In check: move, block or take?', 0]]), 'card 5: in check, the check, nothing drawn');
   });
 
-  await test('review of slice 1, the words: a try that leaves the queen attacked says so (step 1); the answer guard compares whole moves (Qxc5 is not c5); "on top" is gone; "keeps" for a piece the game move put in danger; "Find a safe square." after a ring on the piece; "Both tries gave away your queen."; where your game left it ("In your game, Nc5 left White better."); a move that works too names the main move (V1.2)', async () => {
+  await test('review of slice 1, the words: a try that leaves the queen attacked says so (step 1); the answer guard compares whole moves (Qxc5 is not c5); "on top" is gone; "keeps" for a piece the game move put in danger; "Move the circled piece." after a ring on the piece where the safe squares are not all good (V2.3); "Both tries gave away your queen."; where your game left it ("In your game, Nc5 left White better."); a move that works too names the main move (V1.2)', async () => {
     const A = boot();
     const tries = [];
     for (const [key, tier, u, pv, cp] of [['184455333378:68', 1, 'd3c4', ['b4c4'], -150], ['184455333378:68', 2, 'd3c4', ['b4c4'], -150], ['184234373418:63', 2, 'd5c5', ['b4c5', 'd7d8'], -900], ['184234373418:63', 3, 'd5c5', ['b4c5', 'd7d8'], -900], ['184380745302:11', 2, 'd8g5', ['f3g5', 'e4g5', 'c1g5', 'd7d5', 'e5d6', 'c8e6', 'c3d4', 'f8d6'], -250]]) {
@@ -6064,7 +6178,7 @@ const BAR = `(function () {
     eq(JSON.stringify(tries[0]), JSON.stringify(['Your queen is still attacked.', '1', '']), 'card 1, tier 1: Bxc4 Qxc4 leaves the queen attacked, their move (1)');
     eq(JSON.stringify(tries[1]), JSON.stringify(['Qxc4, and your queen is still attacked.', '1', 'Their move']), 'card 1, tier 2: the reply named, the step its chip (the frame drops it where it has no room)');
     eq(tries[2][0], 'Their queen takes your queen.', 'card 5, tier 2');
-    eq(tries[3][0], 'Qxc5 takes your queen.', 'card 5, tier 3: Qxc5 is not the answer c5');
+    eq(tries[3][0], 'Qxc5+ takes your queen.', 'card 5, tier 3: Qxc5 is not the answer c5 (V2.5: with its check sign)');
     eq(tries[4][0], 'After Nxg5, White is better.', 'card 2: "better", never "on top"');
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY}
       var out = {}, settle = function (k, tier) { var a = openAt(k, tier); solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.animMove = null; a.settle = 2; var S = buildStory(a); return [displayFor(a).row2, S.steps[S.steps.length - 1].cap]; };
@@ -6081,7 +6195,10 @@ const BAR = `(function () {
     eq(JSON.stringify(r.keep), JSON.stringify([['Pawn to f4 keeps your queen.', 'Better: pawn to f4. Your queen is safe.'], ['f4 keeps your queen.', 'Better: f4 keeps your queen.']]), 'card 8: the queen was safe until Qf3, so f4 keeps it');
     eq(JSON.stringify(r.left.map((x) => x[0])), JSON.stringify(['Knight to c5 left White better.', 'In your game, Nc5 left White better.']), 'card 2: said of your game');
     eq(r.step2, 1, 'card 2: the knight their queen attacked, which d5 guards: their move (the coach\'s note for slice 2)');
-    eq(r.safe + ' / ' + r.safe4, 'Find a safe square. / Find a safe square.', 'hint 2 on a piece hint 1 rang (cards 1 and 4)');
+    /* V2.3: "Find a safe square." only where every safe square of the piece
+       holds; with no fact sheet (no checked moves of it) that is known only
+       for a piece with one safe square, so these say "Move the circled piece." */
+    eq(r.safe + ' / ' + r.safe4, 'Move the circled piece. / Move the circled piece.', 'hint 2 on a piece hint 1 rang (cards 1 and 4)');
     eq(JSON.stringify(r.both), JSON.stringify(['Both tries let them take your queen.', 'Both tries gave away your queen.']), 'both tries\' short form says what');
     eq(JSON.stringify(r.alt), JSON.stringify(['That works too / The main move was bishop to c3.', 'That works too / The main move was Bc3.']), 'card 12, a move that works too: the main move, never "you were better"');
   });
@@ -6179,7 +6296,8 @@ const BAR = `(function () {
     eq(JSON.stringify(r[2]), JSON.stringify(['Their threat: Rxf5 takes your queen.', 'Rg1 took 20 s, with 20:15 left.', 'Their move: what does it attack?']), 'tier 2');
     /* tier 3: the check line is their threat, one that Rg1 left standing (it pins the g-pawn), said once */
     eq(JSON.stringify(r[3]), JSON.stringify(['Rg1 took 20 s, with 20:15 left. Your pace: 17 s a move.', 'Their threat: Rxf5 takes your queen.']), 'tier 3');
-    eq(JSON.stringify(r.oo), JSON.stringify(['Their threat: their bishop takes your knight.', 'Their threat: Bxc3 takes your knight.', 1]), 'the O-O card: the search kept their mate, O-O stopped it, so Bxc3');
+    /* (V2.5: SAN keeps its check sign) */
+    eq(JSON.stringify(r.oo), JSON.stringify(['Their threat: their bishop takes your knight.', 'Their threat: Bxc3+ takes your knight.', 1]), 'the O-O card: the search kept their mate, O-O stopped it, so Bxc3');
     eq(JSON.stringify(r.c7), '[]', 'card 7: no other threat beside the mate Bf3 allows');
     eq(r.none, '', 'no clock, no line');
   });
@@ -6556,7 +6674,7 @@ const BAR = `(function () {
     eq(JSON.stringify(r.carry), '[0,0.75,1,0.5]', 'the share carries');
   });
 
-  await test('F8.2: a foil opens after its look (one search; a second scores the game move beside the best when the first missed it) as any game-mode review; its game move passes "Good, nothing to fix" / "You played Rxg6+ in your game too."; a try 8 points down "Playable" / "Rxg6+ in your game kept more."; one at the threshold "Not this one" with its reason, and when the card ends "Your game move Rxg6+ was fine here."; the answer shown says the same; hint 2 on a board with nothing in danger "No danger here."; never scheduled, never one more try, logged as a foil; a look that finds the game move lost 3 points or more sets it aside for good', async () => {
+  await test('F8.2: a foil opens after its look (one search; a second scores the game move beside the best when the first missed it) as any game-mode review; its game move passes "Good, nothing to fix" / "You played Rxg6+ in your game too."; a try 8 points down "Playable" / "Rxg6+ in your game kept more."; one at the threshold "Not this one" with its reason, and when the card ends "Your game move Rxg6+ was fine here."; the answer shown "Your game move Rxg6+ was good too." (V2.6); hint 2 on a board with nothing in danger "Any good move passes here." (V2.6); never scheduled, never one more try, logged as a foil; a look that finds the game move lost 3 points or more sets it aside for good', async () => {
     const A = boot();
     const KEY = 'foil:184455333378:66', KEY2 = 'foil:184435538450:49';
     A.ev(`(function () { ${OPEN} ${GAME}
@@ -6602,7 +6720,9 @@ const BAR = `(function () {
       Object.keys(foilItems).forEach(function (k) { if (k !== '${KEY}') delete foilItems[k]; });
       ui.session = keep;
       return JSON.stringify(out); })()`));
-    eq(JSON.stringify(calm), JSON.stringify({ h1: 'What can they take?', h2: 'No danger here.', marks: 0, tag: 'Review' }), 'a foil with nothing in danger: the safety check\'s question, then "No danger here."');
+    /* V2.6: "No danger here." is gone (false on 3 of 8 foils); the tag gives
+       way to the hint's five words */
+    eq(JSON.stringify(calm), JSON.stringify({ h1: 'What can they take?', h2: 'Any good move passes here.', marks: 0, tag: '' }), 'a foil with nothing in danger: the safety check\'s question, then "Any good move passes here."');
     /* the game move passes */
     const good = JSON.parse(A.ev(`(function () { ${TRY} var a = ui.session.active; a.tapped = true; gradeMove(uciToMove(a.st, window.__gu)); a.settle = 2;
       var d = displayFor(a); return JSON.stringify({ phase: a.phase, result: a.result, rows: [d.row1, d.row2].join(' | '), disc: d.disc, bar: d.buttons.map(function (b) { return b.label || '-'; }).join(' / '),
@@ -6635,7 +6755,8 @@ const BAR = `(function () {
     eq(after.end, 'Good, nothing to fix | Your game move Rxg6+ was fine here.', 'when the card ends after a miss');
     eq(after.result, 'retry', 'graded after a miss');
     eq(after.shown, 'Play the green arrow.', 'the answer shown');
-    ok(/^The answer: \S+ \| Your game move Rxg6\+ was fine here\.$/.test(after.shownEnd), 'and when it settles: ' + after.shownEnd);
+    /* V2.6: the answer shown on a foil never reads as a contradiction */
+    ok(/^The answer: \S+ \| Your game move Rxg6\+ was good too\.$/.test(after.shownEnd), 'and when it settles: ' + after.shownEnd);
     /* the second foil's look finds its game move 5 points down: set aside, the next card comes */
     A.ev(`(function () { ui.session.active = null; ui.session.idx = 1; ui.session.keys = ['${KEY}', '${KEY2}', '184455333378:68']; loadCard(); var it = itemOf('${KEY2}'); window.__gu2 = uciOfSan(it.g.mv, it.b.p); window.__alt2 = legalMoves(stateAtPly(it.g.mv, it.b.p)).map(moveUci).filter(function (u) { return u !== window.__gu2; }); window.__sign2 = it.g.color === 'white' ? 1 : -1; return 1; })()`);
     answer(KEY2, `{ cp: 0, mate: null, bestUci: window.__alt2[0], pv: [window.__alt2[0]], lines: [{ cp: 0, mate: null, pv: [window.__alt2[0]] }, { cp: -60 * window.__sign2, mate: null, pv: [window.__gu2] }], depth: 18, stopped: false }`);
@@ -7332,11 +7453,13 @@ const BAR = `(function () {
       await tick(); await tick();
       run(1500);
       eq(A.ev('ui.session.active.phase + " " + ui.session.active.tried.kind'), 'tried miss', at + ': the queen move is a miss');
-      eq(A.ev('ui.session.active.hints + " " + hintMax(ui.session.active)'), '3 3', at + ': the miss brings Hint 3');
+      /* V2.3: the automatic hint is due at the miss and counts when it shows */
+      eq(A.ev('ui.session.active.hints + " " + ui.session.active.autoDue + " " + hintMax(ui.session.active)'), '2 1 3', at + ': the miss brings Hint 3');
       const red = A.ev('hint3Of(ui.session.active).red.length');
       eq(red, 9, at + ': nine red squares for the queen');
       const t0 = A.getNow();
       A.click('tryAgain', null, 1);
+      eq(A.ev('ui.session.active.hints'), 3, at + ': Hint 3 counted as it shows');
       run(reduced ? 20 : 140);
       if (!reduced) eq(lose(), 0, 'during the crossfade the board is the one before Hint 3\'s marks');
       run(reduced ? 20 : 20);
@@ -7399,6 +7522,8 @@ const BAR = `(function () {
   });
   /* ── checked facts and fair grading (v2 slice 1, V1.1 to V1.9): its tests in test/facts.js ── */
   for (const t of require('./facts')({ boot, eq, ok, tick, OPEN, TRY, AFTER })) await test(t[0], t[1]);
+  /* v2 slice 2, words from the facts (V2.1 to V2.7): test/words.js */
+  for (const t of require('./words')({ boot, eq, ok, tick, OPEN, TRY })) await test(t[0], t[1]);
 
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'card flow: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));

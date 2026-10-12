@@ -358,7 +358,16 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
       b = bar();
       ok(!/nav-off/.test(b[1].cls) && b[1].label === pickLabel, 'Play Stockfish\'s pick once it answers');
       const say0 = A.ev('sayAt(ui.session.active, ui.session.active.explore, 0)');
-      ok(tier === 1 ? /^Your move\. The computer's pick is \S+, the gold arrow\.$/.test(say0) : /^Your move\. Stockfish's pick is \S+, the gold arrow\.$/.test(say0), 'tier ' + tier + ' sentence: ' + say0);
+      /* (V2.5: at tier 1 the move in words) */
+      ok(tier === 1 ? /^Your move\. The computer's pick is (?:(?:king|queen|rook|bishop|knight|pawn)(?: from [a-h][1-8])? (?:to|takes on) [a-h][1-8](?: to make a (?:queen|rook|bishop|knight))?|castling(?: on the (?:king|queen)'s side)?), the gold arrow\.$/.test(say0) : /^Your move\. Stockfish's pick is \S+, the gold arrow\.$/.test(say0), 'tier ' + tier + ' sentence: ' + say0);
+      /* (V2.5: tier 1's sentence in Details' words, "their threat", a capture said as its piece, and within 80
+         characters: the later sentence goes first) */
+      if (tier === 1) {
+        const fit = JSON.parse(A.ev(`(function () { var a = ui.session.active, ex = a.explore, st = ex.nodes[0].st, m = legalMoves(st)[0], sn = sanOf(st, m), opp = sidesOf(a).opp;
+          var long = sn + ' ignores ' + opp + "'s threat: " + sn + ' takes your bishop. You lose a lot of material, and then some more of it too.';
+          return JSON.stringify({ w: moveWords(st, m), p: PIECE_WORD[pType(st.b[m.from])], mine: !!st.w === myPov(a.it), out: xpWords(a, ex, 0, long) }); })()`));
+        eq(fit.out, fit.w.charAt(0).toUpperCase() + fit.w.slice(1) + ' ignores their threat: ' + (fit.mine ? 'your ' : 'their ') + fit.p + ' takes your bishop.', 'tier 1 Explore sentence in words, fitted');
+      }
       const strip = A.ev('stripHtml(ui.session.active, ui.session)');
       ok(strip.indexOf('<p class="xp-say">' + A.ev('esc(sayAt(ui.session.active, ui.session.active.explore, 0))') + '</p>') >= 0, 'the sentence in the panel');
       ok(/xp-trail/.test(strip) && /data-act="exploreOff"/.test(strip) && (strip.match(/data-act="xpRow"/g) || []).length === 3, 'trail, way back and rows');
@@ -389,7 +398,9 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
       for (let i = 0; i < 2; i++) { A.ev(`window.__answer(window.__jobs[0], [10, -30, -60])`); await flush(A); }
       const rows = JSON.parse(A.ev('JSON.stringify(xpRows(ui.session.active, ui.session.active.explore))'));
       ok(rows && rows.length, 'rows at tier ' + tier);
-      if (tier === 1) rows.forEach((r) => ok(r.words && !/about level|you are worse|you are losing|%/.test(r.words) && !r.chip, 'tier 1 row: ' + JSON.stringify(r)));
+      /* (V2.5: and the move in words, no notation in the row nor its label) */
+      if (tier === 1) rows.forEach((r) => ok(r.words && !/about level|you are worse|you are losing|%/.test(r.words) && !r.chip
+        && !/\b[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|\b[a-h]x[a-h][1-8]|\bO-O|^[a-h][1-8]\b/.test(r.first + ' | ' + r.label), 'tier 1 row: ' + JSON.stringify(r)));
       else rows.forEach((r) => ok(/^You \d{1,2}%$|mate in/.test(r.chip) && !r.words, 'tier ' + tier + ' row: ' + JSON.stringify(r)));
     }
     /* an even position reads "even game" on a row with nothing more to say */

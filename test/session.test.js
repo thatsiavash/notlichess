@@ -11,7 +11,9 @@ const tick = () => new Promise((r) => setImmediate(r));
 
 let failed = 0, passed = 0;
 const results = [];
+/* ONLY=<words> runs the tests whose names hold them */
 async function test(name, fn) {
+  if (process.env.ONLY && name.indexOf(process.env.ONLY) < 0) return;
   try { await fn(); passed++; } catch (e) { failed++; results.push('FAIL ' + name + ': ' + e.message); }
 }
 function eq(a, b, what) { if (a !== b) throw new Error((what || 'value') + ' expected ' + JSON.stringify(b) + ', got ' + JSON.stringify(a)); }
@@ -36,7 +38,9 @@ const PLAIN = `function unplain(s, tier) {
   if (m) return m[0];
   if (tier === 1 && /stockfish/i.test(s)) return 'Stockfish';
   var re = /\\b(forks?|forked|forking|pins?|pinned|pinning|skewers?|skewered|discovered|hanging|hidden attack|tactics?|tactical|overload(ed|ing)?|deflection|decoy|zwischenzug|desperado|x-ray|back rank)\\b/gi, w;
-  while ((w = re.exec(s))) if (!(tier === 3 && /^(fork|pinned)$/i.test(w[1]))) return w[1];
+  /* V2.2 names a fork at every tier, as its event and See why's step ("Then their queen forks king
+     and rook.", "Qxc3+ forks your king and rook.") */
+  while ((w = re.exec(s))) if (!(tier === 3 && /^(fork|pinned)$/i.test(w[1])) && !/^forks?$/i.test(w[1])) return w[1];
   return '';
 }`;
 /* tier 1 says moves in words: "rook to g1", "rook from a8 to
@@ -49,12 +53,13 @@ const PLAIN = `function unplain(s, tier) {
    says no move in SAN, F1.6), else in SAN */
 const WORDS = `function wordsOf(st, m) {
   var P = { P: 'pawn', N: 'knight', B: 'bishop', R: 'rook', Q: 'queen', K: 'king' }, p = st.b[m.from], t = pType(p);
-  if (t === 'K' && Math.abs(m.to - m.from) === 2) return 'castling';
+  /* V2.1: "castling" where only one castling is legal, else its side */
+  if (t === 'K' && Math.abs(m.to - m.from) === 2) return legalMoves(st).filter(function (x) { return x.from === m.from && Math.abs(x.to - x.from) === 2; }).length > 1 ? 'castling on the ' + (m.to > m.from ? 'king' : 'queen') + '\\'s side' : 'castling';
   var from = {};
   legalMoves(st).forEach(function (x) { if (x.to === m.to && st.b[x.from] === p) from[x.from] = 1; });
   return P[t] + (Object.keys(from).length > 1 ? ' from ' + sqName(m.from) : '') + (st.b[m.to] || m.ep >= 0 ? ' takes on ' : ' to ') + sqName(m.to) + (m.promo ? ' to make a ' + P[pType(m.promo)] : '');
 }
-function unit(s) { return String(s || '').replace(/\\b(?:king|queen|rook|bishop|knight|pawn)(?: from [a-h][1-8])? (?:to|takes on) [a-h][1-8](?: to make a (?:queen|rook|bishop|knight))?|\\bcastling\\b/gi, 'Mv'); }
+function unit(s) { return String(s || '').replace(/\\b(?:king|queen|rook|bishop|knight|pawn)(?: from [a-h][1-8])? (?:to|takes on) [a-h][1-8](?: to make a (?:queen|rook|bishop|knight))?|\\bcastling(?: on the (?:king|queen)'s side)?/gi, 'Mv'); }
 function named(a, st, m, f, ch, t1fall) {
   var w = f(wordsOf(st, m));
   if (a.tier !== 1) return f(sanOf(st, m));
@@ -1059,6 +1064,18 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           var mm = legalMoves(post).filter(function (x) { return x.from === dz.mate.from && x.to === dz.mate.to; })[0], af = mm ? cloneState(post) : null;
           if (af) applyMove(af, mm);
           if (!af || !isMate(af)) out.push(what + ': ' + d.row2 + ' where that move does not mate');
+        } else if (dz.kind === 'win') {
+          /* V2.3: a missed win rings the piece the answer's line wins, where it stands now: theirs, and
+             the line (to where it settles) takes one of its kind */
+          var wp = a.pre.b[dz.sq], wl = buildLine(a.pre, '0000', unpackUci(a.it.b.lu), pov), wk = Math.min(settleLine(a.pre, unpackUci(a.it.b.lu)).k, wl.nodes.length - 1);
+          var wonIt = false;
+          for (var q = 1; q <= wk; q++) { var wn = wl.nodes[q]; if (wn.pov && wn.captured && pType(wn.captured) === pType(wp)) wonIt = true; }
+          var wnet = matDiff(wl.nodes[wk].after.b, pov) - matDiff(wl.nodes[0].before.b, pov);
+          /* (a piece won for less: a net of 2, a pawn's 1; under 60% the answer's own first capture) */
+          if (winPct(a.it.b.eb) < 60) { var f1 = wl.nodes[1]; wonIt = !!f1 && !!f1.captured && pType(f1.captured) === pType(wp); wnet = wonIt ? MOTIF_VAL[pType(wp)] : 0; }
+          if (!wp || isW(wp) === pov || !wonIt || wnet < (pType(wp) === 'P' ? 1 : 2)) out.push(what + ': "' + d.row2 + '" where the line does not win the ' + wp + ' on ' + sqName(dz.sq));
+          if ((m = /^You can win their (\w+)\.$/.exec(d.row2)) && PW[m[1]] !== pType(wp)) out.push(what + ': ' + d.row2 + ' rings a ' + wp);
+          if (hm.rings.length && (hm.rings.length !== 1 || hm.rings[0].sq !== dz.sq || hm.rings[0].kind !== 'target')) out.push(what + ': a missed win draws ' + JSON.stringify(hm));
         } else if (dz.kind === 'loose') {
           var lp = a.pre.b[dz.loose.sq];
           if (!lp || isW(lp) === pov || isDefended(a.pre.b, dz.loose.sq) || !hintPrize(a) || hintPrize(a).sq !== dz.loose.sq) out.push(what + ': the loose piece on ' + sqName(dz.loose.sq) + ' is not one');
@@ -1109,8 +1126,13 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           if (!same(hm.rings, [{ sq: due.from, kind: 'hint' }]) || hm.arrows.length) out.push(what + ': hint 2 draws ' + JSON.stringify(hm));
           /* "Find a safe square." only where hint 1 rang that piece as in danger and the answer takes it out
              of danger (content's review) */
+          /* V2.3 (the orchestrator's rule): with no fact sheet, only where the piece has one safe square,
+             the answer's, so it never invites a rejected move */
           var safe = !(a.sol && a.solIdx > 0) && (dangerView(a) || { attacked: [] }).attacked.some(function (x) { return x.sq === due.from; });
-          if (safe) { var af2 = cloneState(a.st); applyMove(af2, due); safe = !(dzSee(af2.b, due.to, !myPov(a.it)) > 0); }
+          if (safe) {
+            var outs = legalMoves(a.st).filter(function (x) { if (x.from !== due.from) return false; var af2 = cloneState(a.st); applyMove(af2, x); return !(dzSee(af2.b, x.to, !myPov(a.it)) > 0); });
+            safe = outs.length === 1 && moveUci(outs[0]) === moveUci(due);
+          }
           if (d.row1 !== (hintMax(a) === 3 ? 'Hint 2 of 3' : 'Hint 2 of 2') || d.row2 !== (safe ? 'Find a safe square.' : 'Move the circled piece.')) out.push(what + ': hint 2 reads ' + d.row1 + ' / ' + d.row2);
           n.safe = (n.safe || 0) + (safe ? 1 : 0);
           return;
@@ -1126,7 +1148,10 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           n.mid++;
           var mine = checkersOf(a.st).length > 0 && !!a.st.w === myPov(a.it);
           if (sqs.length) out.push(what + ': an in-line hint 1 draws ' + JSON.stringify(hm));
-          if (d.row2 !== (mine ? 'Your king is in check.' : 'The next move is forcing too.')) out.push(what + ': an in-line hint 1 reads ' + d.row2);
+          /* (V2.1: "forcing" only where the move due takes, checks or promotes) */
+          var dx = cloneState(a.st); applyMove(dx, due);
+          var forcing = !!(a.st.b[due.to] || due.ep >= 0 || due.promo || checkersOf(dx).length);
+          if (d.row2 !== (mine ? 'Your king is in check.' : forcing ? 'The next move is forcing too.' : 'Find the next move.')) out.push(what + ': an in-line hint 1 reads ' + d.row2);
           return;
         }
         var fam = familyOf(patternOf(a.it.b)).key, c = a.cls, th = threatOf(c.gameLine, 1);
@@ -1177,7 +1202,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           if (fam === 'safety' || fam === 'king') {
             n.plain++;
             var get = c.mateFor ? 'There is a checkmate here.' : null;
-            if (!(d.row2 === get || /^You can win .+ here\\.$/.test(d.row2) && c.matBest >= 1 && !c.mateFor || look.indexOf(d.row2) >= 0 && !c.mateFor && !(c.matBest >= 1 && c.bestLine && !c.bestLine.unsettled))) out.push(what + ': a ' + fam + ' card with nothing drawn reads ' + d.row2);
+            /* (V2.4's rule: a win only where it leaves the player better, 60% or more) */
+            var better = !(a.it.b.eb != null && winPct(a.it.b.eb) < 60);
+            if (!(d.row2 === get || /^You can win .+ here\\.$/.test(d.row2) && c.matBest >= 1 && !c.mateFor && better || look.indexOf(d.row2) >= 0 && !c.mateFor && !(c.matBest >= 1 && c.bestLine && !c.bestLine.unsettled && better))) out.push(what + ': a ' + fam + ' card with nothing drawn reads ' + d.row2);
           }
         }
       };
@@ -1252,14 +1279,15 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         /* the fork form (reached only when the best line is missing) in plain words at tiers 1 and 2 (in
            check, the check is the hint: the coach's review) */
         if (fam === 'chances' && !c.mateFor && !checkersOf(a.pre).length) {
-          var keepF = [c.bestLine, c.missed];
-          c.bestLine = null; c.missed = { fork: { ply: 1 } };
+          /* (the line missing: the stored one too, which V2.3's missed win reads) */
+          var keepF = [c.bestLine, c.missed, a.it.b.lu];
+          c.bestLine = null; c.missed = { fork: { ply: 1 } }; a.it.b.lu = '';
           try {
             var fr = hintText(a);
             fx.fork++;
             if (fr.row2 !== 'One piece can hit two targets.' && fr.row2 !== 'You can win material here.') out.push(at + ': the fork form reads ' + fr.row2);
             [1, 2].forEach(function (tr) { [fr.row2].concat(fr.cands).forEach(function (x) { var bad = unplain(x, tr); if (bad) out.push(at + ': "' + bad + '" at tier ' + tr + ': ' + x); }); });
-          } finally { c.bestLine = keepF[0]; c.missed = keepF[1]; }
+          } finally { c.bestLine = keepF[0]; c.missed = keepF[1]; a.it.b.lu = keepF[2]; }
         }
       });
       var st0 = stateFromFen('4k3/8/8/3n4/1n6/8/8/R3K3 w - - 0 1');
@@ -1271,8 +1299,10 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       n.doctored = fx;
       return JSON.stringify({ out: out, n: n }); })()`));
     ok(r.n.doctored.line >= 5 && r.n.doctored.word >= 10 && r.n.doctored.named >= 20 && r.n.doctored.mate >= 20 && r.n.doctored.fork >= 5, JSON.stringify(r.n.doctored));
-    ok(r.n.frames > 600 && r.n.danger >= 15 && r.n.harmless >= 3 && r.n.look >= 10 && r.n.prize >= 6 && r.n.words >= 20 && r.n.mid > 30 && r.n.ring2 > 300 && r.n.ring3 >= 10 && r.n.plain2 > 4 * r.n.frames
-      && r.n.dz > 40 && r.n['dz attacked'] >= 15 && r.n['dz made'] >= 15 && r.n['dz madeMate'] >= 6 && r.n['dz loose'] >= 3 && r.n['dz lost'] >= 10 && r.n['dz check'] >= 3 && r.n.safe >= 20, JSON.stringify(r.n));
+    /* (V2.3: a missed win's hint 1 rings the piece its line wins, in place of the prize ring, the loose piece
+       and "You can win X here.", which with V2.4's rule comes only where the win leaves the player better) */
+    ok(r.n.frames > 600 && r.n.danger >= 15 && r.n.harmless >= 3 && r.n.look >= 10 && r.n.prize + (r.n['dz win'] || 0) >= 6 && r.n.words + (r.n['dz win'] || 0) >= 20 && r.n.mid > 30 && r.n.ring2 > 300 && r.n.ring3 >= 10 && r.n.plain2 > 4 * r.n.frames
+      && r.n.dz > 40 && r.n['dz attacked'] >= 15 && r.n['dz made'] >= 15 && r.n['dz madeMate'] >= 6 && (r.n['dz loose'] || 0) + (r.n['dz win'] || 0) >= 3 && r.n['dz win'] >= 10 && r.n['dz lost'] >= 10 && r.n['dz check'] >= 3 && r.n.safe >= 3, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
@@ -1304,7 +1334,10 @@ const SIM = `function simRun(seed, days, plan, noRule) {
                your king is attacked; while a move is checked (before K1) it
                keeps saying it, after K1 the band speaks of the check */
             checked ? n.mine++ : n.free++;
-            var d = displayFor(a), want = checked ? 'Your king is in check.' : 'The next move is forcing too.';
+            var dm = a.solIdx < a.sol.length ? uciToMove(a.st, a.sol[a.solIdx]) : null, dx2 = cloneState(a.st);
+            if (dm) applyMove(dx2, dm);
+            var forcing2 = !!dm && !!(a.st.b[dm.to] || dm.ep >= 0 || dm.promo || checkersOf(dx2).length);
+            var d = displayFor(a), want = checked ? 'Your king is in check.' : forcing2 ? 'The next move is forcing too.' : 'Find the next move.';
             if (d.row1 !== 'Hint 1 of 2' || d.row2 !== want) out.push(at + ': ' + d.row1 + ' / ' + d.row2 + ', want ' + want);
             a.phase = 'checking'; a.checkSaid = 0;
             if (displayFor(a).row2 !== want) out.push(at + ' (checking, before K1): ' + displayFor(a).row2);
@@ -1319,13 +1352,13 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
   });
 
-  await test('tier 1 says moves in words where the row has room: "rook to g1", "pawn takes on d3", "castling", "rook from a8 to d8" where two can go there, "pawn to a8 to make a queen", one word against the caps; the task, the hint, the reason, R4, the answer and the story in words, tiers 2 and 3 in SAN', () => {
+  await test('tier 1 says moves in words where the row has room: "rook to g1", "pawn takes on d3", "castling" (its side where both are legal: V2.1), "rook from a8 to d8" where two can go there, "pawn to a8 to make a queen", one word against the caps; the task, the hint, the reason, R4, the answer and the story in words, tiers 2 and 3 in SAN', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       ${WORDS}
       var mw = function (fen, uci) { var st = stateFromFen(fen); return moveWords(st, uciToMove(st, uci)); };
       var one = {
-        castle: mw('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'e1g1'), long: mw('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'e1c1'),
+        castle: mw('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'e1g1'), long: mw('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'e1c1'), only: mw('4k3/8/8/8/8/8/8/4K2R w K - 0 1', 'e1g1'),
         takes: mw('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'a1a8'), ep: mw('4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1', 'e5d6'),
         promo: mw('4k3/P7/8/8/8/8/8/4K3 w - - 0 1', 'a7a8q'), twin: mw('R6R/8/8/8/8/8/8/4K2k w - - 0 1', 'a8d8'),
         lone: mw('R7/8/8/8/8/8/8/4K2k w - - 0 1', 'a8d8'), pawns: mw('4k3/8/8/3p4/2P1P3/8/8/4K3 w - - 0 1', 'c4d5'),
@@ -1354,7 +1387,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         });
       });
       return JSON.stringify({ one: one, out: out, n: n }); })()`));
-    eq(JSON.stringify(r.one), JSON.stringify({ castle: 'castling', long: 'castling', takes: 'rook takes on a8', ep: 'pawn takes on d6', promo: 'pawn to a8 to make a queen',
+    /* V2.1: "castling" only where one castling is legal, else its side */
+    eq(JSON.stringify(r.one), JSON.stringify({ castle: 'castling on the king\'s side', long: 'castling on the queen\'s side', only: 'castling', takes: 'rook takes on a8', ep: 'pawn takes on d6', promo: 'pawn to a8 to make a queen',
       twin: 'rook from a8 to d8', lone: 'rook to d8', pawns: 'pawn from c4 takes on d5', units: '6 true' }), 'moves in words');
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
     ok(r.n.t2 > 40 && r.n.hint > 10 && r.n.m3 > 20 && r.n.v1 > 50 && r.n.r4 > 40 && r.n.cap > 250, JSON.stringify(r.n));
@@ -1376,11 +1410,16 @@ const SIM = `function simRun(seed, days, plan, noRule) {
        would claim one piece: the reason names what their one reply took
        (F1.2), and the loss is said in the board's pieces, read from the
        line's own captures, never a word that claims what it did not take */
-    eq(A.ev(`(function () { ${OPEN} var it = allMistakes().filter(trainable)[0], a = openCard(it), cw = captureWord;
+    /* (V2.2: the try's line read from the position it is played on, its
+       first capture named as its event; a loss of several kinds of piece in
+       the board's pieces) */
+    eq(A.ev(`(function () { ${OPEN} playerTier = function () { return 2; };
+      var it = allMistakes().filter(trainable).filter(function (x) { return myPov(x); })[0], a = openCard(it), cw = captureWord, keep = a.st;
       captureWord = function () { return 'material'; };
       var st = stateFromFen('4k3/8/8/3q4/8/8/8/3QK3 w - - 0 1'), line = buildLine(st, 'd1d4', ['d5d4', 'e1e2'], false);
-      try { return plainCapture({ nodes: [] }, 1, 0) + ' / ' + missWhy(a, { lossG: 9, lossAt: 1, gameLine: line }, 1, null, false).cands.join(' / '); } finally { captureWord = cw; } })()`),
-    "null / Their queen takes your queen. / You'd lose \u2655.", 'three kinds of piece: the reply named, the loss in pieces');
+      a.st = st;
+      try { return plainCapture({ nodes: [] }, 1, 0) + ' / ' + missWhy(a, { lossG: 9, lossAt: 1, gameLine: line }, 1, null, false, null, { pv: ['d1d4', 'd5d4', 'e1e2'], wBest: 50 }).cands.join(' / ') + ' / ' + lostWords(a, ['B', 'Q', 'R']); } finally { captureWord = cw; a.st = keep; } })()`),
+    "null / Their queen takes your queen. / \u2655\u2656\u2657", 'three kinds of piece: the reply named, the loss in pieces');
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       /* the band's caps: row 1 26 characters, row 2 40 and 7
          words, a caption 60 and 8; the chip one short label */
@@ -1455,7 +1494,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       var plain = function (what, s) { if (/exchange/.test(s)) out.push(what + ' says ' + s); };
       /* F1.2: their one reply named (tier 3 its SAN), a trade in the board's pieces, a danger left standing
          ("Qxc4, and your queen is still attacked."), where the game stands now, tier 1's plain words */
-      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|After \\S+, you'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|Their (?:pawn|knight|bishop|rook|queen|king) takes your (?:pawn|knight|bishop|rook|queen)\\.|\\S+ takes your (?:pawn|knight|bishop|rook|queen)\\.|Most of your advantage is gone\\.|You are still better, but less so\\.|After \\S+, (the game is even|(White|Black) is (better|winning))\\.|Now (the game is even|(White|Black) is (better|winning))\\.|(\\S+, and y|Y)our (?:pawn|knight|bishop|rook|queen) is still attacked\\.|That helps (White|Black)\\.|There's a stronger move here\\.)$/;
+      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|After \\S+, you'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|Their (?:pawn|knight|bishop|rook|queen|king) takes your (?:pawn|knight|bishop|rook|queen)\\.|\\S+ takes your (?:pawn|knight|bishop|rook|queen)\\.|Most of your advantage is gone\\.|You are still better, but less so\\.|After \\S+, (the game is even|(White|Black) is (better|winning))\\.|Now (the game is even|(White|Black) is (better|winning))\\.|(\\S+, and y|Y)our (?:pawn|knight|bishop|rook|queen) is still attacked\\.|That helps (White|Black)\\.|There's a stronger move here\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) takes your (?:pawn|knight|bishop|rook|queen)\\.|Then \\S+ forces mate\\.|Then they can force checkmate\\.|Then \\S+: their pawn becomes a (?:queen|rook|bishop|knight)\\.|Their pawn will become a (?:queen|rook|bishop|knight)\\.|After \\S+ \\S+, \\S+ (?:forks|is mate)\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) forks (?:both (?:pawn|knight|bishop|rook|queen|king)s|(?:pawn|knight|bishop|rook|queen|king) and (?:pawn|knight|bishop|rook|queen|king))\\.|Safe, but (?:then .+|their pawn will become a (?:queen|rook|bishop|knight)\\.|only \\d+% for you\\.|(?:the game is even|(?:White|Black) is (?:better|winning)) now\\.|there's a stronger move\\.)|After \\S+, you are still better\\.)$/;
       /* "You'd lose material." only when no form before it fits beside row
          1 and the widest bar this miss shows: as the ladder's one word for a
          trade ("a rook for a knight" is never said as its net), or as the
@@ -1525,12 +1564,12 @@ const SIM = `function simRun(seed, days, plan, noRule) {
             a.checkSaid = 2; d = band(at + ' checking, 3 s', a);
             if (d.row2 !== 'Still checking.') out.push(at + ' K2 reads ' + d.row2);
             takeBack();
-            /* S5: a good move that is not the best; the second time row 1 alone */
+            /* S5: a good move that is not the best; the second time the same (V2.7: it keeps its row 2) */
             a = openCard(it); showTry(a, off0, 'close', null, null, false); d = band(at + ' close', a);
             if (d.row1 + ' / ' + d.row2 !== 'Good move / There\\'s a stronger one.' || d.disc !== 'close') out.push(at + ' close reads ' + d.row1 + ' / ' + d.row2);
             d = band(at + ' close, T4', note(a, 'T4'));
             a = openCard(it); showTry(a, off0, 'close', null, null, true); d = band(at + ' close again', a);
-            if (d.row1 !== 'Good move' || d.row2) out.push(at + ' close again reads ' + d.row1 + ' / ' + d.row2);
+            if (d.row1 + ' / ' + d.row2 !== 'Good move / There\\'s a stronger one.') out.push(at + ' close again reads ' + d.row1 + ' / ' + d.row2);
             /* S11: a move the engine could not check */
             a = openCard(it); showTry(a, off0, 'unchecked', null); d = band(at + ' not checked', a);
             if (d.row1 + ' / ' + d.row2 !== 'Cannot check this move / Not counted. Try again.' || d.disc !== 'unchecked' || d.kind !== 'info') out.push(at + ' not checked reads ' + d.row1 + ' / ' + d.row2);
@@ -1648,7 +1687,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           plain(at + ' game move again', a.verdict.cands.join(' | '));
           if (!M3.test(unit(d.row2)) && !(d.row2 === '' && !M3.test(unit(a.verdict.row2)))) out.push(at + ' game move again, its reason reads ' + d.row2 + ' (' + a.verdict.row2 + ')');
           lossFall(at + ' game move again', a, d.row2);
-          if (familyOf(patternOf(it.b)).key === 'chances' && a.verdict.row2 !== 'There\\'s a stronger move here.') out.push(at + ' a missed chance\\'s game move reads ' + a.verdict.row2);
+          /* (V2.2: unless its line has a decisive event, said as any wrong try's) */
+          if (familyOf(patternOf(it.b)).key === 'chances' && a.verdict.row2 !== 'There\\'s a stronger move here.' && !/^(Then .+|Their (?:pawn|knight|bishop|rook|queen|king) takes your .+|\\S+ takes your .+|Their pawn will become a .+|After \\S+ \\S+, \\S+ (?:forks|is mate)\\.)$/.test(unit(a.verdict.row2))) out.push(at + ' a missed chance\\'s game move reads ' + a.verdict.row2);
           if (a.tried && a.tried.reply) { seeIt(); if (band(at + ' game move again, seen', a).row2 !== d.row2) out.push(at + ' game move again: row 2 changed with See it'); }
           /* the game move again at miss 3: its reason stays as See it goes */
           a = openCard(it); a.misses = 2; gradeMove(uciToMove(a.st, a.playedUci)); a.reason = 2; d = band(at + ' game move again, miss 3', a);
@@ -1705,7 +1745,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           d = band(at + ' shown, N1', note(a, 'N1'));
           if (d.row2 !== 'To try moves, open Details.') out.push(at + ' N1 reads ' + d.row2);
           a.note = null;
-          if (!a.sol) { playIt(false); d = band(at + ' shown, played', a); if (d.row1 + ' / ' + d.row2 !== v1 + ' / Play the green arrow.') out.push(at + ' played reads ' + d.row1 + ' / ' + d.row2); }
+          /* V2.7: "Play the green arrow." leaves with the arrow */
+          if (!a.sol) { playIt(false); d = band(at + ' shown, played', a); if (d.row1 + ' / ' + d.row2 !== v1 + ' / ') out.push(at + ' played reads ' + d.row1 + ' / ' + d.row2); }
           else playLine(a);
           /* settled, a reveal names the card's own answer (R4's), also after
              a line whose band named each move as it came */
@@ -1902,7 +1943,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         mv.forEach(function (x) { cap = cap.split(x.w).join(x.san).split(x.w.charAt(0).toUpperCase() + x.w.slice(1)).join(x.san); });
         if (nd.move) {
           var pw = Object.keys(PW).filter(function (w) { return PW[w] === pType(nd.before.b[nd.move.from]); })[0];
-          var subj = new RegExp('^(?:' + (byMe ? 'Your ' : 'Their ') + pw + '|' + pw.charAt(0).toUpperCase() + pw.slice(1) + ')(?= (?:takes|could take|could give|still takes) )');
+          var subj = new RegExp('^(?:' + (byMe ? 'Your ' : 'Their ') + pw + '|' + pw.charAt(0).toUpperCase() + pw.slice(1) + ')(?= (?:takes|could take|could give|still takes|forks) )');
           cap = cap.replace(subj, bare(sanOf(nd.before, nd.move)));
         }
         var m = /^(You|They) play (\\S+)\\. Checkmate\\./.exec(cap);
@@ -1933,6 +1974,12 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         else if (/^Two threats: \\S+ mate and \\S+\\.$|^Two threats: mate on [a-h][1-8] and your \\w+\\.$/.test(cap)) { var tt = twoThreats(a); ok = !!tt && !!tt.mate && !dangerView(a).threat.stands; n.forms.two = (n.forms.two || 0) + 1; }
         /* the game move's piece stood in the way of their mate */
         else if ((m = /^Your (\\w+) on ([a-h][1-8]) blocks their mate\\.$/.exec(cap))) { var bk = mateBlocker(a); ok = !!bk && sqName(bk.sq) === m[2] && pType(bk.p) === PW[m[1]]; n.forms.block = (n.forms.block || 0) + 1; }
+        /* V2.7: two pieces of one kind by their squares */
+        else if ((m = /^(?:After (\\S+): your|Your) (\\w+)s on ([a-h][1-8]) and ([a-h][1-8]) are attacked\\.$|^Their last move attacks your (\\w+)s on ([a-h][1-8]) and ([a-h][1-8])\\.$/.exec(cap))) {
+          var tw2 = m[2] || m[5], twoAt = [m[3] || m[6], m[4] || m[7]].map(sqNum);
+          ok = twoAt.every(function (q) { var p = a.pre.b[q]; return !!p && isW(p) === pov && pType(p) === PW[tw2] && takers(q).length >= 1; }) && (!m[1] || (m[1] === last && made(tw2))) && (!m[5] || (a.tier === 1 && made(tw2)));
+          n.forms.twoSq = (n.forms.twoSq || 0) + 1;
+        }
         else if ((m = /^Their last move attacks your (\\w+)\\.$/.exec(cap))) ok = a.tier === 1 && made(m[1]);
         else if ((m = /^Your (\\w+) is attacked (once|twice|three times|four times), your (\\w+) (once|twice|three times|four times)\\.$/.exec(cap))) ok = att(m[1], TW[m[2]]) && att(m[3], TW[m[4]]);
         else if ((m = /^Your (\\w+) is attacked (twice|three times|four times)\\.$/.exec(cap))) ok = att(m[1], TW[m[2]]);
@@ -1963,8 +2010,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         /* the ply it names: the game move, the better move, or this step's own */
         var sents = cap.match(/[^.]+\\./g) || [cap];
         var head = sents[0];
-        /* a move is named without its check sign on every rung (the check form says it in words) */
-        if (/[+#]/.test(cap)) fail('a check or mate sign');
+        /* a move is named without its check sign on every rung (the check form says it in words), but
+           V2.2's fork, which says no check otherwise ("Qxc3+ forks your king and rook.") */
+        if (/[+#]/.test(cap.replace(/^(\\S+)[+#] forks /, '$1 forks '))) fail('a check or mate sign');
         /* the story's end says what the better move saves (F1.4): tier 3's only-move line where it is
            true, "Better: Qe6 saves your queen." on B1, else "Your queen is safe." after the ply (below) */
         var lastStep = !game && i === S.steps.length - 1, m0;
@@ -2006,6 +2054,13 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           else if (j === 0 && /^\\S+ would be checkmate\\.$/.test(x)) { form = 'could mate'; ok = couldStep && isMate(nd.after); }
           else if (j === 0 && (m = /^They could play (\\S+)\\.$/.exec(x))) { form = 'could play'; ok = couldStep && blow && m[1] === bare(san) && !nd.captured && !checkersOf(nd.after).length; }
           else if (j === 0 && /^\\S+, check\\.$/.test(x)) { form = 'check'; ok = checkersOf(nd.after).length > 0 && !isMate(nd.after); }
+          /* V2.2: a fork the ply makes, its targets the other side's pieces it attacks from where it lands */
+          else if (j === 0 && (m = /^(\\S+?)[+#]? forks (?:(your|their) (\\w+) and (\\w+)|both (your|their) (\\w+)s)\\.$/.exec(x))) {
+            form = 'forks';
+            var fw = m[2] || m[5], fa = PW[m[3] || m[6]], fb = PW[m[4] || m[6]], fmine = !!nd.byWhite === pov;
+            var hit = attacksFrom(nd.after.b, nd.move.to).map(function (q) { return nd.after.b[q]; }).filter(function (p) { return p && isW(p) !== !!nd.byWhite; }).map(pType);
+            ok = m[1] === bare(san) && (fw === 'their') === fmine && hit.indexOf(fa) >= 0 && hit.indexOf(fb) >= 0 && (fa !== fb || hit.filter(function (p) { return p === fa; }).length >= 2);
+          }
           /* a quiet check says whose it is */
           else if (j === 0 && (m = /^(You|They) play (\\S+), check\\.$/.exec(x))) { form = 'whose check'; ok = m[2] === bare(san) && (m[1] === 'You') === (!!nd.byWhite === pov) && !nd.captured && checkersOf(nd.after).length > 0 && !isMate(nd.after); }
           else if (j === 0 && /^\\S+$/.test(x.replace(/\\.$/, '')) && sents.length > 1 && /^Checkmate\\.$/.test(sents[1].trim())) { form = 'mate'; ok = isMate(nd.after); }
@@ -2134,7 +2189,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(r.s46[r.s46.length - 1], 'Rxh2 still takes your knight.', 'S-same where the better line loses the same knight');
     /* (each after See why's danger frame, F1.5) */
     eq(r.c57[0], 'Their knight on f5 has no guard.', 'the danger frame of a missed chance: their loose piece');
-    eq(r.c57[6], 'They play Qd5, check. You lose the pawn.', 'a checking move on the loss rung, whose it is and without its sign');
+    /* (V2.2: the game's line runs on to where it settles, so the loss is said a move later) */
+    eq(r.c57[6] + ' | ' + r.c57[7], 'They play Qd5, check. | You play Kh8. You lose the pawn.', 'a checking move, whose it is and without its sign; the loss where the line settles');
     /* a capture that checks says both (fresh-eyes T7), and drops the check before the game's words */
     eq(r.c57[4], 'Qxd6 takes your bishop with check.', 'a capture that checks');
     /* the check is a board fact, "as in your game" context: the check is kept when both do not fit (final fixes 4) */
