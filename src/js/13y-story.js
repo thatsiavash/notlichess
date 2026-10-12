@@ -219,9 +219,20 @@ var LIVE_PREFIX = { good: 'Correct.', bad: 'Wrong.', close: 'Good move, not best
    fallback. A row that fits nothing stays empty rather than overflow */
 function fitsRow(s, row) {
   var cap = typeof row === 'object' ? row : ROW_CAPS[row] || ROW_CAPS.row2;
-  /* the ledger's pieces are no words (each takes two characters, rowLen) */
-  return !!s && rowLen(s) <= cap.ch && wordsIn(s) <= cap.words && oneUnit(s).split(/\s+/).filter(function (t) { return !/^[\u2654-\u265f.,]+$/.test(t); }).length <= cap.words;
+  /* the ledger's pieces are no words (each takes two characters, rowLen);
+     a form that carries a program value never fits (progVal) */
+  return !!s && !progVal(s) && rowLen(s) <= cap.ch && wordsIn(s) <= cap.words && oneUnit(s).split(/\s+/).filter(function (t) { return !/^[\u2654-\u265f.,]+$/.test(t); }).length <= cap.words;
 }
+/* a program value on screen ("b3null", "undefined", "NaN%", "[object
+   Object]"): a string that carries one says nothing true, so no screen
+   shows it. The fit ladder skips such a form (fitsRow), the band, Details,
+   the check line, the board's description and the explorer's rows drop it
+   or say their fallback instead (no lowercase letter on either side of the
+   word: "b3null" is one, "annulled" none) */
+var PROG_VAL = /(^|[^a-z])(null|undefined|NaN)(?![a-z])|\[object /;
+function progVal(s) { return s != null && PROG_VAL.test(String(s)); }
+/* the string itself, or '' where it carries a program value */
+function noProg(s) { return s && !progVal(s) ? s : ''; }
 function firstSentence(s) { var m = /^.*?[.!?…](?=\s|$)/.exec(String(s || '')); return m ? m[0] : String(s || ''); }
 /* fallback: one string, or its words and SAN forms in that order */
 function fitRow(cands, row, fallback) {
@@ -1100,7 +1111,8 @@ function checkLine(a) {
 function checkLineOf(a) {
   var s = cardStep(a), t = a.tier || 2;
   if (t < 3 || s > 3) return lineOfStep(s, t);
-  return checkFact(a, s) || lineOfStep(s, t);
+  var f = checkFact(a, s);
+  return f && !progVal(f) ? f : lineOfStep(s, t);
 }
 /* tier 3's computed line, '' when none is true: their threat, the one the
    game move left standing (standingThreat), "Their threat: Rxf5 takes your
@@ -1121,7 +1133,10 @@ function checkFact(a, s) {
        race's Kxf5 stops the pawn, it does not win it); a band reason says
        no chance missed here */
     var wo = whyOf(a);
-    if (wo) return wo.r !== 'band' ? ans + whyPred(a) + '. ' + g + ' missed it.' : '';
+    /* a reason whose fact does not hold has no words (whyPred null: a
+       "wins" whose settled line nets nothing, 184434540700:103), so the
+       step's own line stands, never a program value */
+    if (wo) { var wp = wo.r !== 'band' ? whyPred(a) : null; return wp ? ans + wp + '. ' + g + ' missed it.' : ''; }
     return cmp.w2 && !/material/.test(cmp.w2) ? bs + ' wins ' + cmp.w2 + '. ' + g + ' missed it.' : '';
   }
   if (cmp.only && /^Only move/.test(cmp.only)) return cmp.only;

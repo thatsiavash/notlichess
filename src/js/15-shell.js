@@ -46,30 +46,61 @@ function renderFirstVisit(prefill) {
     input.addEventListener('input', function () { engineLoad().catch(function () {}); }, { once: true });
   }
 }
+/* a site that asked us to wait (F3): "chess.com is busy and asked us to
+   wait. Trying again in 60 s.", the seconds ticking down on screen
+   (.busy-n) and, at zero, the lookup tried again by itself, once, while
+   live() still holds (the same lookup, the same screen); a newer count ends
+   an older one. Try now ends the site's wait at once (busyNow) and tries */
+var busyTick = { seq: 0, until: 0 };
+function busyCountdown(until, live, retry) {
+  /* a screen drawn again under a count that runs keeps that count */
+  if (busyTick.until === until && busyTick.live && busyTick.live()) return;
+  var seq = ++busyTick.seq;
+  busyTick.until = until; busyTick.live = live;
+  var step = function () {
+    if (seq !== busyTick.seq || !live()) return;
+    var left = Math.max(0, Math.ceil((until - Date.now()) / 1000)), n = document.querySelector('.busy-n');
+    if (n) n.textContent = left + ' s';
+    if (left <= 0) { busyTick.seq++; retry(); return; }
+    setTimeout(step, 1000);
+  };
+  setTimeout(step, 1000);
+}
+function busyNow(sites) { [].concat(sites).forEach(function (s) { if (s === 'chess.com') ccBackoffUntil = 0; else backoffUntil = 0; }); }
+function busySecs(until) { return Math.max(1, Math.ceil((until - Date.now()) / 1000)); }
+/* the count's words, its seconds ticking only for the eye (a screen reader
+   hears the line once) */
+function busyWhen(until) { var s = busySecs(until) + ' s'; return 'Trying again in <span class="busy-n" aria-hidden="true">' + s + '</span><span class="sr-only">' + s + '</span>.'; }
 /* the name on both sites at once: one found, go; both, ask which; neither,
-   say so. A site that does not answer counts as not found there */
+   say so. A site that does not answer counts as not found there; a site
+   busy (F3) says so at once and counts down to trying again, the button
+   usable meanwhile, and a name found on the other site goes ahead (r6) */
 var findSeq = 0;
-function findUser(name) {
+function findUser(name, now) {
   name = String(name || '').trim();
   /* Find my mistakes with the box empty: say what it needs (V5.8) */
   if (!name) { notice('Type your username first.'); var box0 = el('firstUser'); if (box0 && box0.focus) box0.focus(); return; }
   if (!/^[a-zA-Z0-9_-]{2,30}$/.test(name)) { notice('That is not a chess.com or lichess username: letters, numbers, underscore and hyphen only.'); return; }
   /* only the latest lookup acts: an earlier one answering late is ignored */
   var seq = ++findSeq;
+  if (now) busyNow(['chess.com', 'lichess']);
   var btn = el('findBtn'), box = el('whichSite');
   if (btn) { btn.textContent = 'Looking…'; btn.classList.add('btn-off'); }
   if (box) box.innerHTML = '';
-  /* only a real 404 means "no account there"; anything else is "no answer" */
-  var failed = function (e) { return e && e.code === 404 ? null : { err: true }; };
-  var li = getJSON('/api/user/' + encodeURIComponent(name), { quiet: true }).then(function (u) {
+  /* only a real 404 means "no account there"; a 429 is a busy site;
+     anything else is "no answer" */
+  var failed = function (e) { return e && e.code === 404 ? null : e && e.code === 429 ? { busy: true, site: e.site, wait: e.wait || BUSY_SECS } : { err: true }; };
+  /* (each its own: ccJSON marks its options absolute) */
+  var ask = function () { return { quiet: true, noWait: true }; };
+  var li = getJSON('/api/user/' + encodeURIComponent(name), ask()).then(function (u) {
     if (!u || u.disabled || u.closed) return null;
     var best = null;
     ['rapid', 'blitz', 'bullet', 'classical'].forEach(function (p) { var pf = u.perfs && u.perfs[p]; if (pf && pf.games && (!best || pf.games > best.games)) best = { p: p, games: pf.games, r: pf.rating }; });
     return { site: 'lichess', name: u.username || name, best: best };
   }, failed);
-  var cc = ccJSON('/player/' + encodeURIComponent(name), { quiet: true }).then(function (p) {
+  var cc = ccJSON('/player/' + encodeURIComponent(name), ask()).then(function (p) {
     if (!p) return null;
-    return ccJSON('/player/' + encodeURIComponent(name) + '/stats', { quiet: true }).then(function (st) {
+    return ccJSON('/player/' + encodeURIComponent(name) + '/stats', ask()).then(function (st) {
       var best = null;
       [['chess_rapid', 'rapid'], ['chess_blitz', 'blitz'], ['chess_bullet', 'bullet']].forEach(function (k) {
         var v = st && st[k[0]], n = v && v.record ? (v.record.win || 0) + (v.record.loss || 0) + (v.record.draw || 0) : 0;
@@ -83,19 +114,29 @@ function findUser(name) {
     box = el('whichSite'); btn = el('findBtn');
     if (btn) { btn.textContent = 'Find my mistakes'; btn.classList.remove('btn-off'); }
     if (!box) return;
-    var found = res.filter(function (f) { return f && !f.err; }), silent = res.some(function (f) { return f && f.err; });
+    var found = res.filter(function (f) { return f && !f.err && !f.busy; }), busy = res.filter(function (f) { return f && f.busy; });
+    var down = res.filter(function (f) { return f && f.err; }), silent = !!(busy.length || down.length);
     /* one site has it and the other surely does not, or only one of the
-       two accounts has rated games: go */
+       two accounts has rated games: go; so too where the other site is
+       only busy (r6: a name found on the other site goes ahead) */
     var played = found.filter(function (f) { return f.best; });
     if (found.length === 2 && played.length === 1 && !silent) found = played;
-    if (found.length === 1 && !silent) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
+    if (found.length === 1 && !down.length) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
     if (!found.length && !silent) {
       box.innerHTML = '<p class="which-none">Neither chess.com nor lichess has an account called ' + esc(name) + '. Check the spelling.</p>';
       return;
     }
+    /* busy (F3): said at once, counting down to trying again by itself */
+    if (!found.length && busy.length) {
+      var sites = busy.map(function (f) { return f.site; }), until = Date.now() + Math.max.apply(null, busy.map(function (f) { return f.wait; })) * 1000;
+      box.innerHTML = '<p class="which-none which-busy">' + sites.join(' and ') + (sites.length > 1 ? ' are' : ' is') + ' busy and asked us to wait. ' + busyWhen(until)
+        + ' <a class="btn-quiet" data-act="findNow">Try now</a></p>';
+      busyCountdown(until, function () { var inp = el('firstUser'); return seq === findSeq && !cfg.user && !!inp && inp.value.trim() === name; }, function () { findUser(name); });
+      return;
+    }
     if (!found.length) {
-      var down = res.filter(function (f) { return f && f.err; }).length === 2 ? 'chess.com or lichess' : (res[0] && res[0].err ? 'chess.com' : 'lichess');
-      box.innerHTML = '<p class="which-none">Could not reach ' + down + '. Check your connection and try again.</p>';
+      var unreached = down.length === 2 ? 'chess.com or lichess' : (res[0] && res[0].err ? 'chess.com' : 'lichess');
+      box.innerHTML = '<p class="which-none">Could not reach ' + unreached + '. Check your connection and try again.</p>';
       return;
     }
     /* both: ask which. One while the other did not answer: only the site
@@ -349,9 +390,10 @@ function renderNarration() {
 }
 function finishNarration() {
   if (!data.narrate) return;
-  var n = allMistakes().filter(trainable).length;
+  var n = allMistakes().filter(trainable).length, ge = data.sections.games === 'fail' ? data.gamesErr : null;
+  /* a load that failed is no account without games (F9): Today says what happened */
   narrLine('done', n ? 'Found your first ' + n + ' mistake' + (n === 1 ? '' : 's') + '. Stockfish keeps reading the rest while you train.'
-    : (data.games.length ? 'Games are in. Stockfish is now reading them for mistakes.' : 'No rated live games found on this account.'));
+    : (data.games.length ? 'Games are in. Stockfish is now reading them for mistakes.' : ge ? ge.site + (ge.busy ? ' is busy.' : ' did not answer.') : 'No rated live games found on this account.'));
   setTimeout(function () {
     data.narrate = false;
     data.freshOnboard = true;
@@ -486,28 +528,45 @@ function adoptFresh(old, fresh) {
 }
 
 /* ── progress between devices, as a file ────────────────────────────────── */
+/* the player's progress keys: in storage, and in this visit's memory (a
+   write the browser refused, out of room or with storage that throws,
+   lives only there: F2) */
+function progressKeys() {
+  var u = playerId(), seen = {};
+  var mine = function (k) { return !!k && (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u || k === 'nl:foil:' + u || k === 'nl:skill:' + u || k === 'nl:help:' + u); };
+  Object.keys(mem).forEach(function (k) { if (mine(k)) seen[k] = 1; });
+  try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (mine(k)) seen[k] = 1; } } catch (e) {}
+  return Object.keys(seen).sort();
+}
+/* the file holds what this visit holds: each key's value as the store
+   reads it now (its memory's where a write was refused), and every
+   position the schedule knows. Only then does the notice say where it went
+   and how much it holds ("Saved 12 positions to notlichess-tester-2026-10-
+   12.json."); a file that could not be made says so */
 function exportProgress() {
-  var u = playerId(), out = { v: 1, user: cfg.user, src: cfg.src, at: Date.now(), keys: {} };
+  var out = { v: 1, user: cfg.user, src: cfg.src, at: Date.now(), keys: {} }, name = progressFileName(), text = '', n = 0;
+  progressKeys().forEach(function (k) { var v = store.get(k, null); if (v != null) out.keys[k] = v; });
   try {
-    for (var i = 0; i < localStorage.length; i++) {
-      var k = localStorage.key(i);
-      if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u || k === 'nl:foil:' + u || k === 'nl:skill:' + u || k === 'nl:help:' + u)
-        out.keys[k] = JSON.parse(localStorage.getItem(k));
-    }
-  } catch (e) {}
-  var blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
-  var a = document.createElement('a'), name = progressFileName();
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    text = JSON.stringify(out);
+    var back = JSON.parse(text), file = back.keys[srsKey()] || {}, live = srsLoad();
+    n = Object.keys(file).length;
+    /* every position the schedule holds this visit, and every key, in the file */
+    if (Object.keys(live).some(function (k) { return !file[k]; }) || Object.keys(out.keys).some(function (k) { return !(k in back.keys); })) throw new Error('short');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  } catch (e) {
+    notice('The progress file could not be made in this browser. Try again, or save it from another browser.');
+    return;
+  }
   track('export_done');
   /* a backup made: the next prompt waits 30 practice days (F5.4), Settings
      says when (V4.5), and the player is told where it went */
   backupSaved();
-  notice('Saved to ' + name + '.');
+  notice(n ? 'Saved ' + plur(n, 'position') + ' to ' + name + '.' : 'Saved to ' + name + '.');
   renderSettings();
 }
 /* "notlichess-tester-2026-10-11.json": the player and the day (V4.5) */
@@ -612,6 +671,8 @@ document.addEventListener('click', function (e) {
     }
     case 'setUser': setUser(el('firstUser') ? el('firstUser').value : ''); break;
     case 'findUser': findUser(el('firstUser') ? el('firstUser').value : ''); break;
+    /* a busy site's Try now (F3): its wait ends, and the lookup goes again */
+    case 'findNow': findUser(el('firstUser') ? el('firstUser').value : '', true); break;
     case 'pickSite': { var nm2 = t.getAttribute('data-n') || (el('firstUser') ? el('firstUser').value : ''); cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm2); break; }
     case 'useOtherSite': { var nm = cfg.user; cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm); break; }
     case 'logout': {
@@ -706,7 +767,8 @@ document.addEventListener('click', function (e) {
     case 'size': store.set('nl:sessionSize', parseInt(k, 10)); renderSettings(); renderTrain(); break;
     case 'scanDepth': store.set('nl:scanDepth', k === 'thorough' ? 'thorough' : 'std'); track('scan_' + (k === 'thorough' ? 'thorough_on' : 'standard')); renderSettings(); autoScan(); setTimeout(autoEnrich, 500); break;
     case 'weekGoal': setWeekGoal(parseInt(k, 10)); renderSettings(); renderTrain(); break;
-    case 'reload': checkForGames(); break;
+    /* Try again, or a busy site's Try now (F3: its wait ends first) */
+    case 'reload': if (k === 'now' && data.gamesErr && data.gamesErr.busy) busyNow(data.gamesErr.site); checkForGames(true); break;
     /* Today's games rail: every game, not four (F5.1) */
     case 'allGames': {
       ui.allGames = true;
@@ -716,7 +778,7 @@ document.addEventListener('click', function (e) {
     }
     /* the way back (F5.2, F5.4): the diagnosis's report, the reminder, the backup */
     case 'reportOpen': closeSheet(); track('reveal_open'); setView('insights'); break;
-    case 'cueSlot': ui.cueSlot = CUE_AT[k] ? k : null; cuePaint(); break;
+    case 'cueSlot': cuePick(k); break;
     case 'cueAdd': cueAdd(k, false); break;
     case 'cueGcal': cueAdd(k, true); break;
     case 'cueNo': cueNotNow(); break;
@@ -810,8 +872,10 @@ document.addEventListener('keydown', function (e) {
   /* a held Enter sends the typed move once (its auto-repeat would send it
      again, or an empty box, as soon as the board takes moves again) */
   if (e.target && e.target.id === 'kbmove' && e.key === 'Enter') { e.preventDefault(); if (!e.repeat) typedMove(e.target.value); return; }
-  /* typing belongs to the field, but Esc from the move field leaves exploring */
-  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !(e.target.id === 'kbmove' && e.key === 'Escape')) return;
+  /* typing belongs to the field, but Esc from the move field leaves
+     exploring, and Esc from any control in a sheet (a Settings switch: F5)
+     closes it */
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !(e.key === 'Escape' && (e.target.id === 'kbmove' || ui.sheet))) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   /* a held key acts once: the keyboard's auto-repeat never reaches the
      button that took the pressed one's place (a held Enter would go through
@@ -819,6 +883,18 @@ document.addEventListener('keydown', function (e) {
      Arrows keep repeating, to step through a line. Space repeats freely off
      a card, where it scrolls the page */
   if (e.repeat && (/^(Enter|\?|Escape)$/.test(e.key) || (e.key === ' ' && ui.session && ui.session.active))) { e.preventDefault(); return; }
+  /* the view tabs (F6): the arrows (and Home, End) move between them, the
+     tab pattern, and the keyboard stays on the tab */
+  var vt = e.target && e.target.closest && e.target.closest('#views [role="tab"]');
+  if (vt && /^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key)) {
+    e.preventDefault();
+    var vi = VIEWS.map(function (v) { return v[0]; }).indexOf(ui.view), vn = VIEWS.length;
+    var to = e.key === 'Home' ? 0 : e.key === 'End' ? vn - 1 : (vi + (e.key === 'ArrowRight' ? 1 : vn - 1)) % vn;
+    setView(VIEWS[to][0]);
+    var tt = el('tab-' + VIEWS[to][0]);
+    if (tt && tt.focus) tt.focus({ preventScroll: true });
+    return;
+  }
   if (e.key === 'Tab' && ui.sheet) {
     /* focus stays inside the open sheet */
     var sh = document.querySelector('#overlay .sheet');
@@ -968,7 +1044,7 @@ document.addEventListener('keydown', function (e) {
 });
 
 /* ── board input: tap-tap and drag, on the card's own board only ─────────── */
-var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null, held: false };
+var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null, held: false, captured: false };
 function sqFromEvent(e) {
   var el2 = document.elementFromPoint(e.clientX, e.clientY);
   var sqEl = el2 && el2.closest ? el2.closest('#bwrap [data-sq]') : null;
@@ -1006,9 +1082,19 @@ function boardState(a) {
   if (a.phase === 'checking') return { st: checkingFrame(a), live: false, checking: true };
   return { st: a.st, live: false };
 }
+/* a swipe that starts on a board scrolls the page (r6 design M2): every
+   board lets the page pan (app.css), and on the card's board only a touch
+   that picks up a piece the board takes now holds the gesture for its drag
+   (its touchstart comes after the pointerdown that picked it up). Held so,
+   a touch sends no click: the tap that puts a lifted piece down again is
+   played at its pointerup instead (pointerFinish) */
+document.addEventListener('touchstart', function (e) {
+  if (pointerState.dragFrom >= 0 && e.target && e.target.closest && e.target.closest('#bwrap')) { e.preventDefault(); pointerState.captured = true; }
+}, { passive: false });
 document.addEventListener('pointerdown', function (e) {
   var a = ui.session && ui.session.active;
   pointerState.held = false;
+  pointerState.captured = false;
   if (!a || !e.target.closest || !e.target.closest('#bwrap')) return;
   var sq = sqFromEvent(e);
   if (sq < 0) return;
@@ -1110,7 +1196,13 @@ function pointerFinish(e, cancelled) {
       sessionClick(sq);
     } else if (!pointerState.moved && pointerState.justSelected) {
       pointerState.suppressClick = true;
+    } else if (!pointerState.moved && pointerState.captured && sq === from) {
+      /* a held touch sends no click: the tap on the piece already lifted
+         puts it down here, as its click would */
+      pointerState.suppressClick = true;
+      sessionClick(sq);
     }
+    pointerState.captured = false;
     pointerState.justSelected = false;
     /* a result that arrived mid-drag is drawn now */
     if (a.explore && a.explore.dirty) { a.explore.dirty = false; renderCard(); }
@@ -1176,10 +1268,15 @@ window.addEventListener('resize', function () { if (xpActive()) fitRows(); });
 document.addEventListener('pointercancel', function (e) { pointerFinish(e, true); });
 
 /* ── games: checking for new ones, formats, limits ───────────────────────── */
-function checkForGames() {
+/* user: the player asked (the refresh, Try again): a check that fails says
+   so in a notice too (F10) */
+function checkForGames(user) {
   if (data.sections.games === 'loading') return;
-  notice('Checking for new games…');
+  data.userCheck = !!user;
+  /* a first load tried again shows its reading card in Today's place */
+  if (data.games.length) notice('Checking for new games…');
   loadGames().then(function () { setTimeout(autoScan, 500); });
+  if (!data.games.length) renderTrain();
 }
 var perfFetchTimer = null;
 function perfsChanged() {

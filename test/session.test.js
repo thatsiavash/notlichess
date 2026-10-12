@@ -389,7 +389,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       var habits = []; h.replace(/class="(?:plan )?keep-line">([^<]*)</g, function (m, t) { habits.push(t); return m; });
       var want = []; pick.slice(0, 4).forEach(function (x) { var l = esc(ss.sum[x.key].l); if (want.indexOf(l) < 0) want.push(l); });
       var oddLine = odd ? esc(lineOfStep(familyStep(famOf(odd)), 1)) : null;
-      return JSON.stringify({ words: words, head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], then: (/class="recap-then">([^<]*)</.exec(h) || [])[1], note3: ss.notes[pick[3].key] || null, notes: ss.notes,
+      return JSON.stringify({ words: words, head: (/<h2 class="done-big"[^>]*>([^<]*)</.exec(h) || [])[1], then: (/class="recap-then">([^<]*)</.exec(h) || [])[1], note3: ss.notes[pick[3].key] || null, notes: ss.notes,
         habits: habits, want: want, odd: !!odd, oddLine: oddLine && want.indexOf(oddLine) < 0 ? oddLine : null, skip: ss.sum[pick[4].key] }); })()`));
     eq(r.words.join(' | '), 'Shown, then found | After a miss, then shown again | Shown | After a miss | Skipped', 'the words: ' + JSON.stringify(r.notes));
     eq(r.note3, null, 'a worked example missed first is no first look');
@@ -524,7 +524,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       var want = [];
       pick.slice(0, 6).forEach(function (x) { var e = ss.sum[x.key], l = e && esc(e.l); if (l && want.indexOf(l) < 0) want.push(l); });
       var habits = []; h.replace(/class="(?:plan )?keep-line">([^<]*)</g, function (m, t) { habits.push(t); return m; });
-      return JSON.stringify({ words: words, head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], then: (/class="recap-then">([^<]*)</.exec(h) || [])[1], notes: [ss.notes[pick[0].key], ss.notes[pick[4].key], ss.notes[pick[5].key], ss.notes[pick[6].key]],
+      return JSON.stringify({ words: words, head: (/<h2 class="done-big"[^>]*>([^<]*)</.exec(h) || [])[1], then: (/class="recap-then">([^<]*)</.exec(h) || [])[1], notes: [ss.notes[pick[0].key], ss.notes[pick[4].key], ss.notes[pick[5].key], ss.notes[pick[6].key]],
         stars: (h.match(/<span class="stars"[^>]*aria-label="(\\d) of 3 stars"/g) || []).map(function (x) { return /(\\d) of 3/.exec(x)[1]; }).join(''),
         habits: habits, heads: (h.match(/>Keep in mind</g) || []).length, want: want, spotted: /spotted/i.test(h), glyphs: /[✓◐]/.test(h) }); })()`));
     eq(r.words.join(' | '), 'First look | First try | With a hint | After a miss | Shown | Missed | Skipped', 'the words, in session order, the removed card gone');
@@ -2496,32 +2496,210 @@ const SIM = `function simRun(seed, days, plan, noRule) {
   });
 
   /* ── groundwork ─────────────────────────────────────────────────── */
-  await test('a practice write the browser refuses: the game cache gives way down its own ladder and the record is kept; a store that cannot recover says so once, with the progress file', () => {
+  /* F8 (release QA): a full browser dropped the games without cards, and Insights moved from "Based on 50 ...
+     24 of your 27 losses" to "Based on 41 ... 25 of your 25 losses" with no word. Those games are packed
+     first (what Insights counts stays); games still left out are named on Insights for as long as they are */
+  const QUOTA = `var notes = [], n0 = notice, real = localStorage.setItem;
+      notice = function (t, o) { notes.push([t, o ? o.act : null]); };
+      var size = function (skip) { var n = 0; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k !== skip) n += k.length + String(localStorage.getItem(k)).length; } return n; };
+      localStorage.setItem = function (k, v) { if (size(k) + k.length + String(v).length > window.__quota) throw new Error('QuotaExceededError'); real(k, v); };
+      var insNow = function () { var r = insightReport(), c = coverage(), box = { innerHTML: '' }, el0 = el; el = function (id) { return id === 'insightsbox' ? box : el0(id); }; ui.view = 'insights'; renderInsights(); el = el0; ui.view = 'train';
+        var t = box.innerHTML.replace(/<[^>]+>/g, '|'); return { cov: [c.total, c.covered, c.losses, c.decided].join(','), games: r.games, kicker: (/Based on [^|]*/.exec(t) || [''])[0], gone: (/This browser is out of room[^|]*/.exec(t) || [''])[0], head: (/In \\d+ of your \\d+ losses[^|]*/.exec(t) || [''])[0] }; };`;
+  await test('a practice write the browser refuses: the game cache gives way down its own ladder (movetext, other players\' games, the games without cards packed, then old games) and the record is kept; after a reload Insights counts the same games, or says how many it does not count; a store that cannot recover says so once, with the progress file', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () {
       SF.state = 'failed';
-      var notes = [], n0 = notice, real = localStorage.setItem;
-      notice = function (t, o) { notes.push([t, o ? o.act : null]); };
-      var size = function (skip) { var n = 0; for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k !== skip) n += k.length + String(localStorage.getItem(k)).length; } return n; };
+      ${QUOTA}
+      var before = insNow();
       /* full: a little room left, less than one record needs */
       window.__quota = size(null) + 60;
-      localStorage.setItem = function (k, v) { if (size(k) + k.length + String(v).length > window.__quota) throw new Error('QuotaExceededError'); real(k, v); };
-      var g0 = JSON.parse(localStorage.getItem('nl:games:cc:tester')).games.length, its = allMistakes().filter(trainable);
+      var its = allMistakes().filter(trainable);
       srsRecord(its[0], 'first', { ms: 30000, attempted: true });
-      var disk = JSON.parse(localStorage.getItem('nl:srs:cc:tester') || '{}');
-      var first = { kept: !!disk[its[0].key], games: [g0, JSON.parse(localStorage.getItem('nl:games:cc:tester')).games.length], notes: notes.slice() };
+      var disk = JSON.parse(localStorage.getItem('nl:srs:cc:tester') || '{}'), c = JSON.parse(localStorage.getItem('nl:games:cc:tester'));
+      var first = { kept: !!disk[its[0].key], games: c.games.length, packed: (c.packed || []).length, gone: (c.gone || []).length, notes: notes.slice() };
+      localStorage.setItem = real; notice = n0;
+      return JSON.stringify({ before: before, first: first }); })()`));
+    eq(r.first.kept, true, 'the record is on disk');
+    eq(JSON.stringify([r.first.games, r.first.packed, r.first.gone]), '[40,10,0]', 'the 10 games without cards packed, none left out');
+    eq(JSON.stringify(r.first.notes), '[]', 'nothing lost, nothing to say');
+    /* a reload: Insights counts the same games */
+    const B = boot({ storage: Object.assign({}, A.storage) });
+    const b = JSON.parse(B.ev(`(function () { SF.state = 'failed'; ${QUOTA} localStorage.setItem = real; notice = n0; return JSON.stringify(insNow()); })()`));
+    eq(JSON.stringify(b), JSON.stringify(r.before), 'Insights after the reload, as before: ' + JSON.stringify(b));
+    ok(/^Based on 50 /.test(b.kicker) && !b.gone, 'its window: ' + b.kicker);
+    /* fuller still: old games without cards are left out, said once, and Insights names them after a reload */
+    const r2 = JSON.parse(B.ev(`(function () {
+      SF.state = 'failed';
+      ${QUOTA}
+      var c0 = JSON.parse(localStorage.getItem('nl:games:cc:tester'));
+      window.__quota = size(null) - 400;
+      var its = allMistakes().filter(trainable);
+      srsRecord(its[1], 'first', { ms: 30000, attempted: true });
+      var c = JSON.parse(localStorage.getItem('nl:games:cc:tester')), disk = JSON.parse(localStorage.getItem('nl:srs:cc:tester') || '{}');
+      var out = { kept: !!disk[its[1].key], packed: [(c0.packed || []).length, (c.packed || []).length], gone: (c.gone || []).length, notes: notes.slice() };
       /* nothing fits any more: one notice for the visit, however many writes fail */
       window.__quota = 0;
       notes.length = 0;
-      srsRecord(its[1], 'first', {}); srsRecord(its[2], 'fail', {}); daySave(dayLoad());
-      var second = { notes: notes.slice(), mem: !!srsLoad()[its[2].key] };
+      srsRecord(its[2], 'first', {}); srsRecord(its[3], 'fail', {}); daySave(dayLoad());
+      out.second = { notes: notes.slice(), mem: !!srsLoad()[its[3].key] };
       localStorage.setItem = real; notice = n0;
-      return JSON.stringify({ first: first, second: second }); })()`));
-    eq(r.first.kept, true, 'the record is on disk');
-    ok(r.first.games[1] < r.first.games[0], 'the game cache shrank to make room: ' + r.first.games.join(' -> '));
-    eq(JSON.stringify(r.first.notes), JSON.stringify([['This browser is short on storage, so ' + r.first.games[1] + ' games are kept, including every game you practise from.', null]]), 'only the games notice');
-    eq(JSON.stringify(r.second.notes), JSON.stringify([['This browser is out of room, so your last answers may not be kept. Save a progress file in Settings.', 'exportProgress']]), 'one notice, with Save');
-    eq(r.second.mem, true, 'kept in memory for this visit');
+      return JSON.stringify(out); })()`));
+    eq(r2.kept, true, 'the record is on disk');
+    ok(r2.gone > 0 && r2.packed[1] === r2.packed[0] - r2.gone, 'packed games left out for room: ' + JSON.stringify(r2));
+    eq(JSON.stringify(r2.notes), JSON.stringify([['This browser is out of room, so ' + (50 - r2.gone) + ' games are kept, including every game you practise from.', null]]), 'said once');
+    eq(JSON.stringify(r2.second.notes), JSON.stringify([['This browser is out of room, so your last answers may not be kept. Save a progress file in Settings.', 'exportProgress']]), 'one notice, with Save');
+    eq(r2.second.mem, true, 'kept in memory for this visit');
+    const C = boot({ storage: Object.assign({}, B.storage) });
+    const c = JSON.parse(C.ev(`(function () { SF.state = 'failed'; ${QUOTA} localStorage.setItem = real; notice = n0; return JSON.stringify(insNow()); })()`));
+    eq(c.gone, 'This browser is out of room, so ' + (r2.gone === 1 ? 'one of your games is' : r2.gone + ' of your games are') + ' not counted here.', 'Insights names the games it does not count: ' + JSON.stringify(c));
+    ok(c.kicker.indexOf('Based on ' + (50 - r2.gone) + ' ') === 0, 'its window counts what it holds: ' + c.kicker);
+    /* the games back (a later fetch, room again): nothing left to say */
+    const back = JSON.parse(C.ev(`(function () { var fx = ${FIX}; data.games = fx.games.slice(); modelDirty(); saveGames(data.games); return JSON.stringify({ gone: goneGames().length, stored: (JSON.parse(localStorage.getItem('nl:games:cc:tester')).gone || []).length }); })()`));
+    eq(JSON.stringify(back), '{"gone":0,"stored":0}', 'the games back: none named');
+  });
+
+  /* F3, F9, F10 (release QA, r6 growth M1): a rate limit gave a silent minute of "Looking..." and then "Check your
+     connection"; a failed first load claimed saved games; a returning player's failed check said nothing. The
+     sites answer here through a stubbed fetch (window.__net: a URL's answer, 'fail' for no answer) */
+  const NET = `window.__fetches = []; window.__net = function () { return null; };
+    fetch = function (u) {
+      window.__fetches.push(String(u));
+      var a = window.__net(String(u));
+      if (a === 'fail') return Promise.reject(new TypeError('Failed to fetch'));
+      var st = a ? a.status : 404, body = a && a.body != null ? a.body : {};
+      return Promise.resolve({ status: st, ok: st >= 200 && st < 300, url: String(u), type: 'basic', body: null,
+        headers: { get: function (h) { return a && a.headers ? a.headers[h] || null : null; } },
+        json: function () { return Promise.resolve(body); }, text: function () { return Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body)); } });
+    };
+    window.__notes = []; notice = function (t) { window.__notes.push(t); };`;
+  const pump = async (A, n) => { for (let i = 0; i < (n || 30); i++) { A.advance(0); await tick(); } };
+  await test('F3: a busy site (429) says so at once, counts down ("chess.com and lichess are busy and asked us to wait. Trying again in 60 s.") and tries again by itself, the button usable; Retry-After sets the wait; a name found on the other site goes ahead; no answer at all keeps "Check your connection"', async () => {
+    const A = boot({ storage: {} });
+    A.ev(`(function () { ${NET}
+      var box = { innerHTML: '' }, inp = { value: 'tester', focus: function () {} }, btn = { textContent: '', classList: { add: function () { btn.off = true; }, remove: function () { btn.off = false; } } }, el0 = el;
+      el = function (id) { return id === 'whichSite' ? box : id === 'firstUser' ? inp : id === 'findBtn' ? btn : el0(id); };
+      window.__box = box; window.__btn = btn; window.__went = []; setUser = function (n) { window.__went.push([cfg.src, n]); };
+      window.__net = function (u) { return /chess\\.com|lichess/.test(u) ? { status: 429 } : null; };
+      findUser('tester'); return 1; })()`);
+    const t0 = A.getNow();
+    await pump(A);
+    const r1 = JSON.parse(A.ev(`JSON.stringify({ box: window.__box.innerHTML.replace(/<[^>]+>/g, ''), btn: [window.__btn.textContent, !!window.__btn.off], n: window.__fetches.length })`));
+    eq(A.getNow() - t0, 0, 'no wait before the line');
+    eq(r1.box, 'chess.com and lichess are busy and asked us to wait. Trying again in 60 s60 s. Try now', 'at once, with its count (the seconds once for the eye, once for a screen reader)');
+    eq(JSON.stringify(r1.btn), '["Find my mistakes",false]', 'the button usable meanwhile');
+    eq(r1.n, 2, 'one request a site');
+    /* the count runs down; at 0 it tries again by itself: chess.com has the name now */
+    A.ev(`window.__net = function (u) { return /lichess/.test(u) ? { status: 404 } : /stats/.test(u) ? { status: 200, body: { chess_rapid: { last: { rating: 1500 }, record: { win: 3, loss: 2, draw: 0 } } } } : /chess\\.com/.test(u) ? { status: 200, body: { username: 'tester' } } : null; }; 1`);
+    A.advance(30000); await pump(A, 5);
+    eq(A.ev('window.__went.length'), 0, 'not before the count ends');
+    A.advance(31000); await pump(A);
+    eq(A.ev('JSON.stringify(window.__went)'), '[["chesscom","tester"]]', 'tried again by itself at 0, and goes');
+    /* Retry-After sets the wait; lichess busy while chess.com has the name: chess.com goes ahead */
+    const B = boot({ storage: {} });
+    B.ev(`(function () { ${NET}
+      var box = { innerHTML: '' }, inp = { value: 'tester', focus: function () {} }, el0 = el;
+      el = function (id) { return id === 'whichSite' ? box : id === 'firstUser' ? inp : el0(id); };
+      window.__box = box; window.__went = []; setUser = function (n) { window.__went.push([cfg.src, n]); };
+      window.__net = function (u) { return /chess\\.com/.test(u) ? { status: 429, headers: { 'Retry-After': '7' } } : /lichess/.test(u) ? { status: 404 } : null; };
+      findUser('tester'); return 1; })()`);
+    await pump(B);
+    eq(B.ev(`window.__box.innerHTML.replace(/<[^>]+>/g, '')`), 'chess.com is busy and asked us to wait. Trying again in 7 s7 s. Try now', 'Retry-After: 7 s');
+    B.ev(`(function () { window.__net = function (u) { return /lichess/.test(u) ? { status: 429 } : /stats/.test(u) ? { status: 200, body: {} } : /chess\\.com/.test(u) ? { status: 200, body: { username: 'tester' } } : null; }; window.__realmClick('findNow'); return 1; })()`);
+    await pump(B);
+    eq(B.ev('JSON.stringify(window.__went)'), '[["chesscom","tester"]]', 'Try now goes at once; a name found on chess.com goes ahead while lichess is busy');
+    /* no answer from either: the connection */
+    const C = boot({ storage: {} });
+    C.ev(`(function () { ${NET}
+      var box = { innerHTML: '' }, inp = { value: 'tester', focus: function () {} }, el0 = el;
+      el = function (id) { return id === 'whichSite' ? box : id === 'firstUser' ? inp : el0(id); };
+      window.__box = box; window.__net = function () { return 'fail'; }; findUser('tester'); return 1; })()`);
+    await pump(C);
+    eq(C.ev(`window.__box.innerHTML.replace(/<[^>]+>/g, '')`), 'Could not reach chess.com or lichess. Check your connection and try again.', 'no answer: the connection');
+  });
+
+  await test('F3, F9: a first load that fails: busy says so at once and counts down to trying again (Try now beside it); no answer "Check your connection", an error "Try again in a minute."; never "saved games" where there are none', async () => {
+    const A = boot({ storage: { 'nl:user': JSON.stringify('tester'), 'nl:src': JSON.stringify('chesscom') } });
+    const card = `(function () { var box = { innerHTML: '', dataset: {} }, el0 = el; el = function (id) { return id === 'trainbox' ? box : el0(id); }; data.narrate = false; renderTrain(); el = el0; return box.innerHTML.replace(/<[^>]+>/g, '|').replace(/\\|+/g, '|'); })()`;
+    A.ev(`(function () { ${NET} window.__net = function (u) { return /archives/.test(u) ? { status: 429 } : null; }; gen++; loadGames(); return 1; })()`);
+    await pump(A);
+    const busy = A.ev(card);
+    ok(/\|chess\.com is busy and asked us to wait\.\|Trying again in \|60 s\|60 s\|\.\|Try now\|/.test(busy) && !/saved games/i.test(busy), 'busy: ' + busy);
+    const n0 = A.ev('window.__fetches.length');
+    A.ev(`window.__net = function (u) { return /archives/.test(u) ? 'fail' : null; }; 1`);
+    A.advance(61000); await pump(A);
+    ok(A.ev('window.__fetches.length') > n0, 'tried again by itself at 0');
+    const net = A.ev(card);
+    ok(/\|chess\.com did not answer\.\|Check your connection and try again\.\|Try again\|/.test(net) && !/saved/i.test(net), 'no answer: ' + net);
+    A.ev(`window.__net = function (u) { return /archives/.test(u) ? { status: 503 } : null; }; checkForGames(true); 1`);
+    await pump(A);
+    const err = A.ev(card);
+    ok(/\|chess\.com did not answer\.\|Try again in a minute\.\|/.test(err) && !/saved/i.test(err), 'an error: ' + err);
+  });
+
+  await test('F10: a returning player\'s failed check says what happened under their games ("Couldn\'t check for new games: chess.com is busy. Your practice is ready."), in a notice too when they asked', async () => {
+    const A = boot();
+    A.ev(`(function () { ${NET} SF.state = 'failed'; data.sections.games = 'ok'; window.__net = function (u) { return /archives/.test(u) ? { status: 429 } : /stats/.test(u) ? { status: 200, body: {} } : { status: 200, body: { username: 'tester' } }; }; checkForGames(true); return 1; })()`);
+    await pump(A);
+    const r = JSON.parse(A.ev(`JSON.stringify({ notes: window.__notes.slice(), aside: (/<p class="lg-note"[^>]*>([^<]*)</.exec(latestGamesHtml()) || [])[1], games: data.games.length })`));
+    eq(r.aside, 'Couldn&#39;t check for new games: chess.com is busy. Your practice is ready.', 'under the games');
+    eq(JSON.stringify(r.notes), JSON.stringify(['Checking for new games…', 'Couldn\'t check for new games: chess.com is busy. Your practice is ready.']), 'and in a notice');
+    eq(r.games, 50, 'the saved games stay');
+    A.ev(`(function () { window.__notes.length = 0; window.__net = function (u) { return /archives/.test(u) ? 'fail' : /stats/.test(u) ? { status: 200, body: {} } : { status: 200, body: { username: 'tester' } }; }; checkForGames(false); return 1; })()`);
+    /* (it waits out chess.com's minute first, as background work does) */
+    A.advance(61000); await pump(A);
+    const r2 = JSON.parse(A.ev(`JSON.stringify({ notes: window.__notes.slice(), aside: (/<p class="lg-note"[^>]*>([^<]*)</.exec(latestGamesHtml()) || [])[1] })`));
+    eq(r2.aside, 'Couldn&#39;t check for new games: chess.com did not answer. Your saved games are still here.', 'no answer: under the games');
+    eq(JSON.stringify(r2.notes), JSON.stringify(['Checking for new games…']), 'a check nobody asked for adds no notice');
+  });
+
+  /* F2 (release QA): Save on the out-of-room notice wrote an empty file under "Saved to ..." (it read storage
+     only). The file holds what this visit holds, and the notice counts it */
+  await test('the progress file holds this visit\'s progress when storage is full or throws ("Saved 1 position to notlichess-tester-2026-09-28.json."); a refused write reads back its newer value; a file that cannot be made never says "Saved"', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      SF.state = 'failed';
+      var notes = [], n0 = notice, real = localStorage.setItem, blob = null, B0 = Blob, ce = document.createElement;
+      notice = function (t) { notes.push(t); };
+      Blob = function (parts) { blob = parts[0]; };
+      document.createElement = function () { return { click: function () {}, remove: function () {}, setAttribute: function () {}, style: {} }; };
+      var out = {};
+      /* a refused write: the store reads back the newer value, not storage's older one */
+      store.set('nl:x', 1); localStorage.setItem = function () { throw new Error('QuotaExceededError'); };
+      out.refused = [store.set('nl:x', 2), store.get('nl:x', null), JSON.parse(localStorage.getItem('nl:x'))];
+      /* full from here: a card found, then Save on the notice */
+      var its = allMistakes().filter(trainable);
+      srsRecord(its[0], 'first', { ms: 30000, attempted: true });
+      out.disk = !!JSON.parse(localStorage.getItem('nl:srs:cc:tester') || '{}')[its[0].key];
+      out.roomNote = notes.slice();
+      notes.length = 0;
+      exportProgress();
+      var f = JSON.parse(blob);
+      out.file = { srs: Object.keys(f.keys['nl:srs:cc:tester'] || {}), day: Object.keys(f.keys).filter(function (k) { return /^nl:day:/.test(k); }).length };
+      out.saved = notes.slice(); out.sv = !!cueLoad().sv;
+      /* storage that throws on every use: the same */
+      var gi = localStorage.getItem, ln = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(localStorage), 'length');
+      localStorage.getItem = function () { throw new Error('SecurityError'); };
+      srsRecord(its[1], 'first', { ms: 30000, attempted: true });
+      notes.length = 0; blob = null;
+      exportProgress();
+      out.thrown = { srs: Object.keys(JSON.parse(blob).keys['nl:srs:cc:tester'] || {}).length, notes: notes.slice() };
+      localStorage.getItem = gi;
+      /* a file that cannot be made: no "Saved", no last save noted */
+      var c = cueLoad(); delete c.sv; cueSave(c);
+      document.createElement = function () { throw new Error('no anchors'); };
+      notes.length = 0;
+      exportProgress();
+      out.cannot = { notes: notes.slice(), sv: !!cueLoad().sv };
+      localStorage.setItem = real; notice = n0; Blob = B0; document.createElement = ce;
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.refused), '[false,2,1]', 'a refused write: false, read back as 2 (storage still holds 1)');
+    eq(r.disk, false, 'the answer never reached storage');
+    eq(JSON.stringify(r.roomNote), JSON.stringify(['This browser is out of room, so your last answers may not be kept. Save a progress file in Settings.']), 'the out-of-room notice');
+    ok(r.file.srs.length === 1 && r.file.day >= 1, 'the file holds the answer and the day: ' + JSON.stringify(r.file));
+    eq(JSON.stringify(r.saved), JSON.stringify(['Saved 1 position to notlichess-tester-2026-09-28.json.']), 'the notice counts what it saved');
+    eq(r.sv, true, 'the last save noted');
+    eq(JSON.stringify(r.thrown), JSON.stringify({ srs: 2, notes: ['Saved 2 positions to notlichess-tester-2026-09-28.json.'] }), 'storage that throws: the file holds both answers');
+    eq(JSON.stringify(r.cannot), JSON.stringify({ notes: ['The progress file could not be made in this browser. Try again, or save it from another browser.'], sv: false }), 'a file that cannot be made never says "Saved"');
   });
 
   await test('tester helpers: after shiftDays(1) a card due tomorrow is due today, the day records, first and last seen and the paused set move back with it; the practice log keeps one entry per answered card and one per set, the last 500', () => {
@@ -3302,9 +3480,12 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       srsRecord(it, 'first', { ms: 30000, attempted: true });
       var f1 = words(focusHtml()), lg = latestGamesHtml();
       var rows = (lg.match(/class="lg-row/g) || []).length, metas = []; lg.replace(/<small>([^<]*)<\\/small>/g, function (m, t) { metas.push(t); return m; });
-      var st = (/<span class="lg-state">([^<]*)<i>([^<]*)<\\/i>/.exec(lg) || []).slice(1);
+      var st = (/<span class="lg-state"[^>]*>([^<]*)<i>([^<]*)<\\/i>/.exec(lg) || []).slice(1);
+      /* each row named by one sentence in reading order, its letters and lines hidden from a screen reader, no aria-label */
+      var said = []; lg.replace(/<(div|a) class="lg-row[^>]*>([\\s\\S]*?)<\\/(div|a)>/g, function (m, t, inner) {
+        said.push({ s: (/^<span class="sr-only">([^<]*)<\\/span>/.exec(inner) || [])[1] || '', hid: (inner.match(/aria-hidden="true"/g) || []).length, lab: /aria-label/.test(m.slice(0, m.indexOf('>'))) }); return m; });
       ui.allGames = true; var all = (latestGamesHtml().match(/class="lg-row/g) || []).length; ui.allGames = false;
-      return JSON.stringify({ f0: f0, f1: f1, rows: rows, all: all, games: scopedGames().length, metas: metas, st: st, more: /data-act="allGames">All games</.test(lg) }); })()`));
+      return JSON.stringify({ f0: f0, f1: f1, rows: rows, all: all, games: scopedGames().length, metas: metas, st: st, said: said, more: /data-act="allGames">All games</.test(lg) }); })()`));
     eq(JSON.stringify([r.f0.name, r.f0.glyph, r.f0.line]), JSON.stringify(['Piece safety', 'shield', 'Before you move: their checks, captures, threats?']), 'its glyph, name and check line');
     eq(r.f0.prog, '38 not started', 'a fresh player: no "0 learned"');
     eq(r.f0.bar, '<i class="sk-g"', 'its meter all not started');
@@ -3315,6 +3496,11 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(r.more && r.all === r.games && r.all > 4, 'All games shows them all: ' + r.all);
     ok(r.metas.every((m) => /^(Rapid|Blitz|Bullet|Classical) · (today|yesterday|\d{1,2} \w+( \d{4})?) · (White|Black)$/.test(m)), 'each row "Rapid · 27 Sept · White": ' + r.metas.join(' | '));
     eq(JSON.stringify(r.st), JSON.stringify(['4 mistakes', '1 cost the game']), 'the state on two lines');
+    /* read in order (release 2 slice A): "Lost to opponent1 (1388), 4 mistakes, 1 cost the game. Rapid, 27 Sept, White." */
+    eq(r.said.length, 4, 'a name for each row');
+    ok(r.said.every((x) => /^(Won against|Lost to|Drew with) [^,]+( \(\d+\))?, [^.]+\. (Rapid|Blitz|Bullet|Classical), (today|yesterday|\d{1,2} \w+( \d{4})?), (White|Black)\.$/.test(x.s)
+      && x.hid === 3 && !x.lab), 'each row one sentence, its three parts hidden, no aria-label: ' + JSON.stringify(r.said));
+    ok(r.said.some((x) => /^Lost to [^,]+, 4 mistakes, 1 cost the game\. /.test(x.s)), 'the state read after the name: ' + r.said.map((x) => x.s).join(' | '));
   });
 
   await test('F5.2: the diagnosis shows on each summary until it has shown in full once: the first summary "Your report builds as you practise: 12 of 40 games read.", then "So far: ...", then with the read done the full card ("In 25 of your 27 losses, one move turned the game for good.", the top three skills, "You started on the biggest: Piece safety.", See your report ›, reveal_seen once), then one line ("Piece safety: 1 climbing · 37 to go."); tier 1\'s words; Today\'s "Why these?"', () => {
@@ -3849,6 +4035,30 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(t2), JSON.stringify(['2 of 5 found first try.', '2 after a miss · 1 shown', '2 of 5 found first try.', '2 after a miss · 1 shown', false]), 'tiers 2 and 3: the first-try count, then the rest in one line; glyphs, no stars');
   });
 
+  /* round 6 (kid550-r2, adult850-r2; growth M4): a lesson in a set's slot read "You found 9 of 10 ... 1 was
+     skipped". A lesson is no position: never skipped, never counted; only what the player played or skipped */
+  await test('a lesson in a set\'s slot is never "skipped": the kid\'s day 2 (a lesson in slot 2, 9 found first try) reads "You found all 9." at tier 1 and "9 of 9 found first try." at tier 2; a position the player skipped still counts', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      data.user = { perfs: { rapid: { rating: 700 } } }; SF.state = 'failed';
+      var its = allMistakes().filter(trainable).slice(0, 9).map(function (x) { return x.key; });
+      var mk = function (skipLast) {
+        var ks = its.slice(0, 1).concat(['ls:free'], its.slice(1)), ss = { mode: 'today', label: 'Today', keys: ks, idx: ks.length, results: { 'ls:free': 'lesson' }, notes: {}, sum: {}, relearn: [], relearnOf: {}, finished: true };
+        its.forEach(function (k, i) { var c = skipLast && i === its.length - 1 ? 'skip' : 'first'; ss.results[k] = c === 'skip' ? 'skip' : 'first'; ss.sum[k] = { c: c, s: c === 'first' ? 3 : 0, fc: '' }; });
+        return ss;
+      };
+      var text = function (h) { return [(/<h2 class="done-big"[^>]*>([^<]*)</.exec(h) || [])[1], (/<p class="recap-then">([^<]*)</.exec(h) || [])[1] || '']; };
+      var out = { tier: playerTier(), t1: text(doneHtml(mk(false))), score: recapScore(mk(false), mk(false).keys, 1), skip1: text(doneHtml(mk(true))) };
+      playerTier = function () { return 2; };
+      out.t2 = text(doneHtml(mk(false)));
+      return JSON.stringify(out); })()`));
+    eq(r.tier, 1, 'a 700 player is at tier 1');
+    eq(JSON.stringify(r.t1), JSON.stringify(['You found all 9.', '']), 'the kid\'s day 2: "You found all 9.", nothing skipped');
+    eq(JSON.stringify(r.score), JSON.stringify({ head: 'You found all 9.', then: '' }), 'the score itself');
+    eq(JSON.stringify(r.skip1), JSON.stringify(['You found 8 of 9.', '1 was skipped.']), 'a position the player skipped still counts');
+    eq(JSON.stringify(r.t2), JSON.stringify(['9 of 9 found first try.', '']), 'tier 2');
+  });
+
   await test('V4.3: at tier 1 a found verdict on a card\'s first showing adds its stars after the verdict\'s glyph, off the board (they fill 80 ms apart with the found moment); none for the answer shown, on a retry, or at tier 2', () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
@@ -3974,6 +4184,49 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(r.settings), JSON.stringify(['M+ T+ W- T+ F- S- S+', true, 'At 7:30 pm on Mon, Tue, Thu and Sun.']), 'Settings lights those days and the time');
     eq(r.last, '[3]', 'the last day on stays on');
     eq(JSON.stringify(r.clock), JSON.stringify(['7:30 pm', '19:30', '8:00 am', '12:05 am', '12:30 pm']), 'en-US a 12-hour clock, en-GB 24');
+  });
+
+  await test('r6 growth M3: the reminder picked is the reminder kept: Evening and Wednesday picked on the summary are saved at once, without Add to calendar; Settings lights them, reads "At 7:30 pm on Mon, Tue, Wed, Thu and Sat." and "Not in your calendar yet." until one is added with that time and those days', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      Blob = function () {}; document.createElement = function () { return { click: function () {}, remove: function () {}, setAttribute: function () {}, style: {} }; };
+      var k = allMistakes().filter(trainable)[0].key, ss = { mode: 'today', label: 'Today', keys: [k], idx: 1, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true }; ss.results[k] = 'first';
+      ui.session = ss; doneHtml(ss); var out = {};
+      var set = function () { var h = (/<div class="set-block cue-set">[\\s\\S]*?<\\/div><div class="set-block">/.exec(settingsHtml()) || [''])[0];
+        return { slot: /data-act="cueSlot" data-k="evening" aria-pressed="true"/.test(h), wed: /data-act="cueDay" data-k="3" aria-pressed="true"/.test(h),
+          when: (/<p class="cue-when">([^<]*)</.exec(h) || [])[1] || '', cal: /<p class="cue-when cue-cal">Not in your calendar yet\\.<\\/p>/.test(h) }; };
+      window.__realmClick('cueSlot', 'evening'); window.__realmClick('cueDay', '3');
+      out.kept = [cueLoad().slot, JSON.stringify(cueLoad().days.slice().sort()), !!cueLoad().cal];
+      /* the page left before any calendar: what Settings reads from storage alone */
+      ui.session = null; ui.cueSlot = null; ui.cueDays = null;
+      out.settings = set();
+      window.__realmClick('cueAdd', 'evening'); ui.cueSlot = null; ui.cueDays = null;
+      out.added = set();
+      window.__realmClick('cueDay', '5'); ui.cueSlot = null; ui.cueDays = null;
+      out.changed = set();
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.kept), JSON.stringify(['evening', '[1,2,3,4,6]', false]), 'the time and the days kept the moment they are picked');
+    eq(JSON.stringify(r.settings), JSON.stringify({ slot: true, wed: true, when: 'At 7:30 pm on Mon, Tue, Wed, Thu and Sat.', cal: true }), 'Settings lights them, says when, and that no calendar has it yet');
+    eq(r.added.cal, false, 'added: the line goes');
+    eq(JSON.stringify([r.changed.cal, r.changed.when]), JSON.stringify([true, 'At 7:30 pm on Mon, Tue, Wed, Thu, Fri and Sat.']), 'a day changed after: kept, and not in the calendar yet again');
+  });
+
+  await test('F5, F6 (release 2 slice A): Escape from a Settings switch closes Settings; the view tabs take the arrows, Home and End (the tab pattern), and are marked up as tabs', () => {
+    const A = boot();
+    A.click('settings');
+    eq(A.ev('ui.sheet'), 'settings', 'the gear opens Settings');
+    A.key('Escape', false, { id: 'sw-sound' });
+    eq(A.ev('ui.sheet || ""'), '', 'Escape on a switch closes it');
+    A.key('Escape', false, { id: 'firstUser' });
+    eq(A.ev('ui.sheet || ""'), '', 'and Escape in a field with no sheet open stays the field\'s');
+    A.ev("setView('train')");
+    const go = (key, on) => { A.key(key, false, { tab: on }); return A.ev('ui.view'); };
+    eq([go('ArrowRight', 'train'), go('ArrowRight', 'insights'), go('ArrowLeft', 'train'), go('Home', 'insights'), go('End', 'train')].join(' '), 'insights train insights train insights', '→ ← wrap; Home, End');
+    const tabs = A.ev(`(function () { var n = { innerHTML: '', contains: function () { return false; } }, pane = { hidden: false }, get0 = document.getElementById;
+      document.getElementById = function (id) { return id === 'views' ? n : /^view-/.test(id) ? pane : get0(id); };
+      try { setView('train'); } finally { document.getElementById = get0; } return n.innerHTML; })()`);
+    ok(/<a class="view-tab view-on" id="tab-train" data-act="view" data-k="train" role="tab" aria-selected="true" aria-controls="view-train" tabindex="0">/.test(tabs)
+      && /id="tab-insights" data-act="view" data-k="insights" role="tab" aria-selected="false" aria-controls="view-insights" tabindex="-1">/.test(tabs), 'the tab shown takes the keyboard, the other an arrow away: ' + tabs.slice(0, 300));
   });
 
   await test('V4.7: a game\'s walk-through opens its positions in move order, whatever their state (a game with positions at moves 25 and 35 opens move 25 first); tier 1 Insights has no "Start here"', () => {
@@ -4195,7 +4448,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     } finally { global.IntersectionObserver = IO; }
     const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.css'), 'utf8');
     ok(/body\.in-session \.consent-slot\{display:none\}/.test(css), 'never during a set (nor on its summary)');
-    ok(/<div id="view-train" class="view"><section id="trainbox"><\/section><div id="consent-slot" class="consent-slot"><\/div><\/div>/.test(A.ev('(renderShell(), el("main").innerHTML)')), 'the slot at Today\'s foot, after the set\'s box, not on Insights');
+    ok(/<div id="view-train" class="view" role="tabpanel" aria-labelledby="tab-train"><h1 class="sr-only">Today<\/h1><section id="trainbox"><\/section><div id="consent-slot" class="consent-slot"><\/div><\/div>/.test(A.ev('(renderShell(), el("main").innerHTML)')), 'the slot at Today\'s foot, after the set\'s box, not on Insights');
     const src = ['14-render.js', '15-shell.js'].map((f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'js', f), 'utf8')).join('\n');
     ok(/foot-line">Free and open source\. Your games and progress are saved in this browser, not on our servers\. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden\.</.test(src), 'the footer\'s line');
     const says = src.match(/'[^'\n]*Microsoft Clarity records[^'\n]*'/g) || [];

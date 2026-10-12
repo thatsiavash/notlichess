@@ -8,6 +8,12 @@ const makeApp = require('./app-realm');
 const FIX = fs.readFileSync(path.join(__dirname, 'data', 'fixture-games.json'), 'utf8');
 const T0 = Date.UTC(2026, 8, 28, 14, 0, 0);
 const base = () => ({ 'nl:user': JSON.stringify('tester'), 'nl:src': JSON.stringify('chesscom'), 'nl:games:cc:tester': FIX });
+/* the fixture with its cards' fact sheets on their records (as test/words.js keys it) */
+const keyedFixture = () => {
+  const d = JSON.parse(FIX), F = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'facts-fixture.json'), 'utf8'));
+  d.games.forEach((g) => (g.bl || []).forEach((b) => { const k = g.id + ':' + b.p; if (F.cards[k]) b.k = F.cards[k]; }));
+  return JSON.stringify(d);
+};
 const boot = (o) => makeApp(Object.assign({ now: T0, storage: base() }, o || {}));
 
 let failed = 0, passed = 0;
@@ -851,7 +857,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
               [/<g class="tried"/g, /Faint red line: |Red cross: a move /g, 'tried move'], [/url[(]#checkglow/g, / king is in check[.]/g, 'check'],
               [/badge-good/g, /Green tick: /g, 'tick'], [/badge-bad/g, /Red cross: your move/g, 'cross'], [/badge-close/g, /Ring with a tick: /g, 'close'], [/badge-info/g, /Grey i: /g, 'i'],
               [/badge-checking/g, /Grey dots: /g, 'checking'], [/badge-unchecked/g, /Question mark: /g, 'unchecked'],
-              [/class="ring-attacked"/g, /Red ring: (your [a-z]+ on [a-h][1-8] is in danger|they could checkmate on [a-h][1-8]|[a-h][1-8], where your piece would be in danger|after your game move, your [a-z]+ on [a-h][1-8] can be taken)[.]/g, 'danger ring']];
+              [/class="ring-attacked"/g, /Red ring: (your [a-z]+ on [a-h][1-8] is in danger|(after (your game move|both your tries), )?they could checkmate on [a-h][1-8]|[a-h][1-8], where your piece would be in danger|after your game move, your [a-z]+ on [a-h][1-8] can be taken)[.]/g, 'danger ring']];
             /* after a forcing line S0's won tokens are read in its one sentence (final fixes 3): each drawn one named there */
             var along = (/Along the line you took ([^.]*)[.]/.exec(lab) || [])[1] || '', lab0 = lab;
             (o.tokens || []).forEach(function (t) { if (t.s0 && along.indexOf('a ' + PIECE_WORD[pType(t.p)] + ' on ' + sqName(t.sq)) >= 0) lab0 += ' @s0won@'; });
@@ -1058,8 +1064,47 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
 
   /* the copy lint (test/copylint.js) walks the same frames, at tiers 1 to 3, with Today, the summary
      and Insights: nothing new against its baseline, and nothing left on it that is gone */
+  let lint = null;
+  const lintRun = () => lint || (lint = require('./copylint')(boot(), OPEN, FRAMES));
+  /* every frame of every card at tiers 1 to 3 with the fact sheets on the records, read once: each string a
+     frame shows (rows, chip, caption, tag, source line, live region, strip, buttons), its board description,
+     and on an answered frame Details and the check line. Kept: those carrying a program value (out), and
+     every red ring said of their mate with the board it was said on (rings) */
+  let walked = null;
+  const keyedWalk = () => {
+    if (walked) return walked;
+    const PROG = require('./copylint').PROG;
+    const A = boot({ storage: Object.assign(base(), { 'nl:games:cc:tester': keyedFixture() }) });
+    walked = JSON.parse(A.ev(`(function () { ${OPEN} ${FRAMES}
+      var out = [], n = 0, keyed = 0, re = ${PROG.toString()}, rings = [];
+      var txt = function (h) { return String(h || '').replace(/<label class="kb-move[^"]*">[\\s\\S]*?<\\/label>/g, ' ').replace(/<input[^>]*>/g, ' ').replace(/<[^>]+>/g, ' / ').replace(/&#39;/g, "'").replace(/\\s+/g, ' '); };
+      var read = function (tier, key, what, s) { n++; if (s && re.test(String(s))) out.push(tier + '|' + key + '|' + what + '|' + s); };
+      [1, 2, 3].forEach(function (tier) {
+        playerTier = function () { return tier; };
+        allMistakes().filter(trainable).forEach(function (it) {
+          if (factsOf(it.b)) keyed++;
+          eachFrame(it, function (what, a) {
+            var d = displayFor(a);
+            [d.row1, d.row2, d.cap, d.chip, d.tag, d.src, d.live, txt(d.strip)].concat(d.buttons.map(function (b) { return b.label; })).forEach(function (s) { read(tier, it.key, what, s); });
+            try {
+              var f = boardOptsFor(a), ar = boardAria(a, f.st, f.opts);
+              read(tier, it.key, what + ', board description', ar);
+              (ar.match(/Red ring: (?:after (?:your game move|both your tries), )?they could checkmate on [a-h][1-8]\\./g) || []).forEach(function (s) {
+                var sq = sqIndex(s.slice(-3, -1)), opp = !myPov(a.it), post = cloneState(a.pre), gm = uciToMove(post, a.playedUci);
+                if (gm) applyMove(post, gm);
+                rings.push({ tier: tier, key: it.key, what: what, s: s, now: mateOnBoard(f.st, sq, opp), afterGame: !!gm && mateOnBoard(post, sq, opp) });
+              });
+            } catch (e) { read(tier, it.key, what + ', board description', 'undefined: ' + e.message); }
+            if (a.phase === 'done' && /^(found|S0 settled|shown|shown, played|game shown)$/.test(what)) { read(tier, it.key, what + ', Details', txt(detailsHtml())); read(tier, it.key, what + ', check line', checkLine(a)); }
+          });
+        });
+      });
+      return JSON.stringify({ out: out, n: n, keyed: keyed, rings: rings }); })()`));
+    walked.A = A;
+    return walked;
+  };
   await test('copy lint: banned words by tier ("on top" at every tier), the caps, one check line per card (the summary\'s, in Details), no old habit sentence, no routine line at tier 1, Insights clear at every tier, against its baseline', () => {
-    const r = require('./copylint')(boot(), OPEN, FRAMES);
+    const r = lintRun();
     ok(r.frames > 2000 && r.strings > 10000, 'walked ' + r.frames + ' frames, ' + r.strings + ' strings');
     eq(r.fresh.length, 0, r.fresh.length + ' new violations (first: ' + r.fresh.slice(0, 4).join(' || ') + ')');
     eq(r.gone.length, 0, r.gone.length + ' baseline entries no longer seen, take them off data/copylint-baseline.json (first: ' + r.gone.slice(0, 4).join(' || ') + ')');
@@ -1072,6 +1117,60 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     ok(r.habits >= 200, 'cards whose check lines were compared: ' + r.habits);
     eq(r.habit.length, 0, r.habit.length + ' old habit sentences on screen (first: ' + r.habit.slice(0, 4).join(' || ') + ')');
     eq(r.routine.length, 0, r.routine.length + ' tier 1 screens with the routine line (first: ' + r.routine.slice(0, 4).join(' || ') + ')');
+  });
+
+  /* release gate 1: "b3null. Rd3 missed it." (tier 3's check line on 184434540700:103, a "wins" reason whose
+     line nets nothing) showed a program value. No string the fixture's cards put on screen carries one, at
+     help levels 1 to 3: the copy lint's strings, every frame's board description and live region, Details
+     on the answered frames; that card's tier 3 Details says the step's line; and the guard itself */
+  await test('no program value on screen (null, undefined, NaN): every frame of every card at tiers 1 to 3, with and without the fact sheets, with its board description, live region and Details; 184434540700:103 at tier 3 says its step\'s line; the guard drops what carries one', () => {
+    const r = lintRun();
+    ok(r.progRead > 30000 && r.arias > 4000, 'strings read for a program value: ' + r.progRead + ', board descriptions ' + r.arias);
+    eq(r.prog.length, 0, r.prog.length + ' strings with a program value (first: ' + r.prog.slice(0, 4).join(' || ') + ')');
+    /* the same frames with the cards' fact sheets (test/data/facts-fixture.json), where "b3null" came from */
+    const kw = keyedWalk(), K = kw.A;
+    ok(kw.n > 30000 && kw.keyed > 150, 'strings read with the fact sheets: ' + kw.n + ', keyed cards over the tiers ' + kw.keyed);
+    eq(kw.out.length, 0, kw.out.length + ' strings with a program value with the fact sheets (first: ' + kw.out.slice(0, 4).join(' || ') + ')');
+    const x = JSON.parse(K.ev(`(function () { ${OPEN}
+      playerTier = function () { return 3; };
+      var it = itemOf('184434540700:103'), a = openCard(it), out = {};
+      out.keyed = !!factsOf(it.b) && whyOf(a).r;
+      solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.settle = 2;
+      out.check = checkLine(a); out.step = lineOfStep(cardStep(a), 3);
+      out.details = detailsHtml().replace(/<[^>]+>/g, ' ');
+      out.guard = [progVal('b3null. Rd3 missed it.'), progVal('Your winning chances NaN%.'), progVal('[object Object]'), progVal('undefined'), progVal('Annulled, a null move'), progVal('The annulled game.'), progVal('Nullify')];
+      out.fit = fitRow(['Rxd3null wins.', 'Rxd3 wins.'], 'row2', '');
+      out.drop = noProg('b3null') + '|' + noProg('Rxd3 wins.');
+      return JSON.stringify(out); })()`));
+    eq(x.keyed, 'wins', '184434540700:103 is keyed, its reason "wins"');
+    ok(!/null|undefined|NaN/.test(x.details), 'Details: ' + x.details.replace(/\s+/g, ' ').slice(0, 300));
+    eq(x.check, x.step, 'the check line falls back to the step\'s own line');
+    eq(JSON.stringify(x.guard), '[true,true,true,true,true,false,false]', 'progVal: "b3null", "NaN%", "[object", "undefined", and a lone "null" word are program values; "annulled" and "Nullify" are not');
+    eq(x.fit, 'Rxd3 wins.', 'the fit ladder skips a form with a program value');
+    eq(x.drop, '|Rxd3 wins.', 'noProg drops it');
+  });
+
+  /* release gate 1's 30 board descriptions: "Red ring: they could checkmate on g7." where the mate comes only
+     after the game move (the back rank and two more, at Hint 1 and game mode's Hint 2). V2.1 said the danger
+     ring's "after your game move"; the mate ring says it too, and keeps its words where the mate is on the
+     board described */
+  await test('the mate ring (gate 1): "Red ring: after your game move, they could checkmate on g7." where the mate comes only after the game move, "Red ring: they could checkmate on f2." where it is on the board described; every mate ring of every frame at tiers 1 to 3 true where it is said', () => {
+    const kw = keyedWalk(), rings = kw.rings;
+    const bare = rings.filter((r) => /^Red ring: they/.test(r.s)), after = rings.filter((r) => /after your game move/.test(r.s)), tries = rings.filter((r) => /after both your tries/.test(r.s));
+    ok(bare.length >= 10 && after.length >= 15, 'mate rings said: ' + bare.length + ' on the board, ' + after.length + ' after the game move, ' + tries.length + ' after both tries');
+    const badBare = bare.filter((r) => !r.now), badAfter = after.filter((r) => r.now || !r.afterGame);
+    eq(badBare.length, 0, 'a bare mate ring with no such mate on its board: ' + JSON.stringify(badBare.slice(0, 3)));
+    eq(badAfter.length, 0, 'an "after your game move" ring whose mate is on the board, or not after the game move: ' + JSON.stringify(badAfter.slice(0, 3)));
+    [['184435538450:67', 'g7'], ['184330688628:85', 'a7'], ['184212737262:58', 'd1']].forEach(([key, sq]) => {
+      [1, 2, 3].forEach((t) => {
+        const h1 = rings.filter((r) => r.key === key && r.tier === t && r.what === 'hint 1');
+        eq(h1.map((r) => r.s).join(), 'Red ring: after your game move, they could checkmate on ' + sq + '.', key + ' at tier ' + t + ', Hint 1');
+      });
+      const g2 = rings.filter((r) => r.key === key && r.tier >= 2 && r.what === 'game after a miss, hint 2');
+      ok(g2.length === 2 && g2.every((r) => /after your game move/.test(r.s)), key + ': game mode\'s Hint 2 after a miss at tiers 2 and 3: ' + JSON.stringify(g2.map((r) => r.s)));
+    });
+    const c4 = rings.filter((r) => r.key === '184268949378:16' && r.tier === 2 && r.what === 'hint 1');
+    eq(c4.map((r) => r.s).join(), 'Red ring: they could checkmate on f2.', 'card 4 at tier 2, Hint 1: the mate stands on the board described');
   });
 
   /* V4.3 and V4.8: the rules themselves, on the lines the testers misread */

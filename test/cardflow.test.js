@@ -2247,6 +2247,47 @@ const BAR = `(function () {
     eq(bad.length, 0, bad.length + ' writes too early, first: ' + JSON.stringify(bad.slice(0, 3)));
   });
 
+  await test('r6 design M2 (release 2 slice A): a swipe that starts on a board scrolls the page; only a touch that picks up one of the player\'s pieces while the card asks holds the gesture, and the tap that puts that piece down is played at its lift', () => {
+    const A = boot();
+    A.ev(DOM);
+    A.ev('(playerTier = function () { return 2; }, 1)');
+    const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
+    /* every board lets the page pan; none takes the whole gesture (touch-action: none) */
+    const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.css'), 'utf8');
+    ok(/#bwrap \.board\{touch-action:pan-y\}/.test(css) && /\.board\{[^}]*touch-action:manipulation/.test(css) && !/touch-action:\s*none/.test(css), 'boards pan the page');
+    const key = A.ev(`allMistakes().filter(trainable).filter(function (it) { var c = cardFor(it); return c && !c.sol; })[0].key`);
+    A.ev(`(window.__show(model().byKey['${key}']), 1)`);
+    run(1000);
+    const sq = JSON.parse(A.ev(`(function (a) { var o = { mine: -1, theirs: -1, empty: -1 }, lm = legalMoves(a.st);
+      for (var q = 0; q < 64; q++) { var p = a.st.b[q]; if (!p) { if (o.empty < 0 && !lm.some(function (m) { return m.to === q; })) o.empty = q; }
+        else if (isW(p) === !!a.st.w) { if (o.mine < 0 && lm.some(function (m) { return m.from === q; })) o.mine = q; } else if (o.theirs < 0 && !lm.some(function (m) { return m.to === q; })) o.theirs = q; }
+      return JSON.stringify(o); })(ui.session.active)`));
+    ok(sq.mine >= 0 && sq.theirs >= 0 && sq.empty >= 0, 'squares ' + JSON.stringify(sq));
+    /* a finger down: the pointer event comes first, then the touch event the page may hold (preventDefault: no scroll, no click) */
+    let held = 0;
+    const touch = (s) => { held = 0; A.pointer('pointerdown', s); A.pointer('touchstart', s, { preventDefault() { held++; } }); return held; };
+    const sel = () => A.ev('ui.session.active.sel');
+    eq(touch(sq.mine), 1, 'a touch on one of yours while the card asks is held for its drag');
+    A.pointer('pointerup', sq.mine);
+    eq(sel(), sq.mine, 'and picks the piece up');
+    eq(touch(sq.mine), 1, 'touched again: held');
+    A.pointer('pointerup', sq.mine);
+    eq(sel(), -1, 'and put down at its lift, as its click would (the held touch sends none)');
+    eq(touch(sq.theirs), 0, 'a touch on one of theirs is the page\'s swipe');
+    A.pointer('pointerup', sq.theirs); A.pointer('click', sq.theirs); run(3000);
+    eq(touch(sq.empty), 0, 'and on an empty square');
+    A.pointer('pointerup', sq.empty); A.pointer('click', sq.empty); run(3000);
+    eq(A.ev('ui.session.active.phase'), 'guess', 'nothing graded');
+    /* a drag still plays: the answer dragged solves the card */
+    const c = JSON.parse(A.ev('JSON.stringify((function (a) { return { bf: a.best.from, bt: a.best.to }; })(ui.session.active))'));
+    eq(touch(c.bf), 1, 'the answer\'s piece held');
+    A.pointer('pointermove', c.bt); A.pointer('pointerup', c.bt);
+    eq(A.ev('ui.session.active.phase'), 'done', 'its drag plays it');
+    run(1500);
+    eq(touch(c.bt), 0, 'on the answered card a touch is never held');
+    A.pointer('pointerup', c.bt);
+  });
+
   await test('Try again is the right slot at miss 3', async () => {
     const A = boot();
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${AFTER}
@@ -6223,7 +6264,7 @@ const BAR = `(function () {
       open(3); await game(); await game(); best();
       open(4); best();
       return JSON.parse(A.ev(`(function () { var ss = ui.session; ss.active = null; ss.finished = true; var h = doneHtml(ss);
-        return JSON.stringify({ close: '${close}', head: (/<h2[^>]*>([^<]*)</.exec(h) || [])[1], then: (/class="recap-then">([^<]*)</.exec(h) || [])[1], cats: ss.keys.map(function (k) { return ss.sum[k].c; }).join(' '),
+        return JSON.stringify({ close: '${close}', head: (/<h2 class="done-big"[^>]*>([^<]*)</.exec(h) || [])[1], then: (/class="recap-then">([^<]*)</.exec(h) || [])[1], cats: ss.keys.map(function (k) { return ss.sum[k].c; }).join(' '),
           stars: ss.keys.map(function (k) { return ss.sum[k].s; }).join(''), words: (h.match(/class="res[^"]*">[^<]*/g) || []).map(function (x) { return x.replace(/^.*>/, ''); }),
           glyphs: (h.match(/<span class="rg rg-\\w+" aria-hidden="true"><\\/span><span class="res/g) || []).map(function (x) { return /rg-(\\w+)/.exec(x)[1]; }).join(' '),
           row: (((/<div class="result-row" aria-hidden="true">([\\s\\S]*?)<\\/div>/.exec(h) || [])[1] || '').match(/rg-\\w+/g) || []).map(function (x) { return x.slice(3); }).join(' ') }); })()`));

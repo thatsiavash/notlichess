@@ -94,6 +94,26 @@ def check_sentence(s, b, r):
             if mg:
                 return 'misleading', 'no mate there on the board shown; only after the game move (%s), which the sentence does not say' % [z.uci() for z in mg]
         return 'untestable', 'no mate there now, nor after the game move'
+    m = re.match(r'^Red ring: after your game move, they could checkmate on ' + SQ + r'\.$', s)
+    if m:
+        # their mate there after the game move (finding 16's red ring, now said as such)
+        if not c.get('pre') or not c.get('played'):
+            return 'untestable', 'no game move in the frame'
+        y = chess.Board(c['pre'])
+        y.push(chess.Move.from_uci(c['played']))
+        mg = [z for z in chk.mates_in_one(y) if chess.square_name(z.to_square) == m.group(1)]
+        return ('true' if mg else 'false'), 'their mates there after the game move: %s' % [z.uci() for z in mg]
+    m = re.match(r'^Red ring: after both your tries, they could checkmate on ' + SQ + r'\.$', s)
+    if m:
+        tw = re.match(r'^two tries: (\S+)', r.get('frame') or '')
+        if not tw or not c.get('played') or not c.get('st'):
+            return 'untestable', 'both tries'
+        res = []
+        for u in (c['played'], tw.group(1)):
+            x = chess.Board(c['st'])
+            x.push(chess.Move.from_uci(u))
+            res.append((u, any(chess.square_name(z.to_square) == m.group(1) for z in chk.mates_in_one(x))))
+        return ('true' if all(ok for u, ok in res) else 'false'), 'after each try: %s' % res
     m = re.match(r'^Gold ring: your ' + PW + ' on ' + SQ + r' blocks their mate\.$', s)
     if m:
         x = chk.null(b) if b.turn == me else b.copy()

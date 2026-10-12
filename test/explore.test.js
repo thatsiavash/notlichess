@@ -482,7 +482,19 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
         a.explore.res[a.explore.nodes[0].key] = { step: 2, lines: [{ cp: 0, mate: null, pv: ['f6f5', 'g6f8', 'f5f6'] }, { cp: -1500, mate: -16, pv: ['f6g5', 'f5f4'] }] };
         return JSON.stringify(xpRows(a, a.explore)); })()`));
       if (tier === 1) eq(rows[0].words, 'a draw', 'tier 1: ' + JSON.stringify(rows[0]));
-      else { eq(rows[0].chip, 'A draw', 'tier 2: ' + JSON.stringify(rows[0])); ok(/A draw\.$/.test(rows[0].label), rows[0].label); ok(/mate in/.test(rows[1].chip), rows[1].chip); }
+      else {
+        eq(rows[0].chip, 'A draw', 'tier 2: ' + JSON.stringify(rows[0])); ok(/mate in/.test(rows[1].chip), rows[1].chip);
+        /* F4 (WCAG 2.5.3): a row's name starts with the words it shows, in their order */
+        eq(rows[0].label, 'A draw, 62.Kxf5, then Nf8 63.Kf6.', 'its name: ' + rows[0].label);
+        rows.forEach(function (r) { const shown = [r.chip, r.num + r.first, r.cont].filter(Boolean); let at = 0; shown.forEach(function (w) { const i = r.label.indexOf(w, at); ok(i >= at, 'the name holds "' + w + '" in order: ' + r.label); at = i + w.length; }); ok(r.label.indexOf(r.chip) === 0, 'it starts with the chip: ' + r.label); });
+      }
+      /* the drawn row's name is its own words, the commas for a screen reader only (no aria-label to drift from them; axe's label-content-name-mismatch) */
+      const nm = JSON.parse(A.ev(`(function () { var a = ui.session.active, out = [];
+        xpHtml(a).replace(/<button type="button" class="xp-row[^"]*"([^>]*)>([\\s\\S]*?)<\\/button>/g, function (m, at, inner) {
+          out.push({ lab: /aria-label/.test(at), name: inner.replace(/<span aria-hidden="true">[^<]*<\\/span>/g, '').replace(/<[^>]+>/g, '').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') }); return m; });
+        return JSON.stringify({ names: out, labels: xpRows(a, a.explore).map(function (r) { return r.label; }) }); })()`));
+      eq(nm.names.map((x) => x.name).join(' | '), nm.labels.join(' | '), 'tier ' + tier + ': each row read as its label');
+      ok(nm.names.length >= 2 && nm.names.length === nm.labels.length && nm.names.every((x) => !x.lab), 'no aria-label on a row: ' + JSON.stringify(nm.names));
     }
   });
 

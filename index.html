@@ -316,6 +316,8 @@ button{font-family:inherit}
 .which-q{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:800;color:var(--text-1);margin:12px 0 8px}
 .which-row{display:flex;flex-wrap:wrap;gap:12px}
 .which-none{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:12px 0 0}
+/* a busy site's line (F3): its count, and Try now beside it */
+.which-busy .btn-quiet{margin-left:4px}
 .value{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:16px;margin-top:48px}
 .value-item{background:var(--surface-1);border-radius:var(--r-card);padding:20px}
 .value-item b{display:block;font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin-bottom:6px}
@@ -442,6 +444,9 @@ a.focus-go:hover .focus-chev{background:var(--text-1)}
 .latest-head .kicker{margin:0}
 .lg-row{display:flex;align-items:center;gap:12px;min-height:64px;padding:10px 8px;margin:0 -8px;border-top:1px solid var(--divider);border-radius:12px;color:inherit}
 .latest .latest-head + .lg-row{border-top:0}
+/* a check for new games that failed (F10), under the head */
+.lg-note{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 8px}
+.latest .lg-note + .lg-row{border-top:0}
 .lg-row.is-open{cursor:pointer}
 .lg-row.is-open:hover{background:var(--surface-2);color:inherit}
 a.lg-row{color:inherit}
@@ -553,12 +558,16 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .evalbar.pending{background:var(--surface-2)}
 .evalbar.pending .evalbar-fill,.evalbar.pending .evalbar-fill-h{opacity:0}
 .board-wrap{position:relative;flex:1;min-width:0;container-type:inline-size}
-.board{width:100%;display:block;user-select:none;border-radius:4px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);touch-action:none}
+/* every board lets a swipe scroll the page and a pinch zoom it (r6 design
+   M2); the card's board pans the page up and down, a sideways swipe stays
+   its own (the story's steps), and a touch that lifts a piece holds the
+   gesture for its drag (15-shell.js) */
+.board{width:100%;display:block;user-select:none;border-radius:4px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);touch-action:manipulation}
+#bwrap .board{touch-action:pan-y}
 /* coordinates in the page's own font (boardSvg colours them: dark brown on
    light squares, white bold on dark) */
 .board text{font-family:var(--font)}
 .board rect[data-sq],.board use[data-sq]{cursor:pointer}
-#bwrap.static .board{touch-action:pan-y}
 #bwrap.static .board rect[data-sq],#bwrap.static .board use[data-sq]{cursor:default}
 .board use.drag-src{opacity:.35}
 /* a selected piece lifts (boardSvg marks it; selecting redraws the board
@@ -1003,6 +1012,10 @@ body.in-session{padding-bottom:0}
 .cue-when{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 12px}
 .cue-acts{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px}
 .cue-acts .btn-line{min-height:44px}
+/* the summary's controls, reached by Tab, scroll 16 px clear of its sticky
+   bar (F7; the page's scroll padding is the bar: html:has(.recap-acts)) */
+.recap-page [data-act],.recap-page a[href]{scroll-margin-bottom:16px}
+.cue-set .cue-cal{color:var(--text-3)}
 .cue-set .chips{margin:8px 0}
 .cue-set .cue-when{margin:8px 0}
 /* the reminder's seven days (V4.6), M to S, sharing a narrow phone's row */
@@ -1087,6 +1100,8 @@ body.in-session{padding-bottom:0}
 .ins .lead{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-2);margin:0;max-width:40em}
 /* while the background check runs, its count (V4.8: counts may still shrink) */
 .ins-checking{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:6px 0 0}
+/* the games this browser had no room for (F8): said under the window's line */
+.ins-gone{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:4px 0 0;max-width:40em}
 .ins-h{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:32px 0 12px}
 .ins-h.ins-also{margin-top:24px}
 .fam-list{background:var(--surface-1);border-radius:var(--r-card);overflow:hidden}
@@ -1280,6 +1295,81 @@ body.in-session{padding-bottom:0}
   .brand{gap:8px}
 }
 
+/* large text and zoom (F1, r6 design M1): a phone at 200% (195 px wide),
+   at 130% (277 to 300 px), and every width between, cut no word and scroll
+   no page sideways. Where the words fit, nothing here changes a thing ──── */
+/* the band's rows wrap rather than cut a word: their heights are floors,
+   met exactly where the words fit them (390 and 360 px, the desktop) */
+.bd-top{height:auto;min-height:28px;overflow:visible}
+.bd-r1{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.bd-r2{height:auto;min-height:48px;display:block;overflow:visible}
+.bd-cap{height:auto;min-height:76px;display:block;overflow:visible}
+.coach.exploring .bd-r2{display:-webkit-box;height:24px;min-height:0;overflow:hidden}
+@container (max-height:175px){.coach.exploring .bd-r2{display:none}}
+@media (min-width:861px){
+  .bd-top{min-height:var(--lh-verdict)}
+  .bd-r2{min-height:52px}
+  .bd-cap{min-height:82px}
+  .coach.exploring .bd-r2{height:26px}
+}
+/* a summary's controls reached by Tab stop 16 px above its sticky bar
+   (F7, r6 design M3: the page's scroll padding is the bar and the safe
+   area) */
+html:has(.recap-acts){scroll-padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+@media (max-width:359px){
+  /* the card flows: the board, the panel under it as tall as its words, the
+     page scrolling under the bar fixed at the foot (its height, --cbar-h,
+     kept clear under the panel's last line) */
+  .card{height:auto;min-height:100vh;min-height:100dvh;overflow:visible}
+  .card > .panel{flex:none;padding-bottom:calc(var(--cbar-h, 64px) + 12px)}
+  .coach,.coach:not(.exploring){flex:none;min-height:0;container-type:normal}
+  .coach.exploring .bd-r2{display:block;height:auto;overflow:visible}
+  .strip{flex-wrap:wrap}
+  .story-strip{flex-wrap:wrap}
+  /* exploring: the trail and each row wrap, every row shown (fitRows) */
+  .xp-head{height:auto;min-height:44px;flex-wrap:wrap}
+  .xp-trail{flex-wrap:wrap;white-space:normal;overflow:visible}
+  .xp-row{height:auto;min-height:44px;flex-wrap:wrap;row-gap:2px;white-space:normal;padding-top:6px;padding-bottom:6px}
+  .xp-cont{overflow:visible;text-overflow:clip}
+  /* the bar: labels wrap, gaps narrow; its height follows its rows */
+  .sticky-acts{gap:8px}
+  .sticky-acts > *{white-space:normal;overflow:visible;text-overflow:clip}
+  .guess-acts,.done-acts{height:auto;min-height:calc(64px + env(safe-area-inset-bottom))}
+  .guess-acts .btn-line,.guess-acts .btn-big,.guess-acts .btn-quiet,.done-acts .btn-line,.done-acts .btn-big{min-width:0;padding:4px 8px;line-height:var(--lh-small)}
+  /* pages: nothing wider than its column; the landing's and a no-account
+     page's headline in the title's size, so its longest word fits */
+  .view-tab{padding:12px 10px 9px}
+  .first h1{font-size:var(--fs-title);line-height:var(--lh-title);overflow-wrap:break-word}
+  .first-form .btn-big,.hero .btn-big,.consent-acts .btn-line{min-width:0;white-space:normal}
+  .btn-big,.btn-line,.chip{white-space:normal}
+  .hero-first{flex-wrap:wrap}
+  .hero-board{width:min(136px,100%)}
+  .wk-row{flex-wrap:wrap;row-gap:6px}
+  .lg-name{display:block;overflow:visible}
+  .lg-state{white-space:normal}
+  .lg-who small{white-space:normal}
+  .dg-row{flex-wrap:wrap;row-gap:0}
+  .dg-n{white-space:normal}
+  .chips.cue-days{flex-wrap:wrap}
+  .cue-days .day-chip{flex:0 0 44px}
+  .fr-main{grid-template-columns:minmax(0,1fr)}
+  .fr-n{grid-column:1;grid-row:auto;text-align:left;white-space:normal}
+  .recap-acts{flex-wrap:wrap}
+}
+/* under 320 px the bar's buttons stack, the honey one at the foot; a back
+   chevron keeps its row with the outlined button beside it */
+@media (max-width:319px){
+  .sticky-acts{flex-wrap:wrap}
+  .sticky-acts > .btn-line,.sticky-acts > .btn-big,.sticky-acts > .btn-quiet{flex:1 1 100%}
+  .sticky-acts > .slot-empty{display:none}
+  .sticky-acts > .nav-btn{flex:0 0 48px}
+  .sticky-acts > .nav-btn ~ .btn-line{flex:1 1 0}
+  .sticky-acts > .btn-big{order:2}
+  .recap-acts > .btn-big,.recap-acts > .btn-line{flex:1 1 100%}
+  .recap-acts > .btn-big{order:2}
+  html:has(.recap-acts){scroll-padding-bottom:calc(144px + env(safe-area-inset-bottom))}
+}
+
 /* reduced motion: every end state at once; a press changes colour instead
    of sinking ─────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion:reduce){
@@ -1329,9 +1419,14 @@ notlichess.org runs in your browser and needs JavaScript turned on. Your games a
 
 /* ── 1. Storage, tolerant of file:// and private windows ─────────────── */
 
-var mem = {};
+/* every value set this visit is kept in memory too (mem); where the
+   browser refused its write (out of room, or storage that throws), the
+   copy in memory is the newer one and is read back instead (memOnly), so
+   this visit and the progress file never fall back to an older value */
+var mem = {}, memOnly = {};
 var store = {
   get: function (k, fallback) {
+    if (memOnly[k]) return k in mem ? mem[k] : fallback;
     try {
       var v = localStorage.getItem(k);
       if (v === null) return k in mem ? mem[k] : fallback;
@@ -1340,11 +1435,12 @@ var store = {
   },
   set: function (k, v) {
     mem[k] = v;
-    try { localStorage.setItem(k, JSON.stringify(v)); return true; }
-    catch (e) { return false; }
+    try { localStorage.setItem(k, JSON.stringify(v)); delete memOnly[k]; return true; }
+    catch (e) { memOnly[k] = 1; return false; }
   },
   del: function (k) {
     delete mem[k];
+    delete memOnly[k];
     try { localStorage.removeItem(k); } catch (e) {}
   }
 };
@@ -1471,16 +1567,36 @@ function gameHref(id, color, ply) {
 }
 
 /* ── 5. API layer ────────────────────────────────────────────────────── */
-/* Lichess policy is one request at a time, and 429 carries no Retry-After,
-   so we serialise every call and back off blind for 60s. */
+/* Lichess policy is one request at a time, and its 429 carries no
+   Retry-After, so we serialise every call and back off for 60 s after a
+   429, each site on its own clock (backoffUntil lichess's, ccBackoffUntil
+   chess.com's), or for as long as a readable Retry-After says (F3). A
+   lookup the player waits on (opts.noWait) never sits out a backoff in the
+   queue: it fails at once as busy, with the seconds left, and the screen
+   says so and tries again by itself (Try now ends the wait: busyNow) */
 
 var chain = Promise.resolve();
-var backoffUntil = 0;
+var backoffUntil = 0, ccBackoffUntil = 0;
 var lastLimitNotice = 0;
+var BUSY_SECS = 60;
+function siteOfPath(path, opts) { return opts && opts.abs && String(path).indexOf(CC) === 0 ? 'chess.com' : 'lichess'; }
+function backoffOf(site) { return site === 'chess.com' ? ccBackoffUntil : backoffUntil; }
+/* a site busy (a 429): err.code 429, err.site, err.wait (seconds) */
+function busyError(site, secs) { var e = new Error('rate-limited'); e.code = 429; e.site = site; e.wait = Math.max(1, Math.ceil(secs)); return e; }
+/* the wait a 429 asks for: its Retry-After (seconds or a date) where the
+   site lets the page read it, else 60 s; 1 s to 10 min */
+function retryAfterSecs(res) {
+  var h = null;
+  try { h = res && res.headers && res.headers.get ? res.headers.get('Retry-After') : null; } catch (e) { h = null; }
+  var s = h == null ? NaN : /^\s*\d+\s*$/.test(h) ? parseInt(h, 10) : (Date.parse(h) - Date.now()) / 1000;
+  return isFinite(s) ? Math.min(600, Math.max(1, Math.ceil(s))) : BUSY_SECS;
+}
 
-function queued(fn) {
+function queued(fn, site, opts) {
+  opts = opts || {};
   var run = function () {
-    var wait = Math.max(0, backoffUntil - Date.now());
+    var wait = Math.max(0, backoffOf(site) - Date.now());
+    if (wait && opts.noWait) return Promise.reject(busyError(site, wait / 1000));
     return new Promise(function (r) { setTimeout(r, wait); }).then(fn);
   };
   var p = chain.then(run, run);
@@ -1490,7 +1606,7 @@ function queued(fn) {
 
 function request(path, opts) {
   opts = opts || {};
-  var headers = { Accept: opts.accept || 'application/json' };
+  var headers = { Accept: opts.accept || 'application/json' }, site = siteOfPath(path, opts);
   return queued(function () {
     return fetch(opts.abs ? path : L + path, {
       method: opts.method || 'GET',
@@ -1499,19 +1615,20 @@ function request(path, opts) {
       redirect: opts.manualRedirect ? 'manual' : 'follow'
     }).then(function (res) {
       if (res.status === 429) {
-        backoffUntil = Date.now() + 60000;
+        var secs = retryAfterSecs(res), until = Date.now() + secs * 1000;
+        if (site === 'chess.com') ccBackoffUntil = Math.max(ccBackoffUntil, until); else backoffUntil = Math.max(backoffUntil, until);
         /* background jobs (the scan, feed refreshes) ride the backoff
            silently; only work the user is waiting on gets a notice, and
            at most one every five minutes */
         if (!opts.quiet && Date.now() - lastLimitNotice > 300000) {
           lastLimitNotice = Date.now();
-          notice((/chess\.com/.test(String(res.url || '')) ? 'chess.com' : 'lichess') + ' asked us to slow down. Picking the work back up in a minute.');
+          notice(site + ' is busy and asked us to wait. Picking the work back up in ' + secs + ' s.');
         }
-        var err = new Error('rate-limited'); err.code = 429; throw err;
+        throw busyError(site, secs);
       }
       return res;
     });
-  });
+  }, site, opts);
 }
 
 function getJSON(path, opts) {
@@ -1525,7 +1642,7 @@ function getJSON(path, opts) {
 /* ndjson, streamed. onLine is called per record as it arrives. */
 function getND(path, onLine, opts) {
   opts = opts || {};
-  return request(path, { accept: 'application/x-ndjson', manualRedirect: opts.manualRedirect, quiet: opts.quiet })
+  return request(path, { accept: 'application/x-ndjson', manualRedirect: opts.manualRedirect, quiet: opts.quiet, noWait: opts.noWait })
     .then(function (res) {
       /* Handoff §3: /api/puzzle/* answers 303 to an HTML login page when the
          token is missing or lacks the scope. With redirect:'manual' that
@@ -1647,7 +1764,7 @@ function ccJSON(path, opts) {
   opts.abs = true;
   return request(CC + path, opts).then(function (res) {
     if (res.status === 404) { var e = new Error('404'); e.code = 404; throw e; }
-    if (!res.ok) throw new Error('cc ' + res.status);
+    if (!res.ok) { var e2 = new Error('cc ' + res.status); e2.code = res.status; throw e2; }
     return res.json();
   });
 }
@@ -1862,10 +1979,17 @@ function loadCachedGames() {
   var c = store.get(cacheKey(), null);
   if (!c || !c.games) return { games: [], ts: 0, perfs: '' };
   if (c.v !== CACHE_VERSION) return { games: [], ts: 0, perfs: '' };
+  /* the games packed for room come back as records Insights reads, and
+     the games left out for room are named (F8) */
+  var games = c.packed && c.packed.length ? c.games.concat(c.packed.map(unpackGame)).sort(function (x, y) { return y.ts - x.ts; }) : c.games;
+  data.gone = c.gone || []; data.goneFor = cacheKey();
   /* a cache built for other formats keeps its games (and their analysis);
      it only asks for a full fetch so the new format's history arrives */
-  if (c.perfs !== trackedPerfs().sort().join(',')) return { games: c.games, ts: 0, perfs: c.perfs, hd: 0, fetchedAt: c.fetchedAt };
-  return c;
+  if (c.perfs !== trackedPerfs().sort().join(',')) return { games: games, ts: 0, perfs: c.perfs, hd: 0, fetchedAt: c.fetchedAt, gone: c.gone };
+  var r = {}, k;
+  for (k in c) if (k !== 'packed') r[k] = c[k];
+  r.games = games;
+  return r;
 }
 
 function trimGames(games) {
@@ -1882,13 +2006,24 @@ function trimGames(games) {
   return out;
 }
 
+/* a game kept for Insights alone, when even the lean copy does not fit
+   (F8): the fields its counts read (the result, colour, ratings, clock,
+   opening and the win-chance series; no movetext, no cards), as one list in
+   this order, so a full browser keeps every game Insights counts */
+var PACKED = ['id', 'ts', 'perf', 'color', 'res', 'plies', 'myR', 'oppR', 'rd', 'opp', 'tc', 'clockPct', 'status', 'opening', 'analysed', 'scanned', 'wp'];
+function packGame(g) { return PACKED.map(function (k) { return g[k] == null ? null : g[k]; }); }
+function unpackGame(a) {
+  var g = { bl: null, mv: null };
+  PACKED.forEach(function (k, i) { if (a && a[i] != null) g[k] = a[i]; });
+  return g;
+}
 /* room: a practice write the browser refused (practiceWrite), tried again
    after each step of the ladder below that wrote a smaller cache; the
    ladder stops at the first step where it fits, since practice cannot be
    fetched again and games can */
 function saveGames(games, room) {
   if (!cfg.user) return { games: games };
-  var live = trimGames(games);
+  var live = trimGames(games), prevGone = data.gone && data.goneFor === cacheKey() ? data.gone : loadCachedGames().gone || [];
   var copy = function (g, lean) {
     var c = {}, k;
     for (k in g) {
@@ -1907,20 +2042,36 @@ function saveGames(games, room) {
     fetchedAt: data.fetchedAt || (loadCachedGames().fetchedAt || 0),
     perfs: trackedPerfs().sort().join(',')
   };
-  var write = function (list, lean) {
-    var p = {}, k;
+  /* the games left out for room, [id, ts, perf], so Insights says its
+     numbers come from fewer games (F8): those before, and those this write
+     leaves out, less any it holds again */
+  var goneOf = function (list) {
+    var have = {}, out = [], seen = {};
+    list.forEach(function (g) { have[g.id] = 1; });
+    prevGone.concat(live.filter(function (g) { return !have[g.id]; }).map(function (g) { return [g.id, g.ts, g.perf]; }))
+      .forEach(function (x) { if (x && !have[x[0]] && !seen[x[0]]) { seen[x[0]] = 1; out.push(x); } });
+    return out;
+  };
+  /* pack: the games without cards as packGame's lists */
+  var write = function (list, lean, pack) {
+    var p = {}, k, gone = goneOf(list);
     for (k in head) p[k] = head[k];
-    p.games = list.map(function (g) { return copy(g, lean); });
-    return store.set(cacheKey(), p);
+    p.games = list.filter(function (g) { return !pack || g.bl; }).map(function (g) { return copy(g, lean); });
+    if (pack) p.packed = list.filter(function (g) { return !g.bl; }).map(packGame);
+    if (gone.length) p.gone = gone;
+    var ok = store.set(cacheKey(), p);
+    if (ok) { data.gone = gone; data.goneFor = cacheKey(); }
+    return ok;
   };
   var out = function (list) { var p = {}, k; for (k in head) p[k] = head[k]; p.games = list; return p; };
   var fits = function () { return !room || room(); };
   if (!room && !data.leanSave && write(live, false)) return out(live);
   /* out of room, cheapest losses first: retained movetext, then other
-     accounts' game caches (their practice history stays), then old games
-     that hold no cards; games with cards are the last to go */
+     accounts' game caches (their practice history stays), then each game
+     with no cards packed (packGame: what Insights counts stays), then old
+     games that hold no cards; games with cards are the last to go */
   data.leanSave = true;
-  if (write(live, true) && fits()) return out(live);
+  if (!data.packSave && write(live, true) && fits()) return out(live);
   try {
     var mine = cacheKey(), drop = [];
     for (var i = 0; i < localStorage.length; i++) {
@@ -1931,25 +2082,36 @@ function saveGames(games, room) {
     if (drop.length) notice('This browser ran out of room, so the saved games of the other player' + (drop.length > 1 ? 's' : '')
       + ' here were cleared. Their practice history is kept, and their games come back on their next visit.');
   } catch (e) {}
-  if (write(live, true) && fits()) return out(live);
+  if (!data.packSave && write(live, true) && fits()) return out(live);
+  data.packSave = true;
+  if (write(live, true, true) && fits()) return out(live);
   var keep = live.slice();
   for (var cut = 0; cut < 6; cut++) {
     var plain = keep.filter(function (g) { return !g.bl; });
     if (!plain.length) break;
     var gone = plain.slice(Math.floor(plain.length / 2));
     keep = keep.filter(function (g) { return gone.indexOf(g) === -1; });
-    if (write(keep, true) && fits()) { storageNotice(keep.length, true); return out(keep); }
+    if (write(keep, true, true) && fits()) { storageNotice(keep.length, true); return out(keep); }
   }
   keep = keep.slice(0, Math.ceil(keep.length / 2));
-  if (write(keep, true) && fits()) storageNotice(keep.length, false);
+  if (write(keep, true, true) && fits()) storageNotice(keep.length, false);
   return out(keep);
 }
 /* all: every game you practise from is still kept (the last step of the
-   ladder drops some of those too, and then the notice does not say so) */
+   ladder drops some of those too, and then the notice does not say so).
+   Once a visit; Insights says it for as long as it holds (goneGames) */
 function storageNotice(n, all) {
   if (data.storageWarned) return;
   data.storageWarned = true;
-  notice('This browser is short on storage, so ' + n + ' games are kept' + (all ? ', including every game you practise from.' : '.'));
+  notice('This browser is out of room, so ' + n + ' games are kept' + (all ? ', including every game you practise from.' : '.'));
+}
+/* the games of the window that the browser had no room for (F8): kept
+   apart by saveGames, so Insights names how many it does not count */
+function goneGames() {
+  var gone = data.gone && data.goneFor === cacheKey() ? data.gone : loadCachedGames().gone || [], have = {};
+  if (!gone.length) return [];
+  data.games.forEach(function (g) { have[g.id] = 1; });
+  return gone.filter(function (x) { return x && !have[x[0]] && trackedPerfs().indexOf(x[2]) !== -1 && x[1] >= windowCut(x[2]); });
 }
 
 /* evals=true AND division=true together are what make
@@ -2007,7 +2169,8 @@ function fetchGames(meId, onProgress, onFirstPaint) {
     pay.all = data.ccHistDone;
     return pay;
   }).catch(function (err) {
-    if (cached.games.length) { cached.all = false; return cached; }
+    /* the saved games stand in, and the failure goes with them (F10) */
+    if (cached.games.length) { cached.all = false; cached.err = err; return cached; }
     throw err;
   });
 }
@@ -3434,10 +3597,28 @@ function loadNarrPreview() {
   }).catch(function () {});
 }
 
+/* why the games did not load (F3, F9, F10): a busy site (429: busy, the
+   site and when its wait ends), a site that answered with an error, or no
+   answer at all (net: the connection) */
+function loadErrOf(err) {
+  var site = (err && err.site) || (isCC() ? 'chess.com' : 'lichess');
+  return { busy: !!(err && err.code === 429), site: site, until: Date.now() + ((err && err.wait) || BUSY_SECS) * 1000, net: !(err && err.code), code: (err && err.code) || null };
+}
+/* a returning player's check that failed (F10): said under their games
+   (refreshWords), and in a notice when they asked for it */
+function refreshFailed(e) {
+  data.refreshErr = e;
+  if (data.userCheck) notice(refreshWords(e));
+  data.userCheck = false;
+}
+function refreshWords(e) {
+  return 'Couldn\'t check for new games: ' + e.site + (e.busy ? ' is busy. Your practice is ready.' : ' did not answer. Your saved games are still here.');
+}
 function loadGames() {
   var myGen = gen;
   data.sections.games = 'loading';
   data.gamesErr = null;
+  data.refreshErr = null;
   data.gamesCount = 0;
   renderHeader(); renderFoot();
   var meId = String(cfg.user).toLowerCase();
@@ -3495,6 +3676,9 @@ function loadGames() {
     if (stale(myGen)) return;
     data.games = payload.games;
     data.sections.games = 'ok';
+    /* the saved games came back in place of new ones: the check failed (F10) */
+    if (payload.err) refreshFailed(loadErrOf(payload.err));
+    else data.userCheck = false;
     if (data.narrate) {
       var totalRead = payload.games.length;
       var byP = {};
@@ -3518,7 +3702,11 @@ function loadGames() {
   }).catch(function (err) {
     if (stale(myGen)) return;
     data.sections.games = 'fail';
-    data.gamesErr = err && err.code === 429 ? (isCC() ? 'chess.com' : 'lichess') + ' asked us to slow down. Try again in a minute.' : '';
+    data.gamesErr = loadErrOf(err);
+    /* a returning player keeps their games: the check that failed says so
+       under them (F10); a first load says it in Today's place (F3, F9) */
+    if (data.games.length) refreshFailed(data.gamesErr);
+    else data.userCheck = false;
     renderTrain(); renderFoot();
   });
 }
@@ -8225,7 +8413,10 @@ function endSession(fromPop) {
   window.scrollTo(0, 0);
   if (keep) notice('Set paused. ' + countsWords(ss), { act: 'resume', label: 'Resume' });
   makeFocusable(el('trainbox'));
-  var st = document.querySelector('#trainbox .hero .btn-big, #trainbox .hero [data-act]');
+  /* the keyboard goes to Today's main button (Resume, Start, the next set),
+     never to the hero's board, which a screen reader does not see (F6);
+     with none, to the Today tab */
+  var st = document.querySelector('#trainbox .hero .acts .btn-big') || document.querySelector('#trainbox .hero .acts [data-act]') || document.querySelector('#views .view-tab.view-on');
   if (st) st.focus({ preventScroll: true });
 }
 
@@ -11370,7 +11561,7 @@ function repeatedDanger(a) {
   if (!p || isW(p) === myPov(a.it)) return null;
   var skip = function (f, q) { return f === due.to || q === due.to; };
   return { kind: 'rep', mate: x.mate, took: x.took, lost: x.lost && y.lost, from: from, to: to, san: x.san || '',
-           rings: skip(to, to) ? [] : [{ sq: to, kind: 'attacked', mate: x.mate }], arrows: skip(from, to) ? [] : [{ from: from, to: to, kind: 'threat', key: 'tries' }] };
+           rings: skip(to, to) ? [] : [{ sq: to, kind: 'attacked', mate: x.mate, key: 'tries' }], arrows: skip(from, to) ? [] : [{ from: from, to: to, kind: 'threat', key: 'tries' }] };
 }
 /* hint 1's danger: the game line's first reply after the game move, when it
    captures or checks (threatOf) and the game line really loses (material,
@@ -12440,7 +12631,11 @@ function xpRows(a, ex) {
     var plies = tier === 3 ? (touch ? 4 : 6) : 2, cont = [];
     for (var k = 1; k <= plies && k < sans.length; k++) cont.push(((xpPly(n.st) + k) % 2 === 0 ? xpNum(n.st, k) : '') + sans[k]);
     row.cont = cont.join(' ');
-    row.label = first + (cont.length ? ', then ' + sans.slice(1, plies + 1).join(' ') : '') + '. ' + (myMate != null || drawn ? row.chip + '.' : 'Your winning chances ' + row.chip.replace('You ', '') + '.');
+    /* a figure that is no number is left out (progVal) */
+    if (progVal(row.chip)) row.chip = '';
+    /* its name starts with the words it shows, in their order (WCAG 2.5.3):
+       "You 50%, 35.Qe6, then b5 36.b3." */
+    row.label = (row.chip ? row.chip + ', ' : '') + row.num + first + (row.cont ? ', then ' + row.cont : '') + '.';
     return row;
   });
 }
@@ -12665,9 +12860,20 @@ var LIVE_PREFIX = { good: 'Correct.', bad: 'Wrong.', close: 'Good move, not best
    fallback. A row that fits nothing stays empty rather than overflow */
 function fitsRow(s, row) {
   var cap = typeof row === 'object' ? row : ROW_CAPS[row] || ROW_CAPS.row2;
-  /* the ledger's pieces are no words (each takes two characters, rowLen) */
-  return !!s && rowLen(s) <= cap.ch && wordsIn(s) <= cap.words && oneUnit(s).split(/\s+/).filter(function (t) { return !/^[\u2654-\u265f.,]+$/.test(t); }).length <= cap.words;
+  /* the ledger's pieces are no words (each takes two characters, rowLen);
+     a form that carries a program value never fits (progVal) */
+  return !!s && !progVal(s) && rowLen(s) <= cap.ch && wordsIn(s) <= cap.words && oneUnit(s).split(/\s+/).filter(function (t) { return !/^[\u2654-\u265f.,]+$/.test(t); }).length <= cap.words;
 }
+/* a program value on screen ("b3null", "undefined", "NaN%", "[object
+   Object]"): a string that carries one says nothing true, so no screen
+   shows it. The fit ladder skips such a form (fitsRow), the band, Details,
+   the check line, the board's description and the explorer's rows drop it
+   or say their fallback instead (no lowercase letter on either side of the
+   word: "b3null" is one, "annulled" none) */
+var PROG_VAL = /(^|[^a-z])(null|undefined|NaN)(?![a-z])|\[object /;
+function progVal(s) { return s != null && PROG_VAL.test(String(s)); }
+/* the string itself, or '' where it carries a program value */
+function noProg(s) { return s && !progVal(s) ? s : ''; }
 function firstSentence(s) { var m = /^.*?[.!?…](?=\s|$)/.exec(String(s || '')); return m ? m[0] : String(s || ''); }
 /* fallback: one string, or its words and SAN forms in that order */
 function fitRow(cands, row, fallback) {
@@ -13546,7 +13752,8 @@ function checkLine(a) {
 function checkLineOf(a) {
   var s = cardStep(a), t = a.tier || 2;
   if (t < 3 || s > 3) return lineOfStep(s, t);
-  return checkFact(a, s) || lineOfStep(s, t);
+  var f = checkFact(a, s);
+  return f && !progVal(f) ? f : lineOfStep(s, t);
 }
 /* tier 3's computed line, '' when none is true: their threat, the one the
    game move left standing (standingThreat), "Their threat: Rxf5 takes your
@@ -13567,7 +13774,10 @@ function checkFact(a, s) {
        race's Kxf5 stops the pawn, it does not win it); a band reason says
        no chance missed here */
     var wo = whyOf(a);
-    if (wo) return wo.r !== 'band' ? ans + whyPred(a) + '. ' + g + ' missed it.' : '';
+    /* a reason whose fact does not hold has no words (whyPred null: a
+       "wins" whose settled line nets nothing, 184434540700:103), so the
+       step's own line stands, never a program value */
+    if (wo) { var wp = wo.r !== 'band' ? whyPred(a) : null; return wp ? ans + wp + '. ' + g + ' missed it.' : ''; }
     return cmp.w2 && !/material/.test(cmp.w2) ? bs + ' wins ' + cmp.w2 + '. ' + g + ' missed it.' : '';
   }
   if (cmp.only && /^Only move/.test(cmp.only)) return cmp.only;
@@ -14914,10 +15124,16 @@ function renderViews() {
   if (!nav) return;
   /* a quiet dot while today's session is not done: never a count */
   var pending = tabDot();
+  /* the tab pattern (F6): the tab shown takes the keyboard (the other one
+     is an arrow away), each names the panel it shows, and a tab that had
+     the keyboard keeps it through the repaint */
+  var had = !!(document.activeElement && nav.contains && nav.contains(document.activeElement));
   nav.innerHTML = VIEWS.map(function (v) {
-    return '<a class="view-tab' + (ui.view === v[0] ? ' view-on' : '') + '" data-act="view" data-k="' + v[0] + '" role="tab" aria-selected="' + (ui.view === v[0]) + '">'
+    var on = ui.view === v[0];
+    return '<a class="view-tab' + (on ? ' view-on' : '') + '" id="tab-' + v[0] + '" data-act="view" data-k="' + v[0] + '" role="tab" aria-selected="' + on + '" aria-controls="view-' + v[0] + '" tabindex="' + (on ? 0 : -1) + '">'
       + v[1] + (v[0] === 'train' && pending && !(ui.session && ui.session.active) ? '<span class="tab-dot" aria-label="practice waiting"></span>' : '') + '</a>';
   }).join('');
+  if (had) { var tf = el('tab-' + ui.view); if (tf && tf.focus) tf.focus({ preventScroll: true }); }
   el('view-train').hidden = ui.view !== 'train';
   el('view-insights').hidden = ui.view !== 'insights';
   /* session mode: the board and nothing else */
@@ -14931,10 +15147,11 @@ function renderShell() {
   }
   /* Today's foot holds the usage-recording question until it is asked
      (V5.5); it hides during a set */
+  /* one h1 a screen, unseen (the design has none here): the tab's name */
   el('main').innerHTML = '<div class="page">'
-    + '<nav id="views" class="views" role="tablist"></nav>'
-    + '<div id="view-train" class="view"><section id="trainbox"></section><div id="consent-slot" class="consent-slot"></div></div>'
-    + '<div id="view-insights" class="view" hidden><section id="insightsbox"></section></div>'
+    + '<nav id="views" class="views" role="tablist" aria-label="Views"></nav>'
+    + '<div id="view-train" class="view" role="tabpanel" aria-labelledby="tab-train"><h1 class="sr-only">Today</h1><section id="trainbox"></section><div id="consent-slot" class="consent-slot"></div></div>'
+    + '<div id="view-insights" class="view" role="tabpanel" aria-labelledby="tab-insights" hidden><h1 class="sr-only">Insights</h1><section id="insightsbox"></section></div>'
     + '</div>';
   consentPaint();
 }
@@ -15027,8 +15244,7 @@ function renderTrain() {
     var site = isCC() ? 'chess.com' : 'lichess';
     box.innerHTML = '<div class="today">' + (gamesLoading
       ? stateCard('Reading your games', 'Fetching your rated games from ' + site + '.', '')
-      : (data.sections.games === 'fail'
-        ? stateCard(site + ' did not answer.', 'Your saved games and progress are all here. Check your connection and try again.', '<a class="btn-big" data-icon="rotate" data-act="reload">Try again</a>')
+      : (data.sections.games === 'fail' ? loadFailHtml(site)
         : stateCard('No rated games yet.', 'notlichess reads rated live games on ' + site + ': bullet, blitz, rapid' + (isCC() ? '' : ' and classical') + '. '
           + (isCC() ? 'Daily games are not read yet.' : 'Correspondence games are not read yet.') + ' Play a few rated games, then come back. Your mistakes will be waiting.',
           '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>')))
@@ -15054,6 +15270,20 @@ function renderTrain() {
     + '</div>' + latestGamesHtml() + '</div>';
   /* the due count in the tab, once the day's opening has run (F5.4) */
   paintTitle();
+}
+/* a first load that failed, in Today's place (F3, F9): a busy site says so
+   at once and counts down to trying again by itself, Try now beside it; a
+   site that answered with an error "Try again in a minute.", no answer at
+   all "Check your connection"; saved progress (never games: there are none
+   here) is said to be kept only where there is some */
+function loadFailHtml(site) {
+  var e = data.gamesErr || { site: site }, s = e.site || site;
+  if (e.busy) {
+    busyCountdown(e.until, function () { return !data.games.length && data.sections.games === 'fail' && data.gamesErr === e; }, function () { checkForGames(false); });
+    return stateCard(s + ' is busy and asked us to wait.', busyWhen(e.until), '<a class="btn-big" data-icon="rotate" data-act="reload" data-k="now">Try now</a>');
+  }
+  var kept = Object.keys(srsLoad()).length ? 'Your progress is still saved here. ' : '';
+  return stateCard(s + ' did not answer.', kept + (e.net ? 'Check your connection and try again.' : 'Try again in a minute.'), '<a class="btn-big" data-icon="rotate" data-act="reload">Try again</a>');
 }
 /* the latest games, each one a way into its own mistakes: four, then All
    games (F5.1); a row is its result, the opponent, "Rapid · 27 Sept ·
@@ -15086,14 +15316,24 @@ function latestGamesHtml() {
     var attrs = e ? ' data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'game', id: g.id, label: 'Game vs ' + g.opp })) + '" role="button"' : '';
     var tag = e ? 'div' : 'a';
     if (!e) attrs = ' href="' + gameHref(g.id, g.color, 0) + '"';
+    /* read in order, as a sentence (a screen reader ran "4 mistakes1 cost
+       the game" together): "Lost to opponent1 (1388), 4 mistakes, 1 cost the
+       game. Rapid, 27 Sept, White." Its name comes from that sentence, the
+       row's letters and lines hidden from a screen reader (an aria-label
+       that leaves out the row's own words fails WCAG 2.5.3) */
+    var said = { W: 'Won against ', L: 'Lost to ', D: 'Drew with ' }[res] + g.opp + (g.oppR ? ' (' + g.oppR + ')' : '') + ', '
+      + right.replace(/<i>/g, ', ').replace(/<[^>]+>/g, '').replace(/^✓ /, '') + '. ' + upFirst(perfLabel(g.perf || '')) + ', ' + gameDayWord(g.ts) + ', ' + upFirst(g.color) + '.';
     return '<' + tag + ' class="lg-row is-open"' + attrs + '>'
-      + '<span class="lg-res lg-' + res + '" title="' + esc(g.res) + '">' + res + '</span>'
-      + '<span class="lg-who"><span class="lg-name">vs ' + esc(g.opp) + (g.oppR ? ' <span class="dim">' + g.oppR + '</span>' : '') + '</span>'
+      + '<span class="sr-only">' + esc(said) + '</span>'
+      + '<span class="lg-res lg-' + res + '" title="' + esc(g.res) + '" aria-hidden="true">' + res + '</span>'
+      + '<span class="lg-who" aria-hidden="true"><span class="lg-name">vs ' + esc(g.opp) + (g.oppR ? ' <span class="dim">' + g.oppR + '</span>' : '') + '</span>'
       + '<small>' + esc(upFirst(perfLabel(g.perf || ''))) + ' · ' + gameDayWord(g.ts) + ' · ' + upFirst(g.color) + '</small></span>'
-      + right + '</' + tag + '>';
+      + right.replace(/^<span class="([^"]*)"/, '<span class="$1" aria-hidden="true"') + '</' + tag + '>';
   }).join('');
+  /* a check for new games that failed says so here, under the games' head (F10) */
   return '<aside class="latest" id="latest"><div class="latest-head"><div class="kicker">Your latest games</div>'
-    + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>' + rows
+    + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>'
+    + (data.refreshErr ? '<p class="lg-note" role="status">' + esc(refreshWords(data.refreshErr)) + '</p>' : '') + rows
     + (all.length > games.length ? '<a class="btn-quiet lg-all" data-act="allGames">All games</a>' : '')
     + '<p class="lg-foot dim">' + tapWord() + ' a game to see its mistakes in the order played.</p></aside>';
 }
@@ -15433,6 +15673,9 @@ function sumOf(ss, k) {
   if (e) return e;
   var r = ss.results[k], n = (ss.notes || {})[k];
   if (!r) return null;
+  /* a lesson in a set's slot (F9.3) is no position: never skipped, never
+     counted (kid550 and adult850, round 6: "1 was skipped") */
+  if (r === 'lesson' || isLessonKey(k)) return { c: 'lesson', lesson: 1, s: 0 };
   var c = n === 'shown' ? 'shown' : n === 'leftMiss' ? 'left' : n === 'left' ? 'skip' : n === 'firstlook' ? 'look'
     : ({ first: 'first', hint: 'hint', retry: 'miss', fail: 'shown' })[r] || 'skip';
   return { c: c, s: { first: 3, look: 3, hint: 2, miss: 1 }[c] || 0 };
@@ -15450,8 +15693,8 @@ function recapScore(ss, keys, tier) {
   keys.forEach(function (k) {
     var e = sumOf(ss, k);
     /* a foil is counted apart (foilWords): it had nothing to find; a
-       practice position too (pracWords, F9.4) */
-    if (!e || e.foil || e.prac) return;
+       practice position too (pracWords, F9.4); a lesson not at all (F9.3) */
+    if (!e || e.foil || e.prac || e.lesson) return;
     if (e.c === 'skip') { skipped++; return; }
     n++;
     if (FOUND[e.c]) found++;
@@ -15594,7 +15837,7 @@ function recallHtml(ss, keys, tier) {
   var n = 0, f = 0;
   keys.forEach(function (k) {
     var e = ss.sum && ss.sum[k];
-    if (!ss.rev[k] || !e || e.c === 'skip' || e.foil || e.prac) return;
+    if (!ss.rev[k] || !e || e.c === 'skip' || e.foil || e.prac || e.lesson) return;
     n++;
     if (tier === 1 ? FOUND[e.c] : e.c === 'first') f++;
   });
@@ -15807,7 +16050,8 @@ function diagHtml(ss, tier) {
      "the biggest" only where no other skill decided as many */
   var started = !tie && big.lost > 0 && big.learned + big.practising > 0;
   return '<section class="diag" aria-label="Your games, read"><div class="kicker">Your games, read</div>'
-    + '<h3 class="diag-h">' + (cv.losses >= 5 ? 'In ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your mistakes, grouped by the skill that would prevent them.') + '</h3>'
+    /* an h2, as the summary's own headline is: heading levels never skip one */
+    + '<h2 class="diag-h">' + (cv.losses >= 5 ? 'In ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your mistakes, grouped by the skill that would prevent them.') + '</h2>'
     + (rows ? '<div class="dg-rows">' + rows + '</div>' : '')
     + (started ? '<p class="diag-start">' + (t1 ? 'Your first skill: ' : 'You started on the biggest: ') + esc(big.fam.name) + '.</p>' : '')
     + link + '</section>';
@@ -15849,7 +16093,9 @@ function cueCardHtml(ss) {
    file is made, how to finish */
 var CUE_WEEK = [1, 2, 3, 4, 5, 6, 0], CUE_DAY_LETTER = ['S', 'M', 'T', 'W', 'T', 'F', 'S'], CUE_DAY_NAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 function cueBody(where) {
-  var c = cueLoad(), slot = ui.cueSlot || (where === 'settings' ? c.slot : null), made = where === 'summary' && !!c.cal, g = ui.cueHow === 'google';
+  /* the time picked is kept the moment it is picked (r6 growth M3), so the
+     summary and Settings both light it */
+  var c = cueLoad(), slot = ui.cueSlot || c.slot || null, made = where === 'summary' && !!c.cal, g = ui.cueHow === 'google';
   if (made) return '<p class="cue-q">' + (g ? 'Save it in the Google Calendar tab.' : 'Open the file to add it to your calendar.') + '</p><p class="cue-when">' + cueWhen(c.slot, c.days) + '</p>'
     + '<div class="cue-acts"><a class="btn-quiet" data-act="' + (g ? 'cueAdd' : 'cueGcal') + '" data-k="' + c.slot + '">' + (g ? 'Or a calendar file ›' : 'Or Google Calendar ›') + '</a></div>';
   var days = cueDayList();
@@ -15860,7 +16106,10 @@ function cueBody(where) {
     + (slot ? '<div class="chips cue-days" role="group" aria-label="Days">' + CUE_WEEK.map(function (d) {
       var on = days.indexOf(d) >= 0;
       return '<a class="chip day-chip' + (on ? ' chip-on' : '') + '" data-act="cueDay" data-k="' + d + '" aria-pressed="' + on + '" aria-label="' + CUE_DAY_NAME[d] + '">' + CUE_DAY_LETTER[d] + '</a>';
-    }).join('') + '</div><p class="cue-when">' + cueWhen(slot, days) + '</p>' : '')
+    }).join('') + '</div><p class="cue-when">' + cueWhen(slot, days) + '</p>'
+    /* Settings: kept, and not yet in a calendar until one is added with
+       this very time and these days */
+      + (where === 'settings' && !cueInCalendar(c) ? '<p class="cue-when cue-cal">Not in your calendar yet.</p>' : '') : '')
     + (slot || where === 'summary' ? '<div class="cue-acts">' + (slot ? '<a class="btn-line" data-icon="calendar" data-act="cueAdd" data-k="' + slot + '">Add to calendar</a>'
       + '<a class="btn-quiet" data-act="cueGcal" data-k="' + slot + '">Google Calendar ›</a>' : '')
     + (where === 'summary' ? '<a class="btn-quiet" data-act="cueNo">Not now</a>' : '') + '</div>' : '');
@@ -15872,12 +16121,30 @@ function cueDayList() {
   var c = cueLoad(), d = ui.cueDays || (Array.isArray(c.days) && c.days.length ? c.days : cueDays(weekGoal()));
   return d.slice().sort(function (x, y) { return (x + 6) % 7 - (y + 6) % 7; });
 }
-/* a day chip pressed: on or off, never the last one off */
+/* a day chip pressed: on or off, never the last one off; kept at once */
 function cueDayToggle(d) {
   var days = cueDayList(), at = days.indexOf(d);
   if (at >= 0 && days.length > 1) days.splice(at, 1); else if (at < 0 && d >= 0 && d <= 6) days.push(d);
   ui.cueDays = days;
-  cuePaint();
+  var c = cueLoad();
+  c.days = days.slice();
+  cueSave(c);
+  cuePaint(true);
+}
+/* a time chip pressed (r6 growth M3): kept at once, with the days it
+   shows, before any calendar is added */
+function cuePick(slot) {
+  if (!CUE_AT[slot]) return;
+  var c = cueLoad();
+  ui.cueSlot = slot;
+  c.slot = slot; c.days = cueDayList();
+  cueSave(c);
+  cuePaint(true);
+}
+/* the reminder in a calendar: one added with the time and days kept now */
+function cueInCalendar(c) {
+  var ad = c.ad || (c.cal ? { slot: c.slot, days: c.days } : null), days = function (x) { return (x || []).slice().sort().join(','); };
+  return !!(c.cal && ad && ad.slot === c.slot && days(ad.days) === days(c.days));
 }
 /* "At 7:30 pm on Mon, Tue, Thu and Sat." ("At 19:30 Monday to Friday.",
    "At 7:30 pm every day.", "At 8:00 am on Sun."), the time in the device's
@@ -15955,7 +16222,7 @@ function cueAdd(slot, google) {
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     } catch (e) {}
   }
-  c.cal = now; c.slot = slot; c.days = days; delete c.no;
+  c.cal = now; c.slot = slot; c.days = days; c.ad = { slot: slot, days: days.slice() }; delete c.no;
   cueSave(c);
   ui.cueHow = google ? 'google' : 'file';
   track('cue_calendar');
@@ -16009,7 +16276,7 @@ function backupAnswer(save) {
 }
 /* the card (or Settings) drawn again in place, the keyboard kept on the
    control it was on */
-function cuePaint() {
+function cuePaint(reveal) {
   var foc = document.activeElement, fk = foc && foc.getAttribute ? (foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || '') : '';
   var card = el('cue'), ss = ui.session;
   if (ui.sheet === 'settings') renderSettings();
@@ -16020,6 +16287,17 @@ function cuePaint() {
   var p = fk.split('|'), back = p[0] && document.querySelector('[data-act="' + p[0] + '"]' + (p[1] ? '[data-k="' + p[1] + '"]' : ''));
   if (!back) back = document.querySelector('#cue [data-act]') || (ss && ss.finished ? el('recap-h') : null);
   if (back && back.focus) { makeFocusable(back.parentNode || document.body); back.focus({ preventScroll: true }); }
+  if (reveal) cueReveal();
+}
+/* what a pick opened on the summary (the days, Add to calendar, Google
+   Calendar, Not now) never sits under its sticky bar (F7): the page
+   scrolls until the card's last button is 16 px above the bar */
+function cueReveal() {
+  var cue = el('cue'), bar = document.querySelector('.recap-acts');
+  if (!cue || !bar || !cue.getBoundingClientRect || !bar.getBoundingClientRect) return;
+  var acts = cue.querySelector('.cue-acts') || cue, r = acts.getBoundingClientRect(), b = bar.getBoundingClientRect();
+  var over = r.bottom + 16 - b.top;
+  if (over > 0 && r.height) window.scrollBy(0, Math.ceil(over));
 }
 
 /* ── the card ────────────────────────────────────────────────────────────── */
@@ -16359,8 +16637,12 @@ function boardAria(a, st, o) {
   (o.hint != null ? [{ sq: o.hint, kind: 'hint' }] : []).concat(o.rings || []).forEach(function (r) {
     if (r.kind === 'threat' && !ringed[r.sq]) out.push('Red ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' punishes it.');
     /* V2.1: "is in danger" only where the danger is on the board described;
-       a danger the game move makes is said as such */
-    else if (r.kind === 'attacked') out.push(r.mate ? 'Red ring: they could checkmate on ' + sqName(r.sq) + '.' : b[r.sq] && isW(b[r.sq]) === myPov(a.it)
+       a danger the game move makes is said as such. Their mate likewise:
+       "they could checkmate on g7" only where that mate is on the board
+       described (a free move for them while it is your turn), else the
+       move that makes it, "after your game move" (both tries' danger,
+       F1.3: "after both your tries") */
+    else if (r.kind === 'attacked') out.push(r.mate ? 'Red ring: ' + (mateOnBoard(st, r.sq, !myPov(a.it)) ? '' : r.key === 'tries' ? 'after both your tries, ' : 'after your game move, ') + 'they could checkmate on ' + sqName(r.sq) + '.' : b[r.sq] && isW(b[r.sq]) === myPov(a.it)
       ? (dzSee(b, r.sq, !myPov(a.it)) > 0 ? 'Red ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is in danger.' : 'Red ring: after your game move, your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' can be taken.')
       : 'Red ring: ' + sqName(r.sq) + ', where your piece would be in danger.');
     else if (r.kind === 'hint') out.push('Gold ring: move the ' + pw(r.sq) + ' on ' + sqName(r.sq) + '.');
@@ -16401,7 +16683,15 @@ function boardAria(a, st, o) {
   });
   (o.badges || []).forEach(function (g) { if (ARIA_BADGE[g.kind]) out.push(ARIA_BADGE[g.kind]); });
   if (o.check != null) out.push('The ' + (isW(b[o.check]) ? 'white' : 'black') + ' king is in check.');
-  return out.join(' ');
+  /* a sentence that carries a program value is left out (progVal) */
+  return out.filter(function (x) { return !progVal(x); }).join(' ');
+}
+/* a mate in one for side w landing on square sq, on the board as it
+   stands (a free move for w where it is the other side's turn) */
+function mateOnBoard(st, sq, w) {
+  var x = cloneState(st);
+  if (!!x.w !== !!w) { x.w = !!w; x.ep = -1; }
+  return legalMoves(x).some(function (m) { if (m.to !== sq) return false; var y = cloneState(x); applyMove(y, m); return isMate(y); });
 }
 /* the corner of square to that the verdict badge takes, as [x, y] from
    the square's corner: the top-right (36, 9) of 2.1, unless an arrow from
@@ -16619,7 +16909,7 @@ function frameLabel(a, f, px, desk, seen) {
   for (var i = 0; i < cands.length; i++) {
     var c = cands[i], texts = c.alt ? [c.text, c.alt] : [c.text];
     for (var j = 0; j < texts.length; j++) {
-      if (wordsIn(texts[j]) > room) continue;
+      if (wordsIn(texts[j]) > room || progVal(texts[j])) continue;
       var sz = labelBox(texts[j], desk), at = placeLabel(labelGeom(f, px, c, due ? [due.to] : []), sz.w, sz.h);
       if (at) return { text: texts[j], role: c.role, tip: c.tip, mark: c.mark, x: at.x, y: at.y, w: sz.w, h: sz.h };
     }
@@ -16951,15 +17241,27 @@ function watchBoardSize() {
   boardObs = new ResizeObserver(function () {
     var a = ui.session && ui.session.active;
     if (a && Date.now() >= motionUntil) paintLabels(a);
+    barRoom();
   });
-  var bw = el('bwrap');
+  var bw = el('bwrap'), bar = el('cbar');
   if (bw) boardObs.observe(bw);
+  if (bar) boardObs.observe(bar);
+}
+/* the bar's height (--cbar-h), so a narrow screen's panel, which grows
+   with its words and scrolls under the bar fixed at the foot, keeps its
+   last line clear of the bar however many rows its buttons take (F1) */
+function barRoom() {
+  var bar = el('cbar'), h = bar && bar.getBoundingClientRect ? Math.ceil(bar.getBoundingClientRect().height) : 0;
+  if (h && document.documentElement.style.getPropertyValue('--cbar-h') !== h + 'px') document.documentElement.style.setProperty('--cbar-h', h + 'px');
 }
 /* what the card says and offers, as data: the band (bandFor: disc, kind,
    row1, row2, chip, cap, and inside a forcing line its pips), the action
    bar as slots, the strip's markup and the live region's words */
 function displayFor(a) {
   var b = bandFor(a), ss = ui.session, buttons = barSlots(a, ss);
+  /* a string that carries a program value is never shown (progVal): the
+     laddered rows fell back already, and any other is left out */
+  ['row1', 'row2', 'cap', 'chip', 'tag', 'src'].forEach(function (k) { b[k] = noProg(b[k]); });
   return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', tag: b.tag || '', src: b.src || '', sweep: !!b.sweep, pips: b.pips || null,
            buttons: buttons, strip: stripHtml(a, ss), live: liveWords(a, b), keys: keyLine(a, buttons) };
 }
@@ -17259,7 +17561,7 @@ function discHtml(a, kind) {
 /* what the live region says: the band, led by its verdict in words, or the
    exploration's own line */
 function liveWords(a, b) {
-  if (a.phase === 'done' && a.explore) return xpLive(a, a.explore, a.explore.at);
+  if (a.phase === 'done' && a.explore) return noProg(xpLive(a, a.explore, a.explore.at));
   /* a lesson's frame says where it is first (F9.3): "Lesson, step 2 of 3." */
   if (a.phase === 'lesson') return 'Lesson, step ' + (a.lesson.i + 1) + ' of ' + PSKILL_OF[a.lesson.k].lesson.frames.length + '. ' + b.cap;
   /* a story step says where it is first (S20): "Step 2 of 3, your game." */
@@ -17671,7 +17973,8 @@ function detailsHtml() {
   if (a && a.prac && a.phase === 'done') return pracDetailsHtml(a);
   if (!a || a.phase !== 'done' || !a.lines) return '';
   var it = a.it, b = it.b, s = a.cls.sentences, best = a.lines.best.san[0] || '', t = patternOf(b), info = patternInfo(t);
-  var row = function (cls, text) { return '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
+  /* a line that carries a program value is left out (progVal) */
+  var row = function (cls, text) { return progVal(text) ? '' : '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
   if (a.foil) return foilDetailsHtml(a, row);
   /* the pattern is named once, by its chip (S13) */
   var h = '<div class="kicker">Details</div>' + ctxHtml(a);
@@ -17687,7 +17990,7 @@ function detailsHtml() {
   if (opp) h += row('tl-opp', opp);
   /* their threat (F0.1's, as kept) and the clock (F2.5); where the check
      line is itself their threat (tier 3), it alone says it */
-  var cl = checkLine(a), th = threatsLine(a), ck = clockLine(a);
+  var cl = checkLine(a), th = noProg(threatsLine(a)), ck = noProg(clockLine(a));
   if (th === cl) th = '';
   h += '</div>' + (th ? '<p class="dt-more">' + esc(th) + '</p>' : '') + (ck ? '<p class="dt-more dt-clock">' + esc(ck) + '</p>' : '')
     + '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
@@ -17741,16 +18044,22 @@ function xpHtml(a) {
   var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis" tabindex="-1">'
     + '<span class="xp-meter' + (busy ? ' run' : '') + '" aria-hidden="true"><i></i></span>'
     + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>'
-    + '<p class="xp-say">' + esc(sayAt(a, ex, ex.at)) + '</p>';
+    + '<p class="xp-say">' + esc(noProg(sayAt(a, ex, ex.at))) + '</p>';
   if (!quiet) {
     var mine = n.st.w === myPov(a.it), who = mine ? 'Your best moves' : sideName(n.st.w) + '\'s best moves';
     h += '<p class="xp-cap">' + who + (tier === 1 ? '' : ' · your winning chances') + '</p>'
       + '<div class="xp-rows k' + (ex.k || 3) + '">';
+    /* a row's name is its own words in their order, the commas between them
+       for a screen reader only (row.label: "You 50%, 35.Qe6, then b5
+       36.b3."; WCAG 2.5.3) */
+    var sr = function (s) { return '<span class="sr-only">' + s + '</span>'; };
     if (rows) h += rows.map(function (r) {
-      return '<button type="button" class="xp-row' + (r.li === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + r.li + '" aria-label="' + esc(r.label) + '">'
-        + (r.chip ? '<span class="xp-chip">' + esc(r.chip) + '</span>' : '')
+      return '<button type="button" class="xp-row' + (r.li === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + r.li + '">'
+        + (r.chip ? '<span class="xp-chip">' + esc(r.chip) + '</span>' + sr(', ') : '')
         + '<span class="xp-first">' + esc(tier === 1 ? r.first : r.num + r.first) + '</span>'
-        + '<span class="xp-cont' + (tier === 1 ? ' t1' : '') + '">' + esc(tier === 1 ? '· ' + r.words : r.cont) + '</span></button>';
+        + (tier === 1 ? sr(', ') + '<span class="xp-cont t1"><span aria-hidden="true">· </span>' + esc(r.words) + '</span>'
+          : (r.cont ? sr(', then ') : '') + '<span class="xp-cont">' + esc(r.cont) + '</span>')
+        + sr('.') + '</button>';
     }).join('');
     else for (var s2 = 0; s2 < 3; s2++) h += '<div class="xp-row skel" aria-hidden="true">' + (tier === 1 ? '' : '<span class="xp-chip">You 00%</span>') + '<span class="xp-first">00.Nxd3</span><span class="xp-cont">00.Ke2 Rd5</span></div>';
     h += '</div>';
@@ -17773,7 +18082,14 @@ function fitRows() {
   var bar = document.querySelector('.done-acts'), board = document.querySelector('#bwrap .board');
   if (!bar || !board) return;
   var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap'), rh = '';
-  if (window.innerWidth <= 860) {
+  if (window.innerWidth < 360) {
+    /* a narrow screen (F1): the panel grows with its rows and the page
+       scrolls, so every row shows, each as tall as its words */
+    if (cap) cap.style.display = '';
+    rowsEl.style.display = '';
+    el('xp').classList.remove('tight');
+    el('xp').classList.remove('nosay');
+  } else if (window.innerWidth <= 860) {
     /* on a phone the analysis fills the Coach Panel from under the band to
        the panel's foot (S14, F4.1): under the trail and the sentence, as
        many whole rows as fit (on a short phone the head tightens so one
@@ -17996,7 +18312,7 @@ function renderInsights() {
   var kinds = trackedPerfs().filter(function (p) { return win.some(function (g) { return g.perf === p; }); }).map(perfLabel).join(' and ');
   var games = (kinds ? kinds + ' ' : '') + 'game' + ((partial ? total : r.games) === 1 ? '' : 's');
   var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + total + ' ' + games + ' so far' : r.games + ' ' + games)
-    + (cg.length ? ', ' + dateSpan(Math.min.apply(null, cg), Math.max.apply(null, cg)) : '') + '</div>';
+    + (cg.length ? ', ' + dateSpan(Math.min.apply(null, cg), Math.max.apply(null, cg)) : '') + '</div>' + goneHtml();
   if (!r.families.length) {
     h += '<h2>Your report appears as ' + (tier === 1 ? 'the computer reads' : 'Stockfish reads') + ' your games.</h2><p class="lead">' + read + ' of ' + total + ' games checked. The first patterns show up after a handful of games; the full picture at about ' + INSIGHT_MIN_GAMES + '.</p>' + tiles + '</div>';
     box.innerHTML = h;
@@ -18047,6 +18363,12 @@ function renderInsights() {
   }
   h += '</div>';
   box.innerHTML = h;
+}
+/* the games of the window this browser had no room for (F8, goneGames):
+   Insights never counts from fewer games without saying so */
+function goneHtml() {
+  var n = goneGames().length;
+  return n ? '<p class="ins-gone">This browser is out of room, so ' + (n === 1 ? 'one of your games is' : n + ' of your games are') + ' not counted here.</p>' : '';
 }
 /* a skill's row: its glyph, name ("Start here" on the focus, at tiers 2
    and 3: at tier 1 the skill tiles' "Next" is the one next step, V4.7),
@@ -18705,30 +19027,61 @@ function renderFirstVisit(prefill) {
     input.addEventListener('input', function () { engineLoad().catch(function () {}); }, { once: true });
   }
 }
+/* a site that asked us to wait (F3): "chess.com is busy and asked us to
+   wait. Trying again in 60 s.", the seconds ticking down on screen
+   (.busy-n) and, at zero, the lookup tried again by itself, once, while
+   live() still holds (the same lookup, the same screen); a newer count ends
+   an older one. Try now ends the site's wait at once (busyNow) and tries */
+var busyTick = { seq: 0, until: 0 };
+function busyCountdown(until, live, retry) {
+  /* a screen drawn again under a count that runs keeps that count */
+  if (busyTick.until === until && busyTick.live && busyTick.live()) return;
+  var seq = ++busyTick.seq;
+  busyTick.until = until; busyTick.live = live;
+  var step = function () {
+    if (seq !== busyTick.seq || !live()) return;
+    var left = Math.max(0, Math.ceil((until - Date.now()) / 1000)), n = document.querySelector('.busy-n');
+    if (n) n.textContent = left + ' s';
+    if (left <= 0) { busyTick.seq++; retry(); return; }
+    setTimeout(step, 1000);
+  };
+  setTimeout(step, 1000);
+}
+function busyNow(sites) { [].concat(sites).forEach(function (s) { if (s === 'chess.com') ccBackoffUntil = 0; else backoffUntil = 0; }); }
+function busySecs(until) { return Math.max(1, Math.ceil((until - Date.now()) / 1000)); }
+/* the count's words, its seconds ticking only for the eye (a screen reader
+   hears the line once) */
+function busyWhen(until) { var s = busySecs(until) + ' s'; return 'Trying again in <span class="busy-n" aria-hidden="true">' + s + '</span><span class="sr-only">' + s + '</span>.'; }
 /* the name on both sites at once: one found, go; both, ask which; neither,
-   say so. A site that does not answer counts as not found there */
+   say so. A site that does not answer counts as not found there; a site
+   busy (F3) says so at once and counts down to trying again, the button
+   usable meanwhile, and a name found on the other site goes ahead (r6) */
 var findSeq = 0;
-function findUser(name) {
+function findUser(name, now) {
   name = String(name || '').trim();
   /* Find my mistakes with the box empty: say what it needs (V5.8) */
   if (!name) { notice('Type your username first.'); var box0 = el('firstUser'); if (box0 && box0.focus) box0.focus(); return; }
   if (!/^[a-zA-Z0-9_-]{2,30}$/.test(name)) { notice('That is not a chess.com or lichess username: letters, numbers, underscore and hyphen only.'); return; }
   /* only the latest lookup acts: an earlier one answering late is ignored */
   var seq = ++findSeq;
+  if (now) busyNow(['chess.com', 'lichess']);
   var btn = el('findBtn'), box = el('whichSite');
   if (btn) { btn.textContent = 'Looking…'; btn.classList.add('btn-off'); }
   if (box) box.innerHTML = '';
-  /* only a real 404 means "no account there"; anything else is "no answer" */
-  var failed = function (e) { return e && e.code === 404 ? null : { err: true }; };
-  var li = getJSON('/api/user/' + encodeURIComponent(name), { quiet: true }).then(function (u) {
+  /* only a real 404 means "no account there"; a 429 is a busy site;
+     anything else is "no answer" */
+  var failed = function (e) { return e && e.code === 404 ? null : e && e.code === 429 ? { busy: true, site: e.site, wait: e.wait || BUSY_SECS } : { err: true }; };
+  /* (each its own: ccJSON marks its options absolute) */
+  var ask = function () { return { quiet: true, noWait: true }; };
+  var li = getJSON('/api/user/' + encodeURIComponent(name), ask()).then(function (u) {
     if (!u || u.disabled || u.closed) return null;
     var best = null;
     ['rapid', 'blitz', 'bullet', 'classical'].forEach(function (p) { var pf = u.perfs && u.perfs[p]; if (pf && pf.games && (!best || pf.games > best.games)) best = { p: p, games: pf.games, r: pf.rating }; });
     return { site: 'lichess', name: u.username || name, best: best };
   }, failed);
-  var cc = ccJSON('/player/' + encodeURIComponent(name), { quiet: true }).then(function (p) {
+  var cc = ccJSON('/player/' + encodeURIComponent(name), ask()).then(function (p) {
     if (!p) return null;
-    return ccJSON('/player/' + encodeURIComponent(name) + '/stats', { quiet: true }).then(function (st) {
+    return ccJSON('/player/' + encodeURIComponent(name) + '/stats', ask()).then(function (st) {
       var best = null;
       [['chess_rapid', 'rapid'], ['chess_blitz', 'blitz'], ['chess_bullet', 'bullet']].forEach(function (k) {
         var v = st && st[k[0]], n = v && v.record ? (v.record.win || 0) + (v.record.loss || 0) + (v.record.draw || 0) : 0;
@@ -18742,19 +19095,29 @@ function findUser(name) {
     box = el('whichSite'); btn = el('findBtn');
     if (btn) { btn.textContent = 'Find my mistakes'; btn.classList.remove('btn-off'); }
     if (!box) return;
-    var found = res.filter(function (f) { return f && !f.err; }), silent = res.some(function (f) { return f && f.err; });
+    var found = res.filter(function (f) { return f && !f.err && !f.busy; }), busy = res.filter(function (f) { return f && f.busy; });
+    var down = res.filter(function (f) { return f && f.err; }), silent = !!(busy.length || down.length);
     /* one site has it and the other surely does not, or only one of the
-       two accounts has rated games: go */
+       two accounts has rated games: go; so too where the other site is
+       only busy (r6: a name found on the other site goes ahead) */
     var played = found.filter(function (f) { return f.best; });
     if (found.length === 2 && played.length === 1 && !silent) found = played;
-    if (found.length === 1 && !silent) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
+    if (found.length === 1 && !down.length) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
     if (!found.length && !silent) {
       box.innerHTML = '<p class="which-none">Neither chess.com nor lichess has an account called ' + esc(name) + '. Check the spelling.</p>';
       return;
     }
+    /* busy (F3): said at once, counting down to trying again by itself */
+    if (!found.length && busy.length) {
+      var sites = busy.map(function (f) { return f.site; }), until = Date.now() + Math.max.apply(null, busy.map(function (f) { return f.wait; })) * 1000;
+      box.innerHTML = '<p class="which-none which-busy">' + sites.join(' and ') + (sites.length > 1 ? ' are' : ' is') + ' busy and asked us to wait. ' + busyWhen(until)
+        + ' <a class="btn-quiet" data-act="findNow">Try now</a></p>';
+      busyCountdown(until, function () { var inp = el('firstUser'); return seq === findSeq && !cfg.user && !!inp && inp.value.trim() === name; }, function () { findUser(name); });
+      return;
+    }
     if (!found.length) {
-      var down = res.filter(function (f) { return f && f.err; }).length === 2 ? 'chess.com or lichess' : (res[0] && res[0].err ? 'chess.com' : 'lichess');
-      box.innerHTML = '<p class="which-none">Could not reach ' + down + '. Check your connection and try again.</p>';
+      var unreached = down.length === 2 ? 'chess.com or lichess' : (res[0] && res[0].err ? 'chess.com' : 'lichess');
+      box.innerHTML = '<p class="which-none">Could not reach ' + unreached + '. Check your connection and try again.</p>';
       return;
     }
     /* both: ask which. One while the other did not answer: only the site
@@ -19008,9 +19371,10 @@ function renderNarration() {
 }
 function finishNarration() {
   if (!data.narrate) return;
-  var n = allMistakes().filter(trainable).length;
+  var n = allMistakes().filter(trainable).length, ge = data.sections.games === 'fail' ? data.gamesErr : null;
+  /* a load that failed is no account without games (F9): Today says what happened */
   narrLine('done', n ? 'Found your first ' + n + ' mistake' + (n === 1 ? '' : 's') + '. Stockfish keeps reading the rest while you train.'
-    : (data.games.length ? 'Games are in. Stockfish is now reading them for mistakes.' : 'No rated live games found on this account.'));
+    : (data.games.length ? 'Games are in. Stockfish is now reading them for mistakes.' : ge ? ge.site + (ge.busy ? ' is busy.' : ' did not answer.') : 'No rated live games found on this account.'));
   setTimeout(function () {
     data.narrate = false;
     data.freshOnboard = true;
@@ -19145,28 +19509,45 @@ function adoptFresh(old, fresh) {
 }
 
 /* ── progress between devices, as a file ────────────────────────────────── */
+/* the player's progress keys: in storage, and in this visit's memory (a
+   write the browser refused, out of room or with storage that throws,
+   lives only there: F2) */
+function progressKeys() {
+  var u = playerId(), seen = {};
+  var mine = function (k) { return !!k && (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u || k === 'nl:foil:' + u || k === 'nl:skill:' + u || k === 'nl:help:' + u); };
+  Object.keys(mem).forEach(function (k) { if (mine(k)) seen[k] = 1; });
+  try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (mine(k)) seen[k] = 1; } } catch (e) {}
+  return Object.keys(seen).sort();
+}
+/* the file holds what this visit holds: each key's value as the store
+   reads it now (its memory's where a write was refused), and every
+   position the schedule knows. Only then does the notice say where it went
+   and how much it holds ("Saved 12 positions to notlichess-tester-2026-10-
+   12.json."); a file that could not be made says so */
 function exportProgress() {
-  var u = playerId(), out = { v: 1, user: cfg.user, src: cfg.src, at: Date.now(), keys: {} };
+  var out = { v: 1, user: cfg.user, src: cfg.src, at: Date.now(), keys: {} }, name = progressFileName(), text = '', n = 0;
+  progressKeys().forEach(function (k) { var v = store.get(k, null); if (v != null) out.keys[k] = v; });
   try {
-    for (var i = 0; i < localStorage.length; i++) {
-      var k = localStorage.key(i);
-      if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u || k === 'nl:foil:' + u || k === 'nl:skill:' + u || k === 'nl:help:' + u)
-        out.keys[k] = JSON.parse(localStorage.getItem(k));
-    }
-  } catch (e) {}
-  var blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
-  var a = document.createElement('a'), name = progressFileName();
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    text = JSON.stringify(out);
+    var back = JSON.parse(text), file = back.keys[srsKey()] || {}, live = srsLoad();
+    n = Object.keys(file).length;
+    /* every position the schedule holds this visit, and every key, in the file */
+    if (Object.keys(live).some(function (k) { return !file[k]; }) || Object.keys(out.keys).some(function (k) { return !(k in back.keys); })) throw new Error('short');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  } catch (e) {
+    notice('The progress file could not be made in this browser. Try again, or save it from another browser.');
+    return;
+  }
   track('export_done');
   /* a backup made: the next prompt waits 30 practice days (F5.4), Settings
      says when (V4.5), and the player is told where it went */
   backupSaved();
-  notice('Saved to ' + name + '.');
+  notice(n ? 'Saved ' + plur(n, 'position') + ' to ' + name + '.' : 'Saved to ' + name + '.');
   renderSettings();
 }
 /* "notlichess-tester-2026-10-11.json": the player and the day (V4.5) */
@@ -19271,6 +19652,8 @@ document.addEventListener('click', function (e) {
     }
     case 'setUser': setUser(el('firstUser') ? el('firstUser').value : ''); break;
     case 'findUser': findUser(el('firstUser') ? el('firstUser').value : ''); break;
+    /* a busy site's Try now (F3): its wait ends, and the lookup goes again */
+    case 'findNow': findUser(el('firstUser') ? el('firstUser').value : '', true); break;
     case 'pickSite': { var nm2 = t.getAttribute('data-n') || (el('firstUser') ? el('firstUser').value : ''); cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm2); break; }
     case 'useOtherSite': { var nm = cfg.user; cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm); break; }
     case 'logout': {
@@ -19365,7 +19748,8 @@ document.addEventListener('click', function (e) {
     case 'size': store.set('nl:sessionSize', parseInt(k, 10)); renderSettings(); renderTrain(); break;
     case 'scanDepth': store.set('nl:scanDepth', k === 'thorough' ? 'thorough' : 'std'); track('scan_' + (k === 'thorough' ? 'thorough_on' : 'standard')); renderSettings(); autoScan(); setTimeout(autoEnrich, 500); break;
     case 'weekGoal': setWeekGoal(parseInt(k, 10)); renderSettings(); renderTrain(); break;
-    case 'reload': checkForGames(); break;
+    /* Try again, or a busy site's Try now (F3: its wait ends first) */
+    case 'reload': if (k === 'now' && data.gamesErr && data.gamesErr.busy) busyNow(data.gamesErr.site); checkForGames(true); break;
     /* Today's games rail: every game, not four (F5.1) */
     case 'allGames': {
       ui.allGames = true;
@@ -19375,7 +19759,7 @@ document.addEventListener('click', function (e) {
     }
     /* the way back (F5.2, F5.4): the diagnosis's report, the reminder, the backup */
     case 'reportOpen': closeSheet(); track('reveal_open'); setView('insights'); break;
-    case 'cueSlot': ui.cueSlot = CUE_AT[k] ? k : null; cuePaint(); break;
+    case 'cueSlot': cuePick(k); break;
     case 'cueAdd': cueAdd(k, false); break;
     case 'cueGcal': cueAdd(k, true); break;
     case 'cueNo': cueNotNow(); break;
@@ -19469,8 +19853,10 @@ document.addEventListener('keydown', function (e) {
   /* a held Enter sends the typed move once (its auto-repeat would send it
      again, or an empty box, as soon as the board takes moves again) */
   if (e.target && e.target.id === 'kbmove' && e.key === 'Enter') { e.preventDefault(); if (!e.repeat) typedMove(e.target.value); return; }
-  /* typing belongs to the field, but Esc from the move field leaves exploring */
-  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !(e.target.id === 'kbmove' && e.key === 'Escape')) return;
+  /* typing belongs to the field, but Esc from the move field leaves
+     exploring, and Esc from any control in a sheet (a Settings switch: F5)
+     closes it */
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !(e.key === 'Escape' && (e.target.id === 'kbmove' || ui.sheet))) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   /* a held key acts once: the keyboard's auto-repeat never reaches the
      button that took the pressed one's place (a held Enter would go through
@@ -19478,6 +19864,18 @@ document.addEventListener('keydown', function (e) {
      Arrows keep repeating, to step through a line. Space repeats freely off
      a card, where it scrolls the page */
   if (e.repeat && (/^(Enter|\?|Escape)$/.test(e.key) || (e.key === ' ' && ui.session && ui.session.active))) { e.preventDefault(); return; }
+  /* the view tabs (F6): the arrows (and Home, End) move between them, the
+     tab pattern, and the keyboard stays on the tab */
+  var vt = e.target && e.target.closest && e.target.closest('#views [role="tab"]');
+  if (vt && /^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key)) {
+    e.preventDefault();
+    var vi = VIEWS.map(function (v) { return v[0]; }).indexOf(ui.view), vn = VIEWS.length;
+    var to = e.key === 'Home' ? 0 : e.key === 'End' ? vn - 1 : (vi + (e.key === 'ArrowRight' ? 1 : vn - 1)) % vn;
+    setView(VIEWS[to][0]);
+    var tt = el('tab-' + VIEWS[to][0]);
+    if (tt && tt.focus) tt.focus({ preventScroll: true });
+    return;
+  }
   if (e.key === 'Tab' && ui.sheet) {
     /* focus stays inside the open sheet */
     var sh = document.querySelector('#overlay .sheet');
@@ -19627,7 +20025,7 @@ document.addEventListener('keydown', function (e) {
 });
 
 /* ── board input: tap-tap and drag, on the card's own board only ─────────── */
-var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null, held: false };
+var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null, held: false, captured: false };
 function sqFromEvent(e) {
   var el2 = document.elementFromPoint(e.clientX, e.clientY);
   var sqEl = el2 && el2.closest ? el2.closest('#bwrap [data-sq]') : null;
@@ -19665,9 +20063,19 @@ function boardState(a) {
   if (a.phase === 'checking') return { st: checkingFrame(a), live: false, checking: true };
   return { st: a.st, live: false };
 }
+/* a swipe that starts on a board scrolls the page (r6 design M2): every
+   board lets the page pan (app.css), and on the card's board only a touch
+   that picks up a piece the board takes now holds the gesture for its drag
+   (its touchstart comes after the pointerdown that picked it up). Held so,
+   a touch sends no click: the tap that puts a lifted piece down again is
+   played at its pointerup instead (pointerFinish) */
+document.addEventListener('touchstart', function (e) {
+  if (pointerState.dragFrom >= 0 && e.target && e.target.closest && e.target.closest('#bwrap')) { e.preventDefault(); pointerState.captured = true; }
+}, { passive: false });
 document.addEventListener('pointerdown', function (e) {
   var a = ui.session && ui.session.active;
   pointerState.held = false;
+  pointerState.captured = false;
   if (!a || !e.target.closest || !e.target.closest('#bwrap')) return;
   var sq = sqFromEvent(e);
   if (sq < 0) return;
@@ -19769,7 +20177,13 @@ function pointerFinish(e, cancelled) {
       sessionClick(sq);
     } else if (!pointerState.moved && pointerState.justSelected) {
       pointerState.suppressClick = true;
+    } else if (!pointerState.moved && pointerState.captured && sq === from) {
+      /* a held touch sends no click: the tap on the piece already lifted
+         puts it down here, as its click would */
+      pointerState.suppressClick = true;
+      sessionClick(sq);
     }
+    pointerState.captured = false;
     pointerState.justSelected = false;
     /* a result that arrived mid-drag is drawn now */
     if (a.explore && a.explore.dirty) { a.explore.dirty = false; renderCard(); }
@@ -19835,10 +20249,15 @@ window.addEventListener('resize', function () { if (xpActive()) fitRows(); });
 document.addEventListener('pointercancel', function (e) { pointerFinish(e, true); });
 
 /* ── games: checking for new ones, formats, limits ───────────────────────── */
-function checkForGames() {
+/* user: the player asked (the refresh, Try again): a check that fails says
+   so in a notice too (F10) */
+function checkForGames(user) {
   if (data.sections.games === 'loading') return;
-  notice('Checking for new games…');
+  data.userCheck = !!user;
+  /* a first load tried again shows its reading card in Today's place */
+  if (data.games.length) notice('Checking for new games…');
   loadGames().then(function () { setTimeout(autoScan, 500); });
+  if (!data.games.length) renderTrain();
 }
 var perfFetchTimer = null;
 function perfsChanged() {

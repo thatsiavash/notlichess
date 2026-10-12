@@ -1803,7 +1803,7 @@ function repeatedDanger(a) {
   if (!p || isW(p) === myPov(a.it)) return null;
   var skip = function (f, q) { return f === due.to || q === due.to; };
   return { kind: 'rep', mate: x.mate, took: x.took, lost: x.lost && y.lost, from: from, to: to, san: x.san || '',
-           rings: skip(to, to) ? [] : [{ sq: to, kind: 'attacked', mate: x.mate }], arrows: skip(from, to) ? [] : [{ from: from, to: to, kind: 'threat', key: 'tries' }] };
+           rings: skip(to, to) ? [] : [{ sq: to, kind: 'attacked', mate: x.mate, key: 'tries' }], arrows: skip(from, to) ? [] : [{ from: from, to: to, kind: 'threat', key: 'tries' }] };
 }
 /* hint 1's danger: the game line's first reply after the game move, when it
    captures or checks (threatOf) and the game line really loses (material,

@@ -1035,10 +1035,28 @@ function loadNarrPreview() {
   }).catch(function () {});
 }
 
+/* why the games did not load (F3, F9, F10): a busy site (429: busy, the
+   site and when its wait ends), a site that answered with an error, or no
+   answer at all (net: the connection) */
+function loadErrOf(err) {
+  var site = (err && err.site) || (isCC() ? 'chess.com' : 'lichess');
+  return { busy: !!(err && err.code === 429), site: site, until: Date.now() + ((err && err.wait) || BUSY_SECS) * 1000, net: !(err && err.code), code: (err && err.code) || null };
+}
+/* a returning player's check that failed (F10): said under their games
+   (refreshWords), and in a notice when they asked for it */
+function refreshFailed(e) {
+  data.refreshErr = e;
+  if (data.userCheck) notice(refreshWords(e));
+  data.userCheck = false;
+}
+function refreshWords(e) {
+  return 'Couldn\'t check for new games: ' + e.site + (e.busy ? ' is busy. Your practice is ready.' : ' did not answer. Your saved games are still here.');
+}
 function loadGames() {
   var myGen = gen;
   data.sections.games = 'loading';
   data.gamesErr = null;
+  data.refreshErr = null;
   data.gamesCount = 0;
   renderHeader(); renderFoot();
   var meId = String(cfg.user).toLowerCase();
@@ -1096,6 +1114,9 @@ function loadGames() {
     if (stale(myGen)) return;
     data.games = payload.games;
     data.sections.games = 'ok';
+    /* the saved games came back in place of new ones: the check failed (F10) */
+    if (payload.err) refreshFailed(loadErrOf(payload.err));
+    else data.userCheck = false;
     if (data.narrate) {
       var totalRead = payload.games.length;
       var byP = {};
@@ -1119,7 +1140,11 @@ function loadGames() {
   }).catch(function (err) {
     if (stale(myGen)) return;
     data.sections.games = 'fail';
-    data.gamesErr = err && err.code === 429 ? (isCC() ? 'chess.com' : 'lichess') + ' asked us to slow down. Try again in a minute.' : '';
+    data.gamesErr = loadErrOf(err);
+    /* a returning player keeps their games: the check that failed says so
+       under them (F10); a first load says it in Today's place (F3, F9) */
+    if (data.games.length) refreshFailed(data.gamesErr);
+    else data.userCheck = false;
     renderTrain(); renderFoot();
   });
 }

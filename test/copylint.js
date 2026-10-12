@@ -16,6 +16,9 @@
 //   One check line per card (F2.3): Details says the line the summary shows for it, and no screen holds
 //   an old habit sentence (the 22 habit lines and the hint fallbacks they replaced: `habit`, never on the
 //   baseline); tier 1 never shows the routine line (`routine`).
+// No string read carries a program value (`prog`: null, undefined, NaN or "[object", release gate 1's
+// "b3null"), never on the baseline: every string above, and for this alone every frame's board
+// description and live region and the Details of answered frames the rules do not read.
 // A violation is kept as "tier|rule|where|template" (moves, pieces, squares, numbers and opponents made
 // generic), against the baseline in data/copylint-baseline.json: today's violations, so a new one fails
 // and one that went away must leave the baseline too (it only shrinks; the card strings and Insights
@@ -69,7 +72,11 @@ const generic = (s) => String(s).replace(/\bopponent\d+\b/g, 'O').replace(MOVE_W
 /* every frame and every screen, read in the realm: frames [tier, key, what, row1, row2, cap, chip,
    buttons, strip, label, tag], screens [tier, where, text], habits [tier, key, details, summary] */
 const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
-  var frames = [], screens = [], habits = [], seen = {};
+  var frames = [], screens = [], habits = [], seen = {}, progs = [];
+  /* read for a program value only (null, undefined, NaN: release gate 1's "b3null"): the board's
+     description on every frame, and Details on the answered frames the other rules do not read */
+  var prog = function (tier, key, what, s) { if (s) progs.push([tier, key, what, String(s)]); };
+  var aria = function (tier, key, what, a) { try { var f = boardOptsFor(a); prog(tier, key, what + ', board description', boardAria(a, f.st, f.opts)); } catch (e) { prog(tier, key, what + ', board description', 'undefined: ' + e.message); } };
   /* a practice position's frames (F9.4) and a lesson's (F9.3), its own position after it */
   var eachPracFrame = function (key, cb) {
     var it = itemOf(key);
@@ -118,6 +125,8 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
         var d = displayFor(a), lb = null;
         try { lb = frameLabel(a, boardOptsFor(a), 360, false); } catch (e) {}
         frames.push([tier, it.key, what, d.row1, d.row2, d.cap, d.chip, d.buttons.map(function (b) { return b.label; }), bits(d.strip).join(' '), lb ? lb.text : '', d.tag]);
+        aria(tier, it.key, what, a); prog(tier, it.key, what + ', live region', d.live);
+        if (/^(shown, played|game shown|found)$/.test(what) && a.phase === 'done') prog(tier, it.key, what + ', Details', bits(detailsHtml()).join(' / '));
         /* the ••• menu, before and after an answer */
         if (what === 'open' || what === 'S0 settled') screen(tier, 'menu', menuHtml(a));
         if (what === 'S0 settled') {
@@ -141,6 +150,7 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
         var d = displayFor(a), lb = null;
         try { lb = frameLabel(a, boardOptsFor(a), 360, false); } catch (e) {}
         frames.push([tier, key, what, d.row1, d.row2, d.cap, d.chip, d.buttons.map(function (b) { return b.label; }), bits(d.strip).join(' '), lb ? lb.text : '', d.tag]);
+        aria(tier, key, what, a);
         if (what === 'foil open' || what === 'foil settled') screen(tier, 'menu', menuHtml(a));
         if (what === 'foil settled') screen(tier, 'details', detailsHtml());
       });
@@ -272,8 +282,11 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
   if (start0) store.set(startKey(), start0); else store.del(startKey());
   store.set(srsKey(), JSON.parse(srs0)); srsMem = null; srsRevision++;
   el = el0;
-  return JSON.stringify({ frames: frames, screens: screens, habits: habits });
+  return JSON.stringify({ frames: frames, screens: screens, habits: habits, progs: progs });
 })()`;
+/* a program value, as the app's own guard reads one (progVal, 13y-story.js): null, undefined or NaN with no
+   lowercase letter on either side ("b3null" is one, "annulled" none), or "[object " */
+const PROG = /(^|[^a-z])(null|undefined|NaN)(?![a-z])|\[object /;
 
 /* the banned-word rules one string breaks, by tier and where it shows (V4.3's and V4.8's acceptance
    reads them too): every tier's, a summary line starting "Then", tier 1's, and tier 1's in the band */
@@ -296,6 +309,18 @@ const FIG_CHIP = 'Your chances';
 module.exports = function copyLint(A, OPEN, FRAMES) {
   const r = JSON.parse(A.ev(COLLECT(OPEN, FRAMES)));
   const found = new Set(), habit = new Set(), routine = new Set();
+  /* every string read (the frames' rows, chip, caption, strip, label, tag and buttons, every screen, the
+     check lines, and the board descriptions, live regions and Details read for this alone) that carries a
+     program value: never on the baseline */
+  const prog = new Set();
+  let progRead = 0;
+  const progOf = (tier, key, where, s) => { progRead++; if (PROG.test(String(s))) prog.add(tier + '|' + key + '|' + where + '|' + s); };
+  r.frames.forEach(([tier, key, what, row1, row2, cap, chip, buttons, strip, label, tag]) => {
+    [row1, row2, cap, chip, strip, label, tag].concat(buttons).forEach((s) => { if (s) progOf(tier, key, what, s); });
+  });
+  r.screens.forEach(([tier, where, s]) => progOf(tier, '', where, s));
+  r.habits.forEach(([tier, key, d, s]) => { progOf(tier, key, 'details check line', d); progOf(tier, key, 'summary check line', s); });
+  r.progs.forEach(([tier, key, what, s]) => progOf(tier, key, what, s));
   const add = (tier, rule, where, s) => found.add(tier + '|' + rule + '|' + where + '|' + generic(s));
   const check = (tier, where, s, chip) => {
     if (OLD_HABITS.some((h) => s.indexOf(h) >= 0) || OLD_ASK.test(s)) habit.add(tier + '|' + where + '|' + s);
@@ -328,6 +353,8 @@ module.exports = function copyLint(A, OPEN, FRAMES) {
   const t1card = [...found].filter((v) => { const f = v.split('|'); return f[0] === '1' && f[1] !== 'caps' && f[1] !== 'over 15 words' && CARD[f[2]]; }).sort();
   /* F6.1: Insights (with how we count and since you started) at every tier */
   const ins = [...found].filter((v) => v.split('|')[2] === 'insights').sort();
-  return { found: found.size, fresh, gone, t1card, ins, habit: [...habit].sort(), routine: [...routine].sort(), habits: r.habits.length, strings, frames: r.frames.length };
+  return { found: found.size, fresh, gone, t1card, ins, habit: [...habit].sort(), routine: [...routine].sort(), habits: r.habits.length, strings, frames: r.frames.length,
+    prog: [...prog].sort(), progRead, arias: r.progs.filter((p) => /board description$/.test(p[2])).length };
 };
 module.exports.rulesOf = rulesOf;
+module.exports.PROG = PROG;

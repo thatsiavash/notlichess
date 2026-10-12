@@ -823,7 +823,7 @@
        F5.4: the first summary asks when you will practise, after the habit card, never in the sticky bar */
     const dg = $('.recap-page .diag') || $('.recap-page .diag-line'), rr = $('.recap-page .result-row');
     ok('the summary leads with the diagnosis above the result row, with See your report (F5.2)', !!dg && (!rr || !!(dg.compareDocumentPosition(rr) & Node.DOCUMENT_POSITION_FOLLOWING))
-      && (!$('.recap-page .diag') || (!!$('.diag [data-act=reportOpen]') && /^(In \d+ of your \d+ losses, one move (turned the game for good|cost you the game)\.|So far: in \d+ of your \d+ losses|Your report builds as you practise: \d+ of \d+ games read\.|Your mistakes, grouped)/.test(text('.diag h3, .diag .diag-so')))),
+      && (!$('.recap-page .diag') || (!!$('.diag [data-act=reportOpen]') && /^(In \d+ of your \d+ losses, one move (turned the game for good|cost you the game)\.|So far: in \d+ of your \d+ losses|Your report builds as you practise: \d+ of \d+ games read\.|Your mistakes, grouped)/.test(text('.diag .diag-h, .diag .diag-so')))),
       dg ? dg.innerText.replace(/\n+/g, ' / ').slice(0, 120) : 'none');
     const cue = $('#cue'), hab = $('.recap-habit');
     ok('the first summary asks "When will you practise?" after the habit card, never in the bar (F5.4)', !!cue && /When will you practise\?/.test(cue.innerText) && $$('#cue [data-act=cueSlot]').length === 3 && !!$('#cue [data-act=cueNo]')

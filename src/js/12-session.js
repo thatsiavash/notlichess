@@ -713,7 +713,10 @@ function endSession(fromPop) {
   window.scrollTo(0, 0);
   if (keep) notice('Set paused. ' + countsWords(ss), { act: 'resume', label: 'Resume' });
   makeFocusable(el('trainbox'));
-  var st = document.querySelector('#trainbox .hero .btn-big, #trainbox .hero [data-act]');
+  /* the keyboard goes to Today's main button (Resume, Start, the next set),
+     never to the hero's board, which a screen reader does not see (F6);
+     with none, to the Today tab */
+  var st = document.querySelector('#trainbox .hero .acts .btn-big') || document.querySelector('#trainbox .hero .acts [data-act]') || document.querySelector('#views .view-tab.view-on');
   if (st) st.focus({ preventScroll: true });
 }
 

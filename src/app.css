@@ -270,6 +270,8 @@ button{font-family:inherit}
 .which-q{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:800;color:var(--text-1);margin:12px 0 8px}
 .which-row{display:flex;flex-wrap:wrap;gap:12px}
 .which-none{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:12px 0 0}
+/* a busy site's line (F3): its count, and Try now beside it */
+.which-busy .btn-quiet{margin-left:4px}
 .value{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:16px;margin-top:48px}
 .value-item{background:var(--surface-1);border-radius:var(--r-card);padding:20px}
 .value-item b{display:block;font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin-bottom:6px}
@@ -396,6 +398,9 @@ a.focus-go:hover .focus-chev{background:var(--text-1)}
 .latest-head .kicker{margin:0}
 .lg-row{display:flex;align-items:center;gap:12px;min-height:64px;padding:10px 8px;margin:0 -8px;border-top:1px solid var(--divider);border-radius:12px;color:inherit}
 .latest .latest-head + .lg-row{border-top:0}
+/* a check for new games that failed (F10), under the head */
+.lg-note{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 8px}
+.latest .lg-note + .lg-row{border-top:0}
 .lg-row.is-open{cursor:pointer}
 .lg-row.is-open:hover{background:var(--surface-2);color:inherit}
 a.lg-row{color:inherit}
@@ -507,12 +512,16 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .evalbar.pending{background:var(--surface-2)}
 .evalbar.pending .evalbar-fill,.evalbar.pending .evalbar-fill-h{opacity:0}
 .board-wrap{position:relative;flex:1;min-width:0;container-type:inline-size}
-.board{width:100%;display:block;user-select:none;border-radius:4px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);touch-action:none}
+/* every board lets a swipe scroll the page and a pinch zoom it (r6 design
+   M2); the card's board pans the page up and down, a sideways swipe stays
+   its own (the story's steps), and a touch that lifts a piece holds the
+   gesture for its drag (15-shell.js) */
+.board{width:100%;display:block;user-select:none;border-radius:4px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);touch-action:manipulation}
+#bwrap .board{touch-action:pan-y}
 /* coordinates in the page's own font (boardSvg colours them: dark brown on
    light squares, white bold on dark) */
 .board text{font-family:var(--font)}
 .board rect[data-sq],.board use[data-sq]{cursor:pointer}
-#bwrap.static .board{touch-action:pan-y}
 #bwrap.static .board rect[data-sq],#bwrap.static .board use[data-sq]{cursor:default}
 .board use.drag-src{opacity:.35}
 /* a selected piece lifts (boardSvg marks it; selecting redraws the board
@@ -957,6 +966,10 @@ body.in-session{padding-bottom:0}
 .cue-when{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 12px}
 .cue-acts{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px}
 .cue-acts .btn-line{min-height:44px}
+/* the summary's controls, reached by Tab, scroll 16 px clear of its sticky
+   bar (F7; the page's scroll padding is the bar: html:has(.recap-acts)) */
+.recap-page [data-act],.recap-page a[href]{scroll-margin-bottom:16px}
+.cue-set .cue-cal{color:var(--text-3)}
 .cue-set .chips{margin:8px 0}
 .cue-set .cue-when{margin:8px 0}
 /* the reminder's seven days (V4.6), M to S, sharing a narrow phone's row */
@@ -1041,6 +1054,8 @@ body.in-session{padding-bottom:0}
 .ins .lead{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-2);margin:0;max-width:40em}
 /* while the background check runs, its count (V4.8: counts may still shrink) */
 .ins-checking{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:6px 0 0}
+/* the games this browser had no room for (F8): said under the window's line */
+.ins-gone{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:4px 0 0;max-width:40em}
 .ins-h{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:32px 0 12px}
 .ins-h.ins-also{margin-top:24px}
 .fam-list{background:var(--surface-1);border-radius:var(--r-card);overflow:hidden}
@@ -1232,6 +1247,81 @@ body.in-session{padding-bottom:0}
 @media (max-width:860px){.notice{bottom:86px}}
 @media (max-width:600px){
   .brand{gap:8px}
+}
+
+/* large text and zoom (F1, r6 design M1): a phone at 200% (195 px wide),
+   at 130% (277 to 300 px), and every width between, cut no word and scroll
+   no page sideways. Where the words fit, nothing here changes a thing ──── */
+/* the band's rows wrap rather than cut a word: their heights are floors,
+   met exactly where the words fit them (390 and 360 px, the desktop) */
+.bd-top{height:auto;min-height:28px;overflow:visible}
+.bd-r1{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.bd-r2{height:auto;min-height:48px;display:block;overflow:visible}
+.bd-cap{height:auto;min-height:76px;display:block;overflow:visible}
+.coach.exploring .bd-r2{display:-webkit-box;height:24px;min-height:0;overflow:hidden}
+@container (max-height:175px){.coach.exploring .bd-r2{display:none}}
+@media (min-width:861px){
+  .bd-top{min-height:var(--lh-verdict)}
+  .bd-r2{min-height:52px}
+  .bd-cap{min-height:82px}
+  .coach.exploring .bd-r2{height:26px}
+}
+/* a summary's controls reached by Tab stop 16 px above its sticky bar
+   (F7, r6 design M3: the page's scroll padding is the bar and the safe
+   area) */
+html:has(.recap-acts){scroll-padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+@media (max-width:359px){
+  /* the card flows: the board, the panel under it as tall as its words, the
+     page scrolling under the bar fixed at the foot (its height, --cbar-h,
+     kept clear under the panel's last line) */
+  .card{height:auto;min-height:100vh;min-height:100dvh;overflow:visible}
+  .card > .panel{flex:none;padding-bottom:calc(var(--cbar-h, 64px) + 12px)}
+  .coach,.coach:not(.exploring){flex:none;min-height:0;container-type:normal}
+  .coach.exploring .bd-r2{display:block;height:auto;overflow:visible}
+  .strip{flex-wrap:wrap}
+  .story-strip{flex-wrap:wrap}
+  /* exploring: the trail and each row wrap, every row shown (fitRows) */
+  .xp-head{height:auto;min-height:44px;flex-wrap:wrap}
+  .xp-trail{flex-wrap:wrap;white-space:normal;overflow:visible}
+  .xp-row{height:auto;min-height:44px;flex-wrap:wrap;row-gap:2px;white-space:normal;padding-top:6px;padding-bottom:6px}
+  .xp-cont{overflow:visible;text-overflow:clip}
+  /* the bar: labels wrap, gaps narrow; its height follows its rows */
+  .sticky-acts{gap:8px}
+  .sticky-acts > *{white-space:normal;overflow:visible;text-overflow:clip}
+  .guess-acts,.done-acts{height:auto;min-height:calc(64px + env(safe-area-inset-bottom))}
+  .guess-acts .btn-line,.guess-acts .btn-big,.guess-acts .btn-quiet,.done-acts .btn-line,.done-acts .btn-big{min-width:0;padding:4px 8px;line-height:var(--lh-small)}
+  /* pages: nothing wider than its column; the landing's and a no-account
+     page's headline in the title's size, so its longest word fits */
+  .view-tab{padding:12px 10px 9px}
+  .first h1{font-size:var(--fs-title);line-height:var(--lh-title);overflow-wrap:break-word}
+  .first-form .btn-big,.hero .btn-big,.consent-acts .btn-line{min-width:0;white-space:normal}
+  .btn-big,.btn-line,.chip{white-space:normal}
+  .hero-first{flex-wrap:wrap}
+  .hero-board{width:min(136px,100%)}
+  .wk-row{flex-wrap:wrap;row-gap:6px}
+  .lg-name{display:block;overflow:visible}
+  .lg-state{white-space:normal}
+  .lg-who small{white-space:normal}
+  .dg-row{flex-wrap:wrap;row-gap:0}
+  .dg-n{white-space:normal}
+  .chips.cue-days{flex-wrap:wrap}
+  .cue-days .day-chip{flex:0 0 44px}
+  .fr-main{grid-template-columns:minmax(0,1fr)}
+  .fr-n{grid-column:1;grid-row:auto;text-align:left;white-space:normal}
+  .recap-acts{flex-wrap:wrap}
+}
+/* under 320 px the bar's buttons stack, the honey one at the foot; a back
+   chevron keeps its row with the outlined button beside it */
+@media (max-width:319px){
+  .sticky-acts{flex-wrap:wrap}
+  .sticky-acts > .btn-line,.sticky-acts > .btn-big,.sticky-acts > .btn-quiet{flex:1 1 100%}
+  .sticky-acts > .slot-empty{display:none}
+  .sticky-acts > .nav-btn{flex:0 0 48px}
+  .sticky-acts > .nav-btn ~ .btn-line{flex:1 1 0}
+  .sticky-acts > .btn-big{order:2}
+  .recap-acts > .btn-big,.recap-acts > .btn-line{flex:1 1 100%}
+  .recap-acts > .btn-big{order:2}
+  html:has(.recap-acts){scroll-padding-bottom:calc(144px + env(safe-area-inset-bottom))}
 }
 
 /* reduced motion: every end state at once; a press changes colour instead

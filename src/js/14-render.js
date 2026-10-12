@@ -63,10 +63,16 @@ function renderViews() {
   if (!nav) return;
   /* a quiet dot while today's session is not done: never a count */
   var pending = tabDot();
+  /* the tab pattern (F6): the tab shown takes the keyboard (the other one
+     is an arrow away), each names the panel it shows, and a tab that had
+     the keyboard keeps it through the repaint */
+  var had = !!(document.activeElement && nav.contains && nav.contains(document.activeElement));
   nav.innerHTML = VIEWS.map(function (v) {
-    return '<a class="view-tab' + (ui.view === v[0] ? ' view-on' : '') + '" data-act="view" data-k="' + v[0] + '" role="tab" aria-selected="' + (ui.view === v[0]) + '">'
+    var on = ui.view === v[0];
+    return '<a class="view-tab' + (on ? ' view-on' : '') + '" id="tab-' + v[0] + '" data-act="view" data-k="' + v[0] + '" role="tab" aria-selected="' + on + '" aria-controls="view-' + v[0] + '" tabindex="' + (on ? 0 : -1) + '">'
       + v[1] + (v[0] === 'train' && pending && !(ui.session && ui.session.active) ? '<span class="tab-dot" aria-label="practice waiting"></span>' : '') + '</a>';
   }).join('');
+  if (had) { var tf = el('tab-' + ui.view); if (tf && tf.focus) tf.focus({ preventScroll: true }); }
   el('view-train').hidden = ui.view !== 'train';
   el('view-insights').hidden = ui.view !== 'insights';
   /* session mode: the board and nothing else */
@@ -80,10 +86,11 @@ function renderShell() {
   }
   /* Today's foot holds the usage-recording question until it is asked
      (V5.5); it hides during a set */
+  /* one h1 a screen, unseen (the design has none here): the tab's name */
   el('main').innerHTML = '<div class="page">'
-    + '<nav id="views" class="views" role="tablist"></nav>'
-    + '<div id="view-train" class="view"><section id="trainbox"></section><div id="consent-slot" class="consent-slot"></div></div>'
-    + '<div id="view-insights" class="view" hidden><section id="insightsbox"></section></div>'
+    + '<nav id="views" class="views" role="tablist" aria-label="Views"></nav>'
+    + '<div id="view-train" class="view" role="tabpanel" aria-labelledby="tab-train"><h1 class="sr-only">Today</h1><section id="trainbox"></section><div id="consent-slot" class="consent-slot"></div></div>'
+    + '<div id="view-insights" class="view" role="tabpanel" aria-labelledby="tab-insights" hidden><h1 class="sr-only">Insights</h1><section id="insightsbox"></section></div>'
     + '</div>';
   consentPaint();
 }
@@ -176,8 +183,7 @@ function renderTrain() {
     var site = isCC() ? 'chess.com' : 'lichess';
     box.innerHTML = '<div class="today">' + (gamesLoading
       ? stateCard('Reading your games', 'Fetching your rated games from ' + site + '.', '')
-      : (data.sections.games === 'fail'
-        ? stateCard(site + ' did not answer.', 'Your saved games and progress are all here. Check your connection and try again.', '<a class="btn-big" data-icon="rotate" data-act="reload">Try again</a>')
+      : (data.sections.games === 'fail' ? loadFailHtml(site)
         : stateCard('No rated games yet.', 'notlichess reads rated live games on ' + site + ': bullet, blitz, rapid' + (isCC() ? '' : ' and classical') + '. '
           + (isCC() ? 'Daily games are not read yet.' : 'Correspondence games are not read yet.') + ' Play a few rated games, then come back. Your mistakes will be waiting.',
           '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>')))
@@ -203,6 +209,20 @@ function renderTrain() {
     + '</div>' + latestGamesHtml() + '</div>';
   /* the due count in the tab, once the day's opening has run (F5.4) */
   paintTitle();
+}
+/* a first load that failed, in Today's place (F3, F9): a busy site says so
+   at once and counts down to trying again by itself, Try now beside it; a
+   site that answered with an error "Try again in a minute.", no answer at
+   all "Check your connection"; saved progress (never games: there are none
+   here) is said to be kept only where there is some */
+function loadFailHtml(site) {
+  var e = data.gamesErr || { site: site }, s = e.site || site;
+  if (e.busy) {
+    busyCountdown(e.until, function () { return !data.games.length && data.sections.games === 'fail' && data.gamesErr === e; }, function () { checkForGames(false); });
+    return stateCard(s + ' is busy and asked us to wait.', busyWhen(e.until), '<a class="btn-big" data-icon="rotate" data-act="reload" data-k="now">Try now</a>');
+  }
+  var kept = Object.keys(srsLoad()).length ? 'Your progress is still saved here. ' : '';
+  return stateCard(s + ' did not answer.', kept + (e.net ? 'Check your connection and try again.' : 'Try again in a minute.'), '<a class="btn-big" data-icon="rotate" data-act="reload">Try again</a>');
 }
 /* the latest games, each one a way into its own mistakes: four, then All
    games (F5.1); a row is its result, the opponent, "Rapid · 27 Sept ·
@@ -235,14 +255,24 @@ function latestGamesHtml() {
     var attrs = e ? ' data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'game', id: g.id, label: 'Game vs ' + g.opp })) + '" role="button"' : '';
     var tag = e ? 'div' : 'a';
     if (!e) attrs = ' href="' + gameHref(g.id, g.color, 0) + '"';
+    /* read in order, as a sentence (a screen reader ran "4 mistakes1 cost
+       the game" together): "Lost to opponent1 (1388), 4 mistakes, 1 cost the
+       game. Rapid, 27 Sept, White." Its name comes from that sentence, the
+       row's letters and lines hidden from a screen reader (an aria-label
+       that leaves out the row's own words fails WCAG 2.5.3) */
+    var said = { W: 'Won against ', L: 'Lost to ', D: 'Drew with ' }[res] + g.opp + (g.oppR ? ' (' + g.oppR + ')' : '') + ', '
+      + right.replace(/<i>/g, ', ').replace(/<[^>]+>/g, '').replace(/^✓ /, '') + '. ' + upFirst(perfLabel(g.perf || '')) + ', ' + gameDayWord(g.ts) + ', ' + upFirst(g.color) + '.';
     return '<' + tag + ' class="lg-row is-open"' + attrs + '>'
-      + '<span class="lg-res lg-' + res + '" title="' + esc(g.res) + '">' + res + '</span>'
-      + '<span class="lg-who"><span class="lg-name">vs ' + esc(g.opp) + (g.oppR ? ' <span class="dim">' + g.oppR + '</span>' : '') + '</span>'
+      + '<span class="sr-only">' + esc(said) + '</span>'
+      + '<span class="lg-res lg-' + res + '" title="' + esc(g.res) + '" aria-hidden="true">' + res + '</span>'
+      + '<span class="lg-who" aria-hidden="true"><span class="lg-name">vs ' + esc(g.opp) + (g.oppR ? ' <span class="dim">' + g.oppR + '</span>' : '') + '</span>'
       + '<small>' + esc(upFirst(perfLabel(g.perf || ''))) + ' · ' + gameDayWord(g.ts) + ' · ' + upFirst(g.color) + '</small></span>'
-      + right + '</' + tag + '>';
+      + right.replace(/^<span class="([^"]*)"/, '<span class="$1" aria-hidden="true"') + '</' + tag + '>';
   }).join('');
+  /* a check for new games that failed says so here, under the games' head (F10) */
   return '<aside class="latest" id="latest"><div class="latest-head"><div class="kicker">Your latest games</div>'
-    + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>' + rows
+    + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>'
+    + (data.refreshErr ? '<p class="lg-note" role="status">' + esc(refreshWords(data.refreshErr)) + '</p>' : '') + rows
     + (all.length > games.length ? '<a class="btn-quiet lg-all" data-act="allGames">All games</a>' : '')
     + '<p class="lg-foot dim">' + tapWord() + ' a game to see its mistakes in the order played.</p></aside>';
 }
@@ -582,6 +612,9 @@ function sumOf(ss, k) {
   if (e) return e;
   var r = ss.results[k], n = (ss.notes || {})[k];
   if (!r) return null;
+  /* a lesson in a set's slot (F9.3) is no position: never skipped, never
+     counted (kid550 and adult850, round 6: "1 was skipped") */
+  if (r === 'lesson' || isLessonKey(k)) return { c: 'lesson', lesson: 1, s: 0 };
   var c = n === 'shown' ? 'shown' : n === 'leftMiss' ? 'left' : n === 'left' ? 'skip' : n === 'firstlook' ? 'look'
     : ({ first: 'first', hint: 'hint', retry: 'miss', fail: 'shown' })[r] || 'skip';
   return { c: c, s: { first: 3, look: 3, hint: 2, miss: 1 }[c] || 0 };
@@ -599,8 +632,8 @@ function recapScore(ss, keys, tier) {
   keys.forEach(function (k) {
     var e = sumOf(ss, k);
     /* a foil is counted apart (foilWords): it had nothing to find; a
-       practice position too (pracWords, F9.4) */
-    if (!e || e.foil || e.prac) return;
+       practice position too (pracWords, F9.4); a lesson not at all (F9.3) */
+    if (!e || e.foil || e.prac || e.lesson) return;
     if (e.c === 'skip') { skipped++; return; }
     n++;
     if (FOUND[e.c]) found++;
@@ -743,7 +776,7 @@ function recallHtml(ss, keys, tier) {
   var n = 0, f = 0;
   keys.forEach(function (k) {
     var e = ss.sum && ss.sum[k];
-    if (!ss.rev[k] || !e || e.c === 'skip' || e.foil || e.prac) return;
+    if (!ss.rev[k] || !e || e.c === 'skip' || e.foil || e.prac || e.lesson) return;
     n++;
     if (tier === 1 ? FOUND[e.c] : e.c === 'first') f++;
   });
@@ -956,7 +989,8 @@ function diagHtml(ss, tier) {
      "the biggest" only where no other skill decided as many */
   var started = !tie && big.lost > 0 && big.learned + big.practising > 0;
   return '<section class="diag" aria-label="Your games, read"><div class="kicker">Your games, read</div>'
-    + '<h3 class="diag-h">' + (cv.losses >= 5 ? 'In ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your mistakes, grouped by the skill that would prevent them.') + '</h3>'
+    /* an h2, as the summary's own headline is: heading levels never skip one */
+    + '<h2 class="diag-h">' + (cv.losses >= 5 ? 'In ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your mistakes, grouped by the skill that would prevent them.') + '</h2>'
     + (rows ? '<div class="dg-rows">' + rows + '</div>' : '')
     + (started ? '<p class="diag-start">' + (t1 ? 'Your first skill: ' : 'You started on the biggest: ') + esc(big.fam.name) + '.</p>' : '')
     + link + '</section>';
@@ -998,7 +1032,9 @@ function cueCardHtml(ss) {
    file is made, how to finish */
 var CUE_WEEK = [1, 2, 3, 4, 5, 6, 0], CUE_DAY_LETTER = ['S', 'M', 'T', 'W', 'T', 'F', 'S'], CUE_DAY_NAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 function cueBody(where) {
-  var c = cueLoad(), slot = ui.cueSlot || (where === 'settings' ? c.slot : null), made = where === 'summary' && !!c.cal, g = ui.cueHow === 'google';
+  /* the time picked is kept the moment it is picked (r6 growth M3), so the
+     summary and Settings both light it */
+  var c = cueLoad(), slot = ui.cueSlot || c.slot || null, made = where === 'summary' && !!c.cal, g = ui.cueHow === 'google';
   if (made) return '<p class="cue-q">' + (g ? 'Save it in the Google Calendar tab.' : 'Open the file to add it to your calendar.') + '</p><p class="cue-when">' + cueWhen(c.slot, c.days) + '</p>'
     + '<div class="cue-acts"><a class="btn-quiet" data-act="' + (g ? 'cueAdd' : 'cueGcal') + '" data-k="' + c.slot + '">' + (g ? 'Or a calendar file ›' : 'Or Google Calendar ›') + '</a></div>';
   var days = cueDayList();
@@ -1009,7 +1045,10 @@ function cueBody(where) {
     + (slot ? '<div class="chips cue-days" role="group" aria-label="Days">' + CUE_WEEK.map(function (d) {
       var on = days.indexOf(d) >= 0;
       return '<a class="chip day-chip' + (on ? ' chip-on' : '') + '" data-act="cueDay" data-k="' + d + '" aria-pressed="' + on + '" aria-label="' + CUE_DAY_NAME[d] + '">' + CUE_DAY_LETTER[d] + '</a>';
-    }).join('') + '</div><p class="cue-when">' + cueWhen(slot, days) + '</p>' : '')
+    }).join('') + '</div><p class="cue-when">' + cueWhen(slot, days) + '</p>'
+    /* Settings: kept, and not yet in a calendar until one is added with
+       this very time and these days */
+      + (where === 'settings' && !cueInCalendar(c) ? '<p class="cue-when cue-cal">Not in your calendar yet.</p>' : '') : '')
     + (slot || where === 'summary' ? '<div class="cue-acts">' + (slot ? '<a class="btn-line" data-icon="calendar" data-act="cueAdd" data-k="' + slot + '">Add to calendar</a>'
       + '<a class="btn-quiet" data-act="cueGcal" data-k="' + slot + '">Google Calendar ›</a>' : '')
     + (where === 'summary' ? '<a class="btn-quiet" data-act="cueNo">Not now</a>' : '') + '</div>' : '');
@@ -1021,12 +1060,30 @@ function cueDayList() {
   var c = cueLoad(), d = ui.cueDays || (Array.isArray(c.days) && c.days.length ? c.days : cueDays(weekGoal()));
   return d.slice().sort(function (x, y) { return (x + 6) % 7 - (y + 6) % 7; });
 }
-/* a day chip pressed: on or off, never the last one off */
+/* a day chip pressed: on or off, never the last one off; kept at once */
 function cueDayToggle(d) {
   var days = cueDayList(), at = days.indexOf(d);
   if (at >= 0 && days.length > 1) days.splice(at, 1); else if (at < 0 && d >= 0 && d <= 6) days.push(d);
   ui.cueDays = days;
-  cuePaint();
+  var c = cueLoad();
+  c.days = days.slice();
+  cueSave(c);
+  cuePaint(true);
+}
+/* a time chip pressed (r6 growth M3): kept at once, with the days it
+   shows, before any calendar is added */
+function cuePick(slot) {
+  if (!CUE_AT[slot]) return;
+  var c = cueLoad();
+  ui.cueSlot = slot;
+  c.slot = slot; c.days = cueDayList();
+  cueSave(c);
+  cuePaint(true);
+}
+/* the reminder in a calendar: one added with the time and days kept now */
+function cueInCalendar(c) {
+  var ad = c.ad || (c.cal ? { slot: c.slot, days: c.days } : null), days = function (x) { return (x || []).slice().sort().join(','); };
+  return !!(c.cal && ad && ad.slot === c.slot && days(ad.days) === days(c.days));
 }
 /* "At 7:30 pm on Mon, Tue, Thu and Sat." ("At 19:30 Monday to Friday.",
    "At 7:30 pm every day.", "At 8:00 am on Sun."), the time in the device's
@@ -1104,7 +1161,7 @@ function cueAdd(slot, google) {
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     } catch (e) {}
   }
-  c.cal = now; c.slot = slot; c.days = days; delete c.no;
+  c.cal = now; c.slot = slot; c.days = days; c.ad = { slot: slot, days: days.slice() }; delete c.no;
   cueSave(c);
   ui.cueHow = google ? 'google' : 'file';
   track('cue_calendar');
@@ -1158,7 +1215,7 @@ function backupAnswer(save) {
 }
 /* the card (or Settings) drawn again in place, the keyboard kept on the
    control it was on */
-function cuePaint() {
+function cuePaint(reveal) {
   var foc = document.activeElement, fk = foc && foc.getAttribute ? (foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || '') : '';
   var card = el('cue'), ss = ui.session;
   if (ui.sheet === 'settings') renderSettings();
@@ -1169,6 +1226,17 @@ function cuePaint() {
   var p = fk.split('|'), back = p[0] && document.querySelector('[data-act="' + p[0] + '"]' + (p[1] ? '[data-k="' + p[1] + '"]' : ''));
   if (!back) back = document.querySelector('#cue [data-act]') || (ss && ss.finished ? el('recap-h') : null);
   if (back && back.focus) { makeFocusable(back.parentNode || document.body); back.focus({ preventScroll: true }); }
+  if (reveal) cueReveal();
+}
+/* what a pick opened on the summary (the days, Add to calendar, Google
+   Calendar, Not now) never sits under its sticky bar (F7): the page
+   scrolls until the card's last button is 16 px above the bar */
+function cueReveal() {
+  var cue = el('cue'), bar = document.querySelector('.recap-acts');
+  if (!cue || !bar || !cue.getBoundingClientRect || !bar.getBoundingClientRect) return;
+  var acts = cue.querySelector('.cue-acts') || cue, r = acts.getBoundingClientRect(), b = bar.getBoundingClientRect();
+  var over = r.bottom + 16 - b.top;
+  if (over > 0 && r.height) window.scrollBy(0, Math.ceil(over));
 }
 
 /* ── the card ────────────────────────────────────────────────────────────── */
@@ -1508,8 +1576,12 @@ function boardAria(a, st, o) {
   (o.hint != null ? [{ sq: o.hint, kind: 'hint' }] : []).concat(o.rings || []).forEach(function (r) {
     if (r.kind === 'threat' && !ringed[r.sq]) out.push('Red ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' punishes it.');
     /* V2.1: "is in danger" only where the danger is on the board described;
-       a danger the game move makes is said as such */
-    else if (r.kind === 'attacked') out.push(r.mate ? 'Red ring: they could checkmate on ' + sqName(r.sq) + '.' : b[r.sq] && isW(b[r.sq]) === myPov(a.it)
+       a danger the game move makes is said as such. Their mate likewise:
+       "they could checkmate on g7" only where that mate is on the board
+       described (a free move for them while it is your turn), else the
+       move that makes it, "after your game move" (both tries' danger,
+       F1.3: "after both your tries") */
+    else if (r.kind === 'attacked') out.push(r.mate ? 'Red ring: ' + (mateOnBoard(st, r.sq, !myPov(a.it)) ? '' : r.key === 'tries' ? 'after both your tries, ' : 'after your game move, ') + 'they could checkmate on ' + sqName(r.sq) + '.' : b[r.sq] && isW(b[r.sq]) === myPov(a.it)
       ? (dzSee(b, r.sq, !myPov(a.it)) > 0 ? 'Red ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is in danger.' : 'Red ring: after your game move, your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' can be taken.')
       : 'Red ring: ' + sqName(r.sq) + ', where your piece would be in danger.');
     else if (r.kind === 'hint') out.push('Gold ring: move the ' + pw(r.sq) + ' on ' + sqName(r.sq) + '.');
@@ -1550,7 +1622,15 @@ function boardAria(a, st, o) {
   });
   (o.badges || []).forEach(function (g) { if (ARIA_BADGE[g.kind]) out.push(ARIA_BADGE[g.kind]); });
   if (o.check != null) out.push('The ' + (isW(b[o.check]) ? 'white' : 'black') + ' king is in check.');
-  return out.join(' ');
+  /* a sentence that carries a program value is left out (progVal) */
+  return out.filter(function (x) { return !progVal(x); }).join(' ');
+}
+/* a mate in one for side w landing on square sq, on the board as it
+   stands (a free move for w where it is the other side's turn) */
+function mateOnBoard(st, sq, w) {
+  var x = cloneState(st);
+  if (!!x.w !== !!w) { x.w = !!w; x.ep = -1; }
+  return legalMoves(x).some(function (m) { if (m.to !== sq) return false; var y = cloneState(x); applyMove(y, m); return isMate(y); });
 }
 /* the corner of square to that the verdict badge takes, as [x, y] from
    the square's corner: the top-right (36, 9) of 2.1, unless an arrow from
@@ -1768,7 +1848,7 @@ function frameLabel(a, f, px, desk, seen) {
   for (var i = 0; i < cands.length; i++) {
     var c = cands[i], texts = c.alt ? [c.text, c.alt] : [c.text];
     for (var j = 0; j < texts.length; j++) {
-      if (wordsIn(texts[j]) > room) continue;
+      if (wordsIn(texts[j]) > room || progVal(texts[j])) continue;
       var sz = labelBox(texts[j], desk), at = placeLabel(labelGeom(f, px, c, due ? [due.to] : []), sz.w, sz.h);
       if (at) return { text: texts[j], role: c.role, tip: c.tip, mark: c.mark, x: at.x, y: at.y, w: sz.w, h: sz.h };
     }
@@ -2100,15 +2180,27 @@ function watchBoardSize() {
   boardObs = new ResizeObserver(function () {
     var a = ui.session && ui.session.active;
     if (a && Date.now() >= motionUntil) paintLabels(a);
+    barRoom();
   });
-  var bw = el('bwrap');
+  var bw = el('bwrap'), bar = el('cbar');
   if (bw) boardObs.observe(bw);
+  if (bar) boardObs.observe(bar);
+}
+/* the bar's height (--cbar-h), so a narrow screen's panel, which grows
+   with its words and scrolls under the bar fixed at the foot, keeps its
+   last line clear of the bar however many rows its buttons take (F1) */
+function barRoom() {
+  var bar = el('cbar'), h = bar && bar.getBoundingClientRect ? Math.ceil(bar.getBoundingClientRect().height) : 0;
+  if (h && document.documentElement.style.getPropertyValue('--cbar-h') !== h + 'px') document.documentElement.style.setProperty('--cbar-h', h + 'px');
 }
 /* what the card says and offers, as data: the band (bandFor: disc, kind,
    row1, row2, chip, cap, and inside a forcing line its pips), the action
    bar as slots, the strip's markup and the live region's words */
 function displayFor(a) {
   var b = bandFor(a), ss = ui.session, buttons = barSlots(a, ss);
+  /* a string that carries a program value is never shown (progVal): the
+     laddered rows fell back already, and any other is left out */
+  ['row1', 'row2', 'cap', 'chip', 'tag', 'src'].forEach(function (k) { b[k] = noProg(b[k]); });
   return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', tag: b.tag || '', src: b.src || '', sweep: !!b.sweep, pips: b.pips || null,
            buttons: buttons, strip: stripHtml(a, ss), live: liveWords(a, b), keys: keyLine(a, buttons) };
 }
@@ -2408,7 +2500,7 @@ function discHtml(a, kind) {
 /* what the live region says: the band, led by its verdict in words, or the
    exploration's own line */
 function liveWords(a, b) {
-  if (a.phase === 'done' && a.explore) return xpLive(a, a.explore, a.explore.at);
+  if (a.phase === 'done' && a.explore) return noProg(xpLive(a, a.explore, a.explore.at));
   /* a lesson's frame says where it is first (F9.3): "Lesson, step 2 of 3." */
   if (a.phase === 'lesson') return 'Lesson, step ' + (a.lesson.i + 1) + ' of ' + PSKILL_OF[a.lesson.k].lesson.frames.length + '. ' + b.cap;
   /* a story step says where it is first (S20): "Step 2 of 3, your game." */
@@ -2820,7 +2912,8 @@ function detailsHtml() {
   if (a && a.prac && a.phase === 'done') return pracDetailsHtml(a);
   if (!a || a.phase !== 'done' || !a.lines) return '';
   var it = a.it, b = it.b, s = a.cls.sentences, best = a.lines.best.san[0] || '', t = patternOf(b), info = patternInfo(t);
-  var row = function (cls, text) { return '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
+  /* a line that carries a program value is left out (progVal) */
+  var row = function (cls, text) { return progVal(text) ? '' : '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
   if (a.foil) return foilDetailsHtml(a, row);
   /* the pattern is named once, by its chip (S13) */
   var h = '<div class="kicker">Details</div>' + ctxHtml(a);
@@ -2836,7 +2929,7 @@ function detailsHtml() {
   if (opp) h += row('tl-opp', opp);
   /* their threat (F0.1's, as kept) and the clock (F2.5); where the check
      line is itself their threat (tier 3), it alone says it */
-  var cl = checkLine(a), th = threatsLine(a), ck = clockLine(a);
+  var cl = checkLine(a), th = noProg(threatsLine(a)), ck = noProg(clockLine(a));
   if (th === cl) th = '';
   h += '</div>' + (th ? '<p class="dt-more">' + esc(th) + '</p>' : '') + (ck ? '<p class="dt-more dt-clock">' + esc(ck) + '</p>' : '')
     + '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
@@ -2890,16 +2983,22 @@ function xpHtml(a) {
   var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis" tabindex="-1">'
     + '<span class="xp-meter' + (busy ? ' run' : '') + '" aria-hidden="true"><i></i></span>'
     + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>'
-    + '<p class="xp-say">' + esc(sayAt(a, ex, ex.at)) + '</p>';
+    + '<p class="xp-say">' + esc(noProg(sayAt(a, ex, ex.at))) + '</p>';
   if (!quiet) {
     var mine = n.st.w === myPov(a.it), who = mine ? 'Your best moves' : sideName(n.st.w) + '\'s best moves';
     h += '<p class="xp-cap">' + who + (tier === 1 ? '' : ' · your winning chances') + '</p>'
       + '<div class="xp-rows k' + (ex.k || 3) + '">';
+    /* a row's name is its own words in their order, the commas between them
+       for a screen reader only (row.label: "You 50%, 35.Qe6, then b5
+       36.b3."; WCAG 2.5.3) */
+    var sr = function (s) { return '<span class="sr-only">' + s + '</span>'; };
     if (rows) h += rows.map(function (r) {
-      return '<button type="button" class="xp-row' + (r.li === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + r.li + '" aria-label="' + esc(r.label) + '">'
-        + (r.chip ? '<span class="xp-chip">' + esc(r.chip) + '</span>' : '')
+      return '<button type="button" class="xp-row' + (r.li === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + r.li + '">'
+        + (r.chip ? '<span class="xp-chip">' + esc(r.chip) + '</span>' + sr(', ') : '')
         + '<span class="xp-first">' + esc(tier === 1 ? r.first : r.num + r.first) + '</span>'
-        + '<span class="xp-cont' + (tier === 1 ? ' t1' : '') + '">' + esc(tier === 1 ? '· ' + r.words : r.cont) + '</span></button>';
+        + (tier === 1 ? sr(', ') + '<span class="xp-cont t1"><span aria-hidden="true">· </span>' + esc(r.words) + '</span>'
+          : (r.cont ? sr(', then ') : '') + '<span class="xp-cont">' + esc(r.cont) + '</span>')
+        + sr('.') + '</button>';
     }).join('');
     else for (var s2 = 0; s2 < 3; s2++) h += '<div class="xp-row skel" aria-hidden="true">' + (tier === 1 ? '' : '<span class="xp-chip">You 00%</span>') + '<span class="xp-first">00.Nxd3</span><span class="xp-cont">00.Ke2 Rd5</span></div>';
     h += '</div>';
@@ -2922,7 +3021,14 @@ function fitRows() {
   var bar = document.querySelector('.done-acts'), board = document.querySelector('#bwrap .board');
   if (!bar || !board) return;
   var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap'), rh = '';
-  if (window.innerWidth <= 860) {
+  if (window.innerWidth < 360) {
+    /* a narrow screen (F1): the panel grows with its rows and the page
+       scrolls, so every row shows, each as tall as its words */
+    if (cap) cap.style.display = '';
+    rowsEl.style.display = '';
+    el('xp').classList.remove('tight');
+    el('xp').classList.remove('nosay');
+  } else if (window.innerWidth <= 860) {
     /* on a phone the analysis fills the Coach Panel from under the band to
        the panel's foot (S14, F4.1): under the trail and the sentence, as
        many whole rows as fit (on a short phone the head tightens so one
@@ -3145,7 +3251,7 @@ function renderInsights() {
   var kinds = trackedPerfs().filter(function (p) { return win.some(function (g) { return g.perf === p; }); }).map(perfLabel).join(' and ');
   var games = (kinds ? kinds + ' ' : '') + 'game' + ((partial ? total : r.games) === 1 ? '' : 's');
   var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + total + ' ' + games + ' so far' : r.games + ' ' + games)
-    + (cg.length ? ', ' + dateSpan(Math.min.apply(null, cg), Math.max.apply(null, cg)) : '') + '</div>';
+    + (cg.length ? ', ' + dateSpan(Math.min.apply(null, cg), Math.max.apply(null, cg)) : '') + '</div>' + goneHtml();
   if (!r.families.length) {
     h += '<h2>Your report appears as ' + (tier === 1 ? 'the computer reads' : 'Stockfish reads') + ' your games.</h2><p class="lead">' + read + ' of ' + total + ' games checked. The first patterns show up after a handful of games; the full picture at about ' + INSIGHT_MIN_GAMES + '.</p>' + tiles + '</div>';
     box.innerHTML = h;
@@ -3196,6 +3302,12 @@ function renderInsights() {
   }
   h += '</div>';
   box.innerHTML = h;
+}
+/* the games of the window this browser had no room for (F8, goneGames):
+   Insights never counts from fewer games without saying so */
+function goneHtml() {
+  var n = goneGames().length;
+  return n ? '<p class="ins-gone">This browser is out of room, so ' + (n === 1 ? 'one of your games is' : n + ' of your games are') + ' not counted here.</p>' : '';
 }
 /* a skill's row: its glyph, name ("Start here" on the focus, at tiers 2
    and 3: at tier 1 the skill tiles' "Next" is the one next step, V4.7),

@@ -2,7 +2,7 @@
 // internals through window.__nlTest.ev (enabled because location.hostname is 'localhost').
 // Usage: const A = require('./app-realm')({ now, storage: {...}, session: {...}, keysOnly });
 //        A.ev('todayPlan()'); A.setNow(ms); A.storage; A.click('tryAgain', k, slot, { detail: 1 }) (a button click, through the page's handler)
-//        A.key('Enter', repeat, on): a key through the page's keydown handlers (on a focused button when on = { act, k, slot })
+//        A.key('Enter', repeat, on): a key through the page's keydown handlers (on a focused button when on = { act, k, slot }, a view tab when on = { tab })
 //        A.tap(sq), A.drag(from, to, mouse): the board by hand, through the page's pointer and click handlers
 //        A.advance(ms): the clock moves on, and each timer runs when it falls due (A.flush runs them all, whatever their delay)
 //        A.fire(type): a document event (visibilitychange) through the page's listeners
@@ -136,8 +136,11 @@ module.exports = function makeApp(opts) {
        on = { id, value } in that text field; repeat marks the keyboard's
        auto-repeat of a held key */
     key: (key, repeat, on) => {
-      const t = !on ? { tagName: 'BODY', closest: () => null, matches: () => false }
-        : on.id ? { tagName: 'INPUT', id: on.id, value: on.value || '', closest: () => null, matches: () => false } : button(on.act, on.k, on.slot);
+      /* (on = { tab: 'train' }: on that view tab, the tab pattern's arrows) */
+      const tab = on && on.tab ? { tagName: 'A', id: 'tab-' + on.tab, getAttribute: (n) => (n === 'role' ? 'tab' : n === 'data-act' ? 'view' : n === 'data-k' ? on.tab : null), matches: () => false } : null;
+      if (tab) tab.closest = (sel) => (sel === '#views [role="tab"]' || sel === '[data-act]' ? tab : null);
+      const t = tab || (!on ? { tagName: 'BODY', closest: () => null, matches: () => false }
+        : on.id ? { tagName: 'INPUT', id: on.id, value: on.value || '', closest: () => null, matches: () => false } : button(on.act, on.k, on.slot));
       (listeners.keydown || []).forEach((fn) => fn({ key, repeat: !!repeat, target: t, preventDefault() {} }));
     },
     /* the clock moves on by ms; each timer runs when it falls due, in order,
