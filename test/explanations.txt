@@ -110,7 +110,7 @@
   your move: Qxg7# lets a forced mate slip away.
   best move: Qxg7# forces mate in 1.
 #37 forkAllowed
-  your move: e5 allows Nf5+, forking your queen and king.
+  your move: e5 makes a difficult position worse: Nf5+ is strong (30% to 5%).
   best move: Rag8 keeps your queen safe.
 #38 material
   your move: b3 loses a bishop for a pawn after Ne5 Qxb7 Qxb7 Rxb7 and more.
@@ -119,7 +119,7 @@
   your move: Qd5 lets Black take over: Bxf3 is strong (56% to 27%).
   best move: Nd2 keeps the game balanced.
 #40 forkAllowed
-  your move: f4 allows Nf3+, forking your rook and king.
+  your move: f4 lets Black take over: Nf3+ is strong (60% to 15%).
   best move: Rd1 keeps your rook safe.
 #41 hung
   your move: f5 leaves your pawn on e6 undefended: Qxe6+ takes it.
@@ -383,7 +383,7 @@
   your move: Bd7 lets White take over (54% to 31%).
   best move: Nd7 keeps the game balanced.
 #128 missedMaterial
-  your move: Bh6 misses Black's undefended queen on c7.
+  your move: Bh6 misses Qxc7.
   best move: Qxc7 wins the queen.
 #129 missedMaterial
   your move: Bxf8 misses Black's undefended queen on c7.
@@ -416,7 +416,7 @@
   your move: a4 lets White force a draw with checks, starting with Nd4+ (100% to 50%).
   best move: Bg6 forces mate in 2.
 #139 forkAllowed
-  your move: Ng5 allows Nf5, forking your bishop and queen.
+  your move: Ng5 lets Black take over (46% to 23%).
   best move: Bxe7 takes the knight.
 #140 promotion
   your move: Kb7 lets White's pawn run through to promote.
@@ -449,7 +449,7 @@
   your move: Qxg7# lets a forced mate slip away.
   best move: Qxg7# forces mate in 1.
 #150 forkAllowed
-  your move: e5 allows Nf5+, forking your queen and king.
+  your move: e5 makes a difficult position worse: Nf5+ is strong (33% to 5%).
   best move: Rag8 keeps your queen safe.
 #151 drift
   your move: b3 lets Black take over (56% to 32%).
@@ -461,7 +461,7 @@
   your move: Qd5 lets Black take over: Bxf3 is strong (56% to 27%).
   best move: Nd2 keeps the game balanced.
 #154 forkAllowed
-  your move: f4 allows Nf3+, forking your rook and king.
+  your move: f4 lets Black take over: Nf3+ is strong (60% to 16%).
   best move: Rh1 keeps your rook safe.
 #155 hung
   your move: f5 leaves your pawn on e6 undefended: Qxe6+ takes it.
@@ -716,7 +716,7 @@
   your move: exf4# lets a forced mate slip away.
   best move: exf4# forces mate in 1.
 #239 forkAllowed
-  your move: Re2 allows Rh5+ Ke4, and then Nc5+ forks your king and rook.
+  your move: Re2 makes a difficult position worse: Rh5+ is strong (38% to 17%).
   best move: Kg6 keeps your rook safe.
 #240 discoveredAllowed
   your move: Kd8 allows a discovered check. You lose two pawns.

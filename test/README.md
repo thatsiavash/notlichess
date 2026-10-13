@@ -9,6 +9,9 @@
   fixture player as a phone with the main thread slowed and checks the speed limits: Today ready, the first card,
   a try's verdict, no long main-thread task. It serves the repo itself and needs no network.
 - `sw-off.js` is the service worker's off switch (README.md, Deploy); `sw.js` here checks it beside the real one.
+- `node test/keys-real.js` (by hand, not in `npm test`; about 40 s of one Stockfish process) runs the page's own
+  engine code on the repo's Stockfish as its one worker: the mate card's fact sheet, made after 20 other searches on
+  that worker, is the fixture's (Rg1+, mate in 11), and the same twice (release 2, B1).
 
 Data: `data/games.ndjson` (sample games with python-chess SAN), `data/mistakes.ndjson` (real chess.com
 mistakes analysed with Stockfish 17), `data/tagger-oracle.ndjson` (cook.py's tags for them).

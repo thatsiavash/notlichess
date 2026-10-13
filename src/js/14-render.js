@@ -1535,8 +1535,9 @@ function boardOptsFor(a) {
       if (a.sel === sdue.from || snear.length) opts.dots = (a.sel === sdue.from ? [sdue.to] : []).concat(snear);
     }
     /* V1.2: a move in the found band settles with the main move beside it,
-       a thin green arrow */
-    if (a.view.mode === 's0' && a.near && !opts.anim) opts.arrows = (opts.arrows || []).concat([{ from: a.best.from, to: a.best.to, kind: 'main', key: 'main' }]);
+       a thin green arrow (B7: not at tier 1, where the move found has its
+       own reason) */
+    if (a.view.mode === 's0' && a.near && a.tier !== 1 && !opts.anim) opts.arrows = (opts.arrows || []).concat([{ from: a.best.from, to: a.best.to, kind: 'main', key: 'main' }]);
     if (a.view.mode === 's0' && a.settle >= 1 && !opts.anim) {
       /* the ghost and the tokens fade in once, as this beat's effect */
       var s0 = s0Marks(a, view.st);
@@ -1789,9 +1790,12 @@ function boardAria(a, st, o) {
        "they could checkmate on g7" only where that mate is on the board
        described (a free move for them while it is your turn), else the
        move that makes it, "after your game move" (both tries' danger,
-       F1.3: "after both your tries") */
+       F1.3: "after both your tries"). B5: a ring the game move's line or
+       both tries' replies confirm (r.after, key 'tries') says so; "is in
+       danger" is said of a ring the search confirms on this board */
     else if (r.kind === 'attacked') out.push(r.mate ? 'Red ring: ' + (mateOnBoard(st, r.sq, !myPov(a.it)) ? '' : r.key === 'tries' ? 'after both your tries, ' : 'after your game move, ') + 'they could checkmate on ' + sqName(r.sq) + '.' : b[r.sq] && isW(b[r.sq]) === myPov(a.it)
-      ? (dzSee(b, r.sq, !myPov(a.it)) > 0 ? 'Red ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is in danger.' : 'Red ring: after your game move, your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' can be taken.')
+      ? (r.key === 'tries' ? 'Red ring: after both your tries, your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' could be taken.'
+        : !r.after && dzSee(b, r.sq, !myPov(a.it)) > 0 ? 'Red ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is in danger.' : 'Red ring: after your game move, your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' can be taken.')
       : 'Red ring: ' + sqName(r.sq) + ', where your piece would be in danger.');
     else if (r.kind === 'hint') out.push('Gold ring: move the ' + pw(r.sq) + ' on ' + sqName(r.sq) + '.');
     else if (r.kind === 'block') out.push('Gold ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' blocks their mate.');
@@ -2862,9 +2866,11 @@ function promoHtml(st) {
 /* an alternative that also works is named at the step where it left the
    engine's line, against the engine's move at that same step */
 function altNames(a) {
-  var at = (a.yours && a.yours.at) || 0;
-  var mine = a.lines.yours && a.lines.yours.san[at], theirs = a.lines.best.san[at] || a.lines.best.san[0];
-  return { mine: mine || 'Your move', theirs: theirs || '' };
+  var at = (a.yours && a.yours.at) || 0, L = a.lines.yours;
+  var mine = L && L.san[at], theirs = a.lines.best.san[at] || a.lines.best.san[0];
+  /* (B8: tier 1 says the move in words, read on its own board) */
+  var w = L && L.moves[at] ? moveWords(at ? L.states[at - 1] : a.pre, L.moves[at]) : '';
+  return { mine: mine || 'Your move', theirs: theirs || '', words: w ? upFirst(w) : 'Your move' };
 }
 /* the session bar: end, progress, more. The count is the set's own (V4.2:
    a set of 5 stays "of 5"); a one more try says its place among the
@@ -3084,8 +3090,29 @@ function stopsHolds(a, san) {
   applyMove(y, m2);
   return !(isMate(y) || (post.b[m2.to] && dzSeeMove(post.b, m2.from, m2.to) > 0));
 }
+/* B8: tier 1's Details name no "material": a sentence that does is left
+   out, and with nothing left the fallback says it */
+function noMaterial(s, fall) {
+  if (!/\bmaterial\b/.test(s)) return s;
+  var keep = (String(s).match(/[^.!?]+[.!?]+/g) || [s]).filter(function (x) { return !/\bmaterial\b/.test(x); }).join('').trim();
+  return upFirst(keep) || fall;
+}
+/* B7: the answer avoids the mate the game move allowed, and its settled
+   line gives material (its count agreeing with its score): "You still lose
+   ♗ for ♙." ('' otherwise) */
+function avoidsLoss(a) {
+  var w = whyOf(a), k = factsOf(a.it.b), pov = myPov(a.it);
+  if (!w || w.r !== 'avoids' || !k || !k.sb || k.sb.a === 0) return '';
+  var lost = (pov ? k.sb.lw : k.sb.lb).split(''), won = (pov ? k.sb.lb : k.sb.lw).split('');
+  won.slice().forEach(function (p) { var j = lost.indexOf(p); if (j >= 0) { lost.splice(j, 1); won.splice(won.indexOf(p), 1); } });
+  if (!lost.length) return '';
+  var sym = function (ps, white) { return ps.sort(function (x, y) { return MOTIF_VAL[y] - MOTIF_VAL[x]; }).map(function (p) { return LEDGER[white ? p : p.toLowerCase()]; }).join(''); };
+  return 'You still lose ' + sym(lost, pov) + (won.length ? ' for ' + sym(won, !pov) : '') + '.';
+}
 function detailsBest(a, s, best) {
   var c = a.cls, say = s.best || best + ' keeps your position together.', bl = c && c.bestLine;
+  /* B2: a try that forced mate was the answer: what it does (the move on the board) */
+  if (a.mateTry) return ownRow(a).cands[0];
   /* V2.4: the answer's one reason, as the settled row says it */
   var wp = whyPred(a);
   if (wp != null) return (inWords(a) ? upFirst(moveWords(a.pre, a.best)) : sanOf(a.pre, a.best)) + wp + '.';
@@ -3129,11 +3156,19 @@ function detailsHtml() {
   if (b.d) h += '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(it.g, b) + '.</p>';
   /* V2.5: tier 1 in words, no notation; tiers 2 and 3 with every figure
      labelled ("Your chances: 49% before, 35% after.") */
-  var t1 = a.tier === 1, why = detailsGame(a), bestSay = detailsBest(a, s, best);
-  why = t1 ? detailsWords(a, why.replace(/ \(\d+% to \d+%\)/g, '')) : labelFigures(why);
+  var t1 = a.tier === 1, why = detailsGame(a), bestSay = detailsBest(a, s, best), good;
+  why = t1 ? noMaterial(detailsWords(a, why.replace(/ \(\d+% to \d+%\)/g, '')), 'After ' + moveWords(a.pre, a.played) + ', ' + (b.wa >= 60 ? 'you are still better' : b.wa >= 40 ? 'the game is even' : sidesOf(a).opp + (b.wa >= 20 ? ' is better' : ' is winning')) + '.') : labelFigures(why);
+  good = t1 ? noMaterial(detailsWords(a, bestSay), upFirst(moveWords(a.pre, a.best)) + ' was the better move.') : labelFigures(bestSay);
+  /* B8: beside "Kb7 is as good as Rxa7." or "Bg4 also holds." never "Rxa7
+     was the better move.": "The main move was Rxa7." (R6) */
+  var holds = (a.alt || (a.near && a.near.deep)) && a.lines.yours;
+  if (a.near || holds) good = good.replace(/^(.+) was the better move\.$/, function (x, m) { return CARD_COPY.R6(t1 ? m.charAt(0).toLowerCase() + m.slice(1) : m); });
   h += '<div class="dt-lines">' + row('tl-bad', esc(why))
-    + ((a.alt || (a.near && a.near.deep)) && a.lines.yours ? row('tl-alt', esc(t1 ? detailsWords(a, altNames(a).mine) : altNames(a).mine) + ' also holds.') : '')
-    + row('tl-good', esc(t1 ? detailsWords(a, bestSay) : labelFigures(bestSay)));
+    + (holds ? row('tl-alt', esc(t1 ? altNames(a).words : altNames(a).mine) + ' also holds.') : '')
+    + row('tl-good', esc(good))
+    /* B7: an answer that avoids the mate the game move allowed still gives
+       what its settled line gives ("You still lose ♗ for ♙.") */
+    + (avoidsLoss(a) ? row('tl-good', esc(avoidsLoss(a))) : '');
   var opp = opponentLine(a);
   if (opp) h += row('tl-opp', opp);
   /* their threat (F0.1's, as kept) and the clock (F2.5); where the check
@@ -3319,7 +3354,7 @@ function clockLine(a) {
   if (b.c == null || b.tt == null) return '';
   var took = Math.round(b.tt), left = Math.round(b.c), secs = function (x) { return x < 60 ? x + ' s' : clockWords(x); };
   if (tier === 1) return 'You took ' + spanWords(took) + '. You had ' + leftWords(left) + ' left.';
-  var s = capSan(a.pre, a.played) + ' took ' + secs(took) + ', with ' + clockWords(left) + ' left.';
+  var s = sanOf(a.pre, a.played) + ' took ' + secs(took) + ', with ' + clockWords(left) + ' left.';
   var pace = tier >= 3 ? paceOf(a.it) : null;
   if (pace) s += ' Your pace: ' + secs(pace) + ' a move.';
   return s;

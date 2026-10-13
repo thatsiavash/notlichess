@@ -4603,6 +4603,14 @@ function classifyMistake(pre, played, best, after, wb, wa, ply, voice) {
     perpetualAgainst: perpetualAgainst, loosened: loosened, kingMoved: kingMoved, sameCapture: !!sameCapture,
     lowerTake: lowerTake, ply: ply || 0, alreadyLost: !!alreadyLost
   };
+  /* B5: with the card's key, "ignores their threat" only for a threat its
+     search kept (after.th: the key's threats); a reply that only became a
+     threat, or none at all, is said by what it costs (noThreat) */
+  var thKept = after && after.th;
+  if (t === 'threat' && thKept && r1 && r1.move) {
+    var u1 = moveUci(r1.move).slice(0, 4);
+    res.noThreat = !thKept.some(function (x) { return !x[1] && String(x[0]).slice(0, 4) === u1; });
+  }
   res.sentences = explainMistake(res, pre, wb, wa);
   res.sentences.short = shortSentence(res.sentences.game);
   /* exploring: the move being judged may be the opponent's, so "your" names
@@ -4624,6 +4632,25 @@ function threatExisted(pre, line) {
   probe.w = !probe.w; probe.ep = -1;
   var m = uciToMove(probe, sqWord(r.move.from) + sqWord(r.move.to) + (r.move.promo ? r.move.promo.toLowerCase() : ''));
   return !!m && (isHangingAt(pre.b, sq) || takenByLower(pre.b, sq));
+}
+/* B4: the fork the game line plays at ply `ply` (their move) stood before
+   my move: on the position before it with them to move (no en passant),
+   the line's moves up to it are legal there and its last one hits pieces
+   of the kinds named (types, piece letters; a knight or more, or the king,
+   as a fork counts them). "Allows" is then no word for it */
+function forkStood(pre, g, ply, types) {
+  if (!g || !types || !types.length || !g.nodes[ply] || !g.nodes[ply].move) return false;
+  var x = cloneState(pre);
+  x.w = !x.w; x.ep = -1;
+  for (var i = 1; i <= ply; i++) {
+    var n = g.nodes[i], m = n && n.move ? uciToMove(x, moveUci(n.move)) : null;
+    if (!m) return false;
+    applyMove(x, m);
+  }
+  var to = g.nodes[ply].move.to, mover = x.b[to];
+  if (!mover) return false;
+  var hit = attacksFrom(x.b, to).filter(function (q) { return x.b[q] && colorW(x.b[q]) !== colorW(mover) && pType(x.b[q]) !== 'P'; }).map(function (q) { return pType(x.b[q]); });
+  return types.every(function (t) { var j = hit.indexOf(t); if (j < 0) return false; hit.splice(j, 1); return true; });
 }
 /* the refutation opens by capturing something my move left undefended */
 function firstReplyTakesLoose(line) {
@@ -4731,6 +4758,21 @@ function explainMistake(c, pre, wb, wa) {
   var lost = captureWord(g || { nodes: [] }, at, 0) || materialWord(c.lossG != null ? -c.lossG : c.matGame);
   var won = bl ? (captureWord(bl, c.bSettle) || materialWord(c.matBest)) : '';
   var gameS, bestS, does;
+  /* where the game left it, with the reply that does it (the drift
+     pattern's words, and no count of its own): a tactic or a threat that
+     stood before the move is said this way (B4: "allows" only for what the
+     move made possible; B5: "ignores their threat" only for one the key's
+     search kept) */
+  var driftS = function () {
+    var r1n = g && g.nodes[1];
+    var forcing = r1n && (r1n.captured || checkersOf(r1n.after).length) && !(r1n.captured && n0 && n0.captured && r1n.move.to === n0.move.to);
+    var head = wb < 40 ? ' makes a difficult position worse'
+      : (wa < 45 ? ' lets ' + them + ' take over' : (wa < 55 ? ' lets the game slip back to level' : ' gives back much of your advantage'));
+    /* a reply that only takes the piece that just moved is not "strong":
+       the damage comes after it */
+    var takesBack = r1n && r1n.captured && n0 && r1n.move.to === n0.move.to;
+    return played + head + (forcing ? (takesBack ? ' after ' + reply : ': ' + reply + ' is strong') : '') + ' (' + Math.round(wb) + '% to ' + Math.round(wa) + '%).';
+  };
   switch (c.t) {
     case 'mateAllowed':
       gameS = played + ' allows mate in ' + c.mateAgainst + (reply ? ', starting with ' + reply : '') + '.';
@@ -4754,6 +4796,9 @@ function explainMistake(c, pre, wb, wa) {
       var targets = f.targets.map(function (s) { return PIECE_WORD[pType(fm.after.b[s])]; }).slice(0, 2);
       var forkSan = sanOf(fm.before, fm.move);
       var tw = targets.length === 2 && targets[0] === targets[1] ? 'both your ' + targets[0] + 's' : 'your ' + targets.join(' and ');
+      /* B4: the same fork stood before the move (the same moves on the board
+         before it, them to move, hit the same pieces): it allowed nothing */
+      if (forkStood(pre, g, f.ply, f.targets.slice(0, 2).map(function (s) { return pType(fm.after.b[s]); }))) { gameS = driftS(); break; }
       /* a fork that also takes a big piece says so */
       var grab = fm.captured && MOTIF_VAL[pType(fm.captured)] >= 5 ? ', which takes your ' + PIECE_WORD[pType(fm.captured)] + ' and forks ' + tw : null;
       gameS = f.ply <= 1
@@ -4791,6 +4836,7 @@ function explainMistake(c, pre, wb, wa) {
       gameS = played + ' lets ' + them + '\'s pawn run through to promote.';
       break;
     case 'threat': {
+      if (c.noThreat) { gameS = driftS(); break; }
       var took = r1 && r1.captured ? 'your ' + PIECE_WORD[pType(r1.captured)] : (lost || 'material');
       gameS = played + ' ignores ' + them + '\'s threat: ' + (reply || 'the reply') + ' takes ' + took + '.'
         + (lost && c.matGame <= -1 && r1 && r1.captured && lost !== 'the ' + PIECE_WORD[pType(r1.captured)] ? ' You lose ' + lost + '.' : '');
@@ -4813,6 +4859,9 @@ function explainMistake(c, pre, wb, wa) {
          anyway, is told as the capture */
       var epCap = bm && bm.captured && bm.move.ep >= 0;
       var loose = what && !epCap && (!bm || !bm.captured || isHangingAt(bm.before.b, bm.move.to));
+      /* B4: the piece named only where it is most of what the move misses
+         (the two lines' material 2 pawns or less beyond it); else the move */
+      if (what && bestSan && (c.matBest || 0) - (c.matGame || 0) > MOTIF_VAL[what.piece] + 2) { gameS = played + ' misses ' + bestSan + '.'; break; }
       gameS = !what ? played + ' misses a chance to win material.'
         : loose ? played + ' misses ' + them + '\'s undefended ' + PIECE_WORD[what.piece] + ' on ' + sqWord(what.sq) + '.'
         : played + ' misses ' + bestSan + ', which takes the ' + PIECE_WORD[what.piece] + (epCap ? ' en passant' : '') + '.';
@@ -4830,16 +4879,8 @@ function explainMistake(c, pre, wb, wa) {
     case 'openingSlip':
     case 'endgame':
     case 'drift':
-    default: {
-      var r1n = g && g.nodes[1];
-      var forcing = r1n && (r1n.captured || checkersOf(r1n.after).length) && !(r1n.captured && n0 && n0.captured && r1n.move.to === n0.move.to);
-      var head = wb < 40 ? ' makes a difficult position worse'
-        : (wa < 45 ? ' lets ' + them + ' take over' : (wa < 55 ? ' lets the game slip back to level' : ' gives back much of your advantage'));
-      /* a reply that only takes the piece that just moved is not "strong":
-         the damage comes after it */
-      var takesBack = r1n && r1n.captured && n0 && r1n.move.to === n0.move.to;
-      gameS = played + head + (forcing ? (takesBack ? ' after ' + reply : ': ' + reply + ' is strong') : '') + ' (' + Math.round(wb) + '% to ' + Math.round(wa) + '%).';
-    }
+    default:
+      gameS = driftS();
   }
   var bestPiece = bl && bl.nodes[1] ? pType(bl.nodes[1].before.b[bl.nodes[1].move.from]) : null;
   var stop = (c.lossG >= 1 || c.mateAgainst) ? stopsWhat(c, pre) : '';
@@ -5067,7 +5108,7 @@ function sanLineToUci(st0, sans) {
 /* name the mistake from what the lines show; cheap (a few ms), so it runs
    at ingest, at scan and again after every deeper look */
 /* raise when the classifier changes: stored mistakes are re-labelled on load */
-var CLASSIFY_V = 5;        /* bump whenever test/explanations.txt changes (CI checks) */
+var CLASSIFY_V = 6;        /* bump whenever test/explanations.txt changes (CI checks) */
 function classifyEntry(b, moves) {
   var pre = stateAtPly(moves, b.p);
   if (!pre) return;
@@ -6624,7 +6665,7 @@ function engineEval(fen, movetime, priority, opts) {
   return new Promise(function (resolve, reject) {
     var job = { fen: fen, movetime: movetime || 80, resolve: resolve, reject: reject,
                 mpv: opts.multipv || 1, moves: opts.searchmoves || null, prio: !!priority, tag: opts.tag || null,
-                onInfo: opts.onInfo || null, lanes: opts.lanes || null, hash: opts.hash || 0, xp: opts.xp || null };
+                onInfo: opts.onInfo || null, lanes: opts.lanes || null, hash: opts.hash || 0, xp: opts.xp || null, fresh: !!opts.fresh };
     /* a player is waiting on priority jobs; the scan can wait */
     if (priority) {
       var at = 0;
@@ -6802,6 +6843,11 @@ function slotWire(slot) {
 /* the kept analyst's limit for background work: a few milliseconds, whatever
    depth the reading setting asks of the scan */
 var RESERVE_NODES = 18000;
+/* B1: a fresh job (a fact sheet's search, a try's re-check) starts from a
+   clean engine with the options the truth harness searches with, so the same
+   question gets the same answer in every browser, whatever the worker ran
+   before: ucinewgame, Hash 32 and Threads 1 are its first commands */
+var FRESH_HASH = 32;
 function enginePump() {
   if (!SF.queue.length) return;
   if (!SF.workers.length) {
@@ -6835,6 +6881,12 @@ function enginePump() {
     if (qi >= 0) {
       var job = SF.queue.splice(qi, 1)[0];
       slot.pending.push(job);
+      if (job.fresh) {
+        slot.w.postMessage('ucinewgame');
+        slot.w.postMessage('setoption name Hash value ' + FRESH_HASH);
+        slot.w.postMessage('setoption name Threads value 1');
+        slot.hash = FRESH_HASH;
+      }
       if (slot.mpv !== job.mpv) {
         slot.w.postMessage('setoption name MultiPV value ' + job.mpv);
         slot.mpv = job.mpv;
@@ -7081,11 +7133,37 @@ function autoEnrich() {
            (uci), p (a capture's piece taken, a promotion's new piece), sq
            (the forking piece's square, or the pinned piece's)}; side (true
            White, false Black, omitted either) keeps that side's events only.
-           {t: 'net', at: k} when nothing else holds }
+           {t: 'net', at: k} when nothing else holds
+     agree false when the line's score (score, below) was given and no
+           settle point's material balance came within SETTLE_AGREE (2) pawns of
+           it: the line is then read to its end (k = n, ok false), and no
+           material may be named from it (B4) }
+   Release 2 (B4): a ply after which either side faces a mate in one is no
+   quiet ply (facesMate: the side to move mates at once, or the other side
+   would, were it its move), so a line under a mate threat is read on; and
+   with score (the line's engine score in centipawns, White's side) a settle
+   point counts only where its material balance (White's material less
+   Black's there, in pawns: the score is a balance too, so a card that
+   starts a bishop up, 184212737262:58, is read as it stands) agrees with
+   the score (settleAgrees: within 2 pawns), or the line mates; otherwise
+   the next one, to 12 plies.
    The engine's lines end where Stockfish stops printing: a line that ends
    before it settles is extended (factsSettled) */
-var SETTLE_MAX = 12;
-function settleLine(st0, moves, side) {
+var SETTLE_MAX = 12, SETTLE_AGREE = 2, SETTLE_DECISIVE = 3;
+/* a settle point's material balance bal agrees with a score sc (both in
+   pawns, from one side): within 2 pawns. With loose (a wrong try's reason,
+   which names the capture: tryEvent) also where the material says more
+   than a decisive score on the same side (3 pawns or more), since the
+   engine's pawns run smaller than piece values (a queen lost for nothing is
+   about 6 down: 184380745302:11's Qh4); a fact sheet's counts (a threat's
+   gain, the settled lines) keep to the 2 pawns. A score worse than the
+   material by more than 2 never agrees (the attack card's pawn against
+   -3.76: B4) */
+function settleAgrees(bal, sc, loose) {
+  if (Math.abs(bal - sc) <= SETTLE_AGREE) return true;
+  return !!loose && bal * sc > 0 && Math.abs(bal) > Math.abs(sc) && Math.abs(sc) >= SETTLE_DECISIVE;
+}
+function settleLine(st0, moves, side, score) {
   var st = cloneState(st0), nodes = [], list = moves || [], mate = 0;
   for (var i = 0; i < list.length && nodes.length < SETTLE_MAX; i++) {
     var m = typeof list[i] === 'string' ? uciToMove(st, list[i]) : list[i];
@@ -7096,20 +7174,52 @@ function settleLine(st0, moves, side) {
     nodes.push({ m: m, u: moveUci(m), w: !!before.w, cap: cap || null, before: before, after: cloneState(st), check: chk });
     if (mt) { mate = nodes.length; break; }
   }
-  /* a quiet ply: no capture, promotion or check, and nothing left en prise
+  /* a quiet ply: no capture, promotion or check, nothing left en prise
      after it (enPrise, the classifier's own test: a piece the side to move
      can take for profit, loose or hit by a cheaper piece; two quiet moves
-     beside a bishop a pawn attacks have not settled anything) */
-  var quiet = function (x) { return !x.cap && !x.m.promo && !x.check && !enPrise(x.after); }, k = -1;
+     beside a bishop a pawn attacks have not settled anything), and no mate
+     in one either side faces (B4) */
+  var quiet = function (x) { if (x.q == null) x.q = !x.cap && !x.m.promo && !x.check && !enPrise(x.after) && !facesMate(x.after); return x.q; };
+  var sc = score == null || isNaN(score) ? null : score / 100, k = -1, agree = true;
+  var balAt = function (kk) { var e = nodes[kk - 1].after; return sideMaterial(e.b, true) - sideMaterial(e.b, false); };
   if (mate) k = mate;
-  else for (var j = 1; j + 1 < nodes.length; j++) if (quiet(nodes[j]) && quiet(nodes[j + 1])) { k = j; break; }
+  else {
+    for (var j = 1; j + 1 < nodes.length; j++) {
+      if (!quiet(nodes[j]) || !quiet(nodes[j + 1])) continue;
+      if (sc == null || settleAgrees(balAt(j), sc)) { k = j; break; }
+      agree = false;
+    }
+    if (k >= 0) agree = true;
+  }
   var ok = k >= 0;
   if (!ok) k = nodes.length;
   var end = k ? nodes[k - 1].after : st0, lw = [], lb = [];
   for (var q = 0; q < k; q++) if (nodes[q].cap) (colorW(nodes[q].cap) ? lw : lb).push(pType(nodes[q].cap));
-  return { k: k, ok: ok, n: nodes.length, mate: mate, moves: nodes.map(function (x) { return x.u; }),
+  return { k: k, ok: ok, n: nodes.length, mate: mate, moves: nodes.map(function (x) { return x.u; }), agree: agree,
            w: sideMaterial(end.b, true) - sideMaterial(st0.b, true), b: sideMaterial(end.b, false) - sideMaterial(st0.b, false),
            lw: lw, lb: lb, ev: settleEvent(nodes, k, mate, side) };
+}
+/* B4: a side faces a mate in one on st: the side to move can mate at once,
+   or (not in check) the other side could, were it its move. Read once per
+   position (a small cache: every settle reading asks it of each ply) */
+var mateNear = { m: {}, n: 0 };
+function mateInOne(st) {
+  var ms = legalMoves(st);
+  for (var i = 0; i < ms.length; i++) {
+    var x = cloneState(st);
+    applyMove(x, ms[i]);
+    if (checkersOf(x).length && !legalMoves(x).length) return true;
+  }
+  return false;
+}
+function facesMate(st) {
+  var key = st.b.join(',') + (st.w ? 'w' : 'b') + st.ep;
+  if (key in mateNear.m) return mateNear.m[key];
+  if (mateNear.n > 4000) { mateNear.m = {}; mateNear.n = 0; }
+  var r = mateInOne(st) || (!checkersOf(st).length && mateInOne(dzNullState(st)));
+  mateNear.m[key] = r;
+  mateNear.n++;
+  return r;
 }
 function settleEvent(nodes, k, mate, side) {
   var mine = function (x) { return side == null || x.w === !!side; }, upto = nodes.slice(0, k), i;
@@ -7143,16 +7253,21 @@ function motifMade(x) {
   return null;
 }
 /* a settled line as the key keeps it: {k, ok (1/0), w, b, lw, lb (piece
-   letters as strings), e (the event)} */
+   letters as strings), e (the event), a (0: its material never agreed with
+   its score, so none is named from it; B4)} */
 function settleRec(s) {
-  return { k: s.k, ok: s.ok ? 1 : 0, w: s.w, b: s.b, lw: s.lw.join(''), lb: s.lb.join(''), e: s.ev };
+  var r = { k: s.k, ok: s.ok ? 1 : 0, w: s.w, b: s.b, lw: s.lw.join(''), lb: s.lb.join(''), e: s.ev };
+  if (s.agree === false) r.a = 0;
+  return r;
 }
 /* the piece on square from survives line ucis (from st) to where it
    settles: followed as it moves, lost when a capture lands on its square,
    unless that is a trade: it had just taken a piece worth as much (card
    1's queen takes theirs on f8 and is taken back), or the capturer, worth
-   as much, is taken back on the next ply */
-function pieceSurvives(st, ucis, from) {
+   as much, is taken back on the next ply. strict: any capture on its
+   square loses it, a trade too (B7: a move that only trades the piece off
+   never "saves" it, 184216981622:42's Ne3 Bxe3 fxe3) */
+function pieceSurvives(st, ucis, from, strict) {
   var s = settleLine(st, ucis), pos = cloneState(st), sq = from, mine = st.b[from] ? colorW(st.b[from]) : null, took = 0;
   if (mine == null) return false;
   var worth = MOTIF_VAL[pType(st.b[from])];
@@ -7162,6 +7277,7 @@ function pieceSurvives(st, ucis, from) {
     var csq = m.ep >= 0 ? m.ep : m.to;
     if (!!pos.w === mine && m.from === sq) { took = pos.b[csq] ? MOTIF_VAL[pType(pos.b[csq])] : 0; sq = m.to; }
     else if (!!pos.w !== mine && csq === sq) {
+      if (strict) return false;
       if (took >= worth) return true;
       var by = MOTIF_VAL[pType(pos.b[m.from])], nx = cloneState(pos);
       applyMove(nx, m);
@@ -7228,6 +7344,10 @@ function pieceSurvives(st, ucis, from) {
           {r: 'wins', n} (net where the line settles, the player then better
           or winning); {r: 'blocks'} (the check); {r: 'attacks', p, sq}; {r:
           'band', w} (the answer's win chance)
+     gb   the take-back the game move's line avoids (B6 c: their reply takes a
+          piece the player could take back on its square, and the line
+          plays something else): [uci, cp, mate, packed line from it], the
+          player's side, from a search of its own
      pm   the moves of the answer's piece (V2.3's Hint 2): up to six [uci,
           safe (1: the piece is not lost where its line settles), cp], best
           first, from one 250,000-node search of those moves (the answer,
@@ -7239,7 +7359,11 @@ function pieceSurvives(st, ucis, from) {
           within the bar), 'lost' (a game already lost, not decided by it),
           'same' (the game move is the answer); the card leaves the set
    } */
-var FACTS_V = 1, FACTS_NODES = 1000000, PM_NODES = 250000, PM_MAX = 6;
+/* FACTS_V 2 (release 2): keys made fresh (B1), a winning card's three
+   lines at 4,000,000 nodes (DEEP_FACTS_NODES, from 90%: DEEP_FACTS_AT), the
+   settle rule's mate threats and score (B4), threats a search confirms (B5).
+   A key of another version is made again, in the background */
+var FACTS_V = 2, FACTS_NODES = 1000000, PM_NODES = 250000, PM_MAX = 6, DEEP_FACTS_NODES = 4000000, DEEP_FACTS_AT = 90;
 var factsState = { failed: {}, pending: {} };
 /* the key's searches carry a tag of their own: a card's other searches
    (the stand-in look, its danger facts, its reply list) are promoted or
@@ -7252,7 +7376,8 @@ function factsLines(k) { return (k && k.l || []).map(function (l) { return { u: 
 /* one search of the fact sheet, tagged with its card; a search stopped
    part-way is no answer */
 function factsEval(fen, nodes, o, ctx) {
-  var opts = { tag: ctx.tag };
+  /* B1: from a clean engine, with the harness's options (fresh) */
+  var opts = { tag: ctx.tag, fresh: true };
   for (var k in o || {}) opts[k] = o[k];
   return engineEval(fen, { nodes: nodes }, ctx.prio, opts).then(function (r) {
     if (!r || r.stopped) throw { stopped: true };
@@ -7260,11 +7385,12 @@ function factsEval(fen, nodes, o, ctx) {
   });
 }
 /* a line made long enough to settle (V1.1): searched on from its last
-   position at 120,000 nodes, twice at most, 12 plies in all */
-function factsSettled(st, pv, ctx) {
+   position at 120,000 nodes, twice at most, 12 plies in all; with its score
+   (White's side), long enough for its material to agree with it (B4) */
+function factsSettled(st, pv, ctx, score) {
   var line = (pv || []).slice(0, SETTLE_MAX), rounds = 0;
   var step = function () {
-    var s = settleLine(st, line);
+    var s = settleLine(st, line, null, score);
     if (s.n < line.length) line = line.slice(0, s.n);
     if (s.ok || line.length >= SETTLE_MAX || rounds >= 2 || s.n < 1) return Promise.resolve(line);
     var end = playUci(st, line).states.pop() || st;
@@ -7283,11 +7409,15 @@ function factsSettled(st, pv, ctx) {
    position (them to move; scores from White's side, as the engine gives
    them): [[uci, mate, gain], ...] up to two, mate first, then the biggest
    settled gain. A line that does not mate counts only where it is a real
-   option for them (within 10 points of their best line that does not
-   mate), and a quiet move only when what it wins is not another threat's
-   capture played later in its line (184434540700:103's e5 dxe5 Nxg3 is the
-   threat Nxg3); a promotion's pieces are one threat (the queen's) */
-function factsThreats(pre, lines, pov, all) {
+   option for them (B5: within 5 points of their best line, so never beside
+   a mate of theirs) and a real gain (10 or more points on where they stand,
+   base: {w, cp} from their side), and a quiet move only when what it wins is not
+   another threat's capture played later in its line (184434540700:103's e5
+   dxe5 Nxg3 is the threat Nxg3); a promotion's pieces are one threat (the
+   queen's). Only what a search found (B5): their mates in one, and the
+   null-move search's lines */
+var THREAT_NEAR = 5, THREAT_GAIN = 10;
+function factsThreats(pre, lines, pov, all, base) {
   if (checkersOf(pre).length) return [];
   var nst = dzNullState(pre), them = !pov, c = {};
   var sq = function (u) { return u.slice(0, 4); };
@@ -7299,34 +7429,42 @@ function factsThreats(pre, lines, pov, all) {
   var gainOf = function (s) { return them ? s.w - s.b : s.b - s.w; };
   var wThem = function (l) { return winPct(them ? l.cp : -l.cp); }, ok = (lines || []).filter(function (l) { return l && l.pv && l.pv[0] && uciToMove(nst, l.pv[0]); });
   var mates = function (l) { return l.mate != null && (them ? l.mate : -l.mate) > 0; };
-  var top = Math.max.apply(null, [0].concat(ok.filter(function (l) { return !mates(l); }).map(wThem)));
+  /* (their mates in one: a fact of the board) */
+  var m1 = legalMoves(nst).filter(function (m) { var x = cloneState(nst); applyMove(x, m); return isMate(x); });
+  /* their best line there (B5): a mate of theirs, in one or along a
+     searched line, is all of it (100), so beside a mate no other move is a
+     threat: none comes within 5 points of it */
+  var top = m1.length || ok.some(mates) ? 100 : Math.max.apply(null, [0].concat(ok.map(wThem)));
   var quiet = [];
-  /* the null-move lines: a mate of theirs, else what the line wins where it
-     settles (a quiet move is named only then) */
+  /* the null-move lines: a mate of theirs, else (B5) a line within 5 points
+     of their best line and gaining them 10 or more on where they stand now
+     (base: their win chance with the player to move), named by what it
+     wins where it settles (a quiet move only then); where its material
+     never agrees with its score (B4), by the score's gain */
   ok.forEach(function (l, i) {
     var u = l.pv[0];
     if (mates(l)) { add(u, them ? l.mate : -l.mate, 0, i); return; }
-    if (wThem(l) < top - 10) return;
-    var s0 = settleLine(nst, l.pv), g = gainOf(s0), m0 = uciToMove(nst, u);
+    if (wThem(l) < top - THREAT_NEAR || (base != null && wThem(l) - base.w < THREAT_GAIN)) return;
+    var s0 = settleLine(nst, l.pv, null, l.cp), g = s0.agree ? gainOf(s0) : base != null ? Math.round(((them ? l.cp : -l.cp) - base.cp) / 100) : 0, m0 = uciToMove(nst, u);
     if (g < 1) return;
     if (nst.b[m0.to] || m0.ep >= 0 || m0.promo) add(u, 0, g, i);
     else quiet.push({ u: u, g: g, i: i, caps: s0.moves.slice(1, s0.k).filter(function (x, j) { return j % 2 === 1; }) });
   });
-  /* every mate in one, and every capture by what it nets where its line
-     settles: a capture the lines play keeps their count, any other the
-     static exchange on its square (both sides taking in turn, each free to
-     stop) */
-  legalMoves(nst).forEach(function (m) {
-    var u = moveUci(m), x = cloneState(nst);
-    applyMove(x, m);
-    if (isMate(x)) { add(u, 1, 0, 9); return; }
-    if (c[sq(u)] || !nst.b[m.to]) return;
-    var g = dzSeeMove(nst.b, m.from, m.to);
-    if (g >= 1) add(u, 0, g, 9);
-  });
+  /* every mate in one (a fact of the board, the search needed for nothing
+     else); a capture no searched line confirms is no threat (B5: the
+     static exchange never decides one alone) */
+  m1.forEach(function (m) { add(moveUci(m), 1, 0, 9); });
   /* a quiet move whose line only plays another threat's capture later is
-     that threat, not one of its own */
-  quiet.forEach(function (x) { if (!x.caps.some(function (u2) { return !!c[sq(u2)]; })) { add(x.u, 0, x.g, x.i); c[sq(x.u)].q = 1; } });
+     that threat, not one of its own; so is one whose line plays another
+     quiet threat's move later (foil:184455333378:60's Rf6 Qg4 Rg6 Qf5 Rg5
+     is the threat Rg5) */
+  var qs = {};
+  quiet.forEach(function (x) { qs[sq(x.u)] = x; });
+  var plays = function (x, y) { return x.caps.some(function (u2) { return sq(u2) === sq(y.u); }); };
+  quiet.forEach(function (x) {
+    var other = x.caps.some(function (u2) { var y = qs[sq(u2)]; return !!c[sq(u2)] || (!!y && y !== x && !plays(y, x)); });
+    if (!other) { add(x.u, 0, x.g, x.i); c[sq(x.u)].q = 1; }
+  });
   var list = Object.keys(c).map(function (k) { return c[k]; }).sort(function (x, y) {
     return (y.mate ? 1 : 0) - (x.mate ? 1 : 0) || (x.mate && y.mate ? x.mate - y.mate : 0) || y.gain - x.gain || x.i - y.i;
   });
@@ -7338,22 +7476,26 @@ function factsThreats(pre, lines, pov, all) {
    a search of its own confirms what it wins where its line settles (the
    null-move line's tail can miss their best answer: 184257113186:38's
    Nc8 is met by Be3, 184329623608:48's a5 by Rg3+); up to two */
-function factsThreatsChecked(pre, lines, pov, ctx) {
-  var cands = factsThreats(pre, lines, pov, true), nst = dzNullState(pre), th = [];
+function factsThreatsChecked(pre, lines, pov, ctx, base) {
+  var cands = factsThreats(pre, lines, pov, true, base), nst = dzNullState(pre), th = [];
   if (!cands.length) return Promise.resolve(th);
   var gainOf = function (s) { return !pov ? s.w - s.b : s.b - s.w; };
   return cands.reduce(function (p, x) {
     return p.then(function () {
       if (th.length >= 2) return;
       if (!x.q || x.mate) { th.push([x.u, x.mate, x.gain]); return; }
-      var after = cloneState(nst), m = uciToMove(after, x.u);
+      var after = cloneState(nst), m = uciToMove(after, x.u), cp = null;
       if (!m) return;
       applyMove(after, m);
       if (!legalMoves(after).length) return;
       return factsEval(stateFen(after), FACTS_NODES, {}, ctx).then(function (r) {
-        return factsSettled(after, r.pv || [], ctx);
+        cp = r.cp;
+        return factsSettled(after, r.pv || [], ctx, cp);
       }).then(function (pv) {
-        var g = gainOf(settleLine(nst, [x.u].concat(pv)));
+        /* (B4: a quiet move "wins material" only where its line's count
+           agrees with its score: 184205946040:58's Ne2+, whose deeper line
+           nets nothing, is no threat) */
+        var s = settleLine(nst, [x.u].concat(pv), null, cp), g = s.agree && s.ok ? gainOf(s) : 0;
         if (g >= 1) th.push([x.u, 0, Math.min(g, x.gain)]);
       });
     });
@@ -7375,34 +7517,77 @@ function factsStopped(pre, after, t) {
   if (!t0) return false;
   return t1 !== t0 || !(dzSeeMove(after.b, m1.from, m1.to) > 0);
 }
-/* the answer's reason (V2.4's order), from the key's own facts */
+/* the answer's reason (V2.4's order), from the key's own facts. Release 2:
+   "guards" and "stops" need a threat a search confirmed (B5: the key's th);
+   "stops X" goes before "saves" where X wins more than the piece saved
+   (B4); "saves", "guards" and "stops" only where the answer's own settled
+   line loses nothing worth more than what they name (B7), else what the
+   answer does instead: it avoids the mate the game move allowed ({r:
+   'avoids', m}), it gives a piece and stays better ({r: 'gives', lost,
+   won}), else the band; "traps" and "wins" only where the line's material
+   agrees with its score (B4) */
 function factsWhy(pre, k, pov, bestPv) {
   var m = uciToMove(pre, k.a);
   if (!m) return { r: 'band', w: winPct(k.l[0][1]) };
   if (k.fm) return { r: 'mate', n: k.fm };
   var after = cloneState(pre), piece = pType(pre.b[m.from]), them = !pov;
   applyMove(after, m);
-  var at = dangerAttacked(pre, pov), sb = k.sb, w = winPct(k.l[0][1]);
-  /* saves: the attacked piece moves where its line keeps it */
-  if (at.some(function (x) { return x[0] === m.from; }) && pieceSurvives(pre, bestPv, m.from)) return { r: 'saves', p: piece, sq: sqName(m.to) };
-  /* guards: the moved piece itself defends an attacked piece of yours, or
-     the square their mate in one lands on */
-  var hits = attacksFrom(after.b, m.to), sqs = [], ps = [], mt = (k.th || []).filter(function (t) { return t[1] === 1; })[0];
-  if (mt && hits.indexOf(sqIndex(mt[0].slice(2, 4))) >= 0) { sqs.push(mt[0].slice(2, 4)); ps.push('mate'); }
-  at.forEach(function (x) { if (x[0] !== m.from && hits.indexOf(x[0]) >= 0 && after.b[x[0]] === pre.b[x[0]] && sqs.indexOf(sqName(x[0])) < 0) { sqs.push(sqName(x[0])); ps.push(pType(pre.b[x[0]])); } });
-  if (sqs.length) return { r: 'guards', sqs: sqs, ps: ps };
+  var sb = k.sb, w = winPct(k.l[0][1]), nst = dzNullState(pre), th = k.th || [];
+  /* (B5: a piece in danger is one a confirmed threat takes, never the
+     static exchange alone) */
+  var at = dzConfirmed(pre, dangerAttacked(pre, pov), th);
+  var mt = th.filter(function (t) { return t[1] === 1; })[0];
+  /* what a confirmed threat wins: a mate everything, else its gain in pawns */
+  var worth = function (t) { return t[1] ? 99 : t[2] || 0; };
+  var cands = [];
+  /* saves: the attacked piece moves where its line keeps it, where that
+     piece is most of what the answer and the game move differ by (B4, C5
+     (c): their scores 2 pawns or less beyond it, and neither line a mate) */
+  var fits = k.l[0][2] == null && k.g && k.g[1] == null && (k.l[0][1] - k.g[0]) / 100 <= MOTIF_VAL[piece] + 2;
+  if (fits && at.some(function (x) { return x[0] === m.from; }) && pieceSurvives(pre, bestPv, m.from)) cands.push({ r: 'saves', p: piece, sq: sqName(m.to), v: MOTIF_VAL[piece] });
+  /* guards: the moved piece itself defends a piece of yours a confirmed
+     threat would take, or the square their mate in one lands on */
+  var hits = attacksFrom(after.b, m.to), sqs = [], ps = [], vmax = 0;
+  if (mt && hits.indexOf(sqIndex(mt[0].slice(2, 4))) >= 0) { sqs.push(mt[0].slice(2, 4)); ps.push('mate'); vmax = 99; }
+  th.forEach(function (t) {
+    var tm = t[1] ? null : uciToMove(nst, t[0]), q = tm ? (tm.ep >= 0 ? tm.ep : tm.to) : -1;
+    if (q < 0 || !pre.b[q] || colorW(pre.b[q]) !== pov || q === m.from || hits.indexOf(q) < 0 || after.b[q] !== pre.b[q] || sqs.indexOf(sqName(q)) >= 0) return;
+    sqs.push(sqName(q)); ps.push(pType(pre.b[q])); vmax = Math.max(vmax, MOTIF_VAL[pType(pre.b[q])]);
+  });
+  if (sqs.length) cands.push({ r: 'guards', sqs: sqs, ps: ps, v: vmax });
   /* stops: their mate, the threat named, or their pawn */
-  var t0 = mt || (k.th || [])[0];
+  var t0 = mt || th[0];
   if (t0 && factsStopped(pre, after, t0)) {
     /* a pawn's run (a pawn move that takes nothing) is their pawn, even
        where it ends in mate; a pawn's capture is a threat like any other */
-    var nst0 = dzNullState(pre), tm = uciToMove(nst0, t0[0]), run = !!tm && pType(nst0.b[tm.from]) === 'P' && !nst0.b[tm.to] && tm.ep < 0;
-    return { r: 'stops', t: run && t0[1] !== 1 ? 'pawn' : t0[1] ? 'mate' : 'threat', m: t0[0] };
+    var tm0 = uciToMove(nst, t0[0]), run = !!tm0 && pType(nst.b[tm0.from]) === 'P' && !nst.b[tm0.to] && tm0.ep < 0;
+    var stop = { r: 'stops', t: run && t0[1] !== 1 ? 'pawn' : t0[1] ? 'mate' : 'threat', m: t0[0], v: worth(t0) };
+    /* B4: what it stops wins more than the piece saved */
+    if (cands.length && cands[0].r === 'saves' && stop.v > cands[0].v) cands.unshift(stop); else cands.push(stop);
   }
-  var net = sb ? (pov ? sb.w - sb.b : sb.b - sb.w) : 0;
+  var net = sb ? (pov ? sb.w - sb.b : sb.b - sb.w) : 0, sure = !!sb && sb.a !== 0;
+  if (cands.length) {
+    var pick = cands[0];
+    /* B7: the answer's own settled losses, net of what its line takes back */
+    var lost = sb ? (pov ? sb.lw : sb.lb).split('') : [], gotB = sb ? (pov ? sb.lb : sb.lw).split('') : [];
+    [false, true].forEach(function (cross) {
+      for (var g = gotB.length - 1; g >= 0; g--) {
+        var j = lost.indexOf(gotB[g]);
+        if (j < 0 && cross && (gotB[g] === 'N' || gotB[g] === 'B')) j = lost.indexOf(gotB[g] === 'N' ? 'B' : 'N');
+        if (j >= 0) { gotB.splice(g, 1); lost.splice(j, 1); }
+      }
+    });
+    var big = sure && lost.some(function (p) { return MOTIF_VAL[p] > pick.v; });
+    if (!big) { delete pick.v; return pick; }
+    /* the game move allowed mate: the answer avoids it */
+    var g0 = k.g, gl = g0 ? unpackUci(g0[2]) : [];
+    if (g0 && g0[1] != null && g0[1] < 0 && gl.length) return { r: 'avoids', m: gl[0], lost: lost.join(''), won: gotB.join('') };
+    if (w >= 60) return { r: 'gives', lost: lost.join(''), won: gotB.join('') };
+    return { r: 'band', w: w };
+  }
   /* traps: the piece the line wins, of theirs, has no safe square once the
      answer is played */
-  var won = sb ? (pov ? sb.lb : sb.lw).split('').sort(function (x, y) { return MOTIF_VAL[y] - MOTIF_VAL[x]; })[0] : null;
+  var won = sure ? (pov ? sb.lb : sb.lw).split('').sort(function (x, y) { return MOTIF_VAL[y] - MOTIF_VAL[x]; })[0] : null;
   if (won && won !== 'P' && net >= 1) {
     for (var sq = 0; sq < 64; sq++) {
       var p = after.b[sq];
@@ -7410,7 +7595,11 @@ function factsWhy(pre, k, pov, bestPv) {
     }
   }
   /* wins: net where the line settles, the player then better or winning */
-  if (net >= 1 && w >= 60) return { r: 'wins', n: net };
+  if (sure && net >= 1 && w >= 60) return { r: 'wins', n: net };
+  /* B7: the game move allowed their mate, and the answer does not
+     (184212737262:58's Rxf5: "Rxf5 avoids the mate Be3 allowed.") */
+  var gm0 = k.g, gml = gm0 ? unpackUci(gm0[2]) : [];
+  if (gm0 && gm0[1] != null && gm0[1] < 0 && gml.length) return { r: 'avoids', m: gml[0] };
   /* blocks the check */
   if (checkersOf(pre).length && piece !== 'K' && !pre.b[m.to]) return { r: 'blocks' };
   /* attacks a piece: one worth more than the mover, or unguarded */
@@ -7422,6 +7611,18 @@ function factsWhy(pre, k, pov, bestPv) {
   });
   if (hit != null) return { r: 'attacks', p: pType(after.b[hit]), sq: sqName(hit) };
   return { r: 'band', w: w };
+}
+/* B6 (c): a line (pv, from st, its first move the player's) whose reply
+   takes a piece of the player's (pov) that could be taken back on its
+   square, where the line plays something else: {st (after the reply), m
+   (the take-back, by the cheapest piece)} or null */
+function takeBackNeed(st, pv, pov) {
+  var ns = lineNodes(st, pv), x = ns[1], y = ns[2];
+  if (!x || !x.cap || colorW(x.cap) !== pov || (y && y.cap && y.m.to === x.m.to)) return null;
+  var re = legalMoves(x.after).filter(function (q) { return (q.ep >= 0 ? q.ep : q.to) === x.m.to; });
+  if (!re.length) return null;
+  re.sort(function (p, q) { return MOTIF_VAL[pType(x.after.b[p.from])] - MOTIF_VAL[pType(x.after.b[q.from])]; });
+  return { st: x.after, m: re[0] };
 }
 /* the answer's piece's moves (pm, V2.3), one 250,000-node search */
 function factsPm(pre, k, lines, sign, ctx) {
@@ -7470,14 +7671,22 @@ function factsCompute(it, prio) {
   var S1, S2, S3, k = { v: FACTS_V };
   var seq = function (list) { return list.reduce(function (p, f) { return p.then(f); }, Promise.resolve()); };
   var legal = function (l) { return l && l.pv && l.pv[0] && uciToMove(pre, l.pv[0]); };
+  var deep = false;
   return factsEval(stateFen(pre), FACTS_NODES, {}, ctx).then(function (r) {
     var top = { cp: r.cp, mate: r.mate, pv: r.pv && r.pv.length ? r.pv : r.bestUci ? [r.bestUci] : [] };
     if (!legal(top)) throw { none: true };
     S1 = [mine(top)];
-    return factsEval(stateFen(pre), FACTS_NODES, { multipv: 3 }, ctx);
+    /* B1: a card the first search scores 90% or more without a mate has its
+       three lines searched at 4,000,000 nodes, where a mate the shallower
+       search misses shows (184364964898:69's Rg1+, mate in 11) */
+    deep = S1[0].mate == null && winPct(S1[0].cp) >= DEEP_FACTS_AT;
+    return factsEval(stateFen(pre), deep ? DEEP_FACTS_NODES : FACTS_NODES, { multipv: 3 }, ctx);
   }).then(function (r) {
     (r.lines && r.lines.length ? r.lines : [{ cp: r.cp, mate: r.mate, pv: r.pv || [] }]).forEach(function (l) {
-      if (S1.length < 3 && legal(l) && l.pv[0] !== S1[0].pv[0]) S1.push(mine(l));
+      if (!legal(l)) return;
+      /* (the deeper search's score for the first line's own move is the truer one) */
+      if (l.pv[0] === S1[0].pv[0]) { if (deep) { var d = mine(l); S1[0].cp = d.cp; S1[0].mate = d.mate; } return; }
+      if (S1.length < 3) S1.push(mine(l));
     });
     /* the answer is the single line's move unless one of the three is
        clearly better: each search can miss what the other finds at this
@@ -7502,11 +7711,12 @@ function factsCompute(it, prio) {
     return inCheck ? null : factsEval(stateFen(dzNullState(pre)), FACTS_NODES, { multipv: 2 }, ctx);
   }).then(function (r) {
     S3 = !r ? [] : (r.lines && r.lines.length ? r.lines : [{ cp: r.cp, mate: r.mate, pv: r.pv || [] }]).filter(function (l) { return l && l.pv && l.pv[0]; }).slice(0, 2).map(function (l) { return { cp: l.cp, mate: l.mate, pv: l.pv.slice() }; });
-    /* every line extended to where it settles */
+    /* every line extended to where it settles (its material in line with
+       its score: B4) */
     var nst = dzNullState(pre);
-    return seq(S1.map(function (l) { return function () { return factsSettled(pre, l.pv, ctx).then(function (x) { l.pv = x; }); }; })
-      .concat([function () { return factsSettled(post, S2.pv, ctx).then(function (x) { S2.pv = x; }); }])
-      .concat(S3.map(function (l) { return function () { return l.mate != null ? null : factsSettled(nst, l.pv, ctx).then(function (x) { l.pv = x; }); }; })));
+    return seq(S1.map(function (l) { return function () { return factsSettled(pre, l.pv, ctx, l.cp * sign).then(function (x) { l.pv = x; }); }; })
+      .concat([function () { return factsSettled(post, S2.pv, ctx, S2.cp * sign).then(function (x) { S2.pv = x; }); }])
+      .concat(S3.map(function (l) { return function () { return l.mate != null ? null : factsSettled(nst, l.pv, ctx, l.cp).then(function (x) { l.pv = x; }); }; })));
   }).then(function () {
     var l0 = S1[0], l1 = S1[1], wb = winPct(l0.cp), wa = winPct(S2.cp), bar = Math.max(10, mistakeMinFor(g) - 3);
     k.a = l0.pv[0];
@@ -7523,14 +7733,25 @@ function factsCompute(it, prio) {
     k.om = l1 && wb - w1 >= 10 && scaleStep(w1) < scaleStep(wb) && (w1 <= 40 || wb >= 80) ? 1 : 0;
     k.fm = l0.mate != null && l0.mate > 0 ? l0.mate : 0;
     if (inCheck) k.ic = 1;
-    return factsThreatsChecked(pre, S3, pov, ctx).then(function (th) { k.th = th; return factsRest(); });
+    /* (where they stand now, for a threat's gain: B5) */
+    return factsThreatsChecked(pre, S3, pov, ctx, { w: 100 - wb, cp: -l0.cp }).then(function (th) { k.th = th; return factsRest(); });
   }).catch(function (e) { if (e && e.none) return null; throw e; });
   function factsRest() {
     var l0 = S1[0];
-    k.sg = settleRec(settleLine(pre, [pu].concat(S2.pv), !pov));
-    k.sb = settleRec(settleLine(pre, l0.pv, pov));
+    k.sg = settleRec(settleLine(pre, [pu].concat(S2.pv), !pov, S2.cp * sign));
+    k.sb = settleRec(settleLine(pre, l0.pv, pov, l0.cp * sign));
     k.why = factsWhy(pre, k, pov, l0.pv);
-    return factsPm(pre, k, S1, sign, ctx).then(function () { return k; });
+    /* B6 (c): their reply to the game move takes a piece the player could
+       take back, and the line plays something else: the take-back searched
+       once, so the game move's reason can say why it fails (gb: [uci, cp,
+       mate, packed line from the take-back], the player's side) */
+    var tb = takeBackNeed(pre, [pu].concat(S2.pv), pov), tx = null;
+    if (tb) { tx = cloneState(tb.st); applyMove(tx, tb.m); }
+    var gb = tx && legalMoves(tx).length ? factsEval(stateFen(tx), FACTS_NODES, {}, ctx).then(function (r) {
+      var x = mine({ cp: r.cp, mate: r.mate, pv: r.pv || [] });
+      k.gb = [moveUci(tb.m), x.cp, x.mate, packUci([moveUci(tb.m)].concat(x.pv))];
+    }) : Promise.resolve();
+    return gb.then(function () { return factsPm(pre, k, S1, sign, ctx); }).then(function () { return k; });
   }
 }
 /* where the record's two lines settle by the key's settle rule, as the
@@ -7614,7 +7835,12 @@ function enrichTargets() {
    beside the deeper look and kept on the mistake record as b.dz:
      at  the player's pieces (not the king) on the card's own position that
          taking would win for them (the static exchange on the square, dzSee:
-         a piece its king or a pawn guards well enough is not in danger):
+         a piece its king or a pawn guards well enough is not in danger),
+         and (B5, release 2) once a search ran, only where it confirms it:
+         one of their threats the search kept (th and the next one) takes
+         it for a gain where its line settles (dzConfirmed); before any
+         search (no key, the engine still loading) the exchange's list,
+         said in words alone, never ringed (dangerView's searched).
          [[square, attacker squares...], ...], the most valuable piece first,
          its cheapest attacker first; only attackers that may legally take
          (not pinned off the line, a king only where nothing guards)
@@ -7648,8 +7874,9 @@ function enrichTargets() {
          before is no such danger: taking away a guard is a safety check
          missed
      v, k  the version (DZ_V) and a signature of the lines and scores it was
-         read from (dzSig): a change to either reads it again */
-var DZ_V = 3;
+         read from (dzSig): a change to either reads it again (DZ_V 4,
+         release 2: B5's threats, a search's lines only) */
+var DZ_V = 4;
 var DZ_STEP = { threat: 1, missedMaterial: 2, missedTactic: 2, mateMissed: 2, slipped: 4, openingSlip: 5, drift: 5, endgame: 5 };
 var DZ_NODES = 250000;
 function dzSig(b) {
@@ -7672,7 +7899,8 @@ function dangerCard(it) {
   var played = pu ? uciToMove(pre, pu) : null, best = b.bu && pre ? uciToMove(pre, b.bu) : null;
   if (!played || !best || b.bu === pu) return null;
   var fs = factsSettle(b, g.color === 'white');
-  var cls = classifyMistake(pre, pu, { pv: unpackUci(b.lu), mate: b.mb, settle: fs.b }, { pv: unpackUci(b.ru), mate: b.ma, settle: fs.g }, b.wb, b.wa, b.p);
+  var kth = factsOf(b) && !factsOf(b).x ? factsOf(b).th : undefined;
+  var cls = classifyMistake(pre, pu, { pv: unpackUci(b.lu), mate: b.mb, settle: fs.b }, { pv: unpackUci(b.ru), mate: b.ma, settle: fs.g, th: kth }, b.wb, b.wa, b.p);
   return { it: it, key: it.key, pre: pre, played: played, playedUci: pu, best: best, cls: cls };
 }
 /* the same position with them to move: castling kept, no en passant */
@@ -7699,6 +7927,19 @@ function dangerAttacked(st, pov) {
     out.push([sq].concat(by));
   }
   return out.sort(function (x, y) { return val(y[0]) - val(x[0]) || x[0] - y[0]; });
+}
+/* B5 (release 2): the attacked pieces (dangerAttacked's list on st) a
+   search confirms: one of their threats ts ([uci, mate, gain], from the
+   null-move search's lines, read by factsThreats' rule) takes the piece and
+   gains them material where its line settles. The static exchange alone
+   never puts a piece in danger (the board's red ring, "saves") */
+function dzConfirmed(st, list, ts) {
+  var nst = dzNullState(st), hit = {};
+  (ts || []).forEach(function (t) {
+    var m = t && !t[1] && t[2] >= 1 ? uciToMove(nst, t[0]) : null, q = m ? (m.ep >= 0 ? m.ep : m.to) : -1;
+    if (q >= 0 && nst.b[q]) hit[q] = 1;
+  });
+  return (list || []).filter(function (x) { return !!hit[x[0]]; });
 }
 /* the static exchange on square sq, side by (true: White) taking first:
    what they net in pawns when both sides take there in turn, the cheapest
@@ -7759,7 +8000,10 @@ function dangerSaves(a) {
    mate, pawns], a mate first, then the biggest gain; [] when none */
 function dangerThreats(a, r) {
   var lines = r && r.lines && r.lines.length ? r.lines : r && r.pv ? [{ cp: r.cp, mate: r.mate, pv: r.pv }] : [];
-  return factsThreats(a.pre, lines, myPov(a.it));
+  /* (B5: a threat gains them 10 or more on where they stand: the card's
+     best line, from their side) */
+  var eb = a.it.b.eb, base = eb != null ? { w: 100 - winPct(eb), cp: -eb } : null;
+  return factsThreats(a.pre, lines, myPov(a.it), false, base);
 }
 /* their threat still stands once the game move is on the board: the same
    piece makes the same move there and takes the same piece (a mate in one
@@ -7830,11 +8074,16 @@ function dzRaises(a, th, sv, s) {
 /* the facts for card a; r: the null-move search's answer, null when it
    found nothing, undefined when none ran */
 function dangerFacts(a, r) {
-  var b = a.it.b, pov = myPov(a.it), d = { v: DZ_V, k: dzSig(b), at: dangerAttacked(a.pre, pov), sv: dangerSaves(a) }, all = [], key = factsOf(b);
+  var b = a.it.b, pov = myPov(a.it), d = { v: DZ_V, k: dzSig(b), at: [], sv: dangerSaves(a) }, all = [], key = factsOf(b);
   if (dzInCheck(a)) d.th = null;
   /* the card's key has them already: no search of its own (V1.1) */
   else if (key && !key.x && r === undefined) { all = (key.th || []).slice(); d.th = all[0] || null; }
   else if (r !== undefined) { all = r ? dangerThreats(a, r) : []; d.th = all[0] || null; }
+  /* (B5: once a search ran, in danger only where it confirms the capture;
+     before one, the exchange's list stands in, never drawn: dangerView's
+     searched) */
+  var at = dangerAttacked(a.pre, pov);
+  d.at = d.th === undefined ? at : dzConfirmed(a.pre, at, all);
   d.st = dangerStep(a, d.th, all.slice(1), d.sv);
   return d;
 }
@@ -8950,7 +9199,7 @@ function foilLook(it, prio) {
     b.ok = 1;
     /* the threat comes after, never holding the card: Hint 2 reads it once
        it is in (until then the board's own attacks) */
-    it.thP = foilThreat(pre, sign > 0, false, key).then(function (th) { if (!stale(myGen) && th !== undefined) b.th = th; });
+    it.thP = foilThreat(pre, sign > 0, false, key, { w: 100 - wBest, cp: -sign * x.bl.cp }).then(function (th) { if (!stale(myGen) && th !== undefined) b.th = th; });
   });
   foilPending[key] = p.then(function () { delete foilPending[key]; return it; }, function () { delete foilPending[key]; return it; });
   return foilPending[key];
@@ -8959,8 +9208,9 @@ function foilLook(it, prio) {
    250,000 nodes), read by the fact sheet's rule (factsThreats); a quiet
    move kept only when a search from after it confirms what it wins where
    its line settles. Resolves with [uci, mate, gain, piece won] or null (none,
-   or the player in check); undefined when no search could run */
-function foilThreat(pre, pov, prio, key) {
+   or the player in check); undefined when no search could run. base: where
+   they stand now ({w, cp}, their side: B5's gain of 10 or more) */
+function foilThreat(pre, pov, prio, key, base) {
   if (checkersOf(pre).length) return Promise.resolve(null);
   var nst = dzNullState(pre), fen = stateFen(nst);
   var settleWins = function (ucis) {
@@ -8973,7 +9223,7 @@ function foilThreat(pre, pov, prio, key) {
   return engineEval(fen, { nodes: DEEP_NODES }, prio, { multipv: 2, tag: key }).then(function (r) {
     if (!r || r.stopped) return undefined;
     var lines = r.lines && r.lines.length ? r.lines : [{ cp: r.cp, mate: r.mate, pv: r.pv || [] }];
-    var c = factsThreats(pre, lines, pov, true)[0];
+    var c = factsThreats(pre, lines, pov, true, base)[0];
     if (!c) return null;
     var m = uciToMove(nst, c.u);
     if (!m) return null;
@@ -8991,8 +9241,12 @@ function foilThreat(pre, pov, prio, key) {
     return engineEval(stateFen(after), { nodes: DEEP_NODES }, prio, { tag: key }).then(function (r2) {
       if (!r2 || r2.stopped) return null;
       var sw = settleWins([c.u].concat(r2.pv || []));
-      /* the gain is theirs: the player's loss, the piece it wins */
-      return -sw.gain >= 1 && sw.wins ? [c.u, 0, -sw.gain, sw.wins] : null;
+      /* the gain is theirs: the player's loss, the piece it wins; a capture
+         names the piece it takes, so its line nets at least what a capture's
+         loss must (a pawn 1, else 2: foil:184215516284:61's Nxe2 is met by
+         exf4, a trade of loose pieces, never "would take your knight") */
+      var need = nst.b[m.to] ? (pType(nst.b[m.to]) === 'P' ? 1 : 2) : 1;
+      return -sw.gain >= need && sw.wins ? [c.u, 0, -sw.gain, sw.wins] : null;
     }, function () { return null; });
   }, function () { return undefined; });
 }
@@ -9001,7 +9255,8 @@ function foilThreat(pre, pov, prio, key) {
    (a capture, or a quiet move that wins a piece); the only move when its
    search's next line is 10 points worse ("Only one move holds here."); the
    player's pieces taking would win for them (dangerAttacked) where no
-   search ran; none: "Any good move passes here." No mark on the answer's
+   search ran, in words alone (B5: no red ring where no search confirms the
+   capture); none: "Any good move passes here." No mark on the answer's
    to-square nor on the game move's (a fine answer too). {kind, rings,
    arrows, ...} */
 function foilDanger(a) {
@@ -9019,7 +9274,7 @@ function foilDanger(a) {
   if (b.om) return { kind: 'only', rings: [], arrows: [] };
   if (th === undefined) {
     var pk = dangerPick(dangerAttacked(st, pov).map(function (x) { return { sq: x[0], p: st.b[x[0]], by: x.slice(1) }; }), [], skip);
-    if (pk) return { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return { from: x.from, to: x.to, kind: 'threat', key: 'danger' }; }) };
+    if (pk) return { kind: 'attacked', named: pk.named, second: pk.second, rings: [], arrows: [] };
   }
   return { kind: 'none', rings: [], arrows: [] };
 }
@@ -10177,7 +10432,9 @@ function cardFor(it) {
      (looksForcing, for the first session's order, reads the same rule
      from the stored line without the classifier) */
   var fs = factsSettle(b, myPov(it));
-  var cls = classifyMistake(pre, playedUci, { pv: unpackUci(b.lu), mate: b.mb, settle: fs.b }, { pv: unpackUci(b.ru), mate: b.ma, settle: fs.g }, b.wb, b.wa, b.p);
+  /* (B5: the key's threats, for "ignores their threat") */
+  var kth = factsOf(b) && !factsOf(b).x ? factsOf(b).th : undefined;
+  var cls = classifyMistake(pre, playedUci, { pv: unpackUci(b.lu), mate: b.mb, settle: fs.b }, { pv: unpackUci(b.ru), mate: b.ma, settle: fs.g, th: kth }, b.wb, b.wa, b.p);
   a.cls = cls;
   /* the forcing line's length reads the line's own settle (the key's
      settle rule reads on further, for its counts only: V1.1) */
@@ -11197,24 +11454,42 @@ function checkMove(m, u, inLine) {
      scored side by side, so depth noise cannot decide the verdict */
   var expect = inLine ? a.sol[a.solIdx] : a.bestUci;
   /* tagged, so Try again, Show the answer and leaving the card stop it */
+  /* the re-check starts from a clean engine with the harness's options,
+     as a fact sheet's searches do (B1: fresh) */
   var search = function (nodes) {
-    return engineEval(fen, { nodes: nodes }, true, { searchmoves: expect && expect !== u ? [u, expect] : [u], multipv: expect && expect !== u ? 2 : 1, tag: 'check' });
+    return engineEval(fen, { nodes: nodes }, true, { searchmoves: expect && expect !== u ? [u, expect] : [u], multipv: expect && expect !== u ? 2 : 1, tag: 'check', fresh: nodes >= CONFIRM_NODES });
   };
   search(inLine ? EXT_NODES : DEEP_NODES).then(function (r) {
     clearTimeout(timer);
     var a2 = ui.session && ui.session.active;
     if (!live(a2)) return;
-    var v = tryVerdict(a2, u, expect, r, inLine), left = t0 + RECHECK_MS - Date.now();
     /* a first answer is never the 1,000,000-node depth the found band asks
        (V1.2): its comparative words wait for the re-check */
+    var v = tryVerdict(a2, u, expect, r, inLine, false), left = t0 + RECHECK_MS - Date.now();
     v.deep = false;
     /* a foil passes any move short of the player's mistake threshold for
-       that game (D10); at or over it the try is a miss, said as any is.
-       Searched once: F10.4's second search is for a card's own verdicts */
+       that game (D10); at or over it the try is a miss, said as any is. B9:
+       a miss is graded, and said, by the 1,000,000-node re-check where it
+       answers in time (foil:184364964898:45's Ne5: its reply f3, "Then f3
+       attacks your bishop.", never the shallow search's Nxe2) */
     if (a2.foil) {
-      a2.ghostMove = null;
-      if (v.wBest - v.wMove < mistakeMinFor(a2.it.g)) foilPass(m, v.wBest - v.wMove);
-      else miss(m, u, { cp: v.myCp, mate: v.myMate, pv: v.line.pv || [], win: v.wMove }, false);
+      var foilEnd = function (v1) {
+        var a3 = ui.session && ui.session.active;
+        if (!live(a3)) return;
+        a3.ghostMove = null;
+        if (v1.wBest - v1.wMove < mistakeMinFor(a3.it.g)) foilPass(m, v1.wBest - v1.wMove);
+        else miss(m, u, { cp: v1.myCp, mate: v1.myMate, pv: v1.line.pv || [], win: v1.wMove, deep: !!v1.deep }, false);
+      };
+      if (v.wBest - v.wMove < mistakeMinFor(a2.it.g) || left <= 0) { foilEnd(v); return; }
+      var fcap = setTimeout(function () { var a4 = ui.session && ui.session.active; if (live(a4)) { engineStop('check'); foilEnd(v); } }, left), fdone = false;
+      search(CONFIRM_NODES).then(function (r2) {
+        clearTimeout(fcap);
+        if (fdone) return;
+        fdone = true;
+        var v2 = r2 && !r2.stopped ? tryVerdict(a2, u, expect, r2, inLine, true) : v;
+        if (v2 !== v) v2.deep = true;
+        foilEnd(v2);
+      }, function () { clearTimeout(fcap); if (!fdone) { fdone = true; foilEnd(v); } });
       return;
     }
     if (left <= 0 || !recheckBand(a2, v)) { applyTry(a2, m, u, inLine, v); return; }
@@ -11239,7 +11514,7 @@ function checkMove(m, u, inLine) {
       applyTry(a3, m, u, inLine, v2);
     };
     search(CONFIRM_NODES).then(function (r2) {
-      var v2 = r2 && !r2.stopped ? tryVerdict(a2, u, expect, r2, inLine) : v;
+      var v2 = r2 && !r2.stopped ? tryVerdict(a2, u, expect, r2, inLine, true) : v;
       if (v2 !== v) v2.deep = true;
       decide(v2);
     }, function () { decide(v); });
@@ -11251,14 +11526,14 @@ function checkMove(m, u, inLine) {
 }
 /* a try's verdict from a search r that scored it (and the expected move,
    expect): 'solved', 'close' or 'miss', with the figures it was read from */
-function tryVerdict(a, u, expect, r, inLine) {
+function tryVerdict(a, u, expect, r, inLine, deep) {
   var b = a.it.b, sign = myPov(a.it) ? 1 : -1, mine = null, theirs = null;
   (r.lines || []).forEach(function (ln) {
     if (ln.pv && ln.pv[0] === u) mine = ln;
     else if (ln.pv && ln.pv[0] === expect) theirs = ln;
   });
   mine = mine || r;
-  var v = tryKind(a, mine.cp * sign, mine.mate != null ? mine.mate * sign : null, theirs ? winPct(theirs.cp * sign) : winPct(b.eb), inLine);
+  var v = tryKind(a, mine.cp * sign, mine.mate != null ? mine.mate * sign : null, theirs ? winPct(theirs.cp * sign) : winPct(b.eb), inLine, deep);
   v.line = mine;
   return v;
 }
@@ -11268,7 +11543,7 @@ function tryVerdict(a, u, expect, r, inLine) {
    the best move; 'safe': a safe win more than 4 points below (the lesson is
    not a missed chance), works too and holds; else a good move that is not
    the best (closeTry) or a miss */
-function tryKind(a, myCp, myMate, wBest0, inLine) {
+function tryKind(a, myCp, myMate, wBest0, inLine, deep) {
   var b = a.it.b, wMove = winPct(myCp), wBest = Math.max(wBest0, wMove);
   var mateCard = b.mb != null && b.mb > 0;
   var keepsMate = myMate != null && myMate > 0;
@@ -11278,7 +11553,7 @@ function tryKind(a, myCp, myMate, wBest0, inLine) {
   var safeWin = wMove >= 70 && wBest >= 70 && wMove >= b.wa + 15 && !chances;
   var found = mateCard ? keepsMate : (wBest - wMove <= SOLVE_TOL || keepsMate);
   var band = found ? 'found' : !mateCard && safeWin ? 'safe' : '';
-  return { kind: band ? 'solved' : closeTry(b, wMove, wBest, mateCard, chances, inLine) ? 'close' : 'miss', band: band,
+  return { kind: band ? 'solved' : closeTry(b, wMove, wBest, mateCard, chances, inLine, deep) ? 'close' : 'miss', band: band,
            myCp: myCp, myMate: myMate, wMove: wMove, wBest: wBest, mateCard: mateCard, keepsMate: keepsMate, safeWin: safeWin };
 }
 /* a try among the key's three lines (V1.1), on the card's own position:
@@ -11289,7 +11564,7 @@ function keyVerdict(a, u) {
   if (!k || k.x || a.foil || a.prac || (a.sol && a.solIdx > 0) || k.a !== a.bestUci) return null;
   var ls = factsLines(k), l = ls.filter(function (x) { return x.u === u; })[0];
   if (!l) return null;
-  var v = tryKind(a, l.cp, l.mate, winPct(ls[0].cp), false);
+  var v = tryKind(a, l.cp, l.mate, winPct(ls[0].cp), false, true);
   v.line = { pv: l.pv };
   v.deep = true;
   return v;
@@ -11317,51 +11592,81 @@ function applyTry(a2, m, u, inLine, v) {
     solved(m, u, { win: v.wMove, best: v.wBest, mate: v.myMate, band: v.band, deep: !!v.deep, san: sanOf(a2.st, m), w: moveWords(a2.st, m) }, inLine);
     return;
   }
-  /* V1.9: at More help a try that takes the attacked piece to safety,
-     loses nothing new on the way and scores 10 points or more above the
-     game move is a good move (it holds: two stars); at Normal and Less help
-     it stays a miss whose reason starts "Safe, but" (R5.4, V2.2) */
+  /* V1.9: at More help a try that takes the attacked piece to safety and
+     scores 10 points or more above the game move is a good move (it holds:
+     two stars); at Normal and Less help it stays a miss whose reason starts
+     "Safe, but" (R5.4, V2.2). Saved: read from the exchange on its square
+     after their reply (B7). A try that saved it is kept for the answer's
+     words (a.savedBy: "Qd7+ saved it too.") */
   var save = !inLine && !a2.foil && (a2.tier === 1 || v.kind !== 'close') ? savingTry(a2, m, u, v) : null;
-  if (save && a2.tier !== 1) { miss(m, u, { cp: v.myCp, mate: v.myMate, pv: r.pv || [], win: v.wMove, wBest: v.wBest, deep: !!v.deep, save: save }, inLine); return; }
+  if (save && !a2.savedBy) a2.savedBy = { san: sanOf(a2.st, m), p: save.p };
+  var pv = r.pv && r.pv.length ? (r.pv[0] === u ? r.pv : [u].concat(r.pv)) : [u];
+  if (save && a2.tier !== 1) { backCheck(a2, m, pv, function (bk) { miss(m, u, { cp: v.myCp, mate: v.myMate, pv: r.pv || [], win: v.wMove, wBest: v.wBest, deep: !!v.deep, save: save, back: bk }, inLine); }); return; }
   if (v.kind === 'close' || save) {
     /* a good move that is not the best: not a miss (S5). The first one is
        remembered, so a later solve or the answer counts as help; a second
-       says row 1 alone */
+       says row 1 alone. B3: one inside a forcing line holds the line's step
+       too (a.lineGood: the line's own move there, "Nxa8 was stronger
+       later."), and the line goes on from the same position */
     var again = !!a2.foundGood;
     if (!again) {
       track('close_shown');
       a2.foundGood = { san: sanOf(a2.st, m), win: v.wMove };
       keepProgress(a2);
     }
+    if (inLine && !a2.lineGood) { var due2 = uciToMove(a2.st, a2.sol[a2.solIdx]); a2.lineGood = { san: due2 ? sanOf(a2.st, due2) : '' }; }
     a2.cue = 'tap';
     showTry(a2, m, 'close', null, save ? { save: save.p } : null, again);
     return;
   }
-  miss(m, u, { cp: v.myCp, mate: v.myMate, pv: r.pv || [], win: v.wMove, wBest: v.wBest, deep: !!v.deep }, inLine);
+  backCheck(a2, m, pv, function (bk) { miss(m, u, { cp: v.myCp, mate: v.myMate, pv: r.pv || [], win: v.wMove, wBest: v.wBest, deep: !!v.deep, back: bk }, inLine); });
 }
-/* V1.9's saving move: the try moves a piece in danger on the card's own
-   position (the danger facts' attacked pieces) to where it is not lost (it
-   survives the try's line to where that settles), the line loses nothing
-   new on the way (each piece it loses is one the answer's settled line
-   loses too, or one already attacked on the card's position: card 1's
-   Qh3 saves the queen and the d3 bishop still falls to the pawn that
-   attacked it, as after Qd7+ and Qg4), and it scores 10 points or more
-   above the game move. {p (the piece's letter)} or null */
+/* B6 (c): their reply takes a piece of yours that you could take back on
+   its square, and the line plays something else: the take-back is searched
+   (250,000 nodes, a clean engine) before the reason is said, under
+   "Checking…", so row 2 can say why it fails ("Bxc3+, and bxc3 Qxc3+
+   forks."). done(back) with {pv (the take-back first), cp, mate (the
+   player's side)} or null: none needed, the engine down, or the try taken
+   back meanwhile (then done never runs) */
+function backNeed(a, pv) { return takeBackNeed(a.st, pv, myPov(a.it)); }
+function backCheck(a, m, pv, done) {
+  var need = SF.state !== 'failed' && !a.prac ? backNeed(a, pv) : null;
+  if (!need) { done(null); return; }
+  var tok = a.checkTok = a.checkTok || ++checkSeq, key = a.key, sign = myPov(a.it) ? 1 : -1;
+  if (a.phase !== 'checking') {
+    a.phase = 'checking';
+    a.animMove = a.tapAnim; a.tapAnim = null;
+    a.ghostMove = [m.from, m.to];
+    a.checking = sanOf(a.st, m);
+    a.checkingW = moveWords(a.st, m);
+    a.checkSaid = 0;
+    renderCard();
+  }
+  var live = function (a2) { return a2 && a2.key === key && a2.phase === 'checking' && a2.checkTok === tok; };
+  var after = cloneState(need.st);
+  applyMove(after, need.m);
+  var fin = function (bk) { var a2 = ui.session && ui.session.active; if (!live(a2)) return; a2.ghostMove = null; done(bk); };
+  if (!legalMoves(after).length) { fin({ pv: [moveUci(need.m)], cp: null, mate: null }); return; }
+  engineEval(stateFen(after), { nodes: DEEP_NODES }, true, { tag: 'check', back: 1, fresh: true }).then(function (r) {
+    fin(r && !r.stopped ? { pv: [moveUci(need.m)].concat(r.pv || []), cp: r.cp * sign, mate: r.mate != null ? r.mate * sign : null } : null);
+  }, function () { fin(null); });
+}
+/* V1.9's saving move, B7's reading: the try moves a piece in danger on the
+   card's own position (the danger facts' attacked pieces), their reply does
+   not win it on its new square (it takes it there only where the exchange
+   pays them nothing), and it scores 10 points or more above the game move:
+   card 1's Qd7+ (Rf7 attacks the queen, which then moves on), Qh3 and Qg4.
+   {p (the piece's letter)} or null */
 function savingTry(a, m, u, v) {
   if (a.sol && a.solIdx > 0) return null;
-  var dv = dangerView(a), b = a.it.b, pov = myPov(a.it);
+  var dv = dangerView(a), b = a.it.b;
   if (!dv || !dv.attacked.some(function (x) { return x.sq === m.from; }) || !(v.wMove >= b.wa + 10)) return null;
   var pv = v.line && v.line.pv && v.line.pv.length ? (v.line.pv[0] === u ? v.line.pv : [u].concat(v.line.pv)) : [u];
-  if (!pieceSurvives(a.pre, pv, m.from)) return null;
-  var mine = settleLine(a.pre, pv), k = factsOf(b);
-  var pool = k && k.sb ? (pov ? k.sb.lw : k.sb.lb).split('') : (function () { var s = settleLine(a.pre, unpackUci(b.lu)); return pov ? s.lw : s.lb; })();
-  dv.attacked.forEach(function (x) { if (x.sq !== m.from && x.p) pool.push(pType(x.p)); });
-  var lost = pov ? mine.lw : mine.lb;
-  for (var i = 0; i < lost.length; i++) {
-    var j = pool.indexOf(lost[i]);
-    if (j < 0) return null;
-    pool.splice(j, 1);
-  }
+  var st = cloneState(a.pre), tm = uciToMove(st, u);
+  if (!tm) return null;
+  applyMove(st, tm);
+  var r = pv[1] ? uciToMove(st, pv[1]) : null;
+  if (r && (r.ep >= 0 ? r.ep : r.to) === tm.to && dzSeeMove(st.b, r.from, tm.to) > 0) return null;
   return { p: pType(a.pre.b[m.from]) };
 }
 /* the close rule (S5), the one path for a good move that is not the best:
@@ -11371,7 +11676,12 @@ function savingTry(a, m, u, v) {
    in this search, or on a missed chance one that keeps a big edge, when it
    is clearly better than the game move; on a mate card a move that still
    wins big. Never inside a forcing line */
-function closeTry(b, wMove, wBest, mateCard, chances, inLine) {
+function closeTry(b, wMove, wBest, mateCard, chances, inLine, deep) {
+  /* B3: within 10 points of the best and both at 70% or more, by the key
+     or the 1,000,000-node re-check (deep): a first try that beats the game
+     move (184434540700:103's Ra1), or a step inside a forcing line (the
+     knight line's gxf3) */
+  if (deep && !mateCard && wBest - wMove <= STRONGER_TOL && wMove >= 70 && wBest >= 70 && (inLine || wMove > b.wa)) return true;
   if (inLine) return false;
   if (mateCard) return wMove >= 80;
   if (wMove >= winPct(b.eb) - STRONGER_TOL) return true;
@@ -11405,7 +11715,7 @@ function miss(m, u, info, inLine) {
      then need their margin) */
   var why = missWhy(a, c, info ? info.win : null, r1 ? sanOf(r1.before, r1.move) : null,
                     !!inLine && !concrete && !!info && info.win >= winPct(it.b.eb) - STRONGER_TOL, r1 ? moveWords(r1.before, r1.move) : null,
-                    { pv: [u].concat(reply), deep: !!(info && info.deep), mate: info ? info.mate : null, wBest: info ? info.wBest : null, save: info ? info.save : null });
+                    { pv: [u].concat(reply), deep: !!(info && info.deep), mate: info ? info.mate : null, cp: info && info.cp != null ? info.cp : null, back: info ? info.back : null, wBest: info ? info.wBest : null, save: info ? info.save : null });
   /* the reply that punishes it is marked when it captures or checks and
      the try loses something by it */
   why.threat = concrete ? threatOf(c.gameLine, 1) : null;
@@ -11446,9 +11756,13 @@ function solved(m, u, alt, lineDone) {
      re-check's: deep); a safe win more than 4 points below works too and
      holds (a.alt). Later in a forcing line a step in the found band simply
      continues as found (V1.6) */
-  var other = !!alt && u !== a.bestUci;
-  a.alt = other && alt.band !== 'found' ? alt : null;
-  a.near = other && first && alt.band === 'found' ? alt : null;
+  var other = !!alt && u !== a.bestUci, b = a.it.b;
+  /* B2: a try that forces mate, where the answer does not (or only later),
+     is the answer: found, it climbs, its own mate row; never "works too" */
+  var mateTry = other && first && alt.mate != null && alt.mate > 0 && !(b.mb != null && b.mb > 0 && b.mb <= alt.mate);
+  a.mateTry = mateTry ? { san: alt.san, w: alt.w, n: alt.mate } : null;
+  a.alt = other && !mateTry && alt.band !== 'found' ? alt : null;
+  a.near = other && first && !mateTry && alt.band === 'found' ? alt : null;
   /* the board then shows the player's own line (a.yours), which the story
      and the settled board tell */
   a.own = other;
@@ -11779,7 +12093,8 @@ function hintMarks(a) {
    In check, the check, in words. Their mate only while the game move leaves
    it standing; one it stopped gives what the game move allows instead
    (parried). Their threat is claimed only from a search that ran
-   (searched): with the engine down, the attacked pieces alone. No mark on
+   (searched), and a piece in danger only where it confirms the capture
+   (B5: with no search, none). No mark on
    the answer's to-square. now (a game-mode card whose game move is not on
    the board yet, F8.1): only what stands on the board, never the game move
    or what it allows: their mate while they threaten it, the pieces in
@@ -11795,9 +12110,11 @@ function dangerHint(a, now) {
   /* in check, the check is the danger, and no capture elsewhere is legal:
      words only (the coach's review: never their loose rook then) */
   if (v.check) return { kind: 'check', rings: [], arrows: [] };
+  /* (B5: the red rings and their arrows only where a search confirmed the
+     captures; before one, in words alone) */
   var attacked = function (list) {
     var pk = dangerPick(list, v.saves, skip);
-    return pk ? { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return threat(x, 'danger'); }) } : null;
+    return pk ? { kind: 'attacked', named: pk.named, second: pk.second, rings: v.searched ? pk.rings : [], arrows: v.searched ? pk.arrows.map(function (x) { return threat(x, 'danger'); }) : [] } : null;
   };
   if (now && v.step === 3) return attacked(v.attacked) || (c.mateAgainst ? { kind: 'watch', piece: 'K', rings: [], arrows: [] } : v.saves.length ? { kind: 'watch', piece: v.saves[0], rings: [], arrows: [] } : null);
   if (v.step === 1) {
@@ -11815,7 +12132,8 @@ function dangerHint(a, now) {
       var rmv = tt.reply.move, csq = rmv.ep >= 0 ? rmv.ep : rmv.to, m2 = uciToMove(tt.nst, moveUci(rmv));
       var trs = [], tas = [];
       if (!skip(tt.mate.to, tt.mate.to)) trs.push({ sq: tt.mate.to, kind: 'attacked', mate: true });
-      if (!skip(csq, csq) && csq !== due.from) trs.push({ sq: csq, kind: 'attacked' });
+      /* (the capture's ring where the search confirms it: B5) */
+      if (!skip(csq, csq) && csq !== due.from && v.attacked.some(function (x) { return x.sq === csq; })) trs.push({ sq: csq, kind: 'attacked' });
       if (!skip(tt.mate.from, tt.mate.to)) tas.push(threat(tt.mate, 'danger'));
       if (!skip(rmv.from, rmv.to) && rmv.to !== due.from) tas.push(threat(rmv, 'danger'));
       if (m2) return { kind: 'two', mate: { from: tt.mate.from, to: tt.mate.to }, mateSan: capSan(tt.nst, tt.mate), took: tt.reply.captured, san: sanOf(tt.nst, m2), rings: trs, arrows: tas };
@@ -11838,7 +12156,17 @@ function dangerHint(a, now) {
   }
   if (v.step !== 3) return null;
   var g1 = c.gameLine && c.gameLine.nodes[1];
-  if (c.mateAgainst && g1 && g1.move && isMate(g1.after)) {
+  /* B4: "lets them mate you" only where they had no mate in one before the
+     game move, and "lets them take (win) your X" only where no X of yours
+     could be taken for profit before it (the moved piece where it is an X,
+     else any X: the exchange on the card's position); what stood is said
+     as it stands, else "Watch your X." */
+  var mateBefore = mateInOne(dzNullState(a.pre)), stood = function (t) {
+    var moved = pType(a.pre.b[a.played.from]) === t;
+    return dangerAttacked(a.pre, myPov(a.it)).some(function (x) { return moved ? x[0] === a.played.from : pType(a.pre.b[x[0]]) === t; });
+  };
+  var watch = function (t) { return attacked(v.attacked) || { kind: 'watch', piece: t, rings: [], arrows: [] }; };
+  if (c.mateAgainst && g1 && g1.move && isMate(g1.after) && !mateBefore) {
     var mg = { from: g1.move.from, to: g1.move.to };
     return { kind: 'madeMate', mate: mg, rings: skip(mg.to, mg.to) ? [] : [{ sq: mg.to, kind: 'attacked', mate: true }], arrows: skip(mg.from, mg.to) ? [] : [threat(mg, 'hint')] };
   }
@@ -11847,9 +12175,15 @@ function dangerHint(a, now) {
   /* a piece the better move keeps that the game line wins later, with no
      attack on the board yet: in words (the coach's review, never the plan
      line then) */
-  if (!rel.length) return v.saves.length ? { kind: 'lost', piece: v.saves[0], rings: [], arrows: [] } : null;
-  var pk3 = dangerPick(rel.concat(cr.filter(function (x) { return !plays(x); })), v.saves, skip);
-  return { kind: 'made', named: pk3.named, second: pk3.second, rings: pk3.rings, arrows: pk3.arrows.map(function (x) { return threat(x, 'hint'); }) };
+  if (!rel.length) return !v.saves.length ? null : stood(v.saves[0]) ? watch(v.saves[0]) : { kind: 'lost', piece: v.saves[0], rings: [], arrows: [] };
+  /* B5: the red ring and its arrows only on the piece the game line's
+     first reply takes where that line loses material (the search confirms
+     the capture); another piece the game move leaves attacked is said in
+     words alone */
+  var gq = g1 && g1.captured && (c.lossG || 0) >= 1 ? (g1.move.ep >= 0 ? g1.move.ep : g1.move.to) : -1;
+  var pk3 = dangerPick(rel.concat(cr.filter(function (x) { return !plays(x); })), v.saves, function (f, t) { return skip(f, t) || t !== gq; });
+  if (stood(pType(pk3.named.p))) return watch(pType(pk3.named.p));
+  return { kind: 'made', named: pk3.named, second: pk3.second, rings: pk3.rings.map(function (r) { r.after = 1; return r; }), arrows: pk3.arrows.map(function (x) { return threat(x, 'hint'); }) };
 }
 /* a game-mode card's hint 2 (F8.1): F1.1's danger, only what stands on the
    board while its game move is not shown (dangerHint's now); a foil's own
@@ -12599,22 +12933,56 @@ function sideCp(line, w) { return w ? line.cp : -line.cp; }
    captures' own words. st: the position before the move; ucis: the move
    and the engine's line after it; cp: the mover's score after it
    (centipawns, mates as +-1500). {n (pawns, more than 0 when won), w} or
-   null when no count stands */
+   null when no count stands. B4 (release 2): the fact sheet's material
+   rule, the settle point's material in line with the line's score (within
+   2 pawns, else read on to 12 plies, else no count), and the count still
+   standing where the line ends (a pawn won back later, as in a king and
+   pawn race, was never won); a net of a single pawn is no count (B4: the
+   new gate found every such count of Explore's turned by a deeper search) */
 function xpClaim(st, ucis, cp) {
   var mover = !!st.w, line = ucis && ucis.length ? buildLine(st, '0000', ucis, mover) : null;
   if (!line || line.nodes.length < 2) return null;
   /* V2.1: counted where the line settles by the fact sheet's rule (two
      quiet plies with nothing en prise, settleLine), never on a capture
      still to be answered: card 2's f5 gives up no pawns */
-  var sl = settleLine(st, ucis), k = sl.k;
-  if (!sl.ok || k < 1 || k >= line.nodes.length || !settledAt(line, k)) return null;
+  var sl = settleLine(st, ucis, null, cp == null ? null : mover ? cp : -cp), k = sl.k;
+  if (!sl.ok || !sl.agree || k < 1 || k >= line.nodes.length || !settledAt(line, k)) return null;
   for (var i = 1; i <= k; i++) if (line.nodes[i].move.promo) return null;
   var base = matDiff(line.nodes[0].after.b, mover), n = matDiff(line.nodes[k].after.b, mover) - base;
-  if (Math.abs(n) < 1) return null;
+  /* (a pawn either way is no count Explore names: a deeper search often
+     finds it back, where a piece's worth stands) */
+  if (Math.abs(n) < 2) return null;
   if (cp != null && Math.abs(cp) < 900 && (n > 0 ? n > cp / 100 - base + EVAL_SLACK : -n > base - cp / 100 + EVAL_SLACK)) return null;
+  /* where the line ends (12 plies at most), and before a last run of
+     captures there, the count runs the same way and as far (a pawn won
+     back on the line's last move was never won) */
+  var end = Math.min(line.nodes.length - 1, SETTLE_MAX), cut = end;
+  while (cut > k && line.nodes[cut].captured) cut--;
+  for (var j = k + 1; j <= end; j++) if (line.nodes[j].move.promo) return null;
+  var holds = function (x) { var nx = matDiff(line.nodes[x].after.b, mover) - base; return n > 0 ? nx >= n - 0.5 : nx <= n + 0.5; };
+  if (!holds(end) || !holds(cut)) return null;
   /* a loss in the words of what the other side took */
   var w = plainCapture(n > 0 ? line : buildLine(st, '0000', ucis, !mover), k, 1);
   return { n: n, w: w || oneWord(null, n) };
+}
+/* B8: san is a move of the mover's side (st's side to move) once the line's
+   first move and their reply to it are played (line from st), as written,
+   and it hits the pieces named (names: piece words; a knight or more, or
+   the king, as a fork counts them): the move a "sets up" sentence names is
+   one that side can play then, and the fork it promises is one */
+function setsUpOk(st, san, line, names) {
+  var x = cloneState(st), mover = !!st.w, want = String(san).replace(/[+#]$/, '');
+  for (var i = 0; i < 2; i++) {
+    var m2 = line && line[i] ? uciToMove(x, line[i]) : null;
+    if (!m2) return false;
+    applyMove(x, m2);
+  }
+  var y = legalMoves(x).filter(function (m) { return sanOf(x, m).replace(/[+#]$/, '') === want; })[0];
+  if (!y || !!x.w !== mover) return false;
+  var z = cloneState(x);
+  applyMove(z, y);
+  var hit = attacksFrom(z.b, y.to).filter(function (q) { return z.b[q] && colorW(z.b[q]) !== mover && pType(z.b[q]) !== 'P'; }).map(function (q) { return PIECE_WORD[pType(z.b[q])]; });
+  return (names || []).every(function (w) { var j = hit.indexOf(w); if (j < 0) return false; hit.splice(j, 1); return true; });
 }
 /* no mate is possible for either side (a dead draw): kings alone, or with
    one knight or bishop, or with bishops all on one colour */
@@ -12691,7 +13059,9 @@ function xpThreatBefore(P, reply) {
    trapped piece the count does not bear out, is dropped (null) */
 var XP_LOSS = [/ (?:You|White|Black) loses? [^.]*\./, /: (?:you|White|Black) loses? [^.]*(?=\.$)/, /, and the pinned \w+ is lost(?=\.$)/];
 function xpBare(s, c, cl) {
-  if (c.t === 'material') return null;
+  /* (the material pattern's words, which also say a tactic that stood
+     before the move: "Bd3 loses a rook after Bxc3+": a count, gone) */
+  if (c.t === 'material' || /^\S+ loses /.test(s)) return null;
   var tr = / lets (?:your|\w+'s) (\w+) get trapped\.$/.exec(s);
   if (tr) return cl && cl.n <= -1 && cl.w === 'the ' + tr[1] ? s : null;
   XP_LOSS.forEach(function (re) { s = s.replace(re, ''); });
@@ -12703,6 +13073,16 @@ function xpBare(s, c, cl) {
 function xpSaysTaken(s, w) {
   var one = /^the (\w+)$/.exec(w || '');
   return !!one && new RegExp('takes (?:your|the|\\w+\'s) ' + one[1] + '\\b').test(s);
+}
+var XP_VAL = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9 };
+/* what a classifier sentence says is lost, in pawns: the piece it names
+   taken, less what the move took first ("Qxh2 takes a pawn, but Rxh2 takes
+   your queen.": 8); 0 where it names none */
+function xpNamedLoss(s) {
+  var m = /takes a (\w+), but \S+ takes (?:your|the) (\w+)\./.exec(s);
+  if (m) return Math.max(0, (XP_VAL[m[2]] || 0) - (XP_VAL[m[1]] || 0));
+  m = / puts your (\w+) where \S+ takes it\./.exec(s) || / leaves your (\w+)(?: on \S+)? undefended/.exec(s) || /'s threat: \S+ takes your (\w+)\./.exec(s);
+  return m ? XP_VAL[m[1]] || 0 : 0;
 }
 /* the better move's sentence, for a chance missed: a gain said only as
    the card face counts it (else "Best was B."); a fork, a mate or a pin
@@ -12748,7 +13128,10 @@ function xpVerdict(a, ex, at) {
   } else {
     var decided = Math.abs(cpBest) >= 1000 && Math.abs(cpX) >= 1000 && (cpBest > 0) === (cpX > 0);
     var mateBoth = best.mate != null && ((row && row.mate != null) || !!(cr && cr.lines[0] && cr.lines[0].mate != null)) && (cpBest > 0) === (cpX > 0);
-    var concrete = XP_TACTIC.indexOf(c.t) !== -1 && (c.t === 'mateMissed' || gap >= 100
+    /* (a chance missed by a point or two is no miss: "Ne2 misses Be3" at
+       86% against 87%) */
+    var missedSmall = XP_MISSED.indexOf(c.t) !== -1 && c.t !== 'mateMissed' && drop <= SOLVE_TOL;
+    var concrete = !missedSmall && XP_TACTIC.indexOf(c.t) !== -1 && (c.t === 'mateMissed' || gap >= 100
       || (!mateBoth && ((c.mateAgainst && !c.alreadyLost) || (decided && c.lossG >= 3))));
     /* a move that keeps a clear edge with no tactic against it passes on
        the card too ("That works too", the safe-win rule): a small drop reads
@@ -12762,6 +13145,18 @@ function xpVerdict(a, ex, at) {
          card face would say it (xpClaim), the classifier's own counts gone */
       var cl = xpClaim(P.st, [X].concat(R), cpX), who = voice === 'you' ? 'You lose ' : sideName(s) + ' loses ';
       var bare = xpBare(String(c.sentences.short || c.sentences.game).replace(/ \(\d+% to \d+%\)/g, ''), c, cl);
+      /* B4: the classifier's sentence only where it holds as said: a piece
+         it names taken (a bad trade, a piece put where it is taken) borne
+         out by the count; a missed piece no smaller than the swing it costs
+         by more than 2 pawns (else "gxf3 misses Nxc7+."); a fork their first
+         reply makes, a pin or skewer within their first two moves */
+      var nl = bare ? xpNamedLoss(bare, c) : 0, f0 = c.allowed && c.allowed.fork, p0 = c.allowed && (c.allowed.skewer || c.allowed.pin);
+      if (nl && !(cl && -cl.n >= nl - 1.5)) bare = null;
+      if (bare && c.t === 'forkAllowed' && f0 && f0.ply > 1) bare = null;
+      if (bare && c.t === 'pinAllowed' && p0 && p0.ply > 2) bare = null;
+      var mm = bare && c.t === 'missedMaterial' ? / misses (?:\w+'s undefended (\w+)|\S+, which takes the (\w+))/.exec(bare) : null;
+      if (mm && gap / 100 > XP_VAL[mm[1] || mm[2]] + 2) bare = C.mv.san + ' misses ' + B + '.';
+      if (!bare && !cl && XP_MISSED.indexOf(c.t) !== -1 && c.t !== 'mateMissed' && c.sentences.best) bare = C.mv.san + ' misses ' + B + '.';
       var loss = cl && cl.n <= -1 && !(bare && xpSaysTaken(bare, cl.w)) ? who + cl.w + '.' : '';
       var reason = bare ? bare + (loss ? ' ' + loss : '') : cl && cl.n <= -1 ? C.mv.san + ' loses ' + cl.w + '.' : '';
       var big = XP_MISSED.indexOf(c.t) === -1 && c.t !== 'mateAllowed' && cl && cl.n <= -1 ? xpBigLoss(c) : null;
@@ -12769,9 +13164,18 @@ function xpVerdict(a, ex, at) {
       var cmp;
       if (XP_MISSED.indexOf(c.t) !== -1 && c.sentences.best) {
         cmp = xpBestSaid(c.sentences.best, B, xpClaim(P.st, best.pv, cpBest));
-        if (cmp.indexOf(B + ' ') === 0 && reason.indexOf(B) !== -1) cmp = 'It ' + cmp.slice(B.length + 1);
+        /* B8: "B sets up X" names X only where X is a move of B's side once
+           B and its line are played (never one the explored move makes
+           impossible: 184234373418:63's Qd5+), and keeps B as its subject:
+           "It" there would read as the explored move */
+        var su = /^\S+ sets up (\S+?), which forks the (\w+) and (\w+)\.$/.exec(cmp) || /^\S+ sets up (\S+?), which/.exec(cmp);
+        if (su && !setsUpOk(P.st, su[1], best.pv, su[2] ? [su[2], su[3]] : null)) cmp = 'Best was ' + B + '.';
+        else if (cmp.indexOf(B + ' ') === 0 && reason.indexOf(B) !== -1 && !su) cmp = 'It ' + cmp.slice(B.length + 1);
       } else {
         var stop = stopsWhat(c, P.st);
+        /* (V2.1: "defends" only by the moved piece) */
+        var dfs = stop ? /^(\S+) defends the (\w+) on ([a-h][1-8])\.$/.exec(stop) : null;
+        if (dfs) { var bm0 = uciToMove(P.st, best.pv[0]), ax = cloneState(P.st); applyMove(ax, bm0); if (attacksFrom(ax.b, bm0.to).indexOf(sqIndex(dfs[3])) < 0) stop = ''; }
         if (stop && voice === 'them') stop = themVoice(stop, sideName(s), sideName(!s));
         cmp = stop && xpThreatBefore(P, R[0]) ? stop : (B + (wBest < 45 ? ' loses less.' : ' keeps more.'));
       }
@@ -12887,16 +13291,19 @@ function xpRowWords(a, n, line, best) {
   if (isBest) {
     if (cl) return (cl.n > 0 ? 'wins ' : 'gives up ') + cl.w;
   } else {
-    var g = c.gameLine, r1 = g && g.nodes[1], rSan = r1 && r1.move ? sanOf(r1.before, r1.move) : '';
-    /* (tier 1 names no move: V2.5) */
-    if (c.t === 'forkAllowed' && c.allowed.fork) { var fm = g.nodes[c.allowed.fork.ply]; return t1 ? 'allows a fork' : 'allows a fork: ' + sanOf(fm.before, fm.move); }
-    if (c.t === 'pinAllowed') return 'walks into a pin';
+    var g = c.gameLine, r1 = g && g.nodes[1], rSan = r1 && r1.move ? sanOf(r1.before, r1.move) : '', pn = c.allowed.skewer || c.allowed.pin;
+    /* (tier 1 names no move: V2.5). B4: a fork only as their first reply, a
+       pin or skewer within their first two moves, a stronger move missed
+       only where it is 10 points stronger (a row a deeper search may rank
+       first is no miss) */
+    if (c.t === 'forkAllowed' && c.allowed.fork && c.allowed.fork.ply === 1) { var fm = g.nodes[c.allowed.fork.ply]; return t1 ? 'allows a fork' : 'allows a fork: ' + sanOf(fm.before, fm.move); }
+    if (c.t === 'pinAllowed' && pn && pn.ply <= 2) return 'walks into a pin';
     if (c.t === 'discoveredAllowed') return 'allows a hidden attack';
     if (c.t === 'mateAllowed') return 'allows mate in ' + (c.mateAgainst || 2);
     /* only when what the line loses, counted where it settles, is that piece */
     if (['threat', 'hung', 'badTrade', 'material'].indexOf(c.t) !== -1 && r1 && r1.captured && cl && cl.n <= -1 && cl.w === 'the ' + PIECE_WORD[pType(r1.captured)])
       return t1 ? 'loses ' + cl.w : 'loses ' + cl.w + ' to ' + rSan;
-    if (XP_MISSED.indexOf(c.t) !== -1) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return t1 ? 'misses a stronger move' : 'misses ' + bs; }
+    if (XP_MISSED.indexOf(c.t) !== -1 && winPct(cpB) - winPct(cpL) >= 10) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return t1 ? 'misses a stronger move' : 'misses ' + bs; }
   }
   return CARD_COPY.X3(a, winPct(myPov(a.it) ? line.cp : -line.cp));
 }
@@ -13007,6 +13414,8 @@ var CARD_COPY = {
   T1: function () { return 'Your turn'; },
   T2: function (a, w) { return 'Find a better move than ' + (w ? moveWords(a.pre, a.played) : gameSan(a)) + '.'; },
   T3: function () { return 'One more try'; },
+  /* B8: the task as row 1 of a card that opens on its drawn Hint 1 */
+  T7: function () { return 'Find a better move'; },
   T4: function (a) { var s = sidesOf(a); return 'You are ' + s.me + '. Move a ' + s.mine + ' piece.'; },
   T5: function () { return 'That piece can\'t go there.'; },
   /* V2.7: a move the rules refuse because the king would be in check */
@@ -13041,6 +13450,10 @@ var CARD_COPY = {
   R7: function (x, m) { return x + ' is as good as ' + m + '.'; },
   L1: function () { return 'First move found, a later one missed.'; },
   L2: function (f, m) { return f + ' found. ' + m + ' missed later.'; },
+  /* B3: a forcing line found with a good move that was not the line's on
+     the way (t1, then t2 and t3 with the two moves) */
+  L3: function () { return 'Found it; one later move was weaker.'; },
+  L4: function (f, m) { return f + ' found. ' + m + ' was stronger later.'; },
   V1: function (a, san) { return 'The answer: ' + (san || a.answerSan || ''); },
   V2: function () { return 'Play the green arrow.'; },
   V3: function () { return 'Here is the answer'; },
@@ -13450,7 +13863,7 @@ function lineNodes(st, pv) {
 }
 /* a quiet ply as settleLine reads one: nothing taken, promoted or checked,
    and nothing left en prise after it */
-function quietNode(x) { return !x.cap && !x.m.promo && !x.check && !enPrise(x.after); }
+function quietNode(x) { return !x.cap && !x.m.promo && !x.check && !enPrise(x.after) && !facesMate(x.after); }
 /* the pieces each side took along plies [0, k), net (an equal swap
    cancels, a knight against a bishop too): {lost (side pov's), won (the
    other side's)}, piece letters */
@@ -13491,20 +13904,42 @@ function forkAt(x) {
 function needOf(p) { return pType(p) === 'P' ? 1 : 2; }
 /* the first decisive event of a wrong try's line pv (the try first, from
    o.st or the position the card asks from), or null: {t: 'mate1' | 'backMate'
-   | 'forced' | 'promo' | 'take' | 'fork' | 'backFork' | 'later', n (its
-   ply), cap and back (the capture you take back, and your move that does),
-   f (a fork's targets), p (the piece taken), at (the ply's index), loss (the
-   pieces the line loses that the answer's does not)}. o.mate: the try's
-   score as a mate, from the player's side (negative: they mate); o.win its
-   win chance */
+   | 'forced' | 'promo' | 'take' | 'fork' | 'backFork' | 'backTake' | 'even'
+   | 'refused' | 'later' | 'loss' | 'mateThreat' | 'attacks', n (its ply), cap
+   and back (their capture and your move that takes back), f (a fork's
+   targets), p (the piece taken, or the piece their reply attacks), p2 (a
+   second piece the same capture's piece takes), at (the ply's index), loss
+   (the pieces the line loses that the answer's does not), re and sub (a
+   take-back the line avoids, and why it fails)}. o.mate: the try's score as
+   a mate, from the player's side (negative: they mate); o.win its win
+   chance; o.cp its score (centipawns, the player's side: B4, a settle point
+   counts only where its material balance agrees with it, settleAgrees);
+   o.back: the take-back the line avoids, searched (B6 c: {pv, cp, mate});
+   o.deep false: a first search's line (no "Nothing lost" from it).
+   Release 2: the line is read by the settle rule (mate threats read on, the
+   score agreeing, B4; no material event where it never agrees); their
+   first capture comes first (B6 a), a take-back the line plays says what
+   follows it ("After the trade, Qxc3+ forks.", or nothing lost: b), one it
+   avoids why it fails (c); with no event, what their reply attacks (d); at
+   tier 1 a mate only within 3 of their moves (B7) */
 function tryEvent(a, pv, o) {
   o = o || {};
-  var st = o.st || a.st, pov = myPov(a.it), ns = lineNodes(st, pv);
+  var st = o.st || a.st, pov = myPov(a.it), ns = lineNodes(st, pv), t1 = inWords(a);
   if (ns.length < 2) return null;
   var base = matDiff(st.b, pov), ans = answerSettle(a);
   var net = function (k) { return matDiff(ns[k - 1].after.b, pov) - base; };
-  var setl = [];
-  for (var k = 1; k + 1 < ns.length; k++) if (quietNode(ns[k]) && quietNode(ns[k + 1])) setl.push(k);
+  var setl = [], quietAll = [];
+  for (var k = 1; k + 1 < ns.length; k++) if (quietNode(ns[k]) && quietNode(ns[k + 1])) quietAll.push(k);
+  /* B4: a settle point counts only where its material balance agrees with
+     the score (both the player's) */
+  var agrees = function (kk) { return o.cp == null || settleAgrees(matDiff(ns[kk - 1].after.b, pov), o.cp / 100, true); };
+  quietAll.forEach(function (kk) { if (agrees(kk)) setl.push(kk); });
+  /* (c)'s own line, the take-back searched, read to its end where it never
+     goes quiet: its count there stands where it agrees with the score (card
+     4's bxc3 Qxc3+ Kd1 Qxa1 c3 d5 exd5 O-O Qxe7 Qxc3, 3 down at -4.55) */
+  if (o.sub && !quietAll.length && ns.length >= SETTLE_MAX && o.cp != null && agrees(ns.length)) setl.push(ns.length);
+  var noMat = quietAll.length > 0 && !setl.length;
+  o.noMat = noMat;
   var mi = -1;
   for (var i = 0; i < ns.length; i++) if (ns[i].mate) { mi = i; break; }
   var k1 = mi >= 0 ? mi + 1 : setl.length ? setl[0] : -1, kL = setl.length ? setl[setl.length - 1] : k1;
@@ -13519,15 +13954,22 @@ function tryEvent(a, pv, o) {
     return { n: ans.net - net(kk), lost: lost.filter(function (p) { var j = extra.indexOf(p); if (j >= 0) { extra.splice(j, 1); return false; } return true; }) };
   };
   var stands = function (need, p) {
-    if (k1 <= 0) return false;
+    if (k1 <= 0 || noMat) return false;
     return [k1, kL].every(function (kk) { var b = beyond(kk); return b.n >= need && (!p || b.lost.indexOf(pType(p)) >= 0); });
   };
-  var lossAt = k1 > 0 ? beyond(k1).lost : [];
+  /* the same, counted on the line alone (not beyond the answer's) */
+  var standsAll = function (need, p) {
+    if (k1 <= 0 || noMat) return false;
+    return [k1, kL].every(function (kk) { return -net(kk) >= need && (!p || netLostOf(ns, kk, pov).indexOf(pType(p)) >= 0); });
+  };
+  var lossAt = k1 > 0 && !noMat ? beyond(k1).lost : [];
+  /* B7: at tier 1 "checkmate" only where the mate comes within 3 of their moves */
+  var near = function (moves) { return !t1 || moves <= 3; };
   /* their mate in the line: next move, after you take back, or later */
   if (mi >= 1 && theirs(ns[mi])) {
     if (mi === 1) return { t: 'mate1', n: ns[1], at: 1 };
     if (mi === 3 && mine(ns[1]) && back(ns[1], ns[2])) return { t: 'backMate', cap: ns[1], back: ns[2], n: ns[3], at: 3 };
-    return { t: 'forced', n: ns[1], at: 1 };
+    if (near((mi + 1) / 2)) return { t: 'forced', n: ns[1], at: 1 };
   }
   /* a promotion of theirs whose new piece stands to the line's end, while
      they are no worse */
@@ -13544,31 +13986,91 @@ function tryEvent(a, pv, o) {
     }
   }
   /* a forced mate the score shows, past the line's end */
-  if (o.mate != null && o.mate < 0) return { t: 'forced', n: ns[1], at: 1 };
+  if (o.mate != null && o.mate < 0 && near(-o.mate)) return { t: 'forced', n: ns[1], at: 1 };
   /* material is read only where a line can be trusted: its event among
      their first three moves (a search's line grows less sure along its
      tail: 184455333378:48's Rad1 line drops a bishop nine plies deep, which
      a search from there does not), and in line with the score: the drop
      from the answer to the try at least 0.6 of the loss named */
   var upto = Math.min(k1 > 0 ? k1 : ns.length, EVENT_PLIES + 1);
-  if (o.drop != null && k1 > 0 && o.drop < 0.6 * Math.max(1, beyond(k1).n)) return null;
-  /* their first capture, when its loss stands */
-  if (mine(ns[1]) && !back(ns[1], ns[2]) && stands(needOf(ns[1].cap), ns[1].cap)) return { t: 'take', n: ns[1], p: pType(ns[1].cap), at: 1, loss: lossAt };
-  /* a fork of theirs whose loss stands: after you take back, or at once */
+  var trusted = !(o.drop != null && k1 > 0 && o.drop < 0.6 * Math.max(1, beyond(k1).n));
+  /* B6: their first capture of yours, never a later one first */
+  var xi = -1;
+  for (i = 1; i < upto; i += 2) if (theirs(ns[i]) && mine(ns[i])) { xi = i; break; }
+  var x = xi >= 0 ? ns[xi] : null;
+  /* (a take-back of less value counts as one where the line is no worse
+     for the swap so far: the knight line's exf6 Bxd1 Kxd1 took a knight
+     first, so Kxd1 leaves it a point up) */
+  var y0 = x ? ns[xi + 1] : null, cheap = !!y0 && !!y0.cap && y0.m.to === x.m.to && net(xi + 2) >= 0;
+  if (x && (back(x, y0) || cheap)) {
+    /* (b) a take-back the line plays: what follows it where it settles */
+    var y = ns[xi + 1], z = ns[xi + 2];
+    var fz = theirs(z) ? forkAt(z) : null;
+    if (fz && trusted && stands(1)) return { t: 'backFork', n: z, f: fz, cap: x, back: y, at: xi + 2, loss: lossAt };
+    if (theirs(z) && mine(z) && !back(z, ns[xi + 3]) && trusted && stands(needOf(z.cap), z.cap)) return { t: 'backTake', n: z, p: pType(z.cap), cap: x, back: y, at: xi + 2, loss: lossAt };
+    /* (nothing lost: at every point after the take-back where the line
+       settles in line with its score, and at its end; or, where the try's
+       own capture began the trade, at every quiet point after it, whatever
+       the score: the knight line's exf6 Bxd1 Kxd1, a point up. A line whose
+       count never agrees with its score says no such thing: B4,
+       184172942198:33's Nh4 Rxf6 gxf6, whose deeper line loses the knight) */
+    /* (read at the key's or the re-check's depth only, o.deep: a first
+       search's line can trade where a deeper one wins the piece; and never
+       where the try leaves the player under 20%, where the band says it:
+       foil:184234373418:65's a5 Qxd5 Rxd5, 4%, loses a pawn further on) */
+    var later = function (l) { return l.filter(function (kk) { return kk > xi + 1; }); };
+    var noneLost = function (l) { return l.length > 0 && l.every(function (kk) { return net(kk) >= 0; }) && net(ns.length) >= 0; };
+    if (o.deep !== false && !(o.win != null && o.win < 20) && (noneLost(later(setl)) || (!!ns[0].cap && noneLost(later(quietAll))))) return { t: 'even', n: x, cap: x, back: y, at: xi };
+  } else if (x) {
+    /* (c) a legal take-back the line avoids: why it fails, from its own
+       search (o.back); (a) else their capture stays */
+    var re = legalMoves(x.after).filter(function (m) { return (m.ep >= 0 ? m.ep : m.to) === x.m.to; });
+    var bk = xi === 1 && o.back && o.back.pv && o.back.pv.length && re.some(function (m) { return moveUci(m) === o.back.pv[0]; }) ? o.back : null;
+    if (bk) {
+      var sub = tryEvent(a, pv.slice(0, xi + 1).concat(bk.pv), { st: st, mate: bk.mate != null ? bk.mate : null, cp: bk.cp, win: bk.cp != null ? winPct(bk.cp) : null, sub: true });
+      if (sub && /^(mate1|forced|fork|backFork|backMate|take|backTake|later|loss)$/.test(sub.t) && (sub.at > xi + 1 || sub.t === 'forced')) return { t: 'refused', n: x, cap: x, re: lineNodes(x.after, [bk.pv[0]])[0], sub: sub, at: xi };
+    }
+    /* two captures that stay, by the same piece; the captures named are the
+       loss (never a pawn where the line wins more, B4: 184435538450:47's
+       Bxg7+ takes a pawn, and a bishop after) */
+    var x2 = ns[xi + 2], p2 = theirs(x2) && mine(x2) && x2.m.from === x.m.to && !back(x2, ns[xi + 3]) ? pType(x2.cap) : '';
+    /* (their reply's own capture is what See it shows first: named where
+       the piece stays lost where the line settles, whatever the answer's
+       line loses too, B6: 184212737262:58's Re3 Rxd2 takes the bishop;
+       a later one only beyond the answer's) */
+    var kept = xi === 1 ? standsAll(needOf(x.cap), x.cap) : stands(needOf(x.cap), x.cap);
+    if (trusted && kept && MOTIF_VAL[pType(x.cap)] + (p2 ? MOTIF_VAL[p2] : 0) + 1 >= beyond(k1).n)
+      return xi === 1 ? { t: 'take', n: x, p: pType(x.cap), p2: p2, at: 1, loss: lossAt } : { t: 'later', n: x, p: pType(x.cap), p2: p2, at: xi, loss: lossAt };
+  }
+  /* a fork of theirs whose loss stands */
   for (i = 1; i < upto; i += 2) {
     var f = theirs(ns[i]) ? forkAt(ns[i]) : null;
-    if (f && stands(1)) return { t: i === 3 && mine(ns[1]) && back(ns[1], ns[2]) ? 'backFork' : 'fork', n: ns[i], f: f, cap: ns[1], back: ns[2], at: i, loss: lossAt };
+    if (f && trusted && stands(1)) return { t: 'fork', n: ns[i], f: f, cap: ns[1], back: ns[2], at: i, loss: lossAt };
   }
-  /* a later capture of theirs, when its loss stands */
-  for (i = 3; i < upto; i += 2) if (theirs(ns[i]) && mine(ns[i]) && !back(ns[i], ns[i + 1]) && stands(needOf(ns[i].cap), ns[i].cap)) return { t: 'later', n: ns[i], p: pType(ns[i].cap), at: i, loss: lossAt };
   /* else a loss that stands at both settled points, in the pieces the
      answer's line keeps, settled within the trusted plies */
-  var sw = netSwap(ns, k1 > 0 ? k1 : 0, pov), worth = function (l) { return l.reduce(function (x, p) { return x + MOTIF_VAL[p]; }, 0); };
+  var sw = netSwap(ns, k1 > 0 ? k1 : 0, pov), worth = function (l) { return l.reduce(function (x0, p) { return x0 + MOTIF_VAL[p]; }, 0); };
   /* (the try's own line down at its settled point: "You'd lose ♜ for ♕"
      is never said of a line that wins a queen for a rook, however much
      more the answer wins) */
-  if (k1 > 0 && k1 <= EVENT_PLIES + 2 && lossAt.length && worth(sw.lost) - worth(sw.won) >= (lossAt.length === 1 ? needOf(lossAt[0]) : 2) && -net(k1) >= 1
+  if (trusted && k1 > 0 && k1 <= EVENT_PLIES + 2 && lossAt.length && worth(sw.lost) - worth(sw.won) >= (lossAt.length === 1 ? needOf(lossAt[0]) : 2) && -net(k1) >= 1
       && stands(lossAt.length === 1 ? needOf(lossAt[0]) : 2)) return { t: 'loss', n: ns[k1 - 1], lost: lossAt, won: sw.won, at: k1 - 1, loss: lossAt };
+  if (o.sub) return null;
+  /* (d) with no event, what their reply does: a mate it threatens, else the
+     most valuable piece of yours it attacks (worth more than it, or with no
+     guard) */
+  var r1 = ns[1];
+  if (theirs(r1) && !r1.cap) {
+    if (!r1.check && mateInOne(dzNullState(r1.after))) return { t: 'mateThreat', n: r1, at: 1 };
+    var hit = null, by = pType(r1.before.b[r1.m.from]);
+    attacksFrom(r1.after.b, r1.m.to).forEach(function (q) {
+      var tp = r1.after.b[q];
+      if (!tp || colorW(tp) !== pov || pType(tp) === 'K') return;
+      if (attacksFrom(r1.before.b, r1.m.from).indexOf(q) >= 0 && r1.before.b[q] === tp) return;
+      if ((MOTIF_VAL[pType(tp)] > MOTIF_VAL[by] || !isDefended(r1.after.b, q)) && (hit == null || MOTIF_VAL[pType(tp)] > MOTIF_VAL[pType(r1.after.b[hit])])) hit = q;
+    });
+    if (hit != null) return { t: 'attacks', n: r1, p: pType(r1.after.b[hit]), sq: hit, at: 1 };
+  }
   return null;
 }
 var EVENT_PLIES = 5;
@@ -13586,39 +14088,71 @@ function lostWords(a, lost, won) {
 }
 function lowFirst(s) { return s ? s.charAt(0).toLowerCase() + s.slice(1) : s; }
 /* an event in row 2's words, fullest first (t1: the moves in words, each
-   form's SAN twin after it): "Their bishop takes your queen." (tier 3
-   "Bxe5 takes your queen."), "Then Qxf2 is checkmate.", "Then Rd1+ forces
-   mate." (tier 1 "Then they can force checkmate."), "Then f1=Q: their pawn
-   becomes a queen." (tier 1 "Their pawn will become a queen."), "After
-   Bxc3+ bxc3, Qxc3+ forks." (tier 1 "Then their queen forks king and
-   rook."), "After Rxd1 Bxd1, Qxg7 is mate." (tier 1 "Then queen takes on g7
-   is checkmate."), "Then Rxf5 takes your queen." (tier 1 "Then their rook
-   takes your queen.") */
+   form's SAN twin after it): "Qxf3 takes your knight." (tier 1 "Their queen
+   takes your knight."), "Then Qxf2 is checkmate.", "Then Rd1+ forces mate."
+   (tier 1 "Then they can force checkmate."), "Then f1=Q: their pawn becomes
+   a queen." (tier 1 "Their pawn will become a queen."). Release 2 (B6):
+   after a take-back at equal value, "After the trade, Qxc3+ forks." (tier 1
+   "After the trade, their queen forks."), "After the trade, Qxg7 is mate."
+   ("..., they can checkmate."), "After the trade, Rxd2 takes your bishop."
+   ("..., you lose your bishop."); taken back with nothing lost, "Nothing
+   lost, but there's a better move."; a take-back that fails, "Bxc3+, and
+   bxc3 Qxc3+ forks." / "Rxd1, and Bxd1 allows Qxg7 mate." (tier 1 "If you
+   take back, their queen forks."); what their reply does, "Then Nf5
+   attacks your queen." (tier 1 "Then their knight attacks your queen."),
+   "Then they threaten mate.". At tier 1 no row opens "Then" on a reply that
+   takes */
 function eventForms(a, ev) {
-  var t1 = inWords(a), t3 = a.tier >= 3, n = ev.n;
+  var t1 = inWords(a), n = ev.n;
   var san = function (x) { return sanOf(x.before, x.m); }, cs = function (x) { return capSan(x.before, x.m); }, mw = function (x) { return moveWords(x.before, x.m); };
   var pw = function (x) { return PIECE_WORD[pType(x.before.b[x.m.from])]; };
   var tw = function (f) { var t = f.targets; return t.length >= 2 && t[0] === t[1] ? 'both ' + PIECE_WORD[t[0]] + 's' : PIECE_WORD[t[0]] + ' and ' + PIECE_WORD[t[1]]; };
   var both = function (w, s) { return t1 ? interleave(w, s) : s; };
-  if (ev.t === 'take') {
-    var tk = ' takes your ' + PIECE_WORD[ev.p] + '.';
-    return (t3 ? [san(n) + tk] : []).concat(['Their ' + pw(n) + tk]);
-  }
-  if (ev.t === 'mate1') return both(['Then ' + mw(n) + ' is checkmate.'], ['Then ' + cs(n) + ' is checkmate.']);
+  /* "After the trade" only where your take-back takes as much as they took */
+  var trade = !!ev.cap && !!ev.back && ev.back.cap && (MOTIF_VAL[pType(ev.back.cap)] === MOTIF_VAL[pType(ev.cap.cap)]);
+  var pair = ev.cap && ev.back ? san(ev.cap) + ' ' + san(ev.back) : '';
+  var takes = function (p, p2) { return ' takes your ' + PIECE_WORD[p] + (p2 ? ' and ' + PIECE_WORD[p2] : '') + '.'; };
+  if (ev.t === 'take') return (t1 ? [] : [san(n) + takes(ev.p, ev.p2)]).concat(['Their ' + pw(n) + takes(ev.p, ev.p2)]);
+  if (ev.t === 'mate1') return n.cap ? both([upFirst(mw(n)) + ' is checkmate.'], ['Then ' + cs(n) + ' is checkmate.']) : both(['Then ' + mw(n) + ' is checkmate.'], ['Then ' + cs(n) + ' is checkmate.']);
   if (ev.t === 'forced') return t1 ? ['Then they can force checkmate.'] : ['Then ' + san(n) + ' forces mate.', 'Then they can force checkmate.'];
   if (ev.t === 'promo') {
     var pp = PIECE_WORD[pType(n.m.promo)], pt1 = 'Their pawn will become a ' + pp + '.';
     return t1 ? [pt1] : ['Then ' + san(n) + ': their pawn becomes a ' + pp + '.', pt1];
   }
-  if (ev.t === 'backFork' || ev.t === 'fork') {
-    var fw = 'Then their ' + pw(n) + ' forks ' + tw(ev.f) + '.';
-    if (t1) return [fw];
-    return (ev.t === 'backFork' ? ['After ' + san(ev.cap) + ' ' + san(ev.back) + ', ' + san(n) + ' forks.'] : []).concat(['Then ' + san(n) + ' forks ' + tw(ev.f) + '.', fw]);
+  if (ev.t === 'backFork') {
+    if (t1) return trade ? ['After the trade, their ' + pw(n) + ' forks.'] : ['Then their ' + pw(n) + ' forks ' + tw(ev.f) + '.'];
+    return (trade ? ['After the trade, ' + san(n) + ' forks.'] : []).concat(['After ' + pair + ', ' + san(n) + ' forks.', 'Then ' + san(n) + ' forks ' + tw(ev.f) + '.']);
   }
-  if (ev.t === 'backMate') return both(['Then ' + mw(n) + ' is checkmate.'], ['After ' + san(ev.cap) + ' ' + san(ev.back) + ', ' + cs(n) + ' is mate.', 'Then ' + cs(n) + ' is checkmate.']);
+  if (ev.t === 'fork') {
+    var fw = (ev.at === 1 ? 'Their ' : 'Then their ') + pw(n) + ' forks ' + tw(ev.f) + '.';
+    return t1 ? [fw] : [(ev.at === 1 ? '' : 'Then ') + san(n) + ' forks ' + tw(ev.f) + '.', fw];
+  }
+  if (ev.t === 'backMate') {
+    if (t1) return trade ? ['After the trade, they can checkmate.'] : ['Then ' + mw(n) + ' is checkmate.'];
+    return (trade ? ['After the trade, ' + cs(n) + ' is mate.'] : []).concat(['After ' + pair + ', ' + cs(n) + ' is mate.', 'Then ' + cs(n) + ' is checkmate.']);
+  }
+  if (ev.t === 'backTake') {
+    if (t1) return trade ? ['After the trade, you lose your ' + PIECE_WORD[ev.p] + '.'] : ['Then their ' + pw(n) + ' takes your ' + PIECE_WORD[ev.p] + '.'];
+    return (trade ? ['After the trade, ' + san(n) + ' takes your ' + PIECE_WORD[ev.p] + '.'] : []).concat(['Then ' + san(n) + ' takes your ' + PIECE_WORD[ev.p] + '.']);
+  }
+  if (ev.t === 'even') return ['Nothing lost, but there\'s a better move.'];
+  if (ev.t === 'refused') {
+    var sb = ev.sub, sn = sb.n, head = san(ev.cap) + ', and ' + san(ev.re) + ' ';
+    if (sb.t === 'mate1' || sb.t === 'forced' || sb.t === 'backMate') return t1 ? ['If you take back, they can checkmate.', 'Taking back allows checkmate.'] : [head + 'allows ' + (sb.t !== 'forced' ? cs(sn) + ' mate.' : 'mate.'), 'Taking back allows mate.'];
+    if (sb.t === 'fork' || sb.t === 'backFork') return t1 ? ['If you take back, their ' + pw(sn) + ' forks.', 'Taking back allows a fork.'] : [head + san(sn) + ' forks.', 'Taking back allows a fork.'];
+    /* (a loss after the take-back, "Bxc3+, and bxc3 loses your knight.", is
+       not said: its 250,000-node line is not sure enough, a deeper one often
+       finds the piece back, release 2 P2; the ladder's next rung says it) */
+    return [];
+  }
   if (ev.t === 'later') {
-    var lw = 'Then their ' + pw(n) + ' takes your ' + PIECE_WORD[ev.p] + '.';
-    return t1 ? [lw] : ['Then ' + san(n) + ' takes your ' + PIECE_WORD[ev.p] + '.', lw];
+    var lw = 'Then their ' + pw(n) + takes(ev.p, ev.p2);
+    return t1 ? [lw] : ['Then ' + san(n) + takes(ev.p, ev.p2), lw];
+  }
+  if (ev.t === 'mateThreat') return t1 ? ['Then they threaten mate.'] : ['Then ' + san(n) + ' threatens mate.', 'Then they threaten mate.'];
+  if (ev.t === 'attacks') {
+    var aw = 'Then their ' + pw(n) + ' attacks your ' + PIECE_WORD[ev.p] + '.';
+    return t1 ? [aw] : ['Then ' + san(n) + ' attacks your ' + PIECE_WORD[ev.p] + '.', aw];
   }
   return [];
 }
@@ -13653,30 +14187,37 @@ function bandWord(a, w, deep) {
 var STEP_CHIP = { 1: 'Their move', 2: 'Your chances', 3: 'Safety check' };
 /* o: {pv (the try and the line after it), deep (the key's or the
    re-check's depth: band words need no margin), mate (the try's score as a
-   mate, the player's side), wBest (the answer's win chance in the same
-   search), save (V1.9's saving try: at tiers 2 and 3 its reason starts
-   "Safe, but")} */
+   mate, the player's side), cp (its score in centipawns, the player's side:
+   B4's settle rule), back (a take-back the line avoids, searched: B6 c),
+   wBest (the answer's win chance in the same search), save (V1.9's saving
+   try: at tiers 2 and 3 its reason starts "Safe, but")}. The reply and the
+   band named are the line's and the score's that graded the miss (B9: the
+   key's line, or the re-check's) */
 function missWhy(a, c, win, reply, inLine, replyW, o) {
   o = o || {};
   var s = sidesOf(a), t1 = inWords(a), cands = [], deep = !!o.deep, bw = bandWord(a, win, deep);
   var wBest = o.wBest != null ? o.wBest : a.it.b.eb != null ? winPct(a.it.b.eb) : null;
   /* where the game stands now, never the vague "That helps Black."
      (content's review) where the score is known; "still better" only with
-     the 5-point margin where the depth is not the key's (V2.1) */
-  var fall = !bw ? 'That helps ' + s.opp + '.' : win >= 60 ? 'You are still better, but less so.' : win >= 40 ? 'Now the game is even.' : 'Now ' + s.opp + (win >= 20 ? ' is better.' : ' is winning.');
+     the 5-point margin where the depth is not the key's (V2.1); at tier 1
+     never a bare "That helps White." (B6: "Now White is ahead.") */
+  var fall = !bw ? (t1 && win != null ? (win >= 50 ? 'You are still ahead, but less so.' : 'Now ' + s.opp + ' is ahead.') : 'That helps ' + s.opp + '.') : win >= 60 ? 'You are still better, but less so.' : win >= 40 ? 'Now the game is even.' : 'Now ' + s.opp + (win >= 20 ? ' is better.' : ' is winning.');
   var r1 = c && c.gameLine && c.gameLine.nodes[1], rm = r1 && r1.move ? r1 : null, rs = rm ? capSan(rm.before, rm.move) : '', rp = t1 ? replyW : reply;
   var pv = o.pv || (c && c.gameLine ? c.gameLine.nodes.filter(function (n) { return !!n.move; }).map(function (n) { return moveUci(n.move); }) : []);
-  /* the line's first decisive event (V2.2); a loss with no event is said
-     only where the try scores 10 or more points below the answer (V2.1) */
+  /* the line's first decisive event (V2.2, B6); a loss with no event is
+     said only where the try scores 10 or more points below the answer
+     (V2.1) */
   var drop = wBest != null && win != null ? (cpFromWin(wBest) - cpFromWin(win)) / 100 : null;
-  var ev = pv.length >= 2 ? tryEvent(a, pv, { mate: o.mate, win: win, drop: drop }) : null;
+  var eo = { mate: o.mate, win: win, drop: drop, cp: o.cp, back: o.back, deep: deep };
+  var ev = pv.length >= 2 ? tryEvent(a, pv, eo) : null;
   if (ev && ev.t === 'loss' && !(wBest != null && win != null && wBest - win >= 10)) ev = null;
   /* a line that never settles (Qg5 Nxg5 Nxg5 Bxg5 d5 exd6+ ...): their
      first capture still named where F1.2's rule holds (worth 3 net of what
      comes straight back, in line with the score, more than the best line
      loses), and only while the line still nets that loss at its end (V2.2:
-     184174601056:59's Ra8 Rxd7 Bc5+ Kh1 Rxb3 wins it back) */
-  if (!ev && rm && rm.captured && !(c && c.mateAgainst) && replyTakes(a, c, win)) {
+     184174601056:59's Ra8 Rxd7 Bc5+ Kh1 Rxb3 wins it back); never where its
+     material and its score disagree (B4) */
+  if (!ev && !eo.noMat && rm && rm.captured && !(c && c.mateAgainst) && replyTakes(a, c, win)) {
     var nsAll = lineNodes(a.st, pv), n1 = nsAll[1], swAll = netSwap(nsAll, nsAll.length, myPov(a.it));
     var worthOf = function (l) { return l.reduce(function (x, p) { return x + MOTIF_VAL[p]; }, 0); };
     if (n1 && n1.cap && worthOf(swAll.lost) - worthOf(swAll.won) >= needOf(n1.cap)) ev = { t: 'take', n: n1, p: pType(n1.cap), at: 1 };
@@ -13695,7 +14236,10 @@ function missWhy(a, c, win, reply, inLine, replyW, o) {
      Black is better now.", tier 3 at the key's depth "Safe, but only 34%
      for you.") */
   if (save) {
-    var ef = cands.filter(function (x) { return /^Then /.test(x) || /^Their pawn/.test(x); }).map(function (x) { return 'Safe, but ' + lowFirst(x); });
+    /* (what their reply attacks is no reason here: the piece saved may be
+       attacked again and still be safe, card 1's Qd7+ Rf7) */
+    if (ev && /^(attacks|mateThreat)$/.test(ev.t)) cands = [];
+    var ef = cands.filter(function (x) { return /^Then /.test(x) || /^Their pawn/.test(x) || /^After the trade/.test(x); }).map(function (x) { return 'Safe, but ' + lowFirst(x); });
     var sb = a.tier >= 3 && deep && win != null ? 'Safe, but only ' + Math.round(win) + '% for you.' : bw && win < 60 ? 'Safe, but ' + bw + ' now.' : 'Safe, but there\'s a stronger move.';
     cands = ef.concat(cands, [sb]);
   } else if (!ev) {
@@ -13725,8 +14269,10 @@ function missWhy(a, c, win, reply, inLine, replyW, o) {
   var lost = !!ev && (ev.t === 'take' || ev.t === 'loss') && !!(rm && rm.captured);
   var out = { cands: cands.filter(function (x) { return !names(x); }), fall: fall, ev: ev, pv: pv, save: save,
               u: rm ? moveUci(rm.move) : '', took: rm && rm.captured && !mate1 ? pType(rm.captured) : '', mate: mate1, lost: lost, rs: rs, d: 0 };
+  /* (a step only where the try loses: never for nothing lost, or for what
+     their reply only attacks, B6) */
   if (still) out.d = 1;
-  else if (rm && (ev || (c && c.mateAgainst))) out.d = dzStood(a.st, out.u, rm.captured) ? 1 : 3;
+  else if (rm && ((ev && !/^(even|attacks|mateThreat)$/.test(ev.t)) || (c && c.mateAgainst))) out.d = dzStood(a.st, out.u, rm.captured) ? 1 : 3;
   else if ((dangerView(a) || {}).step === 2) out.d = 2;
   out.chip = STEP_CHIP[out.d] || '';
   return out;
@@ -13781,12 +14327,16 @@ function gameMoveWhy(a) {
   var b = a.it.b, r1 = a.cls.gameLine && a.cls.gameLine.nodes[1];
   /* its line: the game move and the refutation, at the key's depth once
      the card has its fact sheet (V1.1) */
-  var o = { pv: [a.playedUci].concat(unpackUci(b.ru)), deep: !!factsOf(b) && b.kp === FACTS_V, mate: b.ma != null ? b.ma : null, wBest: b.wb };
+  /* (B6 c: the take-back its line avoids, as the key searched it) */
+  var kg = factsOf(b), gb = kg && !kg.x && kg.gb && b.kp === FACTS_V ? { pv: unpackUci(kg.gb[3]), cp: kg.gb[1], mate: kg.gb[2] } : null;
+  var o = { pv: [a.playedUci].concat(unpackUci(b.ru)), deep: !!kg && b.kp === FACTS_V, mate: b.ma != null ? b.ma : null, cp: b.ea != null ? b.ea : null, back: gb, wBest: b.wb };
   /* a missed chance says its line's decisive event where it has one (V2.2:
      the pawn race's Kxg6 lets the pawn queen), else that there is more to
      find */
   var w = missWhy(a, a.cls, b.wa, r1 ? sanOf(r1.before, r1.move) : null, false, r1 ? moveWords(r1.before, r1.move) : null, o);
-  if (familyOf(patternOf(b)).key === 'chances' && (!w.ev || w.ev.t === 'loss')) return { cands: ['There\'s a stronger move here.'], fall: '', d: 2, chip: STEP_CHIP[2] };
+  /* (B6's events that decide nothing, nothing lost or what their reply
+     attacks, leave a missed chance's lesson where it is) */
+  if (familyOf(patternOf(b)).key === 'chances' && (!w.ev || /^(loss|even|attacks|mateThreat)$/.test(w.ev.t))) return { cands: ['There\'s a stronger move here.'], fall: '', d: 2, chip: STEP_CHIP[2] };
   return w;
 }
 
@@ -13910,7 +14460,7 @@ function hintText(a) {
    after it. Every tier alike but their mate (tier 1 says the square) and
    the game move (in words at tier 1, "that move" where they do not fit) */
 function dangerWords(a, dz) {
-  var P = function (p) { return PIECE_WORD[pType(p)]; }, t1 = inWords(a), gs = !a.played ? [] : t1 ? [upFirst(moveWords(a.pre, a.played)), 'That move'] : [capSan(a.pre, a.played)];
+  var P = function (p) { return PIECE_WORD[pType(p)]; }, t1 = inWords(a), gs = !a.played ? [] : t1 ? [upFirst(moveWords(a.pre, a.played)), 'That move'] : [sanOf(a.pre, a.played)];
   /* (each form's last rung fits five words: game mode's hint 2, beside "No
      more hints", F8.1) */
   if (dz.kind === 'check') return ['In check: move, block or take?', 'You are in check.'];
@@ -13957,6 +14507,9 @@ function dangerWords(a, dz) {
   /* (a hint's frame leaves row 2 six words: "That lets ..." then) */
   if (dz.kind === 'made') return gs.map(function (g) { return g + ' lets them take your ' + P(dz.named.p) + '.'; }).concat(['That lets them take your ' + P(dz.named.p) + '.', 'Watch your ' + P(dz.named.p) + '.']);
   var nm = dz.named, n = nm.by.length, by = a.pre.b[nm.by[0]], sec = dz.second;
+  /* B4: never the pawn a bigger threat takes on its way */
+  var bt = bigThreat(a, nm);
+  if (bt) return [bigThreatWords(a, bt)];
   if (n >= 2) return ['Your ' + P(nm.p) + ' is attacked ' + timesWord(n) + '.'];
   if (MOTIF_VAL[pType(by)] < MOTIF_VAL[pType(nm.p)] || !sec) return ['Their ' + P(by) + ' attacks your ' + P(nm.p) + '.'];
   return pType(sec.p) === pType(nm.p) ? ['Two of your ' + P(nm.p) + 's are attacked.', 'Your ' + P(nm.p) + 's are attacked.']
@@ -14069,7 +14622,8 @@ function checkLineOf(a) {
    only move (F1.4, "Only move" alone), else what the better move saves or
    keeps, "Qe6 saves your queen. Rg1 lost it." */
 function checkFact(a, s) {
-  if (s === 1) { var t = standingThreat(a); return t ? threatWords(t, 3) : ''; }
+  /* B5: on a keyed card their threats as Details names them (the key's th) */
+  if (s === 1) { var kf = factsOf(a.it.b); if (kf && !kf.x && kf.th) return threatsLine(a); var t = standingThreat(a); return t ? threatWords(t, 3) : ''; }
   var cmp = buildCompare(a), bs = cmp.betterSan, g = cmp.gameSan;
   if (s === 2) {
     if (familyOf(patternOf(a.it.b)).key !== 'chances') return '';
@@ -14082,13 +14636,25 @@ function checkFact(a, s) {
        race's Kxf5 stops the pawn, it does not win it); a band reason says
        no chance missed here */
     var wo = whyOf(a);
+    /* B4 (C5 (c)): "X wins Y. Z missed it." sets the two moves side by
+       side, so what it names must be most of what they differ by: no mate
+       on either line, their scores 2 pawns or less beyond it */
+    var sw = swingOf(a.it.b);
     /* a reason whose fact does not hold has no words (whyPred null: a
        "wins" whose settled line nets nothing, 184434540700:103), so the
        step's own line stands, never a program value */
-    if (wo) { var wp = wo.r !== 'band' ? whyPred(a) : null; return wp ? ans + wp + '. ' + g + ' missed it.' : ''; }
-    return cmp.w2 && !/material/.test(cmp.w2) ? bs + ' wins ' + cmp.w2 + '. ' + g + ' missed it.' : '';
+    if (wo) {
+      var wp = wo.r !== 'band' ? whyPred(a) : null, named = wo.r === 'wins' ? wo.n || 0 : wo.r === 'saves' ? MOTIF_VAL[wo.p] : null;
+      if (named != null && sw > named + 2) return '';
+      return wp ? ans + wp + '. ' + g + ' missed it.' : '';
+    }
+    return cmp.w2 && !/material/.test(cmp.w2) && sw <= (a.cls.matBest || 0) + 2 ? bs + ' wins ' + cmp.w2 + '. ' + g + ' missed it.' : '';
   }
   if (cmp.only && /^Only move/.test(cmp.only)) return cmp.only;
+  /* the answer's own reason where it is a mate, a stop or the mate it
+     avoids (B4: never the pawn a bigger threat would take first) */
+  var wr = whyOf(a);
+  if (wr && /^(mate|stops|avoids)$/.test(wr.r) && !a.alt && !a.near) return sanOf(a.pre, a.best) + whyPred(a) + '. ' + g + ' missed it.';
   if (a.alt || a.near || !cmp.saves.length) return '';
   var ps = cmp.saves.slice(0, 2).map(function (x) { return PIECE_WORD[x]; });
   return bs + ' ' + savesVerb(a) + ' your ' + ps.join(' and ') + '. ' + g + (cmp.found ? ' lost ' : ' could lose ') + (ps.length > 1 ? 'them.' : 'it.');
@@ -14106,6 +14672,9 @@ function standingThreat(a) {
   if (!v) return null;
   var th = v.searched ? v.threat : null, nst = dzNullState(a.pre), c = a.cls;
   if (th && th.stands) { var tm = uciToMove(nst, th.uci); return tm ? { st: nst, m: tm, took: th.took, mate: th.mate, gain: th.n } : null; }
+  /* (B5: beside their mate nothing else is a threat, none coming within 5
+     points of it; a mate the game move stopped leaves none to name) */
+  if (th && th.mate) return null;
   var post = cloneState(a.pre), pk = dangerPick(v.attacked, v.saves);
   applyMove(post, a.played);
   var order = pk ? [pk.named].concat(v.attacked.filter(function (x) { return x !== pk.named; })) : [];
@@ -14267,12 +14836,30 @@ function buildCompare(a) {
     w: lc ? lc.w : '', wn: lc ? lc.wn : '', k: lc ? lc.k : -1, wi: lc ? lc.ic : '',
     w2: gain >= 1 && line ? gw || oneWord(null, gain) : '', w2n: gain >= 1 ? oneWord(gw, gain) : '', w2i: gain >= 1 && line ? ledgerIcons(line, settle, at, gw) : '',
     guard: guardRule(c.gameLine, a.played, bn) && guardMeans(c, a.pre, a.played, bn),
-    saves: v && lc ? v.saves : [],
+    saves: v && lc && savesFit(it.b, v.saves) ? v.saves : [],
     /* tier 3's figures, read once, so a second line that lands later never
        changes words on screen */
     only: a.tier >= 3 && !a.alt && !a.near ? onlyMoveLine(a) : '', figs: a.tier >= 3 && !a.alt && !a.near ? figuresLine(a) : ''
   };
   return a.compare;
+}
+/* what the answer and the game move differ by, in pawns, from the record's
+   scores (the player's side; a record kept with win chances alone reads
+   them from those); 99 where either line mates or no score is kept */
+function swingOf(b) {
+  if (b.mb != null || b.ma != null) return 99;
+  var eb = b.eb != null ? b.eb : b.wb != null ? cpFromWin(b.wb) : null, ea = b.ea != null ? b.ea : b.wa != null ? cpFromWin(b.wa) : null;
+  return eb == null || ea == null ? 99 : (eb - ea) / 100;
+}
+/* B4 (C5 (c)): what the better move keeps ("Rc4 keeps your pawn.") is
+   named only where it is most of what the two moves differ by: their
+   scores apart by no more than 2 pawns beyond the pieces named (the first
+   two), and neither line a mate. b: the record (eb, ea from the player's
+   side), saves: piece letters */
+function savesFit(b, saves) {
+  if (!saves || !saves.length) return false;
+  var named = saves.slice(0, 2).reduce(function (s, p) { return s + MOTIF_VAL[p]; }, 0);
+  return swingOf(b) <= named + 2;
 }
 /* the scale the card's words use (X3): winning, better, even, their
    better, their winning */
@@ -14296,7 +14883,7 @@ function onlyMoveLine(a) {
    Rg1 6%." */
 function figuresLine(a) {
   var b = a.it.b;
-  return b.wb == null || b.wa == null ? '' : capSan(a.pre, a.best) + ' ' + Math.round(b.wb) + '%. Your ' + capSan(a.pre, a.played) + ' ' + Math.round(b.wa) + '%.';
+  return b.wb == null || b.wa == null ? '' : sanOf(a.pre, a.best) + ' ' + Math.round(b.wb) + '%. Your ' + sanOf(a.pre, a.played) + ' ' + Math.round(b.wa) + '%.';
 }
 /* "{bestSan} is guarded." says something only when what the game move
    lost was the piece it moved, taken on the square it went to, and neither
@@ -14340,14 +14927,34 @@ function mainAt(a) {
 }
 function ownRow(a) {
   var t1 = inWords(a), mm = mainAt(a), main = interleave(t1 ? [CARD_COPY.R6(moveWords(mm.st, mm.m))] : [], [CARD_COPY.R6(sanOf(mm.st, mm.m))]);
+  /* B2: a try that forces mate was the answer: its own mate row (tier 1:
+     "checkmate" only for a mate within 3 moves, else the band) */
+  if (a.mateTry) {
+    var mt = a.mateTry;
+    return { cands: t1 ? [upFirst(mt.w) + (mt.n <= 3 ? ' forces checkmate.' : ' keeps you winning.')] : [mt.san + ' forces mate.'], fall: '' };
+  }
   if (a.near) {
     if (!a.near.deep) return { cands: main, fall: '' };
-    return { cands: t1 ? [CARD_COPY.R5()] : [CARD_COPY.R7(a.near.san, sanOf(a.pre, a.best))], fall: '' };
+    /* B7: at tier 1 a move as good as the answer says what it does itself,
+       from its own line ("Queen to f3 guards f2 and your knight."), never
+       "Just as good as the main answer." */
+    if (t1) {
+      var aw = altForms(a, a.yours && a.yours.uci[0]);
+      /* (with no line of its own to read, where it keeps the game) */
+      return { cands: aw || [upFirst(a.near.w) + whyPredOf(a, { r: 'band', w: a.near.win }, a.pre, null, null) + '.'], fall: '' };
+    }
+    return { cands: [CARD_COPY.R7(a.near.san, sanOf(a.pre, a.best))], fall: '' };
   }
   if (a.alt) return { cands: main, fall: '' };
   if ((a.slips || a.lineHeld) && a.sol && a.sol.length) {
     var f = uciToMove(a.pre, a.sol[0]);
     return { cands: t1 || !a.slipSan || !f ? [CARD_COPY.L1()] : [CARD_COPY.L2(sanOf(a.pre, f), a.slipSan), CARD_COPY.L1()], fall: '' };
+  }
+  /* B3: a forcing line found, with a good move that was not the line's on
+     the way: "Nxc7+ found. Nxa8 was stronger later." */
+  if (a.lineGood && a.sol && a.sol.length) {
+    var f2 = uciToMove(a.pre, a.sol[0]);
+    return { cands: t1 || !a.lineGood.san || !f2 ? [CARD_COPY.L3()] : [CARD_COPY.L4(sanOf(a.pre, f2), a.lineGood.san), CARD_COPY.L3()], fall: '' };
   }
   return null;
 }
@@ -14361,9 +14968,11 @@ function forcedMate(a) {
 }
 function mateRow(a) {
   var k = factsOf(a.it.b);
-  if (!k || k.x || !k.fm || a.alt || a.near) return null;
+  if (!k || k.x || !k.fm || a.alt || a.near || a.mateTry) return null;
   var san = sanOf(a.pre, a.best);
-  if (inWords(a)) return interleave([upFirst(moveWords(a.pre, a.best)) + ' forces checkmate.'], [san + ' forces mate.']);
+  /* B7: at tier 1 "checkmate" only for a mate See why plays within 3
+     moves; a longer one says the band (whyOf) */
+  if (inWords(a)) return k.fm <= 3 ? interleave([upFirst(moveWords(a.pre, a.best)) + ' forces checkmate.'], [san + ' forces mate.']) : null;
   return a.tier >= 3 && k.om ? ['Only move: ' + san + ' forces mate.', san + ' forces mate.'] : [san + ' forces mate.'];
 }
 /* R4, the settled caption (S6), as row 2's ladder {cands, fall}: by the
@@ -14394,7 +15003,7 @@ function r4Of(a) {
    line does (184359604942:24's Nxc7+ wins a rook, it does not stop Bxd1) */
 function whyOf(a) {
   var k = factsOf(a.it.b);
-  if (!k || k.x || k.a !== a.bestUci || !k.why || a.alt || a.near) return null;
+  if (!k || k.x || k.a !== a.bestUci || !k.why || a.alt || a.near || a.mateTry) return null;
   var w = k.why, pov = myPov(a.it);
   /* "wins" only as far as the answer's score shows it (0.6 of a pawn for
      each one claimed): 184234373418:11's Nh6 line takes a bishop, the score
@@ -14404,17 +15013,23 @@ function whyOf(a) {
     var x = cloneState(a.pre);
     applyMove(x, a.best);
     if (checkersOf(x).length) {
-      var kn = k.sb ? (pov ? k.sb.w - k.sb.b : k.sb.b - k.sb.w) : 0;
+      var kn = k.sb && k.sb.a !== 0 ? (pov ? k.sb.w - k.sb.b : k.sb.b - k.sb.w) : 0;
       w = kn >= 1 && winPct(k.l[0][1]) >= 60 ? { r: 'wins', n: kn } : { r: 'band', w: winPct(k.l[0][1]) };
     }
   }
+  /* B2, B7: at tier 1 "checkmate" only for a mate within 3 moves; a
+     longer one is the band ("Rook to g1 keeps you winning.") */
+  if (w.r === 'mate' && inWords(a) && w.n > 3) w = { r: 'band', w: 100, mate: 1 };
   return w;
 }
-function whyPred(a) {
-  var w = whyOf(a);
+function whyPred(a) { return whyPredOf(a, whyOf(a), a.pre, unpackUci(a.it.b.lu), a.it.b.eb); }
+/* a reason w as a predicate for the move it is about, on position st: its
+   line (pv, the move first) and score (cp, the player's side) for "wins" */
+function whyPredOf(a, w, st, pv, cp) {
   if (!w) return null;
   var t1 = inWords(a), PW = function (p) { return PIECE_WORD[pType(p)]; }, pov = myPov(a.it);
   var join = function (xs) { return xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1]; };
+  var sym = function (ps, white) { return ps.map(function (p) { return LEDGER[white ? p : p.toLowerCase()]; }).join(''); };
   if (w.r === 'mate') return t1 ? ' forces checkmate' : ' forces mate';
   if (w.r === 'saves') return ' saves your ' + PW(w.p);
   if (w.r === 'guards') {
@@ -14425,36 +15040,101 @@ function whyPred(a) {
   if (w.r === 'stops') {
     if (w.t === 'mate') return ' stops the mate';
     if (w.t === 'pawn') return ' stops their pawn';
-    var nst = dzNullState(a.pre), tm = uciToMove(nst, w.m);
+    var nst = dzNullState(st), tm = uciToMove(nst, w.m);
+    /* B4, tier 1: a check said as one ("Pawn to g6 stops their bishop check.") */
+    if (t1 && tm) { var tx = cloneState(nst); applyMove(tx, tm); if (checkersOf(tx).length) return ' stops their ' + PIECE_WORD[pType(nst.b[tm.from])] + ' check'; }
     return tm && !t1 ? ' stops ' + sanOf(nst, tm) : ' stops their threat';
   }
   if (w.r === 'traps') return ' traps their ' + PW(w.p);
   if (w.r === 'wins') {
-    var line = unpackUci(a.it.b.lu), ns = lineNodes(a.pre, line), s = settleLine(a.pre, line), won = netLostOf(ns, s.k, !pov), gave = netLostOf(ns, s.k, pov);
+    var line = pv || [], ns = lineNodes(st, line), s = settleLine(st, line, null, cp != null ? (pov ? cp : -cp) : null), won = netLostOf(ns, s.k, !pov), gave = netLostOf(ns, s.k, pov);
     var byV = function (x, y) { return MOTIF_VAL[y] - MOTIF_VAL[x]; };
     won.sort(byV); gave.sort(byV);
-    if (!won.length) return null;
-    var sym = function (ps, white) { return ps.map(function (p) { return LEDGER[white ? p : p.toLowerCase()]; }).join(''); };
+    /* (a line that, read here, wins no piece says where it keeps the game:
+       never a reason with no words in it; one up by a promotion, "wins
+       material" at tiers 2 and 3, as its count agrees with the score:
+       184434540700:103's b3 trades rooks and queens a pawn) */
+    if (!won.length) {
+      var up = pov ? s.w - s.b : s.b - s.w;
+      if (!t1 && up >= 1 && s.agree !== false && ns.slice(0, s.k).some(function (x) { return x.byW === pov && !!x.m.promo; })) return ' wins material';
+      return whyPredOf(a, { r: 'band', w: winPct(cp != null ? cp : 0) }, st, pv, cp);
+    }
     /* a trade in the board's pieces ("wins ♛ for ♜"), else the pieces won */
     if (gave.length) return ' wins ' + sym(won, !pov) + ' for ' + sym(gave, pov);
     return ' wins ' + (won.length === 1 ? 'a ' + PW(won[0]) : won.length === 2 && won[0] === won[1] ? 'two ' + PW(won[0]) + 's' : sym(won, !pov));
   }
   if (w.r === 'blocks') return ' blocks the check';
   if (w.r === 'attacks') return ' attacks their ' + PW(w.p);
-  var bw = w.w >= 60 ? ' keeps you better' : w.w >= 40 ? ' keeps the game level' : ' limits the damage';
-  return a.tier >= 3 ? bw + ': ' + Math.round(w.w) + '%' : bw;
+  /* B7: the game move allowed their mate, the answer does not ("Rxf5
+     avoids the mate Be3 allowed."; "allowed" only where that mate was not
+     there before the game move) */
+  if (w.r === 'avoids') {
+    var nm = dzNullState(st), mm = uciToMove(nm, w.m), before = false;
+    if (mm) { var mx = cloneState(nm); applyMove(mx, mm); before = isMate(mx); }
+    return t1 ? ' avoids their mate' : ' avoids the mate' + (before ? '' : ' ' + sanOf(a.pre, a.played) + ' allowed');
+  }
+  /* B7: the answer's line gives material and the player stays better */
+  if (w.r === 'gives') return ' gives ' + sym((w.lost || '').split(''), pov) + ' for ' + sym((w.won || '').split(''), !pov) + ', still better';
+  var bw = w.mate ? ' keeps you winning' : w.w >= 60 ? ' keeps you better' : w.w >= 40 ? ' keeps the game level' : ' limits the damage';
+  return a.tier >= 3 && !w.mate ? bw + ': ' + Math.round(w.w) + '%' : bw;
+}
+/* B7: a move as good as the answer, its own reason from its own line (the
+   key's line for it, else the line your move was graded on): the key's
+   rules (factsWhy) on that line. {w, pv, cp} or null */
+function altWhyOf(a, u) {
+  var k = factsOf(a.it.b), m = u ? uciToMove(a.pre, u) : null;
+  if (!k || k.x || !m) return null;
+  var l = (k.l || []).filter(function (x) { return x[0] === u; })[0], pv, cp, mate;
+  if (l) { pv = unpackUci(l[3]); cp = l[1]; mate = l[2]; }
+  else if (a.yours && a.yours.uci[a.yours.at || 0] === u && !(a.yours.at > 0)) { pv = a.yours.uci; cp = a.yours.cp; mate = a.near ? a.near.mate : null; }
+  else return null;
+  var pov = myPov(a.it);
+  var ka = { a: u, l: [[u, cp, mate, packUci(pv)]], th: k.th, g: k.g, fm: mate != null && mate > 0 ? mate : 0, sb: settleRec(settleLine(a.pre, pv, pov, pov ? cp : -cp)) };
+  var w = factsWhy(a.pre, ka, pov, pv);
+  /* (it "saves" the piece only where nothing takes it on its line, a trade
+     neither: 184216981622:42's Ne3 Bxe3 fxe3 says where it keeps the game) */
+  if (w.r === 'saves' && !pieceSurvives(a.pre, pv, m.from, true)) w = { r: 'band', w: winPct(cp) };
+  return { w: w, pv: pv, cp: cp };
+}
+/* its row 2 forms: "Queen to f3 guards f2 and your knight." (tier 1 in
+   words), null with no reason to say */
+function altForms(a, u) {
+  var x = altWhyOf(a, u), m = u ? uciToMove(a.pre, u) : null;
+  if (!x || !m) return null;
+  var w = x.w;
+  if (w.r === 'mate' && inWords(a) && w.n > 3) w = { r: 'band', w: 100, mate: 1 };
+  var pr = whyPredOf(a, w, a.pre, x.pv, x.cp);
+  if (pr == null) return null;
+  if (w.r === 'gives' && inWords(a)) return ['You give ' + pr.slice(7).replace(', still better', '') + ' but stay better.'];
+  return [(inWords(a) ? upFirst(moveWords(a.pre, m)) : sanOf(a.pre, m)) + pr + '.'];
 }
 /* the settled row 2's forms from the reason: "Pawn to f5 guards your
    knight." (tier 1, which never names the game move), "Qe6 saves your queen.
    Rg1 lost it." where the game move lost that piece (tiers 2 and 3), "Be3
    traps their queen."; at tier 3 the only-move line first where it is true
-   (V1.4). null with no reason */
+   (V1.4). Release 2 (B7): with the only move, tier 3 says the only-move
+   line alone on every settled frame; a saving reason a rejected try of this
+   showing met too says the only-move line where there is one (tier 1
+   "Queen to e6 was the only good move.", tier 2 "Qe6 is the only move that
+   holds."), else "Qd7+ saved it too. Qe6 holds better." (tier 1 "Queen to
+   e6 is even better."); a line that gives material says so ("Rxf5 gives ♗
+   for ♙, still better.", tier 1 "You give ♗ for ♙ but stay better.").
+   null with no reason */
 function whyForms(a) {
   var pr = whyPred(a);
   if (pr == null) return null;
-  var t1 = inWords(a), bs = t1 ? upFirst(moveWords(a.pre, a.best)) : sanOf(a.pre, a.best), out = [];
-  if (a.tier >= 3) { var only = buildCompare(a).only; if (only && /^Only move/.test(only)) out.push(only); }
+  var t1 = inWords(a), bs = t1 ? upFirst(moveWords(a.pre, a.best)) : sanOf(a.pre, a.best), out = [], k = factsOf(a.it.b);
+  var only = a.tier >= 3 ? buildCompare(a).only : '';
+  if (only && /^Only move/.test(only)) {
+    if (k && k.om) return [only];
+    out.push(only);
+  }
   var w = whyOf(a);
+  if (w.r === 'saves' && a.savedBy && a.savedBy.p === w.p) {
+    if (k && k.om) return t1 ? [bs + ' was the only good move.'] : [bs + ' is the only move that holds.'];
+    return t1 ? [bs + ' is even better.'] : [a.savedBy.san + ' saved it too. ' + bs + ' holds better.', bs + ' holds better.'];
+  }
+  if (w.r === 'gives' && t1) return out.concat(['You give ' + pr.slice(7).replace(', still better', '') + ' but stay better.']);
   if (!t1 && w.r === 'saves') {
     var cmp = buildCompare(a);
     if (cmp.saves.indexOf(w.p) >= 0) out.push(bs + pr + '. ' + cmp.gameSan + (cmp.found ? ' lost' : ' could lose') + ' it.');
@@ -14493,11 +15173,15 @@ function savesForms(a) {
 /* two threats on the card's position, their mate (which the game move
    stopped) and the game line's reply (which already stood): {mate (the
    search's move), reply (the game line's first node)} or null (the coach's
-   review, 184268949378:16: Qxf2 mate and Bxc3) */
+   review, 184268949378:16: Qxf2 mate and Bxc3). B5: the reply only as a
+   threat the key's search kept, which beside their mate it never is (no
+   move comes within 5 points of a mate), so none is said */
 function twoThreats(a) {
   var v = dangerView(a), th = v && v.searched ? v.threat : null, r1 = a.cls.gameLine && a.cls.gameLine.nodes[1];
   if (!th || th.mate !== 1 || th.stands || !r1 || !r1.move || !r1.captured || moveUci(r1.move) === th.uci) return null;
   if (!dzStood(a.pre, moveUci(r1.move), r1.captured)) return null;
+  var k = factsOf(a.it.b), u1 = moveUci(r1.move);
+  if (!k || k.x || !(k.th || []).some(function (t) { return t[0].slice(0, 4) === u1.slice(0, 4); })) return null;
   var nst = dzNullState(a.pre);
   return { mate: uciToMove(nst, th.uci), reply: r1, nst: nst };
 }
@@ -14513,7 +15197,7 @@ function guardsForm(a) {
   var hits = attacksFrom(after.b, a.best.to), cap = tt.reply.move.ep >= 0 ? tt.reply.move.ep : tt.reply.move.to;
   if (hits.indexOf(tt.mate.to) < 0 || hits.indexOf(cap) < 0 || after.b[cap] !== a.pre.b[cap]) return null;
   var tail = ' guards ' + sqName(tt.mate.to) + ' and your ' + PIECE_WORD[pType(tt.reply.captured)] + '.';
-  return inWords(a) ? [upFirst(moveWords(a.pre, a.best)) + tail] : [capSan(a.pre, a.best) + tail];
+  return inWords(a) ? [upFirst(moveWords(a.pre, a.best)) + tail] : [sanOf(a.pre, a.best) + tail];
 }
 /* R4's forms with the moves in SAN, or in words (mw: tier 1, where no form
    holds SAN or "material": a trade or two kinds of piece in the board's
@@ -14642,7 +15326,10 @@ function buildStory(a) {
      own step (tiers 1 and 2: the step alone, but where the reason is what
      its line wins); at tier 3 its line plays to where it settles (4 to 6
      plies, so the last caption fits) and ends on the figure */
-  var kf = factsOf(it.b), wp = !alt && !c.mateFor && !same && bl === c.bestLine ? whyPred(a) : null, fig = false;
+  /* (B7: at tier 1 a forced mate longer than 3 moves is told by its band
+     reason, on the better move's own step) */
+  var kf = factsOf(it.b), longMate = inWords(a) && !!kf && !kf.x && kf.fm > 3;
+  var wp = !alt && (!c.mateFor || longMate) && !same && bl === c.bestLine ? whyPred(a) : null, fig = false;
   if (wp != null) {
     if (a.tier >= 3) {
       bEnd = Math.min(Math.max(kf.sb ? kf.sb.k : bEnd, 4), from + 5, bl.nodes.length - 1);
@@ -14697,7 +15384,9 @@ function dangerFrame(a) {
   var tt = twoThreats(a);
   if (tt && tt.mate) {
     var rm = tt.reply.move, rs = sanOf(tt.nst, uciToMove(tt.nst, moveUci(rm))), cs = rm.ep >= 0 ? rm.ep : rm.to;
-    return { rings: [{ sq: tt.mate.to, kind: 'attacked', mate: true }, { sq: cs, kind: 'attacked' }],
+    /* (the capture's red ring where the search confirms it: B5) */
+    var csOk = v.attacked.some(function (x) { return x.sq === cs; });
+    return { rings: [{ sq: tt.mate.to, kind: 'attacked', mate: true }].concat(csOk ? [{ sq: cs, kind: 'attacked' }] : []),
              arrows: [{ from: tt.mate.from, to: tt.mate.to, kind: 'threat', key: 'danger' }, { from: rm.from, to: rm.to, kind: 'threat', key: 'danger' }],
              cap: t1 ? 'Two threats: mate on ' + sqName(tt.mate.to) + ' and your ' + PIECE_WORD[pType(tt.reply.captured)] + '.'
                : 'Two threats: ' + capSan(tt.nst, tt.mate) + ' mate and ' + rs + '.' };
@@ -14713,6 +15402,10 @@ function dangerFrame(a) {
   var bk = mateBlocker(a);
   if (bk) return { rings: [{ sq: bk.sq, kind: 'block' }], arrows: [], cap: 'Your ' + P(bk.p) + ' on ' + sqName(bk.sq) + ' blocks their mate.' };
   var pk = v.step === 1 || v.step === 3 ? dangerPick(v.attacked, v.saves) : null;
+  /* B4: the piece attacked is a pawn their threat takes on the way to more
+     (184435538450:47's Bxg7+): the threat is named, never the pawn */
+  var big = pk ? bigThreat(a, pk.named) : null;
+  if (big) return { rings: [{ sq: big.to, kind: 'attacked' }], arrows: [{ from: big.from, to: big.to, kind: 'threat', key: 'danger' }], cap: bigThreatWords(a, big) };
   if (pk && (v.step === 1 || v.saves.indexOf(pType(pk.named.p)) >= 0)) {
     var nm = pk.named, sec = pk.second, n1 = nm.by.length, n2 = sec ? sec.by.length : 0, last = a.preLast, cands = [];
     var made = !!last && nm.by.some(function (f) { return f === last[1] || strictlyBetween(f, nm.sq, last[0]); });
@@ -14730,11 +15423,29 @@ function dangerFrame(a) {
     else if (sec && n1 === 1 && n2 === 1) cands.push('Your ' + P(nm.p) + ' and ' + P(sec.p) + ' are attacked.');
     else if (sec) cands.push('Your ' + P(nm.p) + ' is attacked ' + timesWord(n1) + ', your ' + P(sec.p) + ' ' + timesWord(n2) + '.');
     cands.push(n1 >= 2 ? 'Your ' + P(nm.p) + ' is attacked ' + timesWord(n1) + '.' : 'Their ' + P(a.pre.b[nm.by[0]]) + ' attacks your ' + P(nm.p) + '.');
-    return { rings: pk.rings, arrows: pk.arrows.map(function (x) { return { from: x.from, to: x.to, kind: 'threat', key: 'danger' }; }), cap: fitRow(cands, 'caption', '') };
+    /* (B5: red rings and their arrows only where a search confirmed the
+       captures) */
+    return { rings: v.searched ? pk.rings : [], arrows: v.searched ? pk.arrows.map(function (x) { return { from: x.from, to: x.to, kind: 'threat', key: 'danger' }; }) : [], cap: fitRow(cands, 'caption', '') };
   }
   var pz = v.step === 2 ? hintPrize(a) : null;
   if (pz && isHangingAt(a.pre.b, pz.sq)) return { rings: [{ sq: pz.sq, kind: 'target' }], arrows: [], cap: 'Their ' + P(pz.p) + ' on ' + sqName(pz.sq) + ' has no guard.' };
   return null;
+}
+/* B4: their threat (the danger facts', a search's) takes the piece named,
+   and wins 2 or more beyond it where its line settles: {from, to, uci, n,
+   took} or null */
+function bigThreat(a, named) {
+  var v = dangerView(a), th = v && v.searched ? v.threat : null;
+  if (!th || th.mate || !named || th.to !== named.sq || !th.took || !(th.n >= MOTIF_VAL[pType(named.p)] + 2)) return null;
+  return th;
+}
+/* "They threaten Bxg7+." (tier 1 "Their bishop can take on g7 with
+   check.") */
+function bigThreatWords(a, th) {
+  var nst = dzNullState(a.pre), m = uciToMove(nst, th.uci), x = cloneState(nst);
+  if (!m) return '';
+  applyMove(x, m);
+  return inWords(a) ? 'Their ' + PIECE_WORD[pType(nst.b[m.from])] + ' can take on ' + sqName(m.to) + (checkersOf(x).length ? ' with check.' : '.') : 'They threaten ' + sanOf(nst, m) + '.';
 }
 /* the game move's piece stood in the way of their mate: the game line's
    first reply mates after the game move, and on the card's position (their
@@ -14889,7 +15600,8 @@ function capForms(a, S, i, w) {
   var san = n.move ? (w ? moveWords(n.before, n.move) : capSan(n.before, n.move)) : '', Mv = w ? upFirst(san) : san;
   var who = n.move ? (w ? pieceSay(a, n, w === 2) : san) : '';
   if (s.seg === 'game' && s.k === 0) {
-    var g = w ? upFirst(moveWords(a.pre, a.played)) : capSan(a.pre, a.played), t = S.threat, n1 = s.line.nodes[1];
+    /* (B8: SAN keeps its check sign: "Qg6+, your game move.") */
+    var g = w ? upFirst(moveWords(a.pre, a.played)) : sanOf(a.pre, a.played), t = S.threat, n1 = s.line.nodes[1];
     var tm = t ? (w ? t.words : t.san.replace(/[+#]$/, '')) : '';
     fall = g + ', your game move.';
     /* the piece the better move saves, left in danger by the game move (the
@@ -14898,7 +15610,8 @@ function capForms(a, S, i, w) {
     var sa = c.stalemate || (c.mateAgainst && S.mateG) ? null : stillAfterGame(a);
     if (sa) cands.push(g + '. Your ' + PIECE_WORD[pType(sa.p)] + ' is still attacked' + (sa.n >= 2 ? ' ' + timesWord(sa.n) : '') + '.');
     if (c.stalemate) cands.push(g + '. ' + sd.opp + ' has no move: a draw.');
-    else if (c.mateAgainst && S.mateG) cands.push(g + '. Now ' + sd.opp + ' can checkmate.');
+    /* (B4: "Now" only where they had no mate in one before the game move) */
+    else if (c.mateAgainst && S.mateG) { if (!mateInOne(dzNullState(a.pre))) cands.push(g + '. Now ' + sd.opp + ' can checkmate.'); }
     else if (t) {
       var th = t.th;
       if (th && th.captured) {
@@ -14906,8 +15619,10 @@ function capForms(a, S, i, w) {
         if (!isDefended(n1.before.b, th.to)) cands.push(g + '. Nothing guards the ' + cap + ' on ' + sqName(th.to) + '.');
         else if (MOTIF_VAL[th.piece] < MOTIF_VAL[th.captured]) cands.push(g + '. Their ' + PIECE_WORD[th.piece] + ' can take your ' + cap + '.');
       }
-      if (!cands.length && t.motif === 'fork') cands.push(g + '. Now ' + tm + ' hits two pieces.');
-      if (!cands.length && th && th.check) cands.push(g + '. Now ' + tm + ' is check.');
+      /* B4: "Now X" only where X was not there before the game move */
+      var was = stoodBefore(a, n1);
+      if (!cands.length && t.motif === 'fork' && !was) cands.push(g + '. Now ' + tm + ' hits two pieces.');
+      if (!cands.length && th && th.check && !was) cands.push(g + '. Now ' + tm + ' is check.');
       /* a pin only when it already holds on G1's board */
       if (!cands.length && t.motif === 'pin' && pinRay(n1.before.b, c.allowed.pin.sq)) cands.push(g + '. Your ' + PIECE_WORD[c.allowed.pin.piece] + ' can\'t move safely.');
       if (!cands.length && t.motif === 'discovered') cands.push(g + '. Moving one piece opens a line.');
@@ -14941,8 +15656,11 @@ function capForms(a, S, i, w) {
     else if (missed) {
       /* the move they could have played, said as one (never "takes"): with
          its check first, then "They missed it." */
-      var cp = n.captured ? who + ' could take your ' + PIECE_WORD[pType(n.captured)] : null;
-      var cw = isMate(n.after) ? [Mv + ' would be checkmate'] : cp ? (ck ? [cp + ck, cp] : [cp]) : ck ? [who + ' could give check'] : ['They could play ' + san];
+      /* (never the pawn it takes where its line wins more, B4, nor where the
+         two moves' scores differ by more than 2 pawns beyond it: C5 (c)) */
+      var big = !!n.captured && (c.lossG >= MOTIF_VAL[pType(n.captured)] + 2 || swingOf(a.it.b) > MOTIF_VAL[pType(n.captured)] + 2);
+      var cp = n.captured && !big ? who + ' could take your ' + PIECE_WORD[pType(n.captured)] : null;
+      var cw = isMate(n.after) ? [Mv + ' would be checkmate'] : cp ? (ck ? [cp + ck, cp] : [cp]) : ck && !big ? [who + ' could give check'] : ['They could play ' + san.replace(/[+#]$/, '')];
       heads = [];
       cw.forEach(function (x) { heads.push(x + '. They missed it.', x + '.'); });
       fall = cw[cw.length - 1] + '.';
@@ -14989,11 +15707,21 @@ function capForms(a, S, i, w) {
     fall = 'Better: ' + bs + '.';
     /* V2.4: the answer's one reason, as the settled row and Details say it:
        "Better: f5. It guards your knight." (never a bare "Better: d5.") */
-    if (S.why != null && !S.alt) return { cands: [fall + ' It' + S.why + '.'], fall: fall };
+    /* (B4, C5 (c): beside the game move "It wins ..." is worth what the two
+       moves differ by: never where the game line mates, nor where their
+       scores are apart by more than 2 pawns beyond its count) */
+    if (S.why != null && !S.alt) {
+      var wr = whyOf(a);
+      var under = !!wr && wr.r === 'wins' && swingOf(a.it.b) > (wr.n || 0) + 2;
+      return { cands: [under ? fall : fall + ' It' + S.why + '.'], fall: fall };
+    }
     if (keep) cands.push(w ? fall + ' Your ' + keep + ' is safe' + (pType(n.before.b[n.move.from]) === cmp.saves[0] ? ' there.' : '.') : 'Better: ' + bs + ' ' + savesVerb(a) + ' your ' + keep + '.');
     /* a move in the found band (V1.2) is the answer's equal, said only
        where its depth was the key's or the re-check's */
-    if (S.alt && a.near) cands.push(a.near.deep ? (w ? CARD_COPY.R5() : CARD_COPY.R7(bs, capSan(a.pre, a.best))) : 'Your move: ' + bs + '.');
+    /* (B7: at tier 1 the move's own reason, never "Just as good as the
+       main answer.") */
+    var awp = S.alt && a.near && a.near.deep && w ? altWhyOf(a, a.yours && a.yours.uci[0]) : null, awq = awp ? whyPredOf(a, awp.w.r === 'mate' && awp.w.n > 3 ? { r: 'band', w: 100, mate: 1 } : awp.w, a.pre, awp.pv, awp.cp) : null;
+    if (S.alt && a.near) cands.push(a.near.deep ? (w ? 'Your move: ' + bs + '.' + (awq ? ' It' + awq + '.' : '') : CARD_COPY.R7(bs, sanOf(a.pre, a.best))) : 'Your move: ' + bs + '.');
     else if (S.alt && a.alt) cands.push('Your ' + bs + ' works too.');
     /* later in a forcing line, a step in the found band (V1.6) */
     else if (S.alt) cands.push('Your move: ' + bs + '.');
@@ -15022,7 +15750,7 @@ function capForms(a, S, i, w) {
     fall = Mv + ' still comes.';
     if (net >= 1 && cmp.w2) { cands.push(Mv + ' still comes, but you win ' + (cmp.w2i || cmp.w2) + '.'); if (!cmp.w2i && cmp.w2n !== cmp.w2) cands.push(Mv + ' still comes, but you win ' + cmp.w2n + '.'); }
     else if (net === 0 && lost >= 1) cands.push(Mv + ' still comes, but you lose nothing.');
-    else if (net < 0 && -net < lost && cmp.w) cands.push(Mv + ' still comes. You lose less.');
+    else if (net < 0 && -net < lost && cmp.w && loseLess(a, S)) cands.push(Mv + ' still comes. You lose less.');
     else if (n.captured && colorW(n.captured) === pov) cands.push(who + ' still takes your ' + PIECE_WORD[pType(n.captured)] + '.');
     return { cands: cands, fall: fall };
   }
@@ -15037,9 +15765,29 @@ function capForms(a, S, i, w) {
      it loses less than the game did (a loss the card claims); one that
      loses nothing after a game move that lost something says so (and what
      it saves, F1.4); otherwise its ply alone */
-  else if (stands && cmp.w && gain < 0 && -gain < c.lossG) says.concat([Mv + '.']).forEach(function (h) { cands.push(h + ' You lose less.'); });
+  else if (stands && cmp.w && gain < 0 && -gain < c.lossG && loseLess(a, S)) says.concat([Mv + '.']).forEach(function (h) { cands.push(h + ' You lose less.'); });
   else if (lastB && betterClaim(a, s.line, s.k, s.from) === 'none') says.concat([Mv + '.']).forEach(function (h) { if (keep) cands.push(h + ' Your ' + keep + ' is safe.'); cands.push(h + ' Nothing is lost.'); });
   return { cands: cands.concat(says), fall: fall };
+}
+/* B2: "You lose less." only where the line's own deep score leaves the
+   player under 60%, and never on a line the player mates (184364964898:69:
+   Rg1+ Nxg1 Qxg1+ ... gives a rook on the way to mate) */
+function loseLess(a, S) {
+  var b = a.it.b, y = S.alt && a.yours ? a.yours : null, alt = a.near || a.alt || a.mateTry;
+  var mate = y ? alt && (alt.mate != null ? alt.mate : alt.n) : b.mb, cp = y ? y.cp : b.eb;
+  if (mate != null && mate > 0) return false;
+  return cp != null && winPct(cp) < 60;
+}
+/* B4: their reply n1 (a node of the game line) was there before the game
+   move: the same piece makes the same move on the card's position with
+   them to move, and gives check there too */
+function stoodBefore(a, n1) {
+  if (!n1 || !n1.move) return false;
+  var nst = dzNullState(a.pre), m = uciToMove(nst, moveUci(n1.move));
+  if (!m || nst.b[m.from] !== n1.before.b[n1.move.from]) return false;
+  var x = cloneState(nst);
+  applyMove(x, m);
+  return checkersOf(x).length > 0 || !checkersOf(n1.after).length;
 }
 /* what the better line may claim where it ends (node k, counted from node
    `from`), only where its count stands (settledAt): 'win' (it nets
@@ -15148,8 +15896,19 @@ function bandOf(a) {
     var fig = !!r4 && a.tier >= 3 && r4.cands.some(function (x) { return /\d%/.test(x); });
     /* settled, a reveal names the card's own answer, the move R4 is about
        (inside a forcing line the band named each move as it came) */
-    if (a.revealed)
+    if (a.revealed) {
+      /* B7: a move of the shown answer's found band played by hand
+         (playNear) is the move on the board: the panel names it, with its
+         own reason (card 4's Qf3 after Show the answer, "Qf3 guards f2 and
+         your knight.", never Qd2's reason over it) */
+      var nm = r4 && a.shownNear ? uciToMove(a.pre, a.shownNear) : null;
+      if (nm) {
+        var nw = inWords(a) ? moveWords(a.pre, nm) : '';
+        return { disc: 'info', kind: 'info', row1: nw && fitsRow(CARD_COPY.V1(a, nw), 'row1') ? CARD_COPY.V1(a, nw) : inWords(a) ? CARD_COPY.V3() : CARD_COPY.V1(a, sanOf(a.pre, nm)),
+                 cands: altForms(a, a.shownNear) || [], fall: '', never: null, chip: '', figChip: false };
+      }
       return { disc: 'info', kind: 'info', row1: answerRow(a, r4), cands: r4 ? r4.cands : arrowSaid(a), fall: r4 ? r4.fall : '', never: r4 ? r4.never : null, chip: fig ? FIG_CHIP : '', figChip: fig };
+    }
     return { disc: 'good', kind: 'good', row1: a.alt ? CARD_COPY.R3() : a.result === 'first' ? CARD_COPY.R1() : CARD_COPY.R2(),
              cands: r4 ? r4.cands : [], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null, chip: fig ? FIG_CHIP : '', figChip: fig };
   }
@@ -15193,7 +15952,10 @@ function answerRow(a, settled) {
      1 of 2", what the game move runs into), from its first frame */
   if (a.hints >= 1 && (a.hintAfter || !mid) && (a.hintAt == null || a.hintAt === a.misses || hm.rings.length + hm.arrows.length > 0)) {
     var h = hintText(a);
-    return { disc: 'king', kind: 'hint', row1: h.row1, cands: h.cands, fall: h.fall, tag: tag };
+    /* B8: a card that opens on its drawn Hint 1 (the worked example, S9)
+       keeps its task in row 1, the hint's words beside it */
+    var opening = a.predraw && a.hints === 1 && !a.attempts && !a.hintAfter;
+    return { disc: 'king', kind: 'hint', row1: opening ? CARD_COPY.T7() : h.row1, cands: h.cands, fall: h.fall, tag: tag };
   }
   /* their reply has landed: your move, and what it did (F4) */
   if (mid) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.F3(), cands: a.replySaid ? a.replySaid.slice() : [], fall: 'The next move is forcing too.', budget: LINE_BUDGET, tag: tag };
@@ -15339,11 +16101,12 @@ function labelCands(a, f, seen) {
      cross, ok) in green, never the ghost's first-sight words (F8.2) */
   (o.ghosts || []).forEach(function (g) {
     if (first.ghost || g.rook) return;
-    var gmk = { kind: 'ghost', sq: g.sq, p: g.p }, gtx = gameSan(a) + ' in your game';
+    /* (B8: tier 1 in words, "Rook to h7 in your game", never SAN) */
+    var gmk = { kind: 'ghost', sq: g.sq, p: g.p }, gtx = (inWords(a) ? upFirst(moveWords(a.pre, a.played)) : gameSan(a)) + ' in your game';
     if (g.ok) { short.push(cand(gtx, 'green', null, g.sq, null, gmk, 2)); return; }
     if (seen('ghost')) { if (a.game) short.push(cand(gtx, 'red', null, g.sq, null, gmk, 2)); return; }
     first.ghost = cand(gtx, 'red', 'ghost', g.sq, null, gmk);
-    if (inWords(a)) { first.ghost.alt = first.ghost.text; first.ghost.text = upFirst(moveWords(a.pre, a.played)) + ' in your game'; }
+    if (inWords(a)) first.ghost.alt = 'Your game move';
   });
   /* a hint's prize (S8): "free {piece}" when nothing of theirs guards it */
   (o.rings || []).forEach(function (rg) {
@@ -16904,8 +17667,9 @@ function boardOptsFor(a) {
       if (a.sel === sdue.from || snear.length) opts.dots = (a.sel === sdue.from ? [sdue.to] : []).concat(snear);
     }
     /* V1.2: a move in the found band settles with the main move beside it,
-       a thin green arrow */
-    if (a.view.mode === 's0' && a.near && !opts.anim) opts.arrows = (opts.arrows || []).concat([{ from: a.best.from, to: a.best.to, kind: 'main', key: 'main' }]);
+       a thin green arrow (B7: not at tier 1, where the move found has its
+       own reason) */
+    if (a.view.mode === 's0' && a.near && a.tier !== 1 && !opts.anim) opts.arrows = (opts.arrows || []).concat([{ from: a.best.from, to: a.best.to, kind: 'main', key: 'main' }]);
     if (a.view.mode === 's0' && a.settle >= 1 && !opts.anim) {
       /* the ghost and the tokens fade in once, as this beat's effect */
       var s0 = s0Marks(a, view.st);
@@ -17158,9 +17922,12 @@ function boardAria(a, st, o) {
        "they could checkmate on g7" only where that mate is on the board
        described (a free move for them while it is your turn), else the
        move that makes it, "after your game move" (both tries' danger,
-       F1.3: "after both your tries") */
+       F1.3: "after both your tries"). B5: a ring the game move's line or
+       both tries' replies confirm (r.after, key 'tries') says so; "is in
+       danger" is said of a ring the search confirms on this board */
     else if (r.kind === 'attacked') out.push(r.mate ? 'Red ring: ' + (mateOnBoard(st, r.sq, !myPov(a.it)) ? '' : r.key === 'tries' ? 'after both your tries, ' : 'after your game move, ') + 'they could checkmate on ' + sqName(r.sq) + '.' : b[r.sq] && isW(b[r.sq]) === myPov(a.it)
-      ? (dzSee(b, r.sq, !myPov(a.it)) > 0 ? 'Red ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is in danger.' : 'Red ring: after your game move, your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' can be taken.')
+      ? (r.key === 'tries' ? 'Red ring: after both your tries, your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' could be taken.'
+        : !r.after && dzSee(b, r.sq, !myPov(a.it)) > 0 ? 'Red ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is in danger.' : 'Red ring: after your game move, your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' can be taken.')
       : 'Red ring: ' + sqName(r.sq) + ', where your piece would be in danger.');
     else if (r.kind === 'hint') out.push('Gold ring: move the ' + pw(r.sq) + ' on ' + sqName(r.sq) + '.');
     else if (r.kind === 'block') out.push('Gold ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' blocks their mate.');
@@ -18231,9 +18998,11 @@ function promoHtml(st) {
 /* an alternative that also works is named at the step where it left the
    engine's line, against the engine's move at that same step */
 function altNames(a) {
-  var at = (a.yours && a.yours.at) || 0;
-  var mine = a.lines.yours && a.lines.yours.san[at], theirs = a.lines.best.san[at] || a.lines.best.san[0];
-  return { mine: mine || 'Your move', theirs: theirs || '' };
+  var at = (a.yours && a.yours.at) || 0, L = a.lines.yours;
+  var mine = L && L.san[at], theirs = a.lines.best.san[at] || a.lines.best.san[0];
+  /* (B8: tier 1 says the move in words, read on its own board) */
+  var w = L && L.moves[at] ? moveWords(at ? L.states[at - 1] : a.pre, L.moves[at]) : '';
+  return { mine: mine || 'Your move', theirs: theirs || '', words: w ? upFirst(w) : 'Your move' };
 }
 /* the session bar: end, progress, more. The count is the set's own (V4.2:
    a set of 5 stays "of 5"); a one more try says its place among the
@@ -18453,8 +19222,29 @@ function stopsHolds(a, san) {
   applyMove(y, m2);
   return !(isMate(y) || (post.b[m2.to] && dzSeeMove(post.b, m2.from, m2.to) > 0));
 }
+/* B8: tier 1's Details name no "material": a sentence that does is left
+   out, and with nothing left the fallback says it */
+function noMaterial(s, fall) {
+  if (!/\bmaterial\b/.test(s)) return s;
+  var keep = (String(s).match(/[^.!?]+[.!?]+/g) || [s]).filter(function (x) { return !/\bmaterial\b/.test(x); }).join('').trim();
+  return upFirst(keep) || fall;
+}
+/* B7: the answer avoids the mate the game move allowed, and its settled
+   line gives material (its count agreeing with its score): "You still lose
+   ♗ for ♙." ('' otherwise) */
+function avoidsLoss(a) {
+  var w = whyOf(a), k = factsOf(a.it.b), pov = myPov(a.it);
+  if (!w || w.r !== 'avoids' || !k || !k.sb || k.sb.a === 0) return '';
+  var lost = (pov ? k.sb.lw : k.sb.lb).split(''), won = (pov ? k.sb.lb : k.sb.lw).split('');
+  won.slice().forEach(function (p) { var j = lost.indexOf(p); if (j >= 0) { lost.splice(j, 1); won.splice(won.indexOf(p), 1); } });
+  if (!lost.length) return '';
+  var sym = function (ps, white) { return ps.sort(function (x, y) { return MOTIF_VAL[y] - MOTIF_VAL[x]; }).map(function (p) { return LEDGER[white ? p : p.toLowerCase()]; }).join(''); };
+  return 'You still lose ' + sym(lost, pov) + (won.length ? ' for ' + sym(won, !pov) : '') + '.';
+}
 function detailsBest(a, s, best) {
   var c = a.cls, say = s.best || best + ' keeps your position together.', bl = c && c.bestLine;
+  /* B2: a try that forced mate was the answer: what it does (the move on the board) */
+  if (a.mateTry) return ownRow(a).cands[0];
   /* V2.4: the answer's one reason, as the settled row says it */
   var wp = whyPred(a);
   if (wp != null) return (inWords(a) ? upFirst(moveWords(a.pre, a.best)) : sanOf(a.pre, a.best)) + wp + '.';
@@ -18498,11 +19288,19 @@ function detailsHtml() {
   if (b.d) h += '<p class="stakes-tag"><span class="dot-bad" aria-hidden="true"></span>This move ' + decisiveWords(it.g, b) + '.</p>';
   /* V2.5: tier 1 in words, no notation; tiers 2 and 3 with every figure
      labelled ("Your chances: 49% before, 35% after.") */
-  var t1 = a.tier === 1, why = detailsGame(a), bestSay = detailsBest(a, s, best);
-  why = t1 ? detailsWords(a, why.replace(/ \(\d+% to \d+%\)/g, '')) : labelFigures(why);
+  var t1 = a.tier === 1, why = detailsGame(a), bestSay = detailsBest(a, s, best), good;
+  why = t1 ? noMaterial(detailsWords(a, why.replace(/ \(\d+% to \d+%\)/g, '')), 'After ' + moveWords(a.pre, a.played) + ', ' + (b.wa >= 60 ? 'you are still better' : b.wa >= 40 ? 'the game is even' : sidesOf(a).opp + (b.wa >= 20 ? ' is better' : ' is winning')) + '.') : labelFigures(why);
+  good = t1 ? noMaterial(detailsWords(a, bestSay), upFirst(moveWords(a.pre, a.best)) + ' was the better move.') : labelFigures(bestSay);
+  /* B8: beside "Kb7 is as good as Rxa7." or "Bg4 also holds." never "Rxa7
+     was the better move.": "The main move was Rxa7." (R6) */
+  var holds = (a.alt || (a.near && a.near.deep)) && a.lines.yours;
+  if (a.near || holds) good = good.replace(/^(.+) was the better move\.$/, function (x, m) { return CARD_COPY.R6(t1 ? m.charAt(0).toLowerCase() + m.slice(1) : m); });
   h += '<div class="dt-lines">' + row('tl-bad', esc(why))
-    + ((a.alt || (a.near && a.near.deep)) && a.lines.yours ? row('tl-alt', esc(t1 ? detailsWords(a, altNames(a).mine) : altNames(a).mine) + ' also holds.') : '')
-    + row('tl-good', esc(t1 ? detailsWords(a, bestSay) : labelFigures(bestSay)));
+    + (holds ? row('tl-alt', esc(t1 ? altNames(a).words : altNames(a).mine) + ' also holds.') : '')
+    + row('tl-good', esc(good))
+    /* B7: an answer that avoids the mate the game move allowed still gives
+       what its settled line gives ("You still lose ♗ for ♙.") */
+    + (avoidsLoss(a) ? row('tl-good', esc(avoidsLoss(a))) : '');
   var opp = opponentLine(a);
   if (opp) h += row('tl-opp', opp);
   /* their threat (F0.1's, as kept) and the clock (F2.5); where the check
@@ -18688,7 +19486,7 @@ function clockLine(a) {
   if (b.c == null || b.tt == null) return '';
   var took = Math.round(b.tt), left = Math.round(b.c), secs = function (x) { return x < 60 ? x + ' s' : clockWords(x); };
   if (tier === 1) return 'You took ' + spanWords(took) + '. You had ' + leftWords(left) + ' left.';
-  var s = capSan(a.pre, a.played) + ' took ' + secs(took) + ', with ' + clockWords(left) + ' left.';
+  var s = sanOf(a.pre, a.played) + ' took ' + secs(took) + ', with ' + clockWords(left) + ' left.';
   var pace = tier >= 3 ? paceOf(a.it) : null;
   if (pace) s += ' Your pace: ' + secs(pace) + ' a move.';
   return s;

@@ -12,7 +12,8 @@
 //        opts.hash: the address's hash at boot ('#games'); opts.nav: how it was opened ('reload', 'navigate')
 //        A.urls: the addresses pushed and replaced ([kind, url]); A.pop(hash, state): Back or Forward to an address
 // Nothing reaches the network (fetch never resolves) and no engine runs (Worker throws), so everything
-// tested here is the app's own bookkeeping.
+// tested here is the app's own bookkeeping; opts.Worker gives the page a worker class of its own (the real
+// engine as a Node process: test/keys-real.js).
 const fs = require('fs'), path = require('path');
 const FILE = process.env.NL_HTML || path.join(__dirname, '..', 'index.html');
 
@@ -74,7 +75,7 @@ module.exports = function makeApp(opts) {
     performance: { getEntriesByType: () => (opts.nav ? [{ type: opts.nav }] : []) },
     navigator: { onLine: true, hardwareConcurrency: 4, storage: { persist: () => Promise.resolve(true) } },
     setTimeout: (fn, ms) => { const w = () => fn(); w.due = now + (+ms || 0); timers.push(w); return timers.length; }, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
-    requestAnimationFrame() {}, fetch: () => new Promise(() => {}), Worker: function () { throw new Error('no workers in node'); },
+    requestAnimationFrame() {}, fetch: () => new Promise(() => {}), Worker: opts.Worker || function () { throw new Error('no workers in node'); },
     MutationObserver: function () { this.observe = function () {}; }, TextDecoder, KeyboardEvent: function () {},
   };
   window.localStorage = local.api;

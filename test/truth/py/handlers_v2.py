@@ -617,6 +617,17 @@ def reason_check(R, mv_text, pred, base=None):
             else:
                 errs.append('form: ' + it)
         return F('; '.join(errs)) if errs else T('guards ' + m.group(1))
+    # B4: tier 1's words for "g6 stops Bxg7+.": "Pawn to g6 stops their bishop check." (a check by that
+    # piece on the board before the move, them to move, that the move takes away)
+    mck = re.match(r'^stops their (\w+) check$', p)
+    if mck:
+        nb0 = chk.null(b)
+        before = [y for y in nb0.legal_moves if nb0.gives_check(y) and nb0.is_capture(y) and PNAME[nb0.piece_at(y.from_square).piece_type] == mck.group(1)]
+        if not before:
+            return F('no %s check of theirs before %s' % (mck.group(1), x.uci()))
+        # (the check is the capture the threat names, "Bxg7+": taken away where it no longer takes with check)
+        gone = [y for y in before if y not in a.legal_moves or not a.gives_check(y) or not a.is_capture(y)]
+        return (T if gone else F)('their %s checks %s; after %s still: %s' % (mck.group(1), [y.uci() for y in before], x.uci(), [y.uci() for y in before if y not in gone]))
     if p == 'stops the mate':
         n0 = chk.mates_in_one(chk.null(b))
         n1 = chk.mates_in_one(a) if a.turn != R.color else []

@@ -513,6 +513,31 @@ def danger_cap(R, text):
         return T('')
     if re.match(r'^(Two of your|Your \w+ and \w+ are attacked)', text):
         return T('(pair attack: not counted)')
+    # V2.7: two pieces of one kind by their squares ("Your knights on c3 and f4 are attacked.")
+    mp = re.match(r'^Your (\w+?)s on ([a-h][1-8]) and ([a-h][1-8]) are attacked\.$', text)
+    if mp:
+        for q in (mp.group(2), mp.group(3)):
+            s = chess.parse_square(q)
+            p = b.piece_at(s)
+            if not p or p.color != R.color or chk.PNAME[p.piece_type] != mp.group(1):
+                return F('no %s of yours on %s' % (mp.group(1), q))
+            if not chk.attackers_legal(b, s):
+                return F('your %s on %s is not attacked' % (mp.group(1), q))
+        return T('')
+    # B4: the threat named where the piece it takes is a pawn on the way to more ("They threaten
+    # Bxg7+.", tier 1 "Their bishop can take on g7 with check."), by B5's rule
+    mt2 = re.match(r'^They threaten (\S+)\.$', text) or re.match(r'^Their (\w+) can take on ([a-h][1-8])( with check)?\.$', text)
+    if mt2:
+        import handlers_gate as HG
+        x = chk.null(b) if b.turn == R.color else b
+        if mt2.re.pattern.startswith('^They'):
+            y = parse_move(x, mt2.group(1))
+        else:
+            ys = [z for z in x.legal_moves if chess.square_name(z.to_square) == mt2.group(2) and x.is_capture(z) and chk.PNAME[x.piece_at(z.from_square).piece_type] == mt2.group(1) and (not mt2.group(3) or x.gives_check(z))]
+            y = ys[0] if ys else None
+        if not y:
+            return F('no such move of theirs on the board shown')
+        return HG.threat_b5(b.fen() if b.turn == R.color else chk.null(b).fen(), R.color, y)
     return U('danger caption not read: ' + text)
 
 

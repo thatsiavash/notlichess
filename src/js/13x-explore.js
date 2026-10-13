@@ -245,22 +245,56 @@ function sideCp(line, w) { return w ? line.cp : -line.cp; }
    captures' own words. st: the position before the move; ucis: the move
    and the engine's line after it; cp: the mover's score after it
    (centipawns, mates as +-1500). {n (pawns, more than 0 when won), w} or
-   null when no count stands */
+   null when no count stands. B4 (release 2): the fact sheet's material
+   rule, the settle point's material in line with the line's score (within
+   2 pawns, else read on to 12 plies, else no count), and the count still
+   standing where the line ends (a pawn won back later, as in a king and
+   pawn race, was never won); a net of a single pawn is no count (B4: the
+   new gate found every such count of Explore's turned by a deeper search) */
 function xpClaim(st, ucis, cp) {
   var mover = !!st.w, line = ucis && ucis.length ? buildLine(st, '0000', ucis, mover) : null;
   if (!line || line.nodes.length < 2) return null;
   /* V2.1: counted where the line settles by the fact sheet's rule (two
      quiet plies with nothing en prise, settleLine), never on a capture
      still to be answered: card 2's f5 gives up no pawns */
-  var sl = settleLine(st, ucis), k = sl.k;
-  if (!sl.ok || k < 1 || k >= line.nodes.length || !settledAt(line, k)) return null;
+  var sl = settleLine(st, ucis, null, cp == null ? null : mover ? cp : -cp), k = sl.k;
+  if (!sl.ok || !sl.agree || k < 1 || k >= line.nodes.length || !settledAt(line, k)) return null;
   for (var i = 1; i <= k; i++) if (line.nodes[i].move.promo) return null;
   var base = matDiff(line.nodes[0].after.b, mover), n = matDiff(line.nodes[k].after.b, mover) - base;
-  if (Math.abs(n) < 1) return null;
+  /* (a pawn either way is no count Explore names: a deeper search often
+     finds it back, where a piece's worth stands) */
+  if (Math.abs(n) < 2) return null;
   if (cp != null && Math.abs(cp) < 900 && (n > 0 ? n > cp / 100 - base + EVAL_SLACK : -n > base - cp / 100 + EVAL_SLACK)) return null;
+  /* where the line ends (12 plies at most), and before a last run of
+     captures there, the count runs the same way and as far (a pawn won
+     back on the line's last move was never won) */
+  var end = Math.min(line.nodes.length - 1, SETTLE_MAX), cut = end;
+  while (cut > k && line.nodes[cut].captured) cut--;
+  for (var j = k + 1; j <= end; j++) if (line.nodes[j].move.promo) return null;
+  var holds = function (x) { var nx = matDiff(line.nodes[x].after.b, mover) - base; return n > 0 ? nx >= n - 0.5 : nx <= n + 0.5; };
+  if (!holds(end) || !holds(cut)) return null;
   /* a loss in the words of what the other side took */
   var w = plainCapture(n > 0 ? line : buildLine(st, '0000', ucis, !mover), k, 1);
   return { n: n, w: w || oneWord(null, n) };
+}
+/* B8: san is a move of the mover's side (st's side to move) once the line's
+   first move and their reply to it are played (line from st), as written,
+   and it hits the pieces named (names: piece words; a knight or more, or
+   the king, as a fork counts them): the move a "sets up" sentence names is
+   one that side can play then, and the fork it promises is one */
+function setsUpOk(st, san, line, names) {
+  var x = cloneState(st), mover = !!st.w, want = String(san).replace(/[+#]$/, '');
+  for (var i = 0; i < 2; i++) {
+    var m2 = line && line[i] ? uciToMove(x, line[i]) : null;
+    if (!m2) return false;
+    applyMove(x, m2);
+  }
+  var y = legalMoves(x).filter(function (m) { return sanOf(x, m).replace(/[+#]$/, '') === want; })[0];
+  if (!y || !!x.w !== mover) return false;
+  var z = cloneState(x);
+  applyMove(z, y);
+  var hit = attacksFrom(z.b, y.to).filter(function (q) { return z.b[q] && colorW(z.b[q]) !== mover && pType(z.b[q]) !== 'P'; }).map(function (q) { return PIECE_WORD[pType(z.b[q])]; });
+  return (names || []).every(function (w) { var j = hit.indexOf(w); if (j < 0) return false; hit.splice(j, 1); return true; });
 }
 /* no mate is possible for either side (a dead draw): kings alone, or with
    one knight or bishop, or with bishops all on one colour */
@@ -337,7 +371,9 @@ function xpThreatBefore(P, reply) {
    trapped piece the count does not bear out, is dropped (null) */
 var XP_LOSS = [/ (?:You|White|Black) loses? [^.]*\./, /: (?:you|White|Black) loses? [^.]*(?=\.$)/, /, and the pinned \w+ is lost(?=\.$)/];
 function xpBare(s, c, cl) {
-  if (c.t === 'material') return null;
+  /* (the material pattern's words, which also say a tactic that stood
+     before the move: "Bd3 loses a rook after Bxc3+": a count, gone) */
+  if (c.t === 'material' || /^\S+ loses /.test(s)) return null;
   var tr = / lets (?:your|\w+'s) (\w+) get trapped\.$/.exec(s);
   if (tr) return cl && cl.n <= -1 && cl.w === 'the ' + tr[1] ? s : null;
   XP_LOSS.forEach(function (re) { s = s.replace(re, ''); });
@@ -349,6 +385,16 @@ function xpBare(s, c, cl) {
 function xpSaysTaken(s, w) {
   var one = /^the (\w+)$/.exec(w || '');
   return !!one && new RegExp('takes (?:your|the|\\w+\'s) ' + one[1] + '\\b').test(s);
+}
+var XP_VAL = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9 };
+/* what a classifier sentence says is lost, in pawns: the piece it names
+   taken, less what the move took first ("Qxh2 takes a pawn, but Rxh2 takes
+   your queen.": 8); 0 where it names none */
+function xpNamedLoss(s) {
+  var m = /takes a (\w+), but \S+ takes (?:your|the) (\w+)\./.exec(s);
+  if (m) return Math.max(0, (XP_VAL[m[2]] || 0) - (XP_VAL[m[1]] || 0));
+  m = / puts your (\w+) where \S+ takes it\./.exec(s) || / leaves your (\w+)(?: on \S+)? undefended/.exec(s) || /'s threat: \S+ takes your (\w+)\./.exec(s);
+  return m ? XP_VAL[m[1]] || 0 : 0;
 }
 /* the better move's sentence, for a chance missed: a gain said only as
    the card face counts it (else "Best was B."); a fork, a mate or a pin
@@ -394,7 +440,10 @@ function xpVerdict(a, ex, at) {
   } else {
     var decided = Math.abs(cpBest) >= 1000 && Math.abs(cpX) >= 1000 && (cpBest > 0) === (cpX > 0);
     var mateBoth = best.mate != null && ((row && row.mate != null) || !!(cr && cr.lines[0] && cr.lines[0].mate != null)) && (cpBest > 0) === (cpX > 0);
-    var concrete = XP_TACTIC.indexOf(c.t) !== -1 && (c.t === 'mateMissed' || gap >= 100
+    /* (a chance missed by a point or two is no miss: "Ne2 misses Be3" at
+       86% against 87%) */
+    var missedSmall = XP_MISSED.indexOf(c.t) !== -1 && c.t !== 'mateMissed' && drop <= SOLVE_TOL;
+    var concrete = !missedSmall && XP_TACTIC.indexOf(c.t) !== -1 && (c.t === 'mateMissed' || gap >= 100
       || (!mateBoth && ((c.mateAgainst && !c.alreadyLost) || (decided && c.lossG >= 3))));
     /* a move that keeps a clear edge with no tactic against it passes on
        the card too ("That works too", the safe-win rule): a small drop reads
@@ -408,6 +457,18 @@ function xpVerdict(a, ex, at) {
          card face would say it (xpClaim), the classifier's own counts gone */
       var cl = xpClaim(P.st, [X].concat(R), cpX), who = voice === 'you' ? 'You lose ' : sideName(s) + ' loses ';
       var bare = xpBare(String(c.sentences.short || c.sentences.game).replace(/ \(\d+% to \d+%\)/g, ''), c, cl);
+      /* B4: the classifier's sentence only where it holds as said: a piece
+         it names taken (a bad trade, a piece put where it is taken) borne
+         out by the count; a missed piece no smaller than the swing it costs
+         by more than 2 pawns (else "gxf3 misses Nxc7+."); a fork their first
+         reply makes, a pin or skewer within their first two moves */
+      var nl = bare ? xpNamedLoss(bare, c) : 0, f0 = c.allowed && c.allowed.fork, p0 = c.allowed && (c.allowed.skewer || c.allowed.pin);
+      if (nl && !(cl && -cl.n >= nl - 1.5)) bare = null;
+      if (bare && c.t === 'forkAllowed' && f0 && f0.ply > 1) bare = null;
+      if (bare && c.t === 'pinAllowed' && p0 && p0.ply > 2) bare = null;
+      var mm = bare && c.t === 'missedMaterial' ? / misses (?:\w+'s undefended (\w+)|\S+, which takes the (\w+))/.exec(bare) : null;
+      if (mm && gap / 100 > XP_VAL[mm[1] || mm[2]] + 2) bare = C.mv.san + ' misses ' + B + '.';
+      if (!bare && !cl && XP_MISSED.indexOf(c.t) !== -1 && c.t !== 'mateMissed' && c.sentences.best) bare = C.mv.san + ' misses ' + B + '.';
       var loss = cl && cl.n <= -1 && !(bare && xpSaysTaken(bare, cl.w)) ? who + cl.w + '.' : '';
       var reason = bare ? bare + (loss ? ' ' + loss : '') : cl && cl.n <= -1 ? C.mv.san + ' loses ' + cl.w + '.' : '';
       var big = XP_MISSED.indexOf(c.t) === -1 && c.t !== 'mateAllowed' && cl && cl.n <= -1 ? xpBigLoss(c) : null;
@@ -415,9 +476,18 @@ function xpVerdict(a, ex, at) {
       var cmp;
       if (XP_MISSED.indexOf(c.t) !== -1 && c.sentences.best) {
         cmp = xpBestSaid(c.sentences.best, B, xpClaim(P.st, best.pv, cpBest));
-        if (cmp.indexOf(B + ' ') === 0 && reason.indexOf(B) !== -1) cmp = 'It ' + cmp.slice(B.length + 1);
+        /* B8: "B sets up X" names X only where X is a move of B's side once
+           B and its line are played (never one the explored move makes
+           impossible: 184234373418:63's Qd5+), and keeps B as its subject:
+           "It" there would read as the explored move */
+        var su = /^\S+ sets up (\S+?), which forks the (\w+) and (\w+)\.$/.exec(cmp) || /^\S+ sets up (\S+?), which/.exec(cmp);
+        if (su && !setsUpOk(P.st, su[1], best.pv, su[2] ? [su[2], su[3]] : null)) cmp = 'Best was ' + B + '.';
+        else if (cmp.indexOf(B + ' ') === 0 && reason.indexOf(B) !== -1 && !su) cmp = 'It ' + cmp.slice(B.length + 1);
       } else {
         var stop = stopsWhat(c, P.st);
+        /* (V2.1: "defends" only by the moved piece) */
+        var dfs = stop ? /^(\S+) defends the (\w+) on ([a-h][1-8])\.$/.exec(stop) : null;
+        if (dfs) { var bm0 = uciToMove(P.st, best.pv[0]), ax = cloneState(P.st); applyMove(ax, bm0); if (attacksFrom(ax.b, bm0.to).indexOf(sqIndex(dfs[3])) < 0) stop = ''; }
         if (stop && voice === 'them') stop = themVoice(stop, sideName(s), sideName(!s));
         cmp = stop && xpThreatBefore(P, R[0]) ? stop : (B + (wBest < 45 ? ' loses less.' : ' keeps more.'));
       }
@@ -533,16 +603,19 @@ function xpRowWords(a, n, line, best) {
   if (isBest) {
     if (cl) return (cl.n > 0 ? 'wins ' : 'gives up ') + cl.w;
   } else {
-    var g = c.gameLine, r1 = g && g.nodes[1], rSan = r1 && r1.move ? sanOf(r1.before, r1.move) : '';
-    /* (tier 1 names no move: V2.5) */
-    if (c.t === 'forkAllowed' && c.allowed.fork) { var fm = g.nodes[c.allowed.fork.ply]; return t1 ? 'allows a fork' : 'allows a fork: ' + sanOf(fm.before, fm.move); }
-    if (c.t === 'pinAllowed') return 'walks into a pin';
+    var g = c.gameLine, r1 = g && g.nodes[1], rSan = r1 && r1.move ? sanOf(r1.before, r1.move) : '', pn = c.allowed.skewer || c.allowed.pin;
+    /* (tier 1 names no move: V2.5). B4: a fork only as their first reply, a
+       pin or skewer within their first two moves, a stronger move missed
+       only where it is 10 points stronger (a row a deeper search may rank
+       first is no miss) */
+    if (c.t === 'forkAllowed' && c.allowed.fork && c.allowed.fork.ply === 1) { var fm = g.nodes[c.allowed.fork.ply]; return t1 ? 'allows a fork' : 'allows a fork: ' + sanOf(fm.before, fm.move); }
+    if (c.t === 'pinAllowed' && pn && pn.ply <= 2) return 'walks into a pin';
     if (c.t === 'discoveredAllowed') return 'allows a hidden attack';
     if (c.t === 'mateAllowed') return 'allows mate in ' + (c.mateAgainst || 2);
     /* only when what the line loses, counted where it settles, is that piece */
     if (['threat', 'hung', 'badTrade', 'material'].indexOf(c.t) !== -1 && r1 && r1.captured && cl && cl.n <= -1 && cl.w === 'the ' + PIECE_WORD[pType(r1.captured)])
       return t1 ? 'loses ' + cl.w : 'loses ' + cl.w + ' to ' + rSan;
-    if (XP_MISSED.indexOf(c.t) !== -1) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return t1 ? 'misses a stronger move' : 'misses ' + bs; }
+    if (XP_MISSED.indexOf(c.t) !== -1 && winPct(cpB) - winPct(cpL) >= 10) { var bs = sanOf(n.st, uciToMove(n.st, best.pv[0])); return t1 ? 'misses a stronger move' : 'misses ' + bs; }
   }
   return CARD_COPY.X3(a, winPct(myPov(a.it) ? line.cp : -line.cp));
 }

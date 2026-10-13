@@ -313,6 +313,14 @@ function classifyMistake(pre, played, best, after, wb, wa, ply, voice) {
     perpetualAgainst: perpetualAgainst, loosened: loosened, kingMoved: kingMoved, sameCapture: !!sameCapture,
     lowerTake: lowerTake, ply: ply || 0, alreadyLost: !!alreadyLost
   };
+  /* B5: with the card's key, "ignores their threat" only for a threat its
+     search kept (after.th: the key's threats); a reply that only became a
+     threat, or none at all, is said by what it costs (noThreat) */
+  var thKept = after && after.th;
+  if (t === 'threat' && thKept && r1 && r1.move) {
+    var u1 = moveUci(r1.move).slice(0, 4);
+    res.noThreat = !thKept.some(function (x) { return !x[1] && String(x[0]).slice(0, 4) === u1; });
+  }
   res.sentences = explainMistake(res, pre, wb, wa);
   res.sentences.short = shortSentence(res.sentences.game);
   /* exploring: the move being judged may be the opponent's, so "your" names
@@ -334,6 +342,25 @@ function threatExisted(pre, line) {
   probe.w = !probe.w; probe.ep = -1;
   var m = uciToMove(probe, sqWord(r.move.from) + sqWord(r.move.to) + (r.move.promo ? r.move.promo.toLowerCase() : ''));
   return !!m && (isHangingAt(pre.b, sq) || takenByLower(pre.b, sq));
+}
+/* B4: the fork the game line plays at ply `ply` (their move) stood before
+   my move: on the position before it with them to move (no en passant),
+   the line's moves up to it are legal there and its last one hits pieces
+   of the kinds named (types, piece letters; a knight or more, or the king,
+   as a fork counts them). "Allows" is then no word for it */
+function forkStood(pre, g, ply, types) {
+  if (!g || !types || !types.length || !g.nodes[ply] || !g.nodes[ply].move) return false;
+  var x = cloneState(pre);
+  x.w = !x.w; x.ep = -1;
+  for (var i = 1; i <= ply; i++) {
+    var n = g.nodes[i], m = n && n.move ? uciToMove(x, moveUci(n.move)) : null;
+    if (!m) return false;
+    applyMove(x, m);
+  }
+  var to = g.nodes[ply].move.to, mover = x.b[to];
+  if (!mover) return false;
+  var hit = attacksFrom(x.b, to).filter(function (q) { return x.b[q] && colorW(x.b[q]) !== colorW(mover) && pType(x.b[q]) !== 'P'; }).map(function (q) { return pType(x.b[q]); });
+  return types.every(function (t) { var j = hit.indexOf(t); if (j < 0) return false; hit.splice(j, 1); return true; });
 }
 /* the refutation opens by capturing something my move left undefended */
 function firstReplyTakesLoose(line) {
@@ -441,6 +468,21 @@ function explainMistake(c, pre, wb, wa) {
   var lost = captureWord(g || { nodes: [] }, at, 0) || materialWord(c.lossG != null ? -c.lossG : c.matGame);
   var won = bl ? (captureWord(bl, c.bSettle) || materialWord(c.matBest)) : '';
   var gameS, bestS, does;
+  /* where the game left it, with the reply that does it (the drift
+     pattern's words, and no count of its own): a tactic or a threat that
+     stood before the move is said this way (B4: "allows" only for what the
+     move made possible; B5: "ignores their threat" only for one the key's
+     search kept) */
+  var driftS = function () {
+    var r1n = g && g.nodes[1];
+    var forcing = r1n && (r1n.captured || checkersOf(r1n.after).length) && !(r1n.captured && n0 && n0.captured && r1n.move.to === n0.move.to);
+    var head = wb < 40 ? ' makes a difficult position worse'
+      : (wa < 45 ? ' lets ' + them + ' take over' : (wa < 55 ? ' lets the game slip back to level' : ' gives back much of your advantage'));
+    /* a reply that only takes the piece that just moved is not "strong":
+       the damage comes after it */
+    var takesBack = r1n && r1n.captured && n0 && r1n.move.to === n0.move.to;
+    return played + head + (forcing ? (takesBack ? ' after ' + reply : ': ' + reply + ' is strong') : '') + ' (' + Math.round(wb) + '% to ' + Math.round(wa) + '%).';
+  };
   switch (c.t) {
     case 'mateAllowed':
       gameS = played + ' allows mate in ' + c.mateAgainst + (reply ? ', starting with ' + reply : '') + '.';
@@ -464,6 +506,9 @@ function explainMistake(c, pre, wb, wa) {
       var targets = f.targets.map(function (s) { return PIECE_WORD[pType(fm.after.b[s])]; }).slice(0, 2);
       var forkSan = sanOf(fm.before, fm.move);
       var tw = targets.length === 2 && targets[0] === targets[1] ? 'both your ' + targets[0] + 's' : 'your ' + targets.join(' and ');
+      /* B4: the same fork stood before the move (the same moves on the board
+         before it, them to move, hit the same pieces): it allowed nothing */
+      if (forkStood(pre, g, f.ply, f.targets.slice(0, 2).map(function (s) { return pType(fm.after.b[s]); }))) { gameS = driftS(); break; }
       /* a fork that also takes a big piece says so */
       var grab = fm.captured && MOTIF_VAL[pType(fm.captured)] >= 5 ? ', which takes your ' + PIECE_WORD[pType(fm.captured)] + ' and forks ' + tw : null;
       gameS = f.ply <= 1
@@ -501,6 +546,7 @@ function explainMistake(c, pre, wb, wa) {
       gameS = played + ' lets ' + them + '\'s pawn run through to promote.';
       break;
     case 'threat': {
+      if (c.noThreat) { gameS = driftS(); break; }
       var took = r1 && r1.captured ? 'your ' + PIECE_WORD[pType(r1.captured)] : (lost || 'material');
       gameS = played + ' ignores ' + them + '\'s threat: ' + (reply || 'the reply') + ' takes ' + took + '.'
         + (lost && c.matGame <= -1 && r1 && r1.captured && lost !== 'the ' + PIECE_WORD[pType(r1.captured)] ? ' You lose ' + lost + '.' : '');
@@ -523,6 +569,9 @@ function explainMistake(c, pre, wb, wa) {
          anyway, is told as the capture */
       var epCap = bm && bm.captured && bm.move.ep >= 0;
       var loose = what && !epCap && (!bm || !bm.captured || isHangingAt(bm.before.b, bm.move.to));
+      /* B4: the piece named only where it is most of what the move misses
+         (the two lines' material 2 pawns or less beyond it); else the move */
+      if (what && bestSan && (c.matBest || 0) - (c.matGame || 0) > MOTIF_VAL[what.piece] + 2) { gameS = played + ' misses ' + bestSan + '.'; break; }
       gameS = !what ? played + ' misses a chance to win material.'
         : loose ? played + ' misses ' + them + '\'s undefended ' + PIECE_WORD[what.piece] + ' on ' + sqWord(what.sq) + '.'
         : played + ' misses ' + bestSan + ', which takes the ' + PIECE_WORD[what.piece] + (epCap ? ' en passant' : '') + '.';
@@ -540,16 +589,8 @@ function explainMistake(c, pre, wb, wa) {
     case 'openingSlip':
     case 'endgame':
     case 'drift':
-    default: {
-      var r1n = g && g.nodes[1];
-      var forcing = r1n && (r1n.captured || checkersOf(r1n.after).length) && !(r1n.captured && n0 && n0.captured && r1n.move.to === n0.move.to);
-      var head = wb < 40 ? ' makes a difficult position worse'
-        : (wa < 45 ? ' lets ' + them + ' take over' : (wa < 55 ? ' lets the game slip back to level' : ' gives back much of your advantage'));
-      /* a reply that only takes the piece that just moved is not "strong":
-         the damage comes after it */
-      var takesBack = r1n && r1n.captured && n0 && r1n.move.to === n0.move.to;
-      gameS = played + head + (forcing ? (takesBack ? ' after ' + reply : ': ' + reply + ' is strong') : '') + ' (' + Math.round(wb) + '% to ' + Math.round(wa) + '%).';
-    }
+    default:
+      gameS = driftS();
   }
   var bestPiece = bl && bl.nodes[1] ? pType(bl.nodes[1].before.b[bl.nodes[1].move.from]) : null;
   var stop = (c.lossG >= 1 || c.mateAgainst) ? stopsWhat(c, pre) : '';

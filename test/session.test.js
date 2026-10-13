@@ -1391,7 +1391,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(r.one), JSON.stringify({ castle: 'castling on the king\'s side', long: 'castling on the queen\'s side', only: 'castling', takes: 'rook takes on a8', ep: 'pawn takes on d6', promo: 'pawn to a8 to make a queen',
       twin: 'rook from a8 to d8', lone: 'rook to d8', pawns: 'pawn from c4 takes on d5', units: '6 true' }), 'moves in words');
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
-    ok(r.n.t2 > 40 && r.n.hint > 10 && r.n.m3 > 20 && r.n.v1 > 50 && r.n.r4 > 40 && r.n.cap > 250, JSON.stringify(r.n));
+    /* (release 2, B6: the game move again names pieces more often than moves: "Then their knight attacks your queen.") */
+    ok(r.n.t2 > 40 && r.n.hint > 10 && r.n.m3 > 10 && r.n.v1 > 50 && r.n.r4 > 40 && r.n.cap > 250, JSON.stringify(r.n));
   });
 
   await test('S1 to S8, S10, S11 and the answered frame fit 26 / 40 / 60 characters and 15 words at every tier, the board\'s label included, in plain words', () => {
@@ -1419,7 +1420,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       var st = stateFromFen('4k3/8/8/3q4/8/8/8/3QK3 w - - 0 1'), line = buildLine(st, 'd1d4', ['d5d4', 'e1e2'], false);
       a.st = st;
       try { return plainCapture({ nodes: [] }, 1, 0) + ' / ' + missWhy(a, { lossG: 9, lossAt: 1, gameLine: line }, 1, null, false, null, { pv: ['d1d4', 'd5d4', 'e1e2'], wBest: 50 }).cands.join(' / ') + ' / ' + lostWords(a, ['B', 'Q', 'R']); } finally { captureWord = cw; a.st = keep; } })()`),
-    "null / Their queen takes your queen. / \u2655\u2656\u2657", 'three kinds of piece: the reply named, the loss in pieces');
+    "null / Qxd4 takes your queen. / Their queen takes your queen. / \u2655\u2656\u2657", 'three kinds of piece: the reply named (in SAN first at tier 2, release 2 B6), the loss in pieces');
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       /* the band's caps: row 1 26 characters, row 2 40 and 7
          words, a caption 60 and 8; the chip one short label */
@@ -1493,8 +1494,12 @@ const SIM = `function simRun(seed, days, plan, noRule) {
          words ("the exchange" is spelled out as the rook and what it went for) */
       var plain = function (what, s) { if (/exchange/.test(s)) out.push(what + ' says ' + s); };
       /* F1.2: their one reply named (tier 3 its SAN), a trade in the board's pieces, a danger left standing
-         ("Qxc4, and your queen is still attacked."), where the game stands now, tier 1's plain words */
-      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|After \\S+, you'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|Their (?:pawn|knight|bishop|rook|queen|king) takes your (?:pawn|knight|bishop|rook|queen)\\.|\\S+ takes your (?:pawn|knight|bishop|rook|queen)\\.|Most of your advantage is gone\\.|You are still better, but less so\\.|After \\S+, (the game is even|(White|Black) is (better|winning))\\.|Now (the game is even|(White|Black) is (better|winning))\\.|(\\S+, and y|Y)our (?:pawn|knight|bishop|rook|queen) is still attacked\\.|That helps (White|Black)\\.|There's a stronger move here\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) takes your (?:pawn|knight|bishop|rook|queen)\\.|Then \\S+ forces mate\\.|Then they can force checkmate\\.|Then \\S+: their pawn becomes a (?:queen|rook|bishop|knight)\\.|Their pawn will become a (?:queen|rook|bishop|knight)\\.|After \\S+ \\S+, \\S+ (?:forks|is mate)\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) forks (?:both (?:pawn|knight|bishop|rook|queen|king)s|(?:pawn|knight|bishop|rook|queen|king) and (?:pawn|knight|bishop|rook|queen|king))\\.|Safe, but (?:then .+|their pawn will become a (?:queen|rook|bishop|knight)\\.|only \\d+% for you\\.|(?:the game is even|(?:White|Black) is (?:better|winning)) now\\.|there's a stronger move\\.)|After \\S+, you are still better\\.)$/;
+         ("Qxc4, and your queen is still attacked."), where the game stands now, tier 1's plain words;
+         release 2 (B6): what follows a take-back ("After the trade, Qxc3+ forks.", "Nothing lost, but
+         there's a better move."), a take-back that fails ("Bxc3+, and bxc3 Qxc3+ forks.", "If you take
+         back, ...", "Taking back loses your knight."), two captures, what their reply attacks or
+         threatens, and tier 1's "Now White is ahead." */
+      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|After \\S+, you'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|Their (?:pawn|knight|bishop|rook|queen|king) takes your (?:pawn|knight|bishop|rook|queen)\\.|\\S+ takes your (?:pawn|knight|bishop|rook|queen)\\.|Most of your advantage is gone\\.|You are still better, but less so\\.|After \\S+, (the game is even|(White|Black) is (better|winning))\\.|Now (the game is even|(White|Black) is (better|winning))\\.|(\\S+, and y|Y)our (?:pawn|knight|bishop|rook|queen) is still attacked\\.|That helps (White|Black)\\.|There's a stronger move here\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) takes your (?:pawn|knight|bishop|rook|queen)\\.|Then \\S+ forces mate\\.|Then they can force checkmate\\.|Then \\S+: their pawn becomes a (?:queen|rook|bishop|knight)\\.|Their pawn will become a (?:queen|rook|bishop|knight)\\.|After \\S+ \\S+, \\S+ (?:forks|is mate)\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) forks (?:both (?:pawn|knight|bishop|rook|queen|king)s|(?:pawn|knight|bishop|rook|queen|king) and (?:pawn|knight|bishop|rook|queen|king))\\.|Safe, but (?:then .+|their pawn will become a (?:queen|rook|bishop|knight)\\.|only \\d+% for you\\.|(?:the game is even|(?:White|Black) is (?:better|winning)) now\\.|there's a stronger move\\.)|After \\S+, you are still better\\.|You are still ahead, but less so\\.|Now (White|Black) is ahead\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) attacks your (?:pawn|knight|bishop|rook|queen)\\.|Then (?:\\S+ threatens mate|they threaten mate)\\.|After the trade, (?:\\S+ takes your (?:pawn|knight|bishop|rook|queen)|you lose your (?:pawn|knight|bishop|rook|queen)|(?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) forks|they can checkmate|\\S+ is mate)\\.|Nothing lost, but there's a better move\\.|(?:Their (?:pawn|knight|bishop|rook|queen|king)|\\S+) takes your (?:pawn|knight|bishop|rook|queen) and (?:pawn|knight|bishop|rook|queen)\\.|\\S+ is checkmate\\.|\\S+, and \\S+ (?:loses .+|allows (?:\\S+ )?mate|\\S+ forks)\\.|If you take back, (?:you lose .+|they can checkmate|their (?:pawn|knight|bishop|rook|queen|king) forks)\\.|Taking back (?:loses .+|allows (?:checkmate|mate|a fork))\\.)$/;
       /* "You'd lose material." only when no form before it fits beside row
          1 and the widest bar this miss shows: as the ladder's one word for a
          trade ("a rook for a knight" is never said as its net), or as the
@@ -2011,8 +2016,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         var sents = cap.match(/[^.]+\\./g) || [cap];
         var head = sents[0];
         /* a move is named without its check sign on every rung (the check form says it in words), but
-           V2.2's fork, which says no check otherwise ("Qxc3+ forks your king and rook.") */
-        if (/[+#]/.test(cap.replace(/^(\\S+)[+#] forks /, '$1 forks '))) fail('a check or mate sign');
+           V2.2's fork, which says no check otherwise ("Qxc3+ forks your king and rook."), and the game
+           move's own step (release 2, B8: "Qg6+, your game move.") */
+        if (/[+#]/.test(cap.replace(/^(\\S+)[+#] forks /, '$1 forks ').replace(/^(\\S+)[+#](, your game move)?\\./, '$1$2.'))) fail('a check or mate sign');
         /* the story's end says what the better move saves (F1.4): tier 3's only-move line where it is
            true, "Better: Qe6 saves your queen." on B1, else "Your queen is safe." after the ply (below) */
         var lastStep = !game && i === S.steps.length - 1, m0;
@@ -2022,7 +2028,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           if (m0[1] !== bare(san) || !lastStep || S.alt || cmp.saves.indexOf(PW[m0[2]]) < 0) fail('saves what the better move does not save');
           return;
         }
-        if (game && s.k === 0) { if (head !== bare(gameSan(a)) + '.' && cap !== bare(gameSan(a)) + ', your game move.') fail('does not start with the game move ' + gameSan(a)); }
+        if (game && s.k === 0) { if (head !== bare(gameSan(a)) + '.' && head !== gameSan(a) + '.' && cap !== bare(gameSan(a)) + ', your game move.' && cap !== gameSan(a) + ', your game move.') fail('does not start with the game move ' + gameSan(a)); }
         else if (firstB) {
           if (head !== 'Better: ' + bare(san) + '.' && cap !== 'Your ' + bare(san) + ' works too.') fail('does not name the better move ' + san);
           /* "yours" only for your own move's line, never the engine's best */
@@ -2052,7 +2058,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           } else if (j === 0 && (m = /^(\\S+) could take your (\\w+)( with check)?\\.$/.exec(x))) { form = 'could take'; ok = couldStep && blow && !!nd.captured && isW(nd.captured) === pov && pType(nd.captured) === PW[m[2]] && (!m[3] || checkersOf(nd.after).length > 0); }
           else if (j === 0 && /^\\S+ could give check\\.$/.test(x)) { form = 'could check'; ok = couldStep && blow && !nd.captured && checkersOf(nd.after).length > 0 && !isMate(nd.after); }
           else if (j === 0 && /^\\S+ would be checkmate\\.$/.test(x)) { form = 'could mate'; ok = couldStep && isMate(nd.after); }
-          else if (j === 0 && (m = /^They could play (\\S+)\\.$/.exec(x))) { form = 'could play'; ok = couldStep && blow && m[1] === bare(san) && !nd.captured && !checkersOf(nd.after).length; }
+          /* (release 2, B4: a capture is played, never "could take", where its line wins more: Kxa3 starts a mate) */
+          /* (and, C5 (c), where the two moves' scores differ by more than 2 pawns beyond it: swingOf) */
+          else if (j === 0 && (m = /^They could play (\\S+)\\.$/.exec(x))) { var big = !!nd.captured && (c.lossG >= MOTIF_VAL[pType(nd.captured)] + 2 || swingOf(a.it.b) > MOTIF_VAL[pType(nd.captured)] + 2); form = 'could play'; ok = couldStep && blow && m[1] === bare(san) && (!nd.captured || big) && (!checkersOf(nd.after).length || big); }
           else if (j === 0 && /^\\S+, check\\.$/.test(x)) { form = 'check'; ok = checkersOf(nd.after).length > 0 && !isMate(nd.after); }
           /* V2.2: a fork the ply makes, its targets the other side's pieces it attacks from where it lands */
           else if (j === 0 && (m = /^(\\S+?)[+#]? forks (?:(your|their) (\\w+) and (\\w+)|both (your|their) (\\w+)s)\\.$/.exec(x))) {
@@ -3410,7 +3418,11 @@ const SIM = `function simRun(seed, days, plan, noRule) {
 
   /* ── slice 5: Today and the way back ── */
   await test('F5.1: Today shows card 1 as it opens, beside its caption, Start and the week; the board is the card\'s own opening frame (the red arrow, never the First look\'s hint nor the answer), a tap on it starts; while the games are read a still square waits in its place', () => {
-    const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
+    /* (card 1 with its key: release 2's B5 draws the First look's danger ring only where the key's search
+       confirmed the capture) */
+    const d1 = JSON.parse(FIX), K1 = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'facts-fixture.json'), 'utf8')).cards['184455333378:68'];
+    d1.games.forEach((g) => (g.bl || []).forEach((b) => { if (g.id + ':' + b.p === '184455333378:68') b.k = K1; }));
+    const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1', 'nl:games:cc:tester': JSON.stringify(d1) }) });
     const r = JSON.parse(A.ev(`(function () {
       var norm = function (s) { return String(s).replace(/(checkglow|ah)b\\d+/g, '$1B'); }, out = {};
       [1, 2].forEach(function (tier) {

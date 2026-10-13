@@ -10,6 +10,15 @@ const FIX = fs.readFileSync(path.join(__dirname, 'data', 'fixture-games.json'), 
 const T0 = Date.UTC(2026, 8, 28, 14, 0, 0);
 const base = () => ({ 'nl:user': JSON.stringify('tester'), 'nl:src': JSON.stringify('chesscom'), 'nl:games:cc:tester': FIX });
 const boot = (o) => { const A = makeApp(Object.assign({ now: T0, storage: base() }, o || {})); A.ev(ENGINE); return A; };
+/* the fixture with the fact sheets (test/data/facts-fixture.json) of the cards named on its records,
+   as a returning player's stored keys: release 2's B5 draws a danger ring only where a search
+   confirmed the capture (the key's threats), so a test of the rings boots with the card's key */
+const FACTS = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'facts-fixture.json'), 'utf8'));
+const keyedBase = (keys) => {
+  const d = JSON.parse(FIX);
+  d.games.forEach((g) => (g.bl || []).forEach((b) => { const k = g.id + ':' + b.p; if (FACTS.cards[k] && (!keys || keys.indexOf(k) >= 0)) b.k = FACTS.cards[k]; }));
+  return Object.assign(base(), { 'nl:games:cc:tester': JSON.stringify(d) });
+};
 const tick = () => new Promise((r) => setImmediate(r));
 /* the fake clock: move the realm's time on, then run what its timers queued */
 const later = (A, ms, rounds) => { A.setNow(A.getNow() + ms); A.flush(rounds || 1); };
@@ -39,17 +48,21 @@ function ok(c, what) { if (!c) throw new Error(what || 'condition failed'); }
    hold the try's answer (window.__holdTry: it waits in window.__evals like
    an explore search). The danger facts' null-move
    search (11d-danger.js, opts.dz) is answered at once, with window.__dz when
-   a test sets it, else with no threat, and kept in window.__dzJobs */
+   a test sets it, else with no threat, and kept in window.__dzJobs; so is a
+   wrong try's take-back search (B6 c, opts.back: window.__back, else no
+   line, kept in window.__backJobs) */
 const ENGINE = `(function () {
   window.__evals = [];
   window.__stops = [];
   window.__dzJobs = [];
+  window.__backJobs = [];
   var realStop = engineStop;
   engineStop = function (tag) { window.__stops.push(tag); return realStop.apply(this, arguments); };
   engineEval = function (fen, mt, prio, opts) {
     opts = opts || {};
     var job = { fen: fen, nodes: mt && mt.nodes, opts: opts, prio: prio };
     if (opts.dz) { window.__dzJobs.push(job); return Promise.resolve(window.__dz || { cp: 0, mate: null, pv: [], lines: [], depth: 18, stopped: false }); }
+    if (opts.back) { window.__backJobs.push(job); return Promise.resolve(window.__back || { cp: 0, mate: null, pv: [], lines: [], depth: 18, stopped: false }); }
     window.__evals.push(job);
     var a = ui.session && ui.session.active, sm = opts.searchmoves;
     if (!a || !sm) return new Promise(function (res, rej) { job.res = res; job.rej = rej; });
@@ -1199,7 +1212,8 @@ const BAR = `(function () {
           if (/\\bis lost\\b|get trapped|\\bwins\\b/.test(game) && !w) out.push(at + ': a loss said another way, with no claim: ' + game);
           /* and a claim the card makes is said, or named as the one piece taken */
           var one = /^the (\\w+)$/.exec(w);
-          if (w && !said && !(one && new RegExp('your ' + one[1] + '\\\\b').test(game))) out.push(at + ': the card claims ' + w + ', Details does not: ' + game);
+          /* (release 2, B8: tier 1's Details never say "material", so that claim goes there) */
+          if (w && !said && !(one && new RegExp('your ' + one[1] + '\\\\b').test(game)) && !(tier === 1 && /material/.test(w))) out.push(at + ': the card claims ' + w + ', Details does not: ' + game);
           /* the better move: its gain as B1 says it, the square a capture of that piece of theirs */
           var gw = c.matBest >= 1 && c.bestLine ? plainCapture(c.bestLine, c.bSettle) || oneWord(null, c.matBest) : '';
           if ((m = /\\bwins (.+?)(?: on ([a-h][1-8]))?\\.$/.exec(best))) {
@@ -1876,14 +1890,27 @@ const BAR = `(function () {
     eq(f.row1 + ' / ' + f.row2, 'Not this one / Nothing lost, but there\'s a better move.', 'said honestly');
     /* and through the page's own path (checkMove): a mid-line move the
        close rule would pass outside a line (6 points under the card's best,
-       8 under the line's next move, never a safe win) is a miss */
-    const lineCards = JSON.parse(A.ev(`(function () { ${OPEN}
+       8 under the line's next move, never a safe win) is a miss, under 70%
+       (release 2, B3: a step inside the line within 10 points of the line's
+       move at the re-check's depth, both at 70% or more, is a good move, and
+       the line goes on) */
+    const lineAll = JSON.parse(A.ev(`(function () { ${OPEN}
       playerTier = function () { return 2; };
       return JSON.stringify(allMistakes().filter(trainable).filter(function (it) {
         var a = openCard(it), b = it.b, w = winPct(b.eb) - 6;
         return a && a.sol && a.sol.length >= 3 && !(b.mb != null && b.mb > 0) && (w < 70 || w < b.wa + 15 || familyOf(patternOf(b)).key === 'chances');
-      }).map(function (it) { return it.key; })); })()`));
+      }).map(function (it) { return [it.key, winPct(it.b.eb) - 6 >= 70]; })); })()`));
+    const lineCards = lineAll.filter((x) => !x[1]).map((x) => x[0]);
     ok(lineCards.length >= 3, 'forcing cards ' + lineCards.length);
+    for (const [key] of lineAll.filter((x) => x[1])) {
+      A.ev(`(function () { ${OPEN} var a = openCard(model().byKey['${key}']), b = a.it.b;
+        var mine = uciToMove(a.st, a.sol[0]); applyMove(a.st, mine); var rp = uciToMove(a.st, a.sol[1]); applyMove(a.st, rp); a.solIdx = 2;
+        var off = legalMoves(a.st).filter(function (m) { var after = cloneState(a.st); applyMove(after, m); return moveUci(m) !== a.sol[2] && !(checkedKingSq(after) != null && !legalMoves(after).length); })[0];
+        window.__tryCp = cpFromWin(winPct(b.eb) - 6); window.__bestCp = cpFromWin(winPct(b.eb) + 2);
+        window.readyEngine(); gradeMove(off); return 1; })()`);
+      await tick(); await tick();
+      eq(A.ev('(function (a) { return a.phase + " " + (a.tried && a.tried.kind) + " " + a.misses + " " + displayFor(a).row1; })(ui.session.active)'), 'tried close 0 Good move', key + ': mid-line, near and winning at depth (B3)');
+    }
     let honest = 0;
     for (const key of lineCards) {
       A.ev(`(function () { ${OPEN} window.__srs0 = JSON.stringify(srsLoad()); var a = openCard(model().byKey['${key}']), b = a.it.b;
@@ -1898,7 +1925,7 @@ const BAR = `(function () {
       ok(!/^After /.test(row2), key + ': a mid-line try that loses nothing never gets the standing words: ' + row2);
       if (row2 === 'Nothing lost, but there\'s a better move.') honest++;
     }
-    ok(honest >= 5, 'mid-line tries that say they lost nothing ' + honest);
+    ok(honest >= Math.min(5, lineCards.length - 1), 'mid-line tries that say they lost nothing ' + honest + ' of ' + lineCards.length);
     A.ev('(window.__tryCp = window.__bestCp = null, 1)');
   });
 
@@ -4503,7 +4530,8 @@ const BAR = `(function () {
     /* See why opens on the danger frame (F1.5): their last move made the attacks */
     eq(r.danger, 'After fxg6: queen attacked twice, bishop once.', 'the danger frame before the game\'s moves');
     ok(r.real && !r.could, 'the game\'s own moves, nothing they could have played');
-    ok(r.cs && r.ccap === 'Kxa3 could take your pawn. They missed it.', 'the could step: ' + r.ccap);
+    /* (release 2, B4: never the pawn it takes where its line wins more: Kxa3 starts a mate in 7) */
+    ok(r.cs && r.ccap === 'They could play Kxa3. They missed it.', 'the could step: ' + r.ccap);
     ok(r.cl.indexOf('They could have taken your pawn on a3.') >= 0 && r.cl.indexOf(' was taken on ') < 0, 'the could step\'s board: ' + r.cl);
     /* a forcing line played through (184215516284:63: Nxc2 Bxc2 Bxf4): its settled board reads what each side took */
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
@@ -4807,7 +4835,8 @@ const BAR = `(function () {
 
   await test('the story\'s beats: the words fade out, a segment crossfades to its start with its arrow, the ply slides 320 ms with its sound, what it brings lands with it, the caption 150 ms later; back is a crossfade', () => {
     for (const reduced of [false, true]) {
-      const A = boot();
+      /* (the cards keyed: a danger frame's rings are the ones the key's search confirmed, B5) */
+      const A = boot({ storage: keyedBase() });
       A.ev(DOM);
       A.ev('(playerTier = function () { return 2; }, 1)');
       A.ev(BAR);
@@ -5093,7 +5122,7 @@ const BAR = `(function () {
           if (cap && kept && c.lossAt !== 1) n.kept++;
           if (cap && stood && !kept && c.lossAt !== 1) n.stood = (n.stood || 0) + 1;
           if (!r1 || !r1.captured || (c.lossAt !== 1 && !(cap && (kept || stood)))) out.push(what + ': "' + first + '" where their one reply does not take it');
-          else if (cap && (PIECE_WORD[pType(r1.captured)] !== cap[3] || (cap[1] ? PIECE_WORD[r1.piece] !== cap[1] : cap[2] !== capSan(r1.before, r1.move)))) out.push(what + ': "' + first + '" is not their reply ' + sanOf(r1.before, r1.move));
+          else if (cap && (PIECE_WORD[pType(r1.captured)] !== cap[3] || (cap[1] ? PIECE_WORD[r1.piece] !== cap[1] : cap[2].replace(/[+#]$/, '') !== capSan(r1.before, r1.move).replace(/[+#]$/, '')))) out.push(what + ': "' + first + '" is not their reply ' + sanOf(r1.before, r1.move));
         } else if (/^After \\S+, you'd lose /.test(first)) {
           n.after++;
           if (first.indexOf('After ' + sanOf(after, uciToMove(after, t.reply)) + ',') !== 0) out.push(what + ': "' + first + '" names another reply than ' + t.reply);
@@ -5731,8 +5760,11 @@ const BAR = `(function () {
       delete it.b.dz;
       /* their best move if it were their turn: gxf5, and the line settles */
       var l = function (pv, cp) { return { cp: cp, mate: null, pv: pv }; };
+      /* (release 2, B5: a piece is in danger only where the search's lines confirm the capture:
+         cxd3+, within 5 points of gxf5, wins the bishop and then the queen for a rook, as card 1's
+         key finds at 1,000,000 nodes) */
       window.__dz = { cp: -800, mate: null, pv: ['g6f5', 'e4f5', 'b4c5', 'd1h1'], depth: 18, stopped: false,
-        lines: [l(['g6f5', 'e4f5', 'b4c5', 'd1h1'], -800), l(['f8f5', 'e4f5', 'b4c5', 'd1h1'], -780), l(['c4d3', 'c2d3', 'b4c5', 'd1h1'], -500)] };
+        lines: [l(['g6f5', 'e4f5', 'b4c5', 'd1h1'], -800), l(['c4d3', 'c2d3', 'f8f5', 'e4f5'], -795), l(['f8f5', 'e4f5', 'b4c5', 'd1h1'], -780)] };
       window.__p = ensureDanger(it, true);
       return JSON.stringify({ jobs: window.__dzJobs.map(function (j) { return { fen: j.fen, nodes: j.nodes, mpv: j.opts.multipv, tag: j.opts.tag, prio: j.prio }; }) });
     })()`));
@@ -5807,8 +5839,8 @@ const BAR = `(function () {
     eq(JSON.stringify(r.inCheck), JSON.stringify({ check: true, jobs: 0, th: null, ready: true }), 'in check: no search, no threat, ready');
     eq(JSON.stringify(r.down), JSON.stringify({ jobs: 0, has: false, ready: false, st: 1 }), 'engine down: the facts read, no threat asked, step from the refutation');
     eq(r.jobs, 1, 'asked once the engine is up');
-    /* V1.5: the stub's answer names no threat, but every capture counts, scored where its line settles: gxf5 wins the queen for a pawn */
-    eq(A.ev(`JSON.stringify(model().byKey['184455333378:68'].b.dz.th)`), '["g6f5",0,8]', 'no threat in the stub\'s answer: the capture that wins the queen');
+    /* release 2, B5: only what a search found is a threat (the static exchange never names one alone): the stub's answer names none */
+    eq(A.ev(`JSON.stringify(model().byKey['184455333378:68'].b.dz.th)`), 'null', 'no threat in the stub\'s answer: none named');
   });
 
   await test('danger facts: step 1 only for a danger that wins and stood before the game move (a guard taken away is a safety check), and their threat only while the game move left it standing', () => {
@@ -5904,7 +5936,7 @@ const BAR = `(function () {
      (Black's Nc5, the wrong try Qg5), card 4 184268949378:16 (tries that
      allow Qxf2 mate) */
   await test('F1.1, the danger first: card 1\'s Hint 1 at 700, 1600 and 2000 rings the queen on f5 and the bishop on d3 red, draws the attackers\' dashed arrows from g6 and f8 (c4 third) and says "Your queen is attacked twice.", inside the spoiler rule', () => {
-    const A = boot();
+    const A = boot({ storage: keyedBase(['184455333378:68']) });
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${SPOILER} ${TRY}
       var out = {};
       [1, 2, 3].forEach(function (tier) {
@@ -5929,7 +5961,7 @@ const BAR = `(function () {
   });
 
   await test('F1.1: card 2 at 700 opens with its First look hint drawn; after Qg5 misses and Try again, Hint 2 shows, not Hint 1 again; at 1600 a Hint pressed before the second miss is followed by Hint 2', async () => {
-    const A = boot();
+    const A = boot({ storage: keyedBase(['184380745302:11']) });
     A.ev(`(function () { ${OPEN} ${TRY} store.set('nl:tip:game', 1);
       var a = openAt('184380745302:11', 1), we = workedExample(a), hm = hintMarks(a);
       window.__h0 = [we, a.hints, !!a.predraw, hm.rings.length + hm.arrows.length, displayFor(a).row1];
@@ -5941,7 +5973,8 @@ const BAR = `(function () {
       return JSON.stringify({ t: t, hints: a.hints, row1: d.row1, rings: hm.rings.map(function (x) { return sqName(x.sq) + ' ' + x.kind; }), arrows: hm.arrows.length, due: sqName(a.best.from) }); })(ui.session.active)`;
     const h0 = JSON.parse(A.ev('JSON.stringify(window.__h0)')), r = JSON.parse(A.ev(AFTER_TRY));
     eq(JSON.stringify(h0.slice(0, 3)), '[true,1,true]', 'the First look hint: hint 1, drawn by the app');
-    ok(h0[3] > 0 && h0[4] === 'Hint 1 of 2', 'its marks and words: ' + JSON.stringify(h0));
+    /* (release 2, B8: a card that opens on its drawn Hint 1 keeps its task line in row 1) */
+    ok(h0[3] > 0 && h0[4] === 'Find a better move', 'its marks and words: ' + JSON.stringify(h0));
     eq(r.t, 'tried miss 1', 'Qg5 misses');
     eq(r.hints + ' ' + r.row1, '2 Hint 2 of 2', 'the automatic hint after the miss is Hint 2');
     eq(JSON.stringify(r.rings) + ' ' + r.arrows, JSON.stringify([r.due + ' hint']) + ' 0', 'its gold ring on the piece to move, nothing of Hint 1');
@@ -5961,9 +5994,10 @@ const BAR = `(function () {
        Qh4 Nxh4 d5 exd6 Bxd6 Qxe4+ Kd8 Kd1 Re8, 6.00 down (a queen for nothing in the score's pawns);
        a line where nothing is taken back; and Qg5's line scored only 2.5 down, as if paid back later */
     const QG5 = ['f3g5', 'e4g5', 'c1g5', 'd7d5', 'e5d6', 'c8e6', 'c3d4', 'f8d6'], QH4 = ['f3h4', 'd7d5', 'e5d6', 'f8d6', 'e2e4', 'e8d8', 'e1d1', 'h8e8'];
-    const TK = 'Their knight takes your queen.';
-    const CASES = [[1, 'd8g5', QG5, -584, TK], [2, 'd8g5', QG5, -584, TK], [3, 'd8g5', QG5, -584, 'Nxg5 takes your queen.'],
-      [2, 'd8g5', ['f3g5', 'f8e7', 'g5f3'], -900, TK], [2, 'd8h4', QH4, -600, TK], [3, 'd8h4', QH4, -600, 'Nxh4 takes your queen.'],
+    /* (release 2, B6: the capture in SAN at tiers 2 and 3, in words at tier 1) */
+    const TK = 'Their knight takes your queen.', G5 = 'Nxg5 takes your queen.', H4 = 'Nxh4 takes your queen.';
+    const CASES = [[1, 'd8g5', QG5, -584, TK], [2, 'd8g5', QG5, -584, G5], [3, 'd8g5', QG5, -584, G5],
+      [2, 'd8g5', ['f3g5', 'f8e7', 'g5f3'], -900, G5], [2, 'd8h4', QH4, -600, H4], [3, 'd8h4', QH4, -600, H4],
       [2, 'd8g5', QG5, -250, 'After Nxg5, White is better.']];
     for (const [tier, u, line, cp, want] of CASES) {
       A.ev(`(function () { ${OPEN} ${TRY} var a = openAt('184380745302:11', ${tier}), rec = srsRec(a.it); window.__fc0 = (rec && rec.fc) || '';
@@ -6001,7 +6035,8 @@ const BAR = `(function () {
         return JSON.stringify(res); })(ui.session.active)`));
       const at = 'tier ' + tier;
       eq(r.kind + ' ' + r.reply, 'miss f6f2', at + ': a miss, their queen mates on f2');
-      eq(r.row2, tier === 1 ? 'Then queen takes on f2 is checkmate.' : 'Then Qxf2 is checkmate.', at + ': row 2');
+      /* (release 2, B6: no tier 1 row 2 opens "Then" on a capturing reply) */
+      eq(r.row2, tier === 1 ? 'Queen takes on f2 is checkmate.' : 'Then Qxf2 is checkmate.', at + ': row 2');
       eq(r.chip, tier >= 2 ? 'Their move' : '', at + ': the chip');
       eq(r.fc + ' ' + r.rec, '1 ' + r.fc0 + '1', at + ': a 1 on the card, and on the record once the card is left');
     }
@@ -6100,12 +6135,14 @@ const BAR = `(function () {
         });
       });
       return JSON.stringify({ out: out, n: n }); })()`));
-    ok(r.n.cards === 273 && r.n.saves >= 30 && r.n.safe >= 5 && r.n.lost >= 8 && r.n.keeps >= 5, JSON.stringify(r.n));
+    /* (release 2, B4 and C5 (c): "X lost it." beside a save only where the piece is most of what the two
+       moves differ by, savesFit) */
+    ok(r.n.cards === 273 && r.n.saves >= 30 && r.n.safe >= 5 && r.n.lost >= 6 && r.n.keeps >= 5, JSON.stringify(r.n));
     eq(r.out.length, 0, r.out.length + ' faults: ' + r.out.slice(0, 4).join(' | '));
   });
 
   await test('F1.5, the danger frame opens See why: card 1 answered at 1600 shows a still frame 0 (the three dashed arrows, f5 and d3 ringed, fxg6 tinted) with "After fxg6: queen attacked twice, bishop once."; the next tap plays Rg1; at 700 "Their last move attacks your queen twice."', () => {
-    const A = boot();
+    const A = boot({ storage: keyedBase(['184455333378:68']) });
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY}
       var out = {};
       [1, 2].forEach(function (tier) {
@@ -6182,7 +6219,7 @@ const BAR = `(function () {
   });
 
   /* ── the review of slice 1: four hints that taught the wrong danger (the coach), and the words ── */
-  await test('review of slice 1, the danger: a piece its king guards against a lone queen is not in danger; card 7 (Bf3) is a safety check whose hint and frame say the mate it allows, never the pawn their queen eyes; card 3 (O-O) stops their mate and allows Bxc3, its hint the two threats (V2.3), with both threats on frame 0 and what Qf3 guards; card 12 (Rxf3) names the bishop it loses, never the plan line; card 5, in check, says the check', async () => {
+  await test('review of slice 1, the danger: a piece its king guards against a lone queen is not in danger; card 7 (Bf3) is a safety check whose hint and frame say the mate it allows, never the pawn their queen eyes; card 3 (O-O) stops their mate and allows Bxc3, its hint what castling runs into (release 2, B5: no threat beside their mate); card 12 (Rxf3) names the bishop it loses, never the plan line; card 5, in check, says the check', async () => {
     const A = boot();
     /* the static exchange: g7 guarded by its king against a lone queen, then attacked twice */
     const see = JSON.parse(A.ev(`JSON.stringify([dangerAttacked(stateFromFen('6k1/6p1/8/8/8/8/1Q6/6K1 b - - 0 1'), false), dangerAttacked(stateFromFen('6k1/6p1/7B/8/8/8/1Q6/6K1 b - - 0 1'), false)])`));
@@ -6217,14 +6254,15 @@ const BAR = `(function () {
     ok(r.c7.every((x) => !x.faults.length), 'card 7: spoiler clean');
     eq(JSON.stringify(r.s7.map((x) => [x.frame, x.rings])), JSON.stringify([['Your bishop on g4 blocks their mate.', ['g4 block']], ['Your bishop on g4 blocks their mate.', ['g4 block']]]), 'card 7: See why opens on what the bishop blocked');
     /* card 3 */
-    /* V2.3: two threats, never praise for the game move ("Castling stops
-       mate." is gone); the hint frame leaves row 2 six words, so the spec's
-       seven-word forms give way to their six-word rungs */
-    eq(JSON.stringify(r.c3.map((x) => [x.step, x.kind, x.row2])), JSON.stringify([[1, 'two', 'Stop the mate, guard your knight.'], [1, 'two', 'Two threats: Qxf2 mate and Bxc3+.']]), 'card 3: the two threats');
-    eq(JSON.stringify([r.c3[1].rings, r.c3[1].arrows]), JSON.stringify([['f2 attacked mate', 'c3 attacked'], ['f6f2 danger', 'd4c3 danger']]), 'card 3: both threats drawn');
-    eq(JSON.stringify(r.s3.map((x) => [x.frame, x.row2])), JSON.stringify([['Two threats: mate on f2 and your knight.', 'Queen to f3 guards f2 and your knight.'], ['Two threats: Qxf2 mate and Bxc3+.', 'Qf3 guards f2 and your knight.'], ['Two threats: Qxf2 mate and Bxc3+.', 'Qf3 guards f2 and your knight.']]), 'card 3: frame 0 and the settled line');
-    eq(JSON.stringify([r.s3[1].rings, r.s3[1].arrows]), JSON.stringify([['f2 attacked', 'c3 attacked'], ['f6f2', 'd4c3']]), 'card 3: both threats drawn on frame 0');
-    eq(JSON.stringify([r.s3[1].check, r.s3[2].check]), JSON.stringify(['Their move: what does it attack?', 'Their threat: Bxc3+ takes your knight.']), 'card 3: its check line, tier 3\'s the threat that stood (V2.5: with its sign)');
+    /* V2.3's two threats are gone with release 2's B5: beside their mate no other move is a threat (none
+       comes within 5 points of a mate), and O-O stopped the mate; so Hint 1 is what castling runs into
+       (the bishop that takes on c3, as today's danger draws it), never praise for the game move, See why
+       opens on the game move, and no threat is named */
+    eq(JSON.stringify(r.c3.map((x) => [x.step, x.kind, x.row2])), JSON.stringify([[3, null, 'See what castling runs into.'], [3, null, 'See what O-O runs into.']]), 'card 3: what castling runs into');
+    eq(JSON.stringify([r.c3[1].rings, r.c3[1].arrows]), JSON.stringify([['d4 threat'], ['d4c3 hint']]), 'card 3: the bishop and its arrow to c3');
+    eq(JSON.stringify(r.s3.map((x) => [x.frame, x.row2])), JSON.stringify([['', 'Castling left Black better.'], ['', 'In your game, O-O left Black better.'], ['', 'Qf3 52%. Your O-O 35%.']]), 'card 3: no danger frame; the settled line');
+    eq(JSON.stringify([r.s3[1].rings, r.s3[1].arrows]), JSON.stringify([[], []]), 'card 3: nothing drawn on frame 0');
+    eq(JSON.stringify([r.s3[1].check, r.s3[2].check]), JSON.stringify(['Before you move: their checks, captures, threats?', 'Before you move: their checks, captures, threats?']), 'card 3: its check line, no threat named beside the mate O-O stopped');
     /* card 12 */
     eq(JSON.stringify(r.c12.map((x) => [x.step, x.kind, x.row2, x.rings.length + x.arrows.length])), JSON.stringify([[3, 'lost', 'That lets them win your bishop.', 0], [3, 'lost', 'Rxf3 lets them win your bishop.', 0]]), 'card 12: the bishop it loses, in words');
     eq(r.s12.check, 'Before you move: their checks, captures, threats?', 'card 12: a safety check, never the plan line');
@@ -6242,7 +6280,7 @@ const BAR = `(function () {
     }
     eq(JSON.stringify(tries[0]), JSON.stringify(['Your queen is still attacked.', '1', '']), 'card 1, tier 1: Bxc4 Qxc4 leaves the queen attacked, their move (1)');
     eq(JSON.stringify(tries[1]), JSON.stringify(['Qxc4, and your queen is still attacked.', '1', 'Their move']), 'card 1, tier 2: the reply named, the step its chip (the frame drops it where it has no room)');
-    eq(tries[2][0], 'Their queen takes your queen.', 'card 5, tier 2');
+    eq(tries[2][0], 'Qxc5+ takes your queen.', 'card 5, tier 2 (release 2, B6: the capture in SAN at tiers 2 and 3)');
     eq(tries[3][0], 'Qxc5+ takes your queen.', 'card 5, tier 3: Qxc5 is not the answer c5 (V2.5: with its check sign)');
     eq(tries[4][0], 'After Nxg5, White is better.', 'card 2: "better", never "on top"');
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY}
@@ -6329,7 +6367,7 @@ const BAR = `(function () {
     eq(JSON.stringify(r.ins), '[false,true,true]', 'Insights: at tiers 2 and 3');
   });
 
-  await test('F2.5: Details says the clock and their threat: card 1 "You took 20 seconds. You had 20 minutes left." at 700, "Rg1 took 20 s, with 20:15 left." at 1600, the pace (1800 - 1234.6) / 34 = 16.6 as "17 s" at 2000; their threat, only one Rg1 left standing: the search\'s gxf5 is stopped (Rg1 pins the pawn), so "Their threat: Rxf5 takes your queen.", said once at tier 3; the O-O card names Bxc3, never the mate O-O stopped; card 7 none beside the mate Bf3 allows; no clock, no line', async () => {
+  await test('F2.5: Details says the clock and their threat: card 1 "You took 20 seconds. You had 20 minutes left." at 700, "Rg1 took 20 s, with 20:15 left." at 1600, the pace (1800 - 1234.6) / 34 = 16.6 as "17 s" at 2000; their threat, only one Rg1 left standing: the search\'s gxf5 is stopped (Rg1 pins the pawn), so "Their threat: Rxf5 takes your queen.", said once at tier 3; the O-O card names no threat, never the mate O-O stopped (release 2, B5: none beside a mate); card 7 none beside the mate Bf3 allows; no clock, no line', async () => {
     const A = boot();
     A.ev(`(function () { window.readyEngine(); var it = model().byKey['184455333378:68']; delete it.b.dz;
       window.__dz = { cp: -800, mate: null, pv: ['g6f5'], depth: 18, stopped: false, lines: [{ cp: -800, mate: null, pv: ['g6f5', 'e4f5', 'b4c5', 'd1h1'] }, { cp: -780, mate: null, pv: ['f8f5', 'e4f5', 'b4c5', 'd1h1'] }] };
@@ -6361,8 +6399,9 @@ const BAR = `(function () {
     eq(JSON.stringify(r[2]), JSON.stringify(['Their threat: Rxf5 takes your queen.', 'Rg1 took 20 s, with 20:15 left.', 'Their move: what does it attack?']), 'tier 2');
     /* tier 3: the check line is their threat, one that Rg1 left standing (it pins the g-pawn), said once */
     eq(JSON.stringify(r[3]), JSON.stringify(['Rg1 took 20 s, with 20:15 left. Your pace: 17 s a move.', 'Their threat: Rxf5 takes your queen.']), 'tier 3');
-    /* (V2.5: SAN keeps its check sign) */
-    eq(JSON.stringify(r.oo), JSON.stringify(['Their threat: their bishop takes your knight.', 'Their threat: Bxc3+ takes your knight.', 1]), 'the O-O card: the search kept their mate, O-O stopped it, so Bxc3');
+    /* (release 2, B5: beside their mate no other move is a threat, so the O-O card, whose mate O-O
+       stopped, names none: Details' first extra line is the clock) */
+    eq(JSON.stringify(r.oo), JSON.stringify(['You took 16 seconds. You had 27 minutes left.', 'O-O took 16 s, with 27:56 left.', 1]), 'the O-O card: the search kept their mate, O-O stopped it, and no other threat is named');
     eq(JSON.stringify(r.c7), '[]', 'card 7: no other threat beside the mate Bf3 allows');
     eq(r.none, '', 'no clock, no line');
   });
@@ -6583,7 +6622,7 @@ const BAR = `(function () {
   });
 
   await test('F8.1: game mode\'s hints: hint 1 is the step\'s row-2 question, never a computed fact, naming neither the answer nor the game move on any fixture card at tiers 2 and 3; hint 2 the danger on the board as it stands (card 1: "Your queen is attacked twice.", f5 and d3 ringed), never the game move or what it allows before it shows, F1.1\'s own form once it shows (card 7: "Bf3 lets them mate you."); every hint frame says something within 15 words; a hint grades "With a hint"', () => {
-    const A = boot();
+    const A = boot({ storage: keyedBase(['184455333378:68']) });
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME}
       var out = { bad: [], n: 0, kinds: {} };
       [2, 3].forEach(function (tier) {
@@ -7589,6 +7628,8 @@ const BAR = `(function () {
   for (const t of require('./facts')({ boot, eq, ok, tick, OPEN, TRY, AFTER })) await test(t[0], t[1]);
   /* v2 slice 2, words from the facts (V2.1 to V2.7): test/words.js */
   for (const t of require('./words')({ boot, eq, ok, tick, OPEN, TRY })) await test(t[0], t[1]);
+  /* release 2 slice B, chess truth (B1 to B9): test/chesstruth.js */
+  for (const t of require('./chesstruth')({ boot, eq, ok, tick, OPEN, TRY })) await test(t[0], t[1]);
 
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'card flow: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));

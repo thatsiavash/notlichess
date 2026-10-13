@@ -218,11 +218,37 @@ function autoEnrich() {
            (uci), p (a capture's piece taken, a promotion's new piece), sq
            (the forking piece's square, or the pinned piece's)}; side (true
            White, false Black, omitted either) keeps that side's events only.
-           {t: 'net', at: k} when nothing else holds }
+           {t: 'net', at: k} when nothing else holds
+     agree false when the line's score (score, below) was given and no
+           settle point's material balance came within SETTLE_AGREE (2) pawns of
+           it: the line is then read to its end (k = n, ok false), and no
+           material may be named from it (B4) }
+   Release 2 (B4): a ply after which either side faces a mate in one is no
+   quiet ply (facesMate: the side to move mates at once, or the other side
+   would, were it its move), so a line under a mate threat is read on; and
+   with score (the line's engine score in centipawns, White's side) a settle
+   point counts only where its material balance (White's material less
+   Black's there, in pawns: the score is a balance too, so a card that
+   starts a bishop up, 184212737262:58, is read as it stands) agrees with
+   the score (settleAgrees: within 2 pawns), or the line mates; otherwise
+   the next one, to 12 plies.
    The engine's lines end where Stockfish stops printing: a line that ends
    before it settles is extended (factsSettled) */
-var SETTLE_MAX = 12;
-function settleLine(st0, moves, side) {
+var SETTLE_MAX = 12, SETTLE_AGREE = 2, SETTLE_DECISIVE = 3;
+/* a settle point's material balance bal agrees with a score sc (both in
+   pawns, from one side): within 2 pawns. With loose (a wrong try's reason,
+   which names the capture: tryEvent) also where the material says more
+   than a decisive score on the same side (3 pawns or more), since the
+   engine's pawns run smaller than piece values (a queen lost for nothing is
+   about 6 down: 184380745302:11's Qh4); a fact sheet's counts (a threat's
+   gain, the settled lines) keep to the 2 pawns. A score worse than the
+   material by more than 2 never agrees (the attack card's pawn against
+   -3.76: B4) */
+function settleAgrees(bal, sc, loose) {
+  if (Math.abs(bal - sc) <= SETTLE_AGREE) return true;
+  return !!loose && bal * sc > 0 && Math.abs(bal) > Math.abs(sc) && Math.abs(sc) >= SETTLE_DECISIVE;
+}
+function settleLine(st0, moves, side, score) {
   var st = cloneState(st0), nodes = [], list = moves || [], mate = 0;
   for (var i = 0; i < list.length && nodes.length < SETTLE_MAX; i++) {
     var m = typeof list[i] === 'string' ? uciToMove(st, list[i]) : list[i];
@@ -233,20 +259,52 @@ function settleLine(st0, moves, side) {
     nodes.push({ m: m, u: moveUci(m), w: !!before.w, cap: cap || null, before: before, after: cloneState(st), check: chk });
     if (mt) { mate = nodes.length; break; }
   }
-  /* a quiet ply: no capture, promotion or check, and nothing left en prise
+  /* a quiet ply: no capture, promotion or check, nothing left en prise
      after it (enPrise, the classifier's own test: a piece the side to move
      can take for profit, loose or hit by a cheaper piece; two quiet moves
-     beside a bishop a pawn attacks have not settled anything) */
-  var quiet = function (x) { return !x.cap && !x.m.promo && !x.check && !enPrise(x.after); }, k = -1;
+     beside a bishop a pawn attacks have not settled anything), and no mate
+     in one either side faces (B4) */
+  var quiet = function (x) { if (x.q == null) x.q = !x.cap && !x.m.promo && !x.check && !enPrise(x.after) && !facesMate(x.after); return x.q; };
+  var sc = score == null || isNaN(score) ? null : score / 100, k = -1, agree = true;
+  var balAt = function (kk) { var e = nodes[kk - 1].after; return sideMaterial(e.b, true) - sideMaterial(e.b, false); };
   if (mate) k = mate;
-  else for (var j = 1; j + 1 < nodes.length; j++) if (quiet(nodes[j]) && quiet(nodes[j + 1])) { k = j; break; }
+  else {
+    for (var j = 1; j + 1 < nodes.length; j++) {
+      if (!quiet(nodes[j]) || !quiet(nodes[j + 1])) continue;
+      if (sc == null || settleAgrees(balAt(j), sc)) { k = j; break; }
+      agree = false;
+    }
+    if (k >= 0) agree = true;
+  }
   var ok = k >= 0;
   if (!ok) k = nodes.length;
   var end = k ? nodes[k - 1].after : st0, lw = [], lb = [];
   for (var q = 0; q < k; q++) if (nodes[q].cap) (colorW(nodes[q].cap) ? lw : lb).push(pType(nodes[q].cap));
-  return { k: k, ok: ok, n: nodes.length, mate: mate, moves: nodes.map(function (x) { return x.u; }),
+  return { k: k, ok: ok, n: nodes.length, mate: mate, moves: nodes.map(function (x) { return x.u; }), agree: agree,
            w: sideMaterial(end.b, true) - sideMaterial(st0.b, true), b: sideMaterial(end.b, false) - sideMaterial(st0.b, false),
            lw: lw, lb: lb, ev: settleEvent(nodes, k, mate, side) };
+}
+/* B4: a side faces a mate in one on st: the side to move can mate at once,
+   or (not in check) the other side could, were it its move. Read once per
+   position (a small cache: every settle reading asks it of each ply) */
+var mateNear = { m: {}, n: 0 };
+function mateInOne(st) {
+  var ms = legalMoves(st);
+  for (var i = 0; i < ms.length; i++) {
+    var x = cloneState(st);
+    applyMove(x, ms[i]);
+    if (checkersOf(x).length && !legalMoves(x).length) return true;
+  }
+  return false;
+}
+function facesMate(st) {
+  var key = st.b.join(',') + (st.w ? 'w' : 'b') + st.ep;
+  if (key in mateNear.m) return mateNear.m[key];
+  if (mateNear.n > 4000) { mateNear.m = {}; mateNear.n = 0; }
+  var r = mateInOne(st) || (!checkersOf(st).length && mateInOne(dzNullState(st)));
+  mateNear.m[key] = r;
+  mateNear.n++;
+  return r;
 }
 function settleEvent(nodes, k, mate, side) {
   var mine = function (x) { return side == null || x.w === !!side; }, upto = nodes.slice(0, k), i;
@@ -280,16 +338,21 @@ function motifMade(x) {
   return null;
 }
 /* a settled line as the key keeps it: {k, ok (1/0), w, b, lw, lb (piece
-   letters as strings), e (the event)} */
+   letters as strings), e (the event), a (0: its material never agreed with
+   its score, so none is named from it; B4)} */
 function settleRec(s) {
-  return { k: s.k, ok: s.ok ? 1 : 0, w: s.w, b: s.b, lw: s.lw.join(''), lb: s.lb.join(''), e: s.ev };
+  var r = { k: s.k, ok: s.ok ? 1 : 0, w: s.w, b: s.b, lw: s.lw.join(''), lb: s.lb.join(''), e: s.ev };
+  if (s.agree === false) r.a = 0;
+  return r;
 }
 /* the piece on square from survives line ucis (from st) to where it
    settles: followed as it moves, lost when a capture lands on its square,
    unless that is a trade: it had just taken a piece worth as much (card
    1's queen takes theirs on f8 and is taken back), or the capturer, worth
-   as much, is taken back on the next ply */
-function pieceSurvives(st, ucis, from) {
+   as much, is taken back on the next ply. strict: any capture on its
+   square loses it, a trade too (B7: a move that only trades the piece off
+   never "saves" it, 184216981622:42's Ne3 Bxe3 fxe3) */
+function pieceSurvives(st, ucis, from, strict) {
   var s = settleLine(st, ucis), pos = cloneState(st), sq = from, mine = st.b[from] ? colorW(st.b[from]) : null, took = 0;
   if (mine == null) return false;
   var worth = MOTIF_VAL[pType(st.b[from])];
@@ -299,6 +362,7 @@ function pieceSurvives(st, ucis, from) {
     var csq = m.ep >= 0 ? m.ep : m.to;
     if (!!pos.w === mine && m.from === sq) { took = pos.b[csq] ? MOTIF_VAL[pType(pos.b[csq])] : 0; sq = m.to; }
     else if (!!pos.w !== mine && csq === sq) {
+      if (strict) return false;
       if (took >= worth) return true;
       var by = MOTIF_VAL[pType(pos.b[m.from])], nx = cloneState(pos);
       applyMove(nx, m);
@@ -365,6 +429,10 @@ function pieceSurvives(st, ucis, from) {
           {r: 'wins', n} (net where the line settles, the player then better
           or winning); {r: 'blocks'} (the check); {r: 'attacks', p, sq}; {r:
           'band', w} (the answer's win chance)
+     gb   the take-back the game move's line avoids (B6 c: their reply takes a
+          piece the player could take back on its square, and the line
+          plays something else): [uci, cp, mate, packed line from it], the
+          player's side, from a search of its own
      pm   the moves of the answer's piece (V2.3's Hint 2): up to six [uci,
           safe (1: the piece is not lost where its line settles), cp], best
           first, from one 250,000-node search of those moves (the answer,
@@ -376,7 +444,11 @@ function pieceSurvives(st, ucis, from) {
           within the bar), 'lost' (a game already lost, not decided by it),
           'same' (the game move is the answer); the card leaves the set
    } */
-var FACTS_V = 1, FACTS_NODES = 1000000, PM_NODES = 250000, PM_MAX = 6;
+/* FACTS_V 2 (release 2): keys made fresh (B1), a winning card's three
+   lines at 4,000,000 nodes (DEEP_FACTS_NODES, from 90%: DEEP_FACTS_AT), the
+   settle rule's mate threats and score (B4), threats a search confirms (B5).
+   A key of another version is made again, in the background */
+var FACTS_V = 2, FACTS_NODES = 1000000, PM_NODES = 250000, PM_MAX = 6, DEEP_FACTS_NODES = 4000000, DEEP_FACTS_AT = 90;
 var factsState = { failed: {}, pending: {} };
 /* the key's searches carry a tag of their own: a card's other searches
    (the stand-in look, its danger facts, its reply list) are promoted or
@@ -389,7 +461,8 @@ function factsLines(k) { return (k && k.l || []).map(function (l) { return { u: 
 /* one search of the fact sheet, tagged with its card; a search stopped
    part-way is no answer */
 function factsEval(fen, nodes, o, ctx) {
-  var opts = { tag: ctx.tag };
+  /* B1: from a clean engine, with the harness's options (fresh) */
+  var opts = { tag: ctx.tag, fresh: true };
   for (var k in o || {}) opts[k] = o[k];
   return engineEval(fen, { nodes: nodes }, ctx.prio, opts).then(function (r) {
     if (!r || r.stopped) throw { stopped: true };
@@ -397,11 +470,12 @@ function factsEval(fen, nodes, o, ctx) {
   });
 }
 /* a line made long enough to settle (V1.1): searched on from its last
-   position at 120,000 nodes, twice at most, 12 plies in all */
-function factsSettled(st, pv, ctx) {
+   position at 120,000 nodes, twice at most, 12 plies in all; with its score
+   (White's side), long enough for its material to agree with it (B4) */
+function factsSettled(st, pv, ctx, score) {
   var line = (pv || []).slice(0, SETTLE_MAX), rounds = 0;
   var step = function () {
-    var s = settleLine(st, line);
+    var s = settleLine(st, line, null, score);
     if (s.n < line.length) line = line.slice(0, s.n);
     if (s.ok || line.length >= SETTLE_MAX || rounds >= 2 || s.n < 1) return Promise.resolve(line);
     var end = playUci(st, line).states.pop() || st;
@@ -420,11 +494,15 @@ function factsSettled(st, pv, ctx) {
    position (them to move; scores from White's side, as the engine gives
    them): [[uci, mate, gain], ...] up to two, mate first, then the biggest
    settled gain. A line that does not mate counts only where it is a real
-   option for them (within 10 points of their best line that does not
-   mate), and a quiet move only when what it wins is not another threat's
-   capture played later in its line (184434540700:103's e5 dxe5 Nxg3 is the
-   threat Nxg3); a promotion's pieces are one threat (the queen's) */
-function factsThreats(pre, lines, pov, all) {
+   option for them (B5: within 5 points of their best line, so never beside
+   a mate of theirs) and a real gain (10 or more points on where they stand,
+   base: {w, cp} from their side), and a quiet move only when what it wins is not
+   another threat's capture played later in its line (184434540700:103's e5
+   dxe5 Nxg3 is the threat Nxg3); a promotion's pieces are one threat (the
+   queen's). Only what a search found (B5): their mates in one, and the
+   null-move search's lines */
+var THREAT_NEAR = 5, THREAT_GAIN = 10;
+function factsThreats(pre, lines, pov, all, base) {
   if (checkersOf(pre).length) return [];
   var nst = dzNullState(pre), them = !pov, c = {};
   var sq = function (u) { return u.slice(0, 4); };
@@ -436,34 +514,42 @@ function factsThreats(pre, lines, pov, all) {
   var gainOf = function (s) { return them ? s.w - s.b : s.b - s.w; };
   var wThem = function (l) { return winPct(them ? l.cp : -l.cp); }, ok = (lines || []).filter(function (l) { return l && l.pv && l.pv[0] && uciToMove(nst, l.pv[0]); });
   var mates = function (l) { return l.mate != null && (them ? l.mate : -l.mate) > 0; };
-  var top = Math.max.apply(null, [0].concat(ok.filter(function (l) { return !mates(l); }).map(wThem)));
+  /* (their mates in one: a fact of the board) */
+  var m1 = legalMoves(nst).filter(function (m) { var x = cloneState(nst); applyMove(x, m); return isMate(x); });
+  /* their best line there (B5): a mate of theirs, in one or along a
+     searched line, is all of it (100), so beside a mate no other move is a
+     threat: none comes within 5 points of it */
+  var top = m1.length || ok.some(mates) ? 100 : Math.max.apply(null, [0].concat(ok.map(wThem)));
   var quiet = [];
-  /* the null-move lines: a mate of theirs, else what the line wins where it
-     settles (a quiet move is named only then) */
+  /* the null-move lines: a mate of theirs, else (B5) a line within 5 points
+     of their best line and gaining them 10 or more on where they stand now
+     (base: their win chance with the player to move), named by what it
+     wins where it settles (a quiet move only then); where its material
+     never agrees with its score (B4), by the score's gain */
   ok.forEach(function (l, i) {
     var u = l.pv[0];
     if (mates(l)) { add(u, them ? l.mate : -l.mate, 0, i); return; }
-    if (wThem(l) < top - 10) return;
-    var s0 = settleLine(nst, l.pv), g = gainOf(s0), m0 = uciToMove(nst, u);
+    if (wThem(l) < top - THREAT_NEAR || (base != null && wThem(l) - base.w < THREAT_GAIN)) return;
+    var s0 = settleLine(nst, l.pv, null, l.cp), g = s0.agree ? gainOf(s0) : base != null ? Math.round(((them ? l.cp : -l.cp) - base.cp) / 100) : 0, m0 = uciToMove(nst, u);
     if (g < 1) return;
     if (nst.b[m0.to] || m0.ep >= 0 || m0.promo) add(u, 0, g, i);
     else quiet.push({ u: u, g: g, i: i, caps: s0.moves.slice(1, s0.k).filter(function (x, j) { return j % 2 === 1; }) });
   });
-  /* every mate in one, and every capture by what it nets where its line
-     settles: a capture the lines play keeps their count, any other the
-     static exchange on its square (both sides taking in turn, each free to
-     stop) */
-  legalMoves(nst).forEach(function (m) {
-    var u = moveUci(m), x = cloneState(nst);
-    applyMove(x, m);
-    if (isMate(x)) { add(u, 1, 0, 9); return; }
-    if (c[sq(u)] || !nst.b[m.to]) return;
-    var g = dzSeeMove(nst.b, m.from, m.to);
-    if (g >= 1) add(u, 0, g, 9);
-  });
+  /* every mate in one (a fact of the board, the search needed for nothing
+     else); a capture no searched line confirms is no threat (B5: the
+     static exchange never decides one alone) */
+  m1.forEach(function (m) { add(moveUci(m), 1, 0, 9); });
   /* a quiet move whose line only plays another threat's capture later is
-     that threat, not one of its own */
-  quiet.forEach(function (x) { if (!x.caps.some(function (u2) { return !!c[sq(u2)]; })) { add(x.u, 0, x.g, x.i); c[sq(x.u)].q = 1; } });
+     that threat, not one of its own; so is one whose line plays another
+     quiet threat's move later (foil:184455333378:60's Rf6 Qg4 Rg6 Qf5 Rg5
+     is the threat Rg5) */
+  var qs = {};
+  quiet.forEach(function (x) { qs[sq(x.u)] = x; });
+  var plays = function (x, y) { return x.caps.some(function (u2) { return sq(u2) === sq(y.u); }); };
+  quiet.forEach(function (x) {
+    var other = x.caps.some(function (u2) { var y = qs[sq(u2)]; return !!c[sq(u2)] || (!!y && y !== x && !plays(y, x)); });
+    if (!other) { add(x.u, 0, x.g, x.i); c[sq(x.u)].q = 1; }
+  });
   var list = Object.keys(c).map(function (k) { return c[k]; }).sort(function (x, y) {
     return (y.mate ? 1 : 0) - (x.mate ? 1 : 0) || (x.mate && y.mate ? x.mate - y.mate : 0) || y.gain - x.gain || x.i - y.i;
   });
@@ -475,22 +561,26 @@ function factsThreats(pre, lines, pov, all) {
    a search of its own confirms what it wins where its line settles (the
    null-move line's tail can miss their best answer: 184257113186:38's
    Nc8 is met by Be3, 184329623608:48's a5 by Rg3+); up to two */
-function factsThreatsChecked(pre, lines, pov, ctx) {
-  var cands = factsThreats(pre, lines, pov, true), nst = dzNullState(pre), th = [];
+function factsThreatsChecked(pre, lines, pov, ctx, base) {
+  var cands = factsThreats(pre, lines, pov, true, base), nst = dzNullState(pre), th = [];
   if (!cands.length) return Promise.resolve(th);
   var gainOf = function (s) { return !pov ? s.w - s.b : s.b - s.w; };
   return cands.reduce(function (p, x) {
     return p.then(function () {
       if (th.length >= 2) return;
       if (!x.q || x.mate) { th.push([x.u, x.mate, x.gain]); return; }
-      var after = cloneState(nst), m = uciToMove(after, x.u);
+      var after = cloneState(nst), m = uciToMove(after, x.u), cp = null;
       if (!m) return;
       applyMove(after, m);
       if (!legalMoves(after).length) return;
       return factsEval(stateFen(after), FACTS_NODES, {}, ctx).then(function (r) {
-        return factsSettled(after, r.pv || [], ctx);
+        cp = r.cp;
+        return factsSettled(after, r.pv || [], ctx, cp);
       }).then(function (pv) {
-        var g = gainOf(settleLine(nst, [x.u].concat(pv)));
+        /* (B4: a quiet move "wins material" only where its line's count
+           agrees with its score: 184205946040:58's Ne2+, whose deeper line
+           nets nothing, is no threat) */
+        var s = settleLine(nst, [x.u].concat(pv), null, cp), g = s.agree && s.ok ? gainOf(s) : 0;
         if (g >= 1) th.push([x.u, 0, Math.min(g, x.gain)]);
       });
     });
@@ -512,34 +602,77 @@ function factsStopped(pre, after, t) {
   if (!t0) return false;
   return t1 !== t0 || !(dzSeeMove(after.b, m1.from, m1.to) > 0);
 }
-/* the answer's reason (V2.4's order), from the key's own facts */
+/* the answer's reason (V2.4's order), from the key's own facts. Release 2:
+   "guards" and "stops" need a threat a search confirmed (B5: the key's th);
+   "stops X" goes before "saves" where X wins more than the piece saved
+   (B4); "saves", "guards" and "stops" only where the answer's own settled
+   line loses nothing worth more than what they name (B7), else what the
+   answer does instead: it avoids the mate the game move allowed ({r:
+   'avoids', m}), it gives a piece and stays better ({r: 'gives', lost,
+   won}), else the band; "traps" and "wins" only where the line's material
+   agrees with its score (B4) */
 function factsWhy(pre, k, pov, bestPv) {
   var m = uciToMove(pre, k.a);
   if (!m) return { r: 'band', w: winPct(k.l[0][1]) };
   if (k.fm) return { r: 'mate', n: k.fm };
   var after = cloneState(pre), piece = pType(pre.b[m.from]), them = !pov;
   applyMove(after, m);
-  var at = dangerAttacked(pre, pov), sb = k.sb, w = winPct(k.l[0][1]);
-  /* saves: the attacked piece moves where its line keeps it */
-  if (at.some(function (x) { return x[0] === m.from; }) && pieceSurvives(pre, bestPv, m.from)) return { r: 'saves', p: piece, sq: sqName(m.to) };
-  /* guards: the moved piece itself defends an attacked piece of yours, or
-     the square their mate in one lands on */
-  var hits = attacksFrom(after.b, m.to), sqs = [], ps = [], mt = (k.th || []).filter(function (t) { return t[1] === 1; })[0];
-  if (mt && hits.indexOf(sqIndex(mt[0].slice(2, 4))) >= 0) { sqs.push(mt[0].slice(2, 4)); ps.push('mate'); }
-  at.forEach(function (x) { if (x[0] !== m.from && hits.indexOf(x[0]) >= 0 && after.b[x[0]] === pre.b[x[0]] && sqs.indexOf(sqName(x[0])) < 0) { sqs.push(sqName(x[0])); ps.push(pType(pre.b[x[0]])); } });
-  if (sqs.length) return { r: 'guards', sqs: sqs, ps: ps };
+  var sb = k.sb, w = winPct(k.l[0][1]), nst = dzNullState(pre), th = k.th || [];
+  /* (B5: a piece in danger is one a confirmed threat takes, never the
+     static exchange alone) */
+  var at = dzConfirmed(pre, dangerAttacked(pre, pov), th);
+  var mt = th.filter(function (t) { return t[1] === 1; })[0];
+  /* what a confirmed threat wins: a mate everything, else its gain in pawns */
+  var worth = function (t) { return t[1] ? 99 : t[2] || 0; };
+  var cands = [];
+  /* saves: the attacked piece moves where its line keeps it, where that
+     piece is most of what the answer and the game move differ by (B4, C5
+     (c): their scores 2 pawns or less beyond it, and neither line a mate) */
+  var fits = k.l[0][2] == null && k.g && k.g[1] == null && (k.l[0][1] - k.g[0]) / 100 <= MOTIF_VAL[piece] + 2;
+  if (fits && at.some(function (x) { return x[0] === m.from; }) && pieceSurvives(pre, bestPv, m.from)) cands.push({ r: 'saves', p: piece, sq: sqName(m.to), v: MOTIF_VAL[piece] });
+  /* guards: the moved piece itself defends a piece of yours a confirmed
+     threat would take, or the square their mate in one lands on */
+  var hits = attacksFrom(after.b, m.to), sqs = [], ps = [], vmax = 0;
+  if (mt && hits.indexOf(sqIndex(mt[0].slice(2, 4))) >= 0) { sqs.push(mt[0].slice(2, 4)); ps.push('mate'); vmax = 99; }
+  th.forEach(function (t) {
+    var tm = t[1] ? null : uciToMove(nst, t[0]), q = tm ? (tm.ep >= 0 ? tm.ep : tm.to) : -1;
+    if (q < 0 || !pre.b[q] || colorW(pre.b[q]) !== pov || q === m.from || hits.indexOf(q) < 0 || after.b[q] !== pre.b[q] || sqs.indexOf(sqName(q)) >= 0) return;
+    sqs.push(sqName(q)); ps.push(pType(pre.b[q])); vmax = Math.max(vmax, MOTIF_VAL[pType(pre.b[q])]);
+  });
+  if (sqs.length) cands.push({ r: 'guards', sqs: sqs, ps: ps, v: vmax });
   /* stops: their mate, the threat named, or their pawn */
-  var t0 = mt || (k.th || [])[0];
+  var t0 = mt || th[0];
   if (t0 && factsStopped(pre, after, t0)) {
     /* a pawn's run (a pawn move that takes nothing) is their pawn, even
        where it ends in mate; a pawn's capture is a threat like any other */
-    var nst0 = dzNullState(pre), tm = uciToMove(nst0, t0[0]), run = !!tm && pType(nst0.b[tm.from]) === 'P' && !nst0.b[tm.to] && tm.ep < 0;
-    return { r: 'stops', t: run && t0[1] !== 1 ? 'pawn' : t0[1] ? 'mate' : 'threat', m: t0[0] };
+    var tm0 = uciToMove(nst, t0[0]), run = !!tm0 && pType(nst.b[tm0.from]) === 'P' && !nst.b[tm0.to] && tm0.ep < 0;
+    var stop = { r: 'stops', t: run && t0[1] !== 1 ? 'pawn' : t0[1] ? 'mate' : 'threat', m: t0[0], v: worth(t0) };
+    /* B4: what it stops wins more than the piece saved */
+    if (cands.length && cands[0].r === 'saves' && stop.v > cands[0].v) cands.unshift(stop); else cands.push(stop);
   }
-  var net = sb ? (pov ? sb.w - sb.b : sb.b - sb.w) : 0;
+  var net = sb ? (pov ? sb.w - sb.b : sb.b - sb.w) : 0, sure = !!sb && sb.a !== 0;
+  if (cands.length) {
+    var pick = cands[0];
+    /* B7: the answer's own settled losses, net of what its line takes back */
+    var lost = sb ? (pov ? sb.lw : sb.lb).split('') : [], gotB = sb ? (pov ? sb.lb : sb.lw).split('') : [];
+    [false, true].forEach(function (cross) {
+      for (var g = gotB.length - 1; g >= 0; g--) {
+        var j = lost.indexOf(gotB[g]);
+        if (j < 0 && cross && (gotB[g] === 'N' || gotB[g] === 'B')) j = lost.indexOf(gotB[g] === 'N' ? 'B' : 'N');
+        if (j >= 0) { gotB.splice(g, 1); lost.splice(j, 1); }
+      }
+    });
+    var big = sure && lost.some(function (p) { return MOTIF_VAL[p] > pick.v; });
+    if (!big) { delete pick.v; return pick; }
+    /* the game move allowed mate: the answer avoids it */
+    var g0 = k.g, gl = g0 ? unpackUci(g0[2]) : [];
+    if (g0 && g0[1] != null && g0[1] < 0 && gl.length) return { r: 'avoids', m: gl[0], lost: lost.join(''), won: gotB.join('') };
+    if (w >= 60) return { r: 'gives', lost: lost.join(''), won: gotB.join('') };
+    return { r: 'band', w: w };
+  }
   /* traps: the piece the line wins, of theirs, has no safe square once the
      answer is played */
-  var won = sb ? (pov ? sb.lb : sb.lw).split('').sort(function (x, y) { return MOTIF_VAL[y] - MOTIF_VAL[x]; })[0] : null;
+  var won = sure ? (pov ? sb.lb : sb.lw).split('').sort(function (x, y) { return MOTIF_VAL[y] - MOTIF_VAL[x]; })[0] : null;
   if (won && won !== 'P' && net >= 1) {
     for (var sq = 0; sq < 64; sq++) {
       var p = after.b[sq];
@@ -547,7 +680,11 @@ function factsWhy(pre, k, pov, bestPv) {
     }
   }
   /* wins: net where the line settles, the player then better or winning */
-  if (net >= 1 && w >= 60) return { r: 'wins', n: net };
+  if (sure && net >= 1 && w >= 60) return { r: 'wins', n: net };
+  /* B7: the game move allowed their mate, and the answer does not
+     (184212737262:58's Rxf5: "Rxf5 avoids the mate Be3 allowed.") */
+  var gm0 = k.g, gml = gm0 ? unpackUci(gm0[2]) : [];
+  if (gm0 && gm0[1] != null && gm0[1] < 0 && gml.length) return { r: 'avoids', m: gml[0] };
   /* blocks the check */
   if (checkersOf(pre).length && piece !== 'K' && !pre.b[m.to]) return { r: 'blocks' };
   /* attacks a piece: one worth more than the mover, or unguarded */
@@ -559,6 +696,18 @@ function factsWhy(pre, k, pov, bestPv) {
   });
   if (hit != null) return { r: 'attacks', p: pType(after.b[hit]), sq: sqName(hit) };
   return { r: 'band', w: w };
+}
+/* B6 (c): a line (pv, from st, its first move the player's) whose reply
+   takes a piece of the player's (pov) that could be taken back on its
+   square, where the line plays something else: {st (after the reply), m
+   (the take-back, by the cheapest piece)} or null */
+function takeBackNeed(st, pv, pov) {
+  var ns = lineNodes(st, pv), x = ns[1], y = ns[2];
+  if (!x || !x.cap || colorW(x.cap) !== pov || (y && y.cap && y.m.to === x.m.to)) return null;
+  var re = legalMoves(x.after).filter(function (q) { return (q.ep >= 0 ? q.ep : q.to) === x.m.to; });
+  if (!re.length) return null;
+  re.sort(function (p, q) { return MOTIF_VAL[pType(x.after.b[p.from])] - MOTIF_VAL[pType(x.after.b[q.from])]; });
+  return { st: x.after, m: re[0] };
 }
 /* the answer's piece's moves (pm, V2.3), one 250,000-node search */
 function factsPm(pre, k, lines, sign, ctx) {
@@ -607,14 +756,22 @@ function factsCompute(it, prio) {
   var S1, S2, S3, k = { v: FACTS_V };
   var seq = function (list) { return list.reduce(function (p, f) { return p.then(f); }, Promise.resolve()); };
   var legal = function (l) { return l && l.pv && l.pv[0] && uciToMove(pre, l.pv[0]); };
+  var deep = false;
   return factsEval(stateFen(pre), FACTS_NODES, {}, ctx).then(function (r) {
     var top = { cp: r.cp, mate: r.mate, pv: r.pv && r.pv.length ? r.pv : r.bestUci ? [r.bestUci] : [] };
     if (!legal(top)) throw { none: true };
     S1 = [mine(top)];
-    return factsEval(stateFen(pre), FACTS_NODES, { multipv: 3 }, ctx);
+    /* B1: a card the first search scores 90% or more without a mate has its
+       three lines searched at 4,000,000 nodes, where a mate the shallower
+       search misses shows (184364964898:69's Rg1+, mate in 11) */
+    deep = S1[0].mate == null && winPct(S1[0].cp) >= DEEP_FACTS_AT;
+    return factsEval(stateFen(pre), deep ? DEEP_FACTS_NODES : FACTS_NODES, { multipv: 3 }, ctx);
   }).then(function (r) {
     (r.lines && r.lines.length ? r.lines : [{ cp: r.cp, mate: r.mate, pv: r.pv || [] }]).forEach(function (l) {
-      if (S1.length < 3 && legal(l) && l.pv[0] !== S1[0].pv[0]) S1.push(mine(l));
+      if (!legal(l)) return;
+      /* (the deeper search's score for the first line's own move is the truer one) */
+      if (l.pv[0] === S1[0].pv[0]) { if (deep) { var d = mine(l); S1[0].cp = d.cp; S1[0].mate = d.mate; } return; }
+      if (S1.length < 3) S1.push(mine(l));
     });
     /* the answer is the single line's move unless one of the three is
        clearly better: each search can miss what the other finds at this
@@ -639,11 +796,12 @@ function factsCompute(it, prio) {
     return inCheck ? null : factsEval(stateFen(dzNullState(pre)), FACTS_NODES, { multipv: 2 }, ctx);
   }).then(function (r) {
     S3 = !r ? [] : (r.lines && r.lines.length ? r.lines : [{ cp: r.cp, mate: r.mate, pv: r.pv || [] }]).filter(function (l) { return l && l.pv && l.pv[0]; }).slice(0, 2).map(function (l) { return { cp: l.cp, mate: l.mate, pv: l.pv.slice() }; });
-    /* every line extended to where it settles */
+    /* every line extended to where it settles (its material in line with
+       its score: B4) */
     var nst = dzNullState(pre);
-    return seq(S1.map(function (l) { return function () { return factsSettled(pre, l.pv, ctx).then(function (x) { l.pv = x; }); }; })
-      .concat([function () { return factsSettled(post, S2.pv, ctx).then(function (x) { S2.pv = x; }); }])
-      .concat(S3.map(function (l) { return function () { return l.mate != null ? null : factsSettled(nst, l.pv, ctx).then(function (x) { l.pv = x; }); }; })));
+    return seq(S1.map(function (l) { return function () { return factsSettled(pre, l.pv, ctx, l.cp * sign).then(function (x) { l.pv = x; }); }; })
+      .concat([function () { return factsSettled(post, S2.pv, ctx, S2.cp * sign).then(function (x) { S2.pv = x; }); }])
+      .concat(S3.map(function (l) { return function () { return l.mate != null ? null : factsSettled(nst, l.pv, ctx, l.cp).then(function (x) { l.pv = x; }); }; })));
   }).then(function () {
     var l0 = S1[0], l1 = S1[1], wb = winPct(l0.cp), wa = winPct(S2.cp), bar = Math.max(10, mistakeMinFor(g) - 3);
     k.a = l0.pv[0];
@@ -660,14 +818,25 @@ function factsCompute(it, prio) {
     k.om = l1 && wb - w1 >= 10 && scaleStep(w1) < scaleStep(wb) && (w1 <= 40 || wb >= 80) ? 1 : 0;
     k.fm = l0.mate != null && l0.mate > 0 ? l0.mate : 0;
     if (inCheck) k.ic = 1;
-    return factsThreatsChecked(pre, S3, pov, ctx).then(function (th) { k.th = th; return factsRest(); });
+    /* (where they stand now, for a threat's gain: B5) */
+    return factsThreatsChecked(pre, S3, pov, ctx, { w: 100 - wb, cp: -l0.cp }).then(function (th) { k.th = th; return factsRest(); });
   }).catch(function (e) { if (e && e.none) return null; throw e; });
   function factsRest() {
     var l0 = S1[0];
-    k.sg = settleRec(settleLine(pre, [pu].concat(S2.pv), !pov));
-    k.sb = settleRec(settleLine(pre, l0.pv, pov));
+    k.sg = settleRec(settleLine(pre, [pu].concat(S2.pv), !pov, S2.cp * sign));
+    k.sb = settleRec(settleLine(pre, l0.pv, pov, l0.cp * sign));
     k.why = factsWhy(pre, k, pov, l0.pv);
-    return factsPm(pre, k, S1, sign, ctx).then(function () { return k; });
+    /* B6 (c): their reply to the game move takes a piece the player could
+       take back, and the line plays something else: the take-back searched
+       once, so the game move's reason can say why it fails (gb: [uci, cp,
+       mate, packed line from the take-back], the player's side) */
+    var tb = takeBackNeed(pre, [pu].concat(S2.pv), pov), tx = null;
+    if (tb) { tx = cloneState(tb.st); applyMove(tx, tb.m); }
+    var gb = tx && legalMoves(tx).length ? factsEval(stateFen(tx), FACTS_NODES, {}, ctx).then(function (r) {
+      var x = mine({ cp: r.cp, mate: r.mate, pv: r.pv || [] });
+      k.gb = [moveUci(tb.m), x.cp, x.mate, packUci([moveUci(tb.m)].concat(x.pv))];
+    }) : Promise.resolve();
+    return gb.then(function () { return factsPm(pre, k, S1, sign, ctx); }).then(function () { return k; });
   }
 }
 /* where the record's two lines settle by the key's settle rule, as the

@@ -32,7 +32,8 @@ const ids0 = typeof o.ids === 'string' ? o.ids.split(',').filter(Boolean) : null
       A.ev(`(function () {
         TA.setTier(${tier}); var tier = ${tier};
         ui.session = null;
-        TA.screen(tier, 'today', heroHtml() + whyTheseHtml(todayPlan()) + cleanLineHtml() + focusHtml() + latestGamesHtml() + nextDueHtml());
+        TA.screen(tier, 'today', heroHtml() + whyTheseHtml(todayPlan()) + cleanLineHtml() + focusHtml() + nextDueHtml());
+        /* (release 2 slice D: the games list left Today for a tab of its own) */
         var ks = allMistakes().filter(trainable).slice(0, 5).map(function (x) { return x.key; });
         var res = ['first', 'retry', 'hint', 'fail', 'skip'], ss = { mode: 'today', label: 'Today', keys: ks, idx: ks.length, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true };
         ks.forEach(function (k, i) { ss.results[k] = res[i]; });

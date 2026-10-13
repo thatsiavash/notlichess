@@ -560,7 +560,8 @@
         text('#cband') + ' / ' + T.card().phase + ' ' + T.card().misses);
       bandFits('T4');
       await sleep(2600);
-      ok('the task (or the First look\'s hint) is back after it, and the outline gone', text('#cband .bd-r2') === before4 && (/^Find a better move/.test(before4) || /^Hint 1 of 2/.test(text('#cband .bd-r1'))) && !$('#bwrap .marks .nope-box'), text('#cband'));
+      /* (release 2, B8: a First look keeps its task in row 1, the hint's words in row 2) */
+      ok('the task (or the First look\'s hint) is back after it, and the outline gone', text('#cband .bd-r2') === before4 && (/^Find a better move/.test(before4) || /^Hint 1 of 2/.test(text('#cband .bd-r1')) || /^Find a better move/.test(text('#cband .bd-r1'))) && !$('#bwrap .marks .nope-box'), text('#cband'));
       await tapMove(c.played);
       await until(() => T.card().misses === 1, 4000);
       await sleep(500);
