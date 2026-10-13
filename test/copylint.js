@@ -31,8 +31,9 @@
 // offer, a Today summary with practice and Settings' Help.
 // V4.2 to V4.5 (at every tier): the retry note, the welcome back and the recall line after a break, a
 // short week on Today, in the goal met and in Settings, the backup prompt in Safari on an iPhone, the
-// last save and the Reset block's second taps. V5.5 and V5.8 (at every tier): the consent card and its
-// thanks, Settings' Your data block, the landing, the footer and the empty name's words.
+// last save and the Reset block's second taps. V5.8 and the usage line (at every tier): Settings' Your
+// data block, the landing, the footer and the empty name's words. The Games tab (release 2 slice D, at
+// every tier): its rows, its filters keeping some and none, a check running and one failed, no games.
 const fs = require('fs'), path = require('path');
 const BASE = path.join(__dirname, 'data', 'copylint-baseline.json');
 
@@ -186,7 +187,23 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
       if (sk0) store.set(skillKey(), sk0); else store.del(skillKey());
     }
     ui.session = null;
-    screen(tier, 'today', heroHtml() + whyTheseHtml(todayPlan()) + cleanLineHtml() + focusHtml() + latestGamesHtml() + nextDueHtml());
+    screen(tier, 'today', heroHtml() + whyTheseHtml(todayPlan()) + focusHtml() + nextDueHtml());
+    /* the Games tab (release 2 slice D): its rows (two positions learned or in practice), a filter that
+       keeps some, one that keeps none, a check for new games running and one that failed (F10), and a
+       player with no games yet; what each set up is put back */
+    var srsG = JSON.stringify(store.get(srsKey(), {})), gf0 = ui.gf, gs0 = data.games, sec0 = data.sections.games, re0 = data.refreshErr;
+    var two = allMistakes().filter(trainable).slice(0, 2), srsNowG = srsLoad();
+    srsNowG[two[0].key] = { box: 5, streak: 3, due: Date.now() + 60 * DAY, last: Date.now(), lapses: 0, learned: true, n: 3 };
+    srsNowG[two[1].key] = { box: 1, streak: 1, due: Date.now() + DAY, last: Date.now(), lapses: 0, n: 1 };
+    srsSave(srsNowG);
+    screen(tier, 'games', gamesHtml());
+    gamesFilterSet({ r: 'loss', p: 'cost' }); screen(tier, 'games', gamesHtml());
+    gamesFilterSet({ r: 'draw', p: 'clean' }); screen(tier, 'games', gamesHtml());
+    gamesFilterSet({}); data.sections.games = 'loading'; screen(tier, 'games', gamesHtml());
+    data.sections.games = 'ok'; data.refreshErr = { site: 'chess.com', busy: true }; screen(tier, 'games', gamesHtml());
+    data.refreshErr = { site: 'chess.com' }; screen(tier, 'games', gamesHtml());
+    data.refreshErr = re0; data.games = []; screen(tier, 'games', gamesHtml());
+    data.games = gs0; data.sections.games = sec0; ui.gf = gf0; store.set(srsKey(), JSON.parse(srsG)); srsMem = null; srsRevision++;
     var ks = allMistakes().filter(trainable).slice(0, 5).map(function (x) { return x.key; });
     var res = ['first', 'retry', 'hint', 'fail', 'skip'], ss = { mode: 'today', label: 'Today', keys: ks, idx: ks.length, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true };
     ks.forEach(function (k, i) { ss.results[k] = res[i]; });
@@ -222,21 +239,18 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
     var dz = /<div class="set-block"><span class="kicker">Reset<\\/span>[\\s\\S]*$/.exec(settingsHtml());
     screen(tier, 'settings', dz ? dz[0] : 'no Reset block');
     ui.wipeArmed = ui.resetArmed = false;
-    /* V5.5 and V5.8: the consent card and its thanks, Settings' Your data block with the usage
-       recording switch, the landing (its line under the form, the card at its foot), the footer and
-       the empty name's words (the card's watch and the answer's effects stubbed: nothing is stored) */
-    screen(tier, 'today', consentCardHtml());
+    /* V5.8 and the usage line (release 2 slice D: Clarity said, never asked): Settings' Your data
+       block, the landing (its line under the form), the footer and the empty name's words */
     var yd = /<div class="set-block"><span class="kicker">Your data<\\/span>[\\s\\S]*?(?=<div class="set-block"><span class="kicker">Reset)/.exec(settingsHtml());
     screen(tier, 'settings', yd ? yd[0] : 'no Your data block');
-    var cw0 = consentWatch, cs0 = consentSet, nt0 = notice;
-    consentWatch = consentSet = function () {};
+    var nt0 = notice;
     notice = function (s) { screen(tier, 'landing', '<p>' + s + '</p>'); };
     el = function (id) { return id === 'insightsbox' || id === 'main' || id === 'foot' ? box : el0(id); };
     box.innerHTML = ''; renderFirstVisit(); screen(tier, 'landing', box.innerHTML);
     box.innerHTML = ''; renderFoot(); screen(tier, 'foot', box.innerHTML);
-    findUser(''); consentAnswer(true);
+    findUser('');
     el = function (id) { return id === 'insightsbox' ? box : el0(id); };
-    consentWatch = cw0; consentSet = cs0; notice = nt0;
+    notice = nt0;
     /* a set with foils: their line and tiles (F8.2) */
     if (fk.length >= 3) {
       var fs = { mode: 'today', label: 'Today', keys: ks.concat(fk.slice(0, 3)), idx: ks.length + 3, results: {}, notes: { }, sum: {}, relearn: [], relearnOf: {}, finished: true };

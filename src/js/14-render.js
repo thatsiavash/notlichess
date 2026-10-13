@@ -1,18 +1,18 @@
 /* ── Rendering ──────────────────────────────────────────────────────────────
-   Two views (Today, Insights), a sheet for details, settings at the foot.
-   The card is built once per position and then updated in place, so the
-   evaluation bar animates and background progress never wipes a message. */
+   Three views (Today, Games, Insights), a sheet for details, settings at the
+   foot. The card is built once per position and then updated in place, so
+   the evaluation bar animates and background progress never wipes a
+   message. */
 
 function el(id) { return document.getElementById(id); }
 /* "1 game", "3 games" */
 function plur(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
-/* a measure (Clarity's event): dropped unless the player said yes to
-   usage recording and the tag was asked for (clarityLive, V5.5) */
+/* a measure (Clarity's event), once the tag is asked for (clarityLive) */
 function track(name) {
   try { if (clarityLive()) window.clarity('event', name); } catch (e) {}
 }
 /* a tag on this visit's recording (Clarity's set): coarse words only,
-   never a name, a rating or a position; dropped as track's are */
+   never a name, a rating or a position */
 function measureTag(key, value) {
   try { if (clarityLive()) window.clarity('set', key, String(value)); } catch (e) {}
 }
@@ -30,11 +30,20 @@ function flushSave() {
 }
 window.addEventListener('pagehide', flushSave);
 
-var VIEWS = [['train', 'Today'], ['insights', 'Insights']];
+/* the top bar's tabs, in order (slice D: the games have a tab of their
+   own, #games) */
+var VIEWS = [['train', 'Today'], ['games', 'Games'], ['insights', 'Insights']];
+/* the view an address names: #games, #insights (an old #coach too), else
+   Today */
+function viewOfHash(h) {
+  h = String(h || '').replace('#', '');
+  return h === 'coach' || h === 'insights' ? 'insights' : h === 'games' ? 'games' : 'train';
+}
 function setView(v, fromPop) {
-  if (v !== 'insights') v = 'train';
-  /* a measure: Insights opened */
-  if (v === 'insights' && ui.view !== 'insights') track('insights_open');
+  if (v !== 'insights' && v !== 'games') v = 'train';
+  /* a measure: Insights or Games opened */
+  if (v !== 'train' && ui.view !== v) track(v + '_open');
+  var moved = ui.view !== v;
   ui.view = v;
   /* the tab, and the day it was left on: a new day opens on Today (V4.4) */
   store.set('nl:view', v);
@@ -43,7 +52,10 @@ function setView(v, fromPop) {
     try { history.pushState(null, '', location.pathname + '#' + v); } catch (e) {}
   }
   renderViews();
-  if (v === 'insights') renderInsights(); else renderTrain();
+  /* a tab strip that scrolls (under 238 px) shows the tab now open */
+  var tb = moved && el('tab-' + v);
+  if (tb && tb.scrollIntoView && el('views').scrollWidth > el('views').clientWidth) { try { tb.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {} }
+  if (v === 'insights') renderInsights(); else if (v === 'games') renderGames(); else renderTrain();
   if (!fromPop) window.scrollTo(0, 0);
 }
 window.addEventListener('popstate', function () {
@@ -54,8 +66,7 @@ window.addEventListener('popstate', function () {
   /* then leaves an exploration, back to the lesson */
   if (am && am.explore) { exploreExit('pop'); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
   if (ui.session) { endSession(true); return; }
-  var h = (location.hash || '').replace('#', '');
-  if (h === 'coach' || h === 'insights') h = 'insights'; else h = 'train';
+  var h = viewOfHash(location.hash);
   if (h !== ui.view) setView(h, true);
 });
 function renderViews() {
@@ -63,9 +74,9 @@ function renderViews() {
   if (!nav) return;
   /* a quiet dot while today's session is not done: never a count */
   var pending = tabDot();
-  /* the tab pattern (F6): the tab shown takes the keyboard (the other one
-     is an arrow away), each names the panel it shows, and a tab that had
-     the keyboard keeps it through the repaint */
+  /* the tab pattern (F6): the tab shown takes the keyboard (the others are
+     an arrow away), each names the panel it shows, and a tab that had the
+     keyboard keeps it through the repaint */
   var had = !!(document.activeElement && nav.contains && nav.contains(document.activeElement));
   nav.innerHTML = VIEWS.map(function (v) {
     var on = ui.view === v[0];
@@ -73,8 +84,7 @@ function renderViews() {
       + v[1] + (v[0] === 'train' && pending && !(ui.session && ui.session.active) ? '<span class="tab-dot" aria-label="practice waiting"></span>' : '') + '</a>';
   }).join('');
   if (had) { var tf = el('tab-' + ui.view); if (tf && tf.focus) tf.focus({ preventScroll: true }); }
-  el('view-train').hidden = ui.view !== 'train';
-  el('view-insights').hidden = ui.view !== 'insights';
+  VIEWS.forEach(function (v) { var p = el('view-' + v[0]); if (p) p.hidden = ui.view !== v[0]; });
   /* session mode: the board and nothing else */
   document.body.classList.toggle('in-session', !!ui.session && ui.view === 'train');
   paintTitle();
@@ -84,18 +94,16 @@ function renderShell() {
   if (location.search) {
     try { history.replaceState(null, '', location.pathname + (location.hash || '#train')); } catch (e) {}
   }
-  /* Today's foot holds the usage-recording question until it is asked
-     (V5.5); it hides during a set */
   /* one h1 a screen, unseen (the design has none here): the tab's name */
   el('main').innerHTML = '<div class="page">'
     + '<nav id="views" class="views" role="tablist" aria-label="Views"></nav>'
-    + '<div id="view-train" class="view" role="tabpanel" aria-labelledby="tab-train"><h1 class="sr-only">Today</h1><section id="trainbox"></section><div id="consent-slot" class="consent-slot"></div></div>'
+    + '<div id="view-train" class="view" role="tabpanel" aria-labelledby="tab-train"><h1 class="sr-only">Today</h1><section id="trainbox"></section></div>'
+    + '<div id="view-games" class="view" role="tabpanel" aria-labelledby="tab-games" hidden><h1 class="sr-only">Games</h1><section id="gamesbox"></section></div>'
     + '<div id="view-insights" class="view" role="tabpanel" aria-labelledby="tab-insights" hidden><h1 class="sr-only">Insights</h1><section id="insightsbox"></section></div>'
     + '</div>';
-  consentPaint();
 }
 function renderAll() {
-  [renderHeader, renderViews, renderTrain, renderInsights, renderSettings, renderFoot].forEach(function (fn) {
+  [renderHeader, renderViews, renderTrain, renderGames, renderInsights, renderSettings, renderFoot].forEach(function (fn) {
     try { fn(); } catch (e) { if (window.console) console.error(fn.name, e && e.stack); }
   });
 }
@@ -110,11 +118,10 @@ function renderHeader() {
     + '</div><span class="read-line" id="read-line" aria-hidden="true"><i></i></span>';
   renderAnalysisStatus();
 }
-/* icons: one style, 1.5 px strokes in the text colour (gear and refresh
-   after Feather, MIT) */
+/* icons: one style, 1.5 px strokes in the text colour (the gear after
+   Feather, MIT) */
 var KNIGHT_MARK = '<svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 21h11v-2.2c0-3.2-1.2-5.6-2.4-7.4-.8-1.2-.6-2.4.4-3.2l-1.6-1c.3-1.4-.3-2.8-1.6-3.6l-.6 1.6c-2.8.2-5 2-6 4.6L4 13.2c-.4.9.1 1.9 1 2.1l1.2.3c.8.2 1.7-.2 2.1-.9l.9-1.4c.8.4 1.6.3 2.2-.2-.2 1.8-1.6 3.1-3.2 4.2C7.4 18.3 7 19.6 7 21z"/></svg>';
 var ICON_GEAR = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
-var ICON_REFRESH = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
 
 /* the engine at work: one small status that never re-renders anything else */
 function analysisNumbers() {
@@ -146,12 +153,11 @@ function renderAnalysisStatus() {
     if (bucket !== lastReadyShown) { lastReadyShown = bucket; renderTrain(); }
     else if (hero && want < 5 && n.ready > want && todayPlan().keys.length > want) renderTrain();
     else if (n.ready >= 3 && Date.now() - lastSigCheck > 3000 && (lastSigCheck = Date.now()) && todaySig() !== lastTodaySig) renderTrain();
-    else {
-      if (el('finds')) el('finds').innerHTML = recentFindsHtml();
-      var lg = el('latest');
-      if (lg) lg.outerHTML = latestGamesHtml();
-    }
+    else if (el('finds')) el('finds').innerHTML = recentFindsHtml();
   }
+  /* the Games tab: a game just read says what it holds (its rows only, so
+     a filter being picked is never closed under the finger) */
+  if (ui.view === 'games' && !ui.session) gamesPaint();
   /* what waits for the read shows the moment it ends, not at the next
      repaint: the focus (Today) and the tab's dot; the dot also follows the
      positions as they arrive */
@@ -170,15 +176,16 @@ function analysisLine(n) {
 function renderEngineState() { renderAnalysisStatus(); }
 /* the background check moved on (C1): the screen whose counts it can
    change is drawn again, "Checking 12 more positions…" beside them, and
-   once it is done drawn settled, without the line: Today, Insights, or a
-   summary's report card (in place). Never a card on screen; the keyboard
-   stays on the control it was on */
+   once it is done drawn settled, without the line: Today, Games (its rows,
+   in place), Insights, or a summary's report card (in place). Never a card
+   on screen; the keyboard stays on the control it was on */
 function checkingPaint() {
   var ss = ui.session;
   if (!cfg.user || (ss && !ss.finished)) return;
   var foc = document.activeElement, fk = foc && foc.getAttribute ? (foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || '') : '';
   if (ui.view === 'insights') renderInsights();
   else if (ss) { var dg = el('recap-diag'); if (dg) dg.innerHTML = diagHtml(ss, playerTier()); }
+  else if (ui.view === 'games') gamesPaint(true);
   else renderTrain();
   if (!fk || fk === '|' || (document.body.contains && document.body.contains(foc))) return;
   var p = fk.split('|'), back = p[0] && document.querySelector('[data-act="' + p[0] + '"]' + (p[1] ? '[data-k="' + p[1] + '"]' : ''));
@@ -206,7 +213,9 @@ function renderTrain() {
       + '</div>';
     return;
   }
-  var since = welcomeHtml() + sinceHtml() + cleanLineHtml();
+  /* Today holds the day's practice only (slice D): the games, the newest
+     clean one and the games since the last visit are the Games tab's */
+  var since = welcomeHtml();
   if (n.ready < 3) { box.innerHTML = '<div class="today">' + since + findingHtml(n) + '</div>'; paintTitle(); return; }
   /* the day's first opening: the extra-set rule, once a day (F7.1) */
   absorbOpen();
@@ -216,23 +225,23 @@ function renderTrain() {
   var doneToday = (day.sessions || 0) > 0 || (!saved && !plan.keys.length);
   var fh = focusHtml();
   lastTodaySig = plan.keys.join(',') + '|' + fh;
-  /* the hero, why these positions (F5.2), the focus, then the games; two
-     columns on a wide screen, the games beside the rest. While the
+  /* the hero and why these positions (F5.2), then the focus. On a wide
+     screen the focus card stands beside the hero, where the games were
+     (no empty column: with no focus card Today is one column). While the
      background check runs, "Checking 12 more positions…" between why these
      and the focus card, beside the counts of both (C1) */
-  box.innerHTML = '<div class="today today-grid"><div class="today-main">' + since
+  box.innerHTML = '<div class="today today-grid' + (fh ? ' has-side' : '') + '"><div class="today-main">' + since
     + (saved ? resumeHtml(saved) : (doneToday ? doneTodayHtml() : heroHtml(plan) + whyTheseHtml(plan)))
-    + (fh ? checkingHtml('focus-check') : '') + fh
     + '<p class="status" id="astat">' + analysisLine(n) + '</p>'
-    + '</div>' + latestGamesHtml() + '</div>';
+    + '</div>' + (fh ? '<div class="today-side">' + checkingHtml('focus-check') + fh + '</div>' : '') + '</div>';
   /* the due count in the tab, once the day's opening has run (F5.4) */
   paintTitle();
 }
-/* a first load that failed, in Today's place (F3, F9): a busy site says so
-   at once and counts down to trying again by itself, Try now beside it; a
-   site that answered with an error "Try again in a minute.", no answer at
-   all "Check your connection"; saved progress (never games: there are none
-   here) is said to be kept only where there is some */
+/* a first load that failed, in Today's place and the Games tab's (F3, F9):
+   a busy site says so at once and counts down to trying again by itself,
+   Try now beside it; a site that answered with an error "Try again in a
+   minute.", no answer at all "Check your connection"; saved progress (never
+   games: there are none here) is said to be kept only where there is some */
 function loadFailHtml(site) {
   var e = data.gamesErr || { site: site }, s = e.site || site;
   if (e.busy) {
@@ -242,59 +251,217 @@ function loadFailHtml(site) {
   var kept = Object.keys(srsLoad()).length ? 'Your progress is still saved here. ' : '';
   return stateCard(s + ' did not answer.', kept + (e.net ? 'Check your connection and try again.' : 'Try again in a minute.'), '<a class="btn-big" data-icon="rotate" data-act="reload">Try again</a>');
 }
-/* the latest games, each one a way into its own mistakes: four, then All
-   games (F5.1); a row is its result, the opponent, "Rapid · 27 Sept ·
-   White" and what it holds, "4 mistakes" with "1 cost the game" under it
-   (the design lead's review of slice 4: the state never wraps, a long name
-   alone may) */
-var LATEST_N = 4;
-function latestGamesHtml() {
-  var all = scopedGames().sort(function (a, b) { return b.ts - a.ts; }), games = ui.allGames ? all : all.slice(0, LATEST_N);
-  if (!games.length) return '';
-  var byGame = {};
+/* ── Games (slice D) ────────────────────────────────────────────────────────
+   The games have a tab of their own (the owner: "a different all games page
+   where you can filter and see more data up front"). From the top: what is
+   new since the last visit and the newest clean game, then "Your games"
+   with Check for new games (its busy words while it checks, F10's when it
+   fails), one row of filters (the result; the game type, where the games
+   hold two or more; and what matters for practice: the games one move cost,
+   the clean ones) with the count ("38 of 50 games"), "Checking 12 more
+   positions…" while the background check can still change a row (C1), and
+   the newest 30 rows, then Show 30 more (never every game at once). The
+   filters last for the visit (sessionStorage), the rows shown while the
+   page stays. Drawn while it shows, as Insights is */
+var GAMES_N = 30, GF0 = { r: 'all', t: 'all', p: 'all' }, gamesLast = '';
+/* what each game holds, by its id: its positions (n; lost: one of them
+   decided the game) and how many of them are learned or in practice (C3:
+   one back in the queue counts in practice) */
+function gamesIndex() {
+  var by = {}, srs = srsLoad();
   allMistakes().forEach(function (it) {
     if (!trainable(it)) return;
-    var e = byGame[it.g.id] || (byGame[it.g.id] = { n: 0, lost: false });
+    var e = by[it.g.id] || (by[it.g.id] = { n: 0, lost: false, learned: 0, practising: 0 });
     e.n++;
     if (it.b.d) e.lost = true;
+    var r = srs[it.key];
+    if (r) { if (isLearned(r)) e.learned++; else e.practising++; }
   });
-  var rows = games.map(function (g) {
-    var e = byGame[g.id], res = g.res === 'win' ? 'W' : (g.res === 'loss' ? 'L' : 'D'), big = covered(g) && !e ? gameMistakeCount(g) : 0;
-    var right;
-    if (!covered(g)) right = '<span class="lg-state dim">' + (scannableAny(g) ? 'Not checked yet' : (g.plies < 6 ? 'Too short to check' : 'Could not be read')) + '</span>';
-    /* a loss with no position: no single move lost it (it may still hold big
-       mistakes, as Insights counts them, e.g. a tester's clone); "Clean
-       game" only where the game holds no big mistake at all */
-    else if (!e) right = g.res === 'loss' ? '<span class="lg-state dim">No single losing move</span>'
-      : big ? '<span class="lg-state dim">' + plur(big, 'mistake') + '</span>' : '<span class="lg-state ok">✓ Clean game</span>';
-    else right = '<span class="lg-state">' + plur(e.n, 'mistake')
-      + (e.lost ? '<i>' + (g.res === 'draw' ? '1 cost the win' : '1 cost the game') + '</i>' : '') + '</span>';
-    /* a game with cards opens its drill; one without opens on its own site */
-    var attrs = e ? ' data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'game', id: g.id, label: 'Game vs ' + g.opp })) + '" role="button"' : '';
-    var tag = e ? 'div' : 'a';
-    if (!e) attrs = ' href="' + gameHref(g.id, g.color, 0) + '"';
-    /* read in order, as a sentence (a screen reader ran "4 mistakes1 cost
-       the game" together): "Lost to opponent1 (1388), 4 mistakes, 1 cost the
-       game. Rapid, 27 Sept, White." Its name comes from that sentence, the
-       row's letters and lines hidden from a screen reader (an aria-label
-       that leaves out the row's own words fails WCAG 2.5.3) */
-    var said = { W: 'Won against ', L: 'Lost to ', D: 'Drew with ' }[res] + g.opp + (g.oppR ? ' (' + g.oppR + ')' : '') + ', '
-      + right.replace(/<i>/g, ', ').replace(/<[^>]+>/g, '').replace(/^✓ /, '') + '. ' + upFirst(perfLabel(g.perf || '')) + ', ' + gameDayWord(g.ts) + ', ' + upFirst(g.color) + '.';
-    return '<' + tag + ' class="lg-row is-open"' + attrs + '>'
-      + '<span class="sr-only">' + esc(said) + '</span>'
-      + '<span class="lg-res lg-' + res + '" title="' + esc(g.res) + '" aria-hidden="true">' + res + '</span>'
-      + '<span class="lg-who" aria-hidden="true"><span class="lg-name">vs ' + esc(g.opp) + (g.oppR ? ' <span class="dim">' + g.oppR + '</span>' : '') + '</span>'
-      + '<small>' + esc(upFirst(perfLabel(g.perf || ''))) + ' · ' + gameDayWord(g.ts) + ' · ' + upFirst(g.color) + '</small></span>'
-      + right.replace(/^<span class="([^"]*)"/, '<span class="$1" aria-hidden="true"') + '</' + tag + '>';
-  }).join('');
-  /* a check for new games that failed says so here, under the games' head
-     (F10); a row's counts may still change while the background check
-     runs (C1) */
-  return '<aside class="latest" id="latest"><div class="latest-head"><div class="kicker">Your latest games</div>'
-    + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>'
-    + (data.refreshErr ? '<p class="lg-note" role="status">' + esc(refreshWords(data.refreshErr)) + '</p>' : '') + checkingHtml('lg-check') + rows
-    + (all.length > games.length ? '<a class="btn-quiet lg-all" data-act="allGames">All games</a>' : '')
-    + '<p class="lg-foot dim">' + tapWord() + ' a game to see its mistakes in the order played.</p></aside>';
+  return by;
+}
+/* a game's state, as its row says it and the filters read it: 'unread'
+   (not checked yet), 'cards' (positions to practise), 'loss' (a loss no
+   single move decided: it may still hold big mistakes, as Insights counts
+   them), 'some' (big mistakes, none kept as a position), 'clean' (no big
+   mistake at all) */
+function gameKind(g, e) {
+  if (!covered(g)) return 'unread';
+  if (e) return 'cards';
+  if (g.res === 'loss') return 'loss';
+  return gameMistakeCount(g) ? 'some' : 'clean';
+}
+/* the formats the games hold, in the sites' order */
+function gameTypes(games) {
+  var seen = {};
+  games.forEach(function (g) { if (g.perf) seen[g.perf] = 1; });
+  return ['ultraBullet', 'bullet', 'blitz', 'rapid', 'classical'].concat(Object.keys(seen).sort())
+    .filter(function (p, i, a) { return seen[p] && a.indexOf(p) === i; });
+}
+/* the filters (r: the result, t: the type, p: practice), this player's,
+   for the visit */
+function gamesFilter() {
+  var k = 'nl:gf:' + playerId();
+  if (!ui.gf || ui.gfFor !== k) {
+    var v = null;
+    try { v = JSON.parse(sessionStorage.getItem(k) || 'null'); } catch (e) { v = null; }
+    ui.gf = Object.assign({}, GF0, v && typeof v === 'object' ? v : {});
+    ui.gfFor = k; ui.gShow = GAMES_N;
+  }
+  return ui.gf;
+}
+function gamesFilterSet(f) {
+  gamesFilter();
+  ui.gf = Object.assign({}, GF0, f); ui.gShow = GAMES_N;
+  try { sessionStorage.setItem(ui.gfFor, JSON.stringify(ui.gf)); } catch (e) {}
+}
+/* the games the filters keep, newest first: { all, kept, types, f (the
+   filters as applied: a type the games no longer hold reads as all), by } */
+function gamesList() {
+  var all = scopedGames().sort(function (a, b) { return b.ts - a.ts; }), by = gamesIndex(), types = gameTypes(all), f = Object.assign({}, gamesFilter());
+  if (types.length < 2 || types.indexOf(f.t) < 0) f.t = 'all';
+  var kept = all.filter(function (g) {
+    var e = by[g.id];
+    if (f.r !== 'all' && g.res !== f.r) return false;
+    if (f.t !== 'all' && g.perf !== f.t) return false;
+    if (f.p === 'cost') return !!(e && e.lost);
+    if (f.p === 'clean') return gameKind(g, e) === 'clean';
+    return true;
+  });
+  return { all: all, kept: kept, types: types, f: f, by: by };
+}
+/* "50 games", or "38 of 50 games" when a filter leaves some out */
+function gamesCountWords(L) { return L.kept.length === L.all.length ? plur(L.all.length, 'game') : L.kept.length + ' of ' + plur(L.all.length, 'game'); }
+/* one game's row: on two lines, its result, "vs opponent1 1388 · you
+   1351" (both ratings side by side), then "Rapid · 27 Sept · White · 36
+   moves"; at its right what it
+   holds ("4 mistakes", with "1 cost the game" beside it; "✓ Clean game";
+   "No single losing move"; "Not checked yet") and under that its positions
+   learned or in practice ("1 learned · 2 in practice", none said when none
+   is); on a phone one part a line, as Today's rows were (V4.7). Read in
+   order as one sentence, the row's letters and lines hidden from a screen
+   reader and no aria-label (release 2 slice A): "Lost to opponent1 (1388),
+   4 mistakes, 1 cost the game, 1 learned, 2 in practice. Rapid, 27 Sept,
+   White, 36 moves, your rating 1351." A game with positions opens them in
+   move order (V4.7); one without opens on its own site */
+function gameRowHtml(g, e) {
+  var res = g.res === 'win' ? 'W' : (g.res === 'loss' ? 'L' : 'D'), kind = gameKind(g, e), state, cls = '';
+  if (kind === 'unread') { state = scannableAny(g) ? 'Not checked yet' : (g.plies < 6 ? 'Too short to check' : 'Could not be read'); cls = ' dim'; }
+  else if (kind === 'loss') { state = 'No single losing move'; cls = ' dim'; }
+  else if (kind === 'some') { state = plur(gameMistakeCount(g), 'mistake'); cls = ' dim'; }
+  else if (kind === 'clean') { state = '✓ Clean game'; cls = ' ok'; }
+  else state = plur(e.n, 'mistake');
+  var cost = kind === 'cards' && e.lost ? (g.res === 'draw' ? '1 cost the win' : '1 cost the game') : '';
+  var prac = e && (e.learned || e.practising) ? progressWords({ learned: e.learned, practising: e.practising, fresh: 0 }) : '';
+  var meta = [upFirst(perfLabel(g.perf || '')), gameDayWord(g.ts), upFirst(g.color || ''), g.plies ? plur(Math.ceil(g.plies / 2), 'move') : ''].filter(Boolean);
+  var said = { W: 'Won against ', L: 'Lost to ', D: 'Drew with ' }[res] + g.opp + (g.oppR ? ' (' + g.oppR + ')' : '') + ', ' + state.replace(/^✓ /, '')
+    + (cost ? ', ' + cost : '') + (prac ? ', ' + prac.replace(/ · /g, ', ') : '') + '. ' + meta.concat(g.myR ? ['your rating ' + g.myR] : []).join(', ') + '.';
+  var tag = e ? 'div' : 'a', attrs = e ? ' data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'game', id: g.id, label: 'Game vs ' + g.opp })) + '" role="button"' : ' href="' + gameHref(g.id, g.color, 0) + '"';
+  return '<' + tag + ' class="lg-row is-open" data-g="' + esc(g.id) + '"' + attrs + '>'
+    + '<span class="sr-only">' + esc(said) + '</span>'
+    + '<span class="lg-res lg-' + res + '" title="' + esc(g.res) + '" aria-hidden="true">' + res + '</span>'
+    + '<span class="lg-who" aria-hidden="true"><span class="lg-name">vs ' + esc(g.opp) + (g.oppR ? ' <span class="dim">' + g.oppR + '</span>' : '') + (g.myR ? '<span class="lg-me"> · you ' + g.myR + '</span>' : '') + '</span>'
+    + '<small>' + esc(meta.join(' · ')) + '</small></span>'
+    + '<span class="lg-state' + cls + '" aria-hidden="true">' + state + (cost ? '<i>' + cost + '</i>' : '') + (prac ? '<b class="gl-prac">' + prac + '</b>' : '') + '</span>'
+    + '</' + tag + '>';
+}
+/* the filter row: three selects (two where the games hold one type), the
+   one in use outlined in honey */
+function gamesFiltersHtml(L) {
+  var sel = function (k, name, opts) {
+    var v = L.f[k];
+    return '<span class="gf' + (v !== 'all' ? ' gf-on' : '') + '"><select data-act="gf" data-k="' + k + '" aria-label="' + name + '">'
+      + opts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></span>';
+  };
+  return '<div class="gl-filters" role="group" aria-label="Filter games">'
+    + sel('r', 'Result', [['all', 'All results'], ['loss', 'Losses'], ['win', 'Wins'], ['draw', 'Draws']])
+    + (L.types.length > 1 ? sel('t', 'Game type', [['all', 'All types']].concat(L.types.map(function (p) { return [p, upFirst(perfLabel(p))]; }))) : '')
+    + sel('p', 'Mistakes', [['all', 'All games'], ['cost', 'Cost the game'], ['clean', 'Clean games']]) + '</div>';
+}
+/* what the background moves (gamesPaint): the checking line, the rows and
+   Show more; a filter that keeps nothing says so, with a way to clear it */
+function gamesBodyHtml(L) {
+  if (!L.kept.length) return checkingHtml('gl-check') + '<div class="gl-none"><p>No games match these filters.</p><a class="btn-quiet" data-act="gamesClear">Clear filters</a></div>';
+  var shown = L.kept.slice(0, ui.gShow || GAMES_N), left = L.kept.length - shown.length;
+  return checkingHtml('gl-check') + '<div class="gl-rows">' + shown.map(function (g) { return gameRowHtml(g, L.by[g.id]); }).join('') + '</div>'
+    + (left > 0 ? '<a class="btn-quiet gl-more" data-act="gamesMore">Show ' + Math.min(GAMES_N, left) + ' more</a>' : '');
+}
+function gamesHtml() {
+  var site = isCC() ? 'chess.com' : 'lichess', busy = data.sections.games === 'loading';
+  gamesLast = '';
+  /* no games yet: being read, a first load that failed (its words and
+     retry, as Today says them), or none at all, and what to do */
+  if (!data.games.length) {
+    return '<div class="games">' + (busy ? stateCard('Reading your games', 'Fetching your rated games from ' + site + '.', '')
+      : data.sections.games === 'fail' ? loadFailHtml(site)
+      : stateCard('No rated games yet.', 'Play a rated game on ' + site + ', then check for new games. Each one shows up here with its mistakes, newest first. '
+          + (isCC() ? 'Daily games are not read yet.' : 'Correspondence games are not read yet.'),
+        '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a><a class="btn-quiet" data-icon="rotate" data-act="reload">Check for new games</a>')) + '</div>';
+  }
+  var L = gamesList();
+  if (!L.all.length) return '<div class="games">' + stateCard('No games in the formats you train.', 'Settings picks which of your rated games to read.', '<a class="btn-big" data-act="settings">Open Settings</a>') + '</div>';
+  gamesLast = gamesBodyHtml(L);
+  return '<div class="games">' + sinceHtml() + cleanLineHtml()
+    + '<section class="gl" aria-labelledby="gl-h"><div class="gl-head"><h2 class="gl-h" id="gl-h">Your games</h2>'
+    + '<a class="btn-quiet gl-refresh' + (busy ? ' is-busy' : '') + '" data-icon="rotate" data-act="reload"' + (busy ? ' aria-disabled="true"' : '') + '>' + (busy ? 'Checking for new games…' : 'Check for new games') + '</a></div>'
+    + (data.refreshErr && !busy ? '<p class="lg-note" role="status">' + esc(refreshWords(data.refreshErr)) + '</p>' : '')
+    + '<div class="gl-bar">' + gamesFiltersHtml(L) + '<p class="gl-count" id="gl-count" role="status">' + gamesCountWords(L) + '</p></div>'
+    + '<div class="gl-body" id="gl-body">' + gamesLast + '</div>'
+    + '<p class="lg-foot dim">' + tapWord() + ' a game to see its mistakes in the order played.</p></section></div>';
+}
+function renderGames() {
+  var box = el('gamesbox');
+  if (!box || !cfg.user || ui.view !== 'games') return;
+  var fk = focusKey(box);
+  box.innerHTML = gamesHtml();
+  focusBack(fk);
+}
+/* the background moved on (a game read, a key, a position practised): the
+   count, the checking line and the rows drawn again in place, only when
+   they changed; the filters are left alone, so one being picked stays open,
+   and the keyboard stays on what it was on */
+function gamesPaint() {
+  var body = el('gl-body');
+  if (!cfg.user || ui.view !== 'games') return;
+  if (!body) { renderGames(); return; }
+  var L = gamesList(), h = gamesBodyHtml(L), c = gamesCountWords(L), cn = el('gl-count');
+  if (cn && cn.textContent !== c) cn.textContent = c;
+  if (h === gamesLast) return;
+  var fk = focusKey(el('gamesbox'));
+  body.innerHTML = h;
+  gamesLast = h;
+  focusBack(fk);
+}
+/* a filter picked: the rows and the count follow (the count is a status,
+   so a screen reader hears "27 of 50 games") */
+function gamesFilterPick(k, v) {
+  var f = Object.assign({}, gamesFilter());
+  f[k] = v;
+  gamesFilterSet(f);
+  var s = document.querySelector('#gamesbox select[data-k="' + k + '"]');
+  if (s && s.parentNode && s.parentNode.classList) s.parentNode.classList.toggle('gf-on', v !== 'all');
+  track('games_filter');
+  gamesPaint();
+}
+/* Show 30 more: the keyboard goes to the first game just shown */
+function gamesMore() {
+  var at = ui.gShow || GAMES_N;
+  ui.gShow = at + GAMES_N;
+  gamesPaint();
+  var rows = document.querySelectorAll('#gl-body .lg-row');
+  if (rows[at]) { makeFocusable(el('gl-body')); rows[at].focus({ preventScroll: true }); }
+}
+/* the control that has the keyboard, by what it is (its act, key or game),
+   so a repaint can give it back */
+function focusKey(root) {
+  var f = document.activeElement;
+  if (!f || !f.getAttribute || !root || !root.contains || !root.contains(f)) return null;
+  return { el: f, act: f.getAttribute('data-act') || '', k: f.getAttribute('data-k') || '', g: f.getAttribute('data-g') || '' };
+}
+function focusBack(fk) {
+  if (!fk || (document.body.contains && document.body.contains(fk.el))) return;
+  var sel = fk.g ? '[data-g="' + fk.g + '"]' : fk.act ? '[data-act="' + fk.act + '"]' + (fk.k ? '[data-k="' + fk.k + '"]' : '') : '';
+  var x = sel && document.querySelector('#gamesbox ' + sel);
+  if (x && x.focus) { makeFocusable(el('gamesbox')); x.focus({ preventScroll: true }); }
 }
 /* a game's day in its row: "today", "yesterday", else its date ("27 Sept") */
 function gameDayWord(ts) {
@@ -303,12 +470,17 @@ function gameDayWord(ts) {
   if (ts >= d0.getTime() - DAY) return 'yesterday';
   return gameDateLine({ ts: ts });
 }
+/* the games since the last visit (computeGreeting), atop the Games tab:
+   game news, its loss's "Go through it ›" a way in (slice D: Today holds
+   the day's practice only) */
 function sinceHtml() { return data.greeting ? '<p class="since">' + data.greeting + '</p>' : ''; }
-/* a game read with no big mistake (F5.3), said once on Today: "Clean game
-   vs opponent41: no big mistakes." (every tier). The newest one read since
-   the last said (and since the last visit) is named for the rest of this
-   page load; nl:clean:<player> keeps the time of the game said, so a
-   reload says it no more. A loss is left out, as the games' rail does */
+/* a game read with no big mistake (F5.3), said once, atop the Games tab
+   (slice D: a game's news, not the day's practice): "Clean game vs
+   opponent41: no big mistakes." (every tier). The newest one read since the
+   last said (and since the last visit) is named for the rest of this page
+   load, from the first time the tab is drawn; nl:clean:<player> keeps the
+   time of the game said, so a reload says it no more. A loss is left out,
+   as the rows do */
 function cleanLineHtml() {
   var key = 'nl:clean:' + playerId();
   if (data.cleanFor !== key) { data.cleanFor = key; data.cleanLine = ''; }
@@ -921,10 +1093,11 @@ function doneHtml(ss) {
     /* at More help, a pack of the coming skill just above the bar (F9.4) */
     + packOfferHtml()
     /* the next set is the main way on: a bar that stays at the foot of the
-       screen, the next set twice as wide as the way back */
+       screen, the next set twice as wide as the way back (to the Games tab
+       for a game opened there, slice D) */
     + '<div class="acts-row recap-acts">'
       + (more ? '<a class="btn-big" data-icon="arrow" data-act="keepGoing">' + nextSetWords(more) + '</a>' : '')
-      + '<a class="' + (more ? 'btn-line' : 'btn-big') + '" data-act="endSession">Back to Today</a>'
+      + '<a class="' + (more ? 'btn-line' : 'btn-big') + '" data-act="endSession">' + (ss.back === 'games' ? 'Back to Games' : 'Back to Today') + '</a>'
     + '</div>'
     + '</div>';
 }
@@ -3698,9 +3871,8 @@ function settingsHtml() {
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
       + '<p class="last-saved">' + lastSavedWords() + '</p>'
       + '<p>' + gamesLine() + '</p>'
-      /* usage recording, the player's own choice (V5.5) */
-      + '<p>None of it is kept on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</p>'
-      + sw('consent', 'Usage recording (Microsoft Clarity)', consentYes()) + '</div>'
+      /* usage recording, said (on for every visitor: no switch) */
+      + '<p>None of it is kept on our servers. ' + clarityLine() + '</p></div>'
     /* each armed row takes its second tap only 1 to 6 s after the first
        (V4.5: a double tap does nothing) */
     + '<div class="set-block"><span class="kicker">Reset</span>'
@@ -3736,7 +3908,7 @@ function gamesLine() {
 function renderFoot() {
   var f = el('foot');
   if (!f) return;
-  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</span>'
+  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. ' + clarityLine() + '</span>'
     + '<span class="foot-links"><a data-act="coffee">Support the developer</a>'
     /* for lichess players only: a first visit plays nowhere yet */
     + (cfg.user && !isCC() ? '<a href="https://lichess.org/patron">Donate to lichess</a>' : '')

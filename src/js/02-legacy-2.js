@@ -1051,8 +1051,9 @@ function loadErrOf(err) {
   var site = (err && err.site) || (isCC() ? 'chess.com' : 'lichess');
   return { busy: !!(err && err.code === 429), site: site, until: Date.now() + ((err && err.wait) || BUSY_SECS) * 1000, net: !(err && err.code), code: (err && err.code) || null };
 }
-/* a returning player's check that failed (F10): said under their games
-   (refreshWords), and in a notice when they asked for it */
+/* a returning player's check that failed (F10): said under their games'
+   head on the Games tab (refreshWords), and in a notice when they asked
+   for it */
 function refreshFailed(e) {
   data.refreshErr = e;
   if (data.userCheck) notice(refreshWords(e));
@@ -1118,7 +1119,7 @@ function loadGames() {
     modelDirty();
     buildSeries();
     renderHeader();
-    if (!data.narrate) renderTrain();
+    if (!data.narrate) { renderTrain(); renderGames(); }
   }).then(function (payload) {
     if (stale(myGen)) return;
     data.games = payload.games;
@@ -1143,7 +1144,7 @@ function loadGames() {
     retainMovetext();
     saveGames(data.games);
     renderHeader(); renderFoot();
-    if (!data.narrate) { renderTrain(); renderInsights(); renderViews(); }
+    if (!data.narrate) { renderTrain(); renderGames(); renderInsights(); renderViews(); }
     topUpFormats();
     setTimeout(autoScan, 800);   /* fresh games always wake the engine */
   }).catch(function (err) {
@@ -1154,7 +1155,7 @@ function loadGames() {
        under them (F10); a first load says it in Today's place (F3, F9) */
     if (data.games.length) refreshFailed(data.gamesErr);
     else data.userCheck = false;
-    renderTrain(); renderFoot();
+    renderTrain(); renderGames(); renderFoot();
   });
 }
 

@@ -6893,7 +6893,7 @@ const BAR = `(function () {
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME}
       window.readyEngine(); playerTier = function () { return 2; };
       var calls = [], notes = [];
-      store.set('nl:consent', 'yes'), window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
+      window.clarity = function () { calls.push([].slice.call(arguments).map(String)); };
       notice = function (m) { notes.push(m); };
       var c1 = model().byKey['184455333378:68'], c2 = model().byKey['184380745302:11'], fk = 'foil:184455333378:66', out = {};
       asReview(c1);
@@ -7085,7 +7085,7 @@ const BAR = `(function () {
     const A = boot();
     A.ev(DOM);
     A.ev(BAR);
-    A.ev('(window.readyEngine(), window.__clar = [], store.set("nl:consent", "yes"), window.clarity = function (k, n) { window.__clar.push(n); }, 1)');
+    A.ev('(window.readyEngine(), window.__clar = [], window.clarity = function (k, n) { window.__clar.push(n); }, 1)');
     const run = (ms) => { for (let t = 0; t < ms; t += 10) A.advance(10); };
     const keys = JSON.parse(A.ev(T3F)), lead = A.ev('SLIDE_LEAD');
     const CASES = ['saw', 'good', 'not', 'open'], measures = [];

@@ -103,16 +103,18 @@ var hiddenAt = 0;
 function onReturn() {
   if (document.hidden) { hiddenAt = Date.now(); return; }
   if (!cfg.user || data.narrate || data.sections.games === 'loading') return;
-  /* a recap left behind for a game (a minute or more away) closes to Today */
+  /* a recap left behind for a game (a minute or more away) closes, to Today
+     or to the Games tab it came from */
   var away = hiddenAt && Date.now() - hiddenAt > 60 * 1000;
   hiddenAt = 0;
   if (ui.session && ui.session.finished && away) endSession();
-  /* a new day opens on Today (V4.4), in a page left open on Insights too */
-  if (away && !ui.session && !ui.sheet && ui.view === 'insights' && store.get('nl:viewDay', '') !== dayStamp()) setView('train');
+  /* a new day opens on Today (V4.4), in a page left open on Games or
+     Insights too */
+  if (away && !ui.session && !ui.sheet && ui.view !== 'train' && store.get('nl:viewDay', '') !== dayStamp()) setView('train');
   paintTitle();
   if (ui.session) return;
   var c = loadCachedGames();
-  if (Date.now() - (c.fetchedAt || c.at || 0) > 2 * 60 * 1000) loadGames().then(function () { computeGreeting(); renderTrain(); setTimeout(autoScan, 800); });
+  if (Date.now() - (c.fetchedAt || c.at || 0) > 2 * 60 * 1000) loadGames().then(function () { computeGreeting(); renderTrain(); renderGames(); setTimeout(autoScan, 800); });
 }
 document.addEventListener('visibilitychange', onReturn);
 window.addEventListener('focus', onReturn);

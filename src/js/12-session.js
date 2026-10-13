@@ -382,16 +382,22 @@ function startSession(mode, keys, label, spec, opts) {
   if (carried) { d0.carry = 0; daySave(d0); }
   /* one position opened from a summary goes back to that summary (I8) */
   var from = spec && spec.type === 'one' && ui.session && ui.session.finished ? ui.session : null;
+  /* a set opened on the Games tab (a game's positions) goes back there
+     (slice D): Back, × and the summary's way back. Its place in the
+     history is the tab's own, so one Back leaves it */
+  var back = !from && ui.view === 'games' ? 'games' : null;
   /* the sets of a day keep the size of the one played (a lesson is no
      position, F9.3) */
   if (mode === 'today' || mode === 'more') store.set('nl:setSize', keys.filter(function (k) { return !isLessonKey(k); }).length);
   ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, carried: carried, rev: reviewKeys(keys) };
   if (from) ui.session.from = from;
+  if (back) ui.session.back = back;
   if (opts && opts.firstTime) ui.session.firstTime = true;
   data.freshOnboard = false;
   logSet(mode, keys);
   saveSession();
-  setView('train', false);
+  setView('train', !!back);
+  if (back) window.scrollTo(0, 0);
   pushSessionState();
   loadCard();
   track('session_start_' + mode);
@@ -751,11 +757,25 @@ function endSession(fromPop) {
   var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints || open.attempts)));
   if (keep) saveSession(); else store.del(sessKey());
   ui.session = null;
-  if (!fromPop && history.state && history.state.nlSession) { try { history.replaceState(null, '', location.pathname + '#train'); } catch (e) {} }
+  /* a set opened on the Games tab leaves its own place in the history (the
+     tab's entry is under it), so the next Back goes on from the tab */
+  var toGames = ss.back === 'games';
+  if (!fromPop && history.state && history.state.nlSession) { try { if (toGames) history.back(); else history.replaceState(null, '', location.pathname + '#train'); } catch (e) {} }
+  if (keep) notice('Set paused. ' + countsWords(ss), { act: 'resume', label: 'Resume' });
+  /* a game's positions opened on the Games tab: back to it, the keyboard
+     on that game's row (else the Games tab) */
+  if (toGames) {
+    renderTrain();
+    setView('games', true);
+    var gid = ss.spec && ss.spec.id, row = gid != null && document.querySelector('#gamesbox [data-g="' + String(gid).replace(/"/g, '') + '"]');
+    makeFocusable(el('gamesbox'));
+    var gt = row || document.querySelector('#views .view-tab.view-on');
+    if (gt && gt.focus) gt.focus();
+    return;
+  }
   renderViews();
   renderTrain();
   window.scrollTo(0, 0);
-  if (keep) notice('Set paused. ' + countsWords(ss), { act: 'resume', label: 'Resume' });
   makeFocusable(el('trainbox'));
   /* the keyboard goes to Today's main button (Resume, Start, the next set),
      never to the hero's board, which a screen reader does not see (F6);

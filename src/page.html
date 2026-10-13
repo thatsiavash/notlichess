@@ -7,8 +7,8 @@
 <script>
 /* a link like /?u=name&src=lichess: the name moves into this tab's
    sessionStorage and leaves the address at once, so no analytics ever sees
-   it (Microsoft Clarity loads only after the player's yes, 15-shell.js,
-   and gets the campaign as a tag) */
+   it (Microsoft Clarity loads at boot, after this, 15-shell.js, and gets
+   the campaign as a tag) */
 (function () { try {
   var p = new URLSearchParams(location.search), u = p.get('u') || p.get('user'), s = p.get('src');
   if (p.get('utm_source')) sessionStorage.setItem('nl:utm', p.get('utm_source'));
