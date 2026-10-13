@@ -560,7 +560,8 @@
         text('#cband') + ' / ' + T.card().phase + ' ' + T.card().misses);
       bandFits('T4');
       await sleep(2600);
-      ok('the task (or the First look\'s hint) is back after it, and the outline gone', text('#cband .bd-r2') === before4 && (/^Find a better move/.test(before4) || /^Hint 1 of 2/.test(text('#cband .bd-r1'))) && !$('#bwrap .marks .nope-box'), text('#cband'));
+      /* (release 2, B8: a First look keeps its task in row 1, the hint's words in row 2) */
+      ok('the task (or the First look\'s hint) is back after it, and the outline gone', text('#cband .bd-r2') === before4 && (/^Find a better move/.test(before4) || /^Hint 1 of 2/.test(text('#cband .bd-r1')) || /^Find a better move/.test(text('#cband .bd-r1'))) && !$('#bwrap .marks .nope-box'), text('#cband'));
       await tapMove(c.played);
       await until(() => T.card().misses === 1, 4000);
       await sleep(500);
@@ -885,7 +886,7 @@
     probe.remove();
     ok('each tile shows its result as its glyph, before its word and in the glyph\'s own colour', words.length > 0 && offGlyph.length === 0, offGlyph.join(' | '));
     const head = text('#recap-h'), firstN = words.filter((w) => /^First try/.test(w)).length, countedN = words.filter((w) => w !== 'Skipped').length;
-    const tier1 = T.ev('playerTier()') === 1, foundN = words.filter((w) => !/^(Shown|Missed|Skipped)/.test(w)).length, allN = words.length;
+    const tier1 = T.ev('playerTier()') === 1, foundN = words.filter((w) => { const [first, last] = w.split(', then '); return !/^(Shown|Missed|Skipped)/.test(first) || /^found/.test(last || ''); }).length /* found on either try counts as found at More help (C3) */, allN = words.length;
     const t1head = foundN === allN ? (allN === 1 ? 'You found it.' : allN === 2 ? 'You found both.' : 'You found all ' + allN + '.') : 'You found ' + foundN + ' of ' + allN + '.';
     ok('the recap counts what it says (V4.3: tier 1 what was found, never "of 15")', !countedN ? head === 'Done.' : tier1 ? head === t1head : head === firstN + ' of ' + countedN + ' found first try.', head + ' / ' + words.join(', '));
     ok('no summary line starts with "Then" or says "held" (V4.3)', ![].some.call($$('.recap-page p, .recap-page h2'), (e) => /^Then\b/.test(e.textContent.trim()) || /\bheld\b/.test(e.textContent)), text('.recap-then') + ' / ' + text('.recap-small'));

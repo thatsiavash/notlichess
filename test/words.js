@@ -98,10 +98,11 @@ module.exports = function (h) {
       const d = settledOf(A, '184379966256:39', t).details.join(' | ');
       ok(!/opens up your king/.test(d) && /White attacks your queen and the c7 pawn\./.test(d), '184379966256:39 at tier ' + t + ': ' + d);
     }
-    /* their threat: Nxg3 (the rook), never the quiet e5 */
+    /* their threat: Nxg3 (the rook), never the quiet e5; release 2 (B5): nor Nxd6, a pawn no search confirms
+       as a threat, so the one threat left is Nxg3, which Rd3 met, and Details names none */
     for (const t of [2, 3]) {
       const d = settledOf(A, '184434540700:103', t).details.join(' | ');
-      ok(/Nxg3/.test(d) && !/\be5\b/.test(d), '184434540700:103 at tier ' + t + ': ' + d);
+      ok(!/\be5\b/.test(d) && !/Nxd6/.test(d), '184434540700:103 at tier ' + t + ': ' + d);
     }
     /* castling: its side where both are legal (row 1 has room for neither, so the arrow shows it) */
     const cw = JSON.parse(P.ev(`(function () { ${OPEN} ${TRY} var a = openAt('184205297974:26', 1), b = openAt('184172942198:33', 1), one = stateFromFen('4k3/8/8/8/8/8/8/4K2R w K - 0 1');
@@ -131,7 +132,7 @@ module.exports = function (h) {
   });
 
   /* ── V2.2 ── */
-  test('V2.2 a wrong try says its first decisive event, to the end: the pawn race\'s Kxg6 at 700 "Their pawn will become a queen." with the pawn\'s path drawn; card 4\'s Qe2 at 1600 "After Bxc3+ bxc3, Qxc3+ forks." (tier 1 "Then their queen forks king and rook."), See it reaching Qxc3+ in three taps, c3 never "lost"; the back rank\'s Rd1+ "After Rxd1 Bxd1, Qxg7 is mate."; card 1\'s Qg4 at 1600 "Safe, but Black is better now." (2000: "Safe, but only 26% for you.")', async () => {
+  test('V2.2 a wrong try says its first decisive event, to the end: the pawn race\'s Kxg6 at 700 "Their pawn will become a queen." with the pawn\'s path drawn; card 4\'s Qe2 at 1600 "After the trade, Qxc3+ forks." (tier 1 "After the trade, their queen forks.", release 2 B6), See it reaching Qxc3+ in three taps, c3 never "lost"; the back rank\'s Rd1+ "After the trade, Qxg7 is mate."; card 1\'s Qg4 at 1600 "Safe, but Black is better now." (2000: "Safe, but only 26% for you.")', async () => {
     const A = keyed();
     /* the pawn race: the game move again, its line queens on f1 */
     const race = await tryOn(A, RACE, 1, 'f6g6', null, null);
@@ -142,7 +143,8 @@ module.exports = function (h) {
     const L4 = ['d4c3', 'b2c3', 'f6c3', 'e1f1', 'c3a1', 'e2d2', 'd7d6', 'h2h4', 'c8e6'];
     const c4 = [];
     for (const t of [1, 2, 3]) c4.push((await tryOn(A, CARD4, t, 'd1e2', L4, -494)).r2);
-    eq(JSON.stringify(c4), JSON.stringify(['Then their queen forks king and rook.', 'After Bxc3+ bxc3, Qxc3+ forks.', 'After Bxc3+ bxc3, Qxc3+ forks.']), 'card 4, Qe2, at each tier');
+    /* (release 2, B6: after a take-back at equal value, "After the trade") */
+    eq(JSON.stringify(c4), JSON.stringify(['After the trade, their queen forks.', 'After the trade, Qxc3+ forks.', 'After the trade, Qxc3+ forks.']), 'card 4, Qe2, at each tier');
     const taps = JSON.parse(A.ev(`(function () { var a = ui.session.active, out = [];
       for (var i = 0; i < 3; i++) { seeIt(); a.animMove = null; var f = boardOptsFor(a); out.push({ last: sqName(f.last[0]) + sqName(f.last[1]), lost: (f.opts.tokens || []).filter(function (x) { return x.kind === 'lost'; }).length, marks: (f.opts.arrows || []).filter(function (x) { return x.kind === 'event' || x.kind === 'back'; }).map(function (x) { return x.kind + ' ' + sqName(x.from) + sqName(x.to) + (x.say ? ' ' + x.say : ''); }) }); }
       return JSON.stringify(out); })()`));
@@ -152,7 +154,7 @@ module.exports = function (h) {
     /* the back rank */
     const back = [];
     for (const t of [1, 2, 3]) back.push((await tryOn(A, BACK, t, 'd8d1', ['g1d1', 'g4d1', 'b7g7'], null, -2)).r2);
-    eq(JSON.stringify(back), JSON.stringify(['Then queen takes on g7 is checkmate.', 'After Rxd1 Bxd1, Qxg7 is mate.', 'After Rxd1 Bxd1, Qxg7 is mate.']), 'the back rank, Rd1+');
+    eq(JSON.stringify(back), JSON.stringify(['After the trade, they can checkmate.', 'After the trade, Qxg7 is mate.', 'After the trade, Qxg7 is mate.']), 'the back rank, Rd1+');
     /* card 1, Qg4: safe, and Qe6's line loses the bishop too, so no capture is named */
     eq((await tryOn(A, CARD1, 2, 'f5g4', ['b7b5'], -282)).r2, 'Safe, but Black is better now.', 'card 1, Qg4, at 1600');
     eq((await tryOn(A, CARD1, 3, 'f5g4', ['b7b5'], -282)).r2, 'Safe, but only 26% for you.', 'card 1, Qg4, at 2000: the key\'s figure');
@@ -160,7 +162,7 @@ module.exports = function (h) {
     const ra8 = [];
     for (const t of [1, 3]) ra8.push((await tryOn(A, '184174601056:59', t, 'f8a8', ['d3d7', 'b4c5', 'g1h1', 'b7b3', 'd7d8', 'a8d8', 'd1d8'], -240)).r2);
     eq(JSON.stringify(ra8), JSON.stringify(['After rook takes on d7, White is better.', 'After Rxd7, White is better.']), 'Ra8: no "takes your bishop" where the line wins it back');
-    eq((await tryOn(A, CARD4, 2, 'c1e3', ['d4c3', 'e3d2', 'c3d2', 'd1d2', 'd7d5', 'e1c1', 'e8g8', 'c4d5', 'e7d5', 'd2d5', 'a7a5'], -410)).r2, 'Their bishop takes your knight.', 'card 4, Be3: the line still nets a piece at its end (a bishop for a pawn), so the capture is named');
+    eq((await tryOn(A, CARD4, 2, 'c1e3', ['d4c3', 'e3d2', 'c3d2', 'd1d2', 'd7d5', 'e1c1', 'e8g8', 'c4d5', 'e7d5', 'd2d5', 'a7a5'], -410)).r2, 'Bxc3+ takes your knight.', 'card 4, Be3: the line still nets a piece at its end (a bishop for a pawn), so the capture is named (in SAN at 1600, release 2 B6)');
   });
 
   test('V2.2 no fixture try whose line mates, promotes or settles a loss ends row 2 in "better" or "winning": every second and third line of every key, at each tier, read by the settle rule (a promotion whose piece stands; a loss beyond the answer\'s, in line with the score)', async () => {
@@ -179,14 +181,19 @@ module.exports = function (h) {
           if (a.phase !== 'tried' || a.tried.kind !== 'miss') return 'null';
           a.reason = 2;
           var d = displayFor(a), k = a.it.b.k, l = k.l.filter(function (x) { return x[0] === '${u}'; })[0], pov = myPov(a.it), sign = pov ? 1 : -1;
-          var pv = unpackUci(l[3] || ''), ns = lineNodes(a.st, pv), s = settleLine(a.st, pv), ans = answerSettle(a);
-          var mate = ns.some(function (x) { return x.mate && x.byW !== pov; }) || (l[2] != null && sign * l[2] < 0);
-          var promo = ns.some(function (x, i) { if (!x.m.promo || x.byW === pov) return false; var sq = x.m.to; for (var j = i + 1; j < ns.length; j++) { if (ns[j].byW !== pov && ns[j].m.from === sq) sq = ns[j].m.to; else if (ns[j].byW === pov && ns[j].m.to === sq) return false; } return true; });
-          /* the pieces its line loses where it settles, net, that the answer's line keeps, worth 2 (a pawn 1), with the drop from the answer at least 0.6 of it */
+          /* (the key's scores are the player's; settleLine reads White's) */
+          var pv = unpackUci(l[3] || ''), ns = lineNodes(a.st, pv), s = settleLine(a.st, pv, null, sign * l[1]), ans = answerSettle(a);
+          /* release 2, B7: at tier 1 a mate is named only within 3 of their moves */
+          var mi = -1; ns.some(function (x, i) { if (x.mate && x.byW !== pov) { mi = i; return true; } return false; });
+          var mate = (mi >= 0 && (${tier} > 1 || mi <= 5)) || (l[2] != null && l[2] < 0 && (${tier} > 1 || -l[2] <= 3));
+          /* a promotion within the plies See it plays (SEE_PLIES with the try) */
+          var promo = ns.some(function (x, i) { if (i >= SEE_PLIES || !x.m.promo || x.byW === pov) return false; var sq = x.m.to; for (var j = i + 1; j < ns.length; j++) { if (ns[j].byW !== pov && ns[j].m.from === sq) sq = ns[j].m.to; else if (ns[j].byW === pov && ns[j].m.to === sq) return false; } return true; });
+          /* the pieces its line loses where it settles, net, that the answer's line keeps, worth 2 (a pawn 1), with the drop from the answer at least 0.6 of it;
+             release 2, B4: settled only where its count agrees with the line's score */
           var lost = netLostOf(ns, s.k, pov), extra = ans.lost.slice();
           lost = lost.filter(function (p) { var j = extra.indexOf(p); if (j >= 0) { extra.splice(j, 1); return false; } return true; });
-          var worth = lost.reduce(function (x, p) { return x + MOTIF_VAL[p]; }, 0), drop = (k.l[0][1] - l[1]) * sign / 100;
-          var loss = s.ok && lost.length && worth >= (lost.length === 1 && lost[0] === 'P' ? 1 : 2) && drop >= 0.6 * worth;
+          var worth = lost.reduce(function (x, p) { return x + MOTIF_VAL[p]; }, 0), drop = (k.l[0][1] - l[1]) / 100;
+          var loss = s.ok && s.agree && lost.length && worth >= (lost.length === 1 && lost[0] === 'P' ? 1 : 2) && drop >= 0.6 * worth;
           return JSON.stringify({ r2: d.row2, mate: mate, promo: promo, loss: !!loss }); })(ui.session.active)`));
         if (!b) continue;
         n.tries++;
@@ -197,12 +204,14 @@ module.exports = function (h) {
         }
       }
     }
-    ok(n.tries > 100 && n.named >= 15 && n.mate >= 1 && n.promo >= 3 && n.loss >= 10, JSON.stringify(n));
+    /* (the key's scores are the player's: a mate of theirs in a key's second or third line is rare, and
+       a promotion See it reaches rarer, B7 and SEE_PLIES) */
+    ok(n.tries > 100 && n.named >= 15 && n.promo >= 1 && n.loss >= 10, JSON.stringify(n));
     eq(out.length, 0, out.length + ' tries end in a band word over their event: ' + out.slice(0, 3).join(' | '));
   });
 
   /* ── V2.3 ── */
-  test('V2.3 hints that never invite a rejected move: card 1\'s Hint 2 "Only one queen move is best." at 700, "Only one queen move holds." at 1600 and 2000 (Qd7+, Qh3 and Qg4 are safe and lose); the queen trap\'s Hint 1 rings f4, "You can win their queen."; card 4\'s Hint 1 the two threats, both drawn, never praise for O-O; card 1\'s Qxe5 at 700: See it leaves "Hint" (the automatic hint counts as it shows), Try again adds it and says so; never "No more hints" while one is unseen', async () => {
+  test('V2.3 hints that never invite a rejected move: card 1\'s Hint 2 "Only one queen move is best." at 700, "Only one queen move holds." at 1600 and 2000 (Qd7+, Qh3 and Qg4 are safe and lose); the queen trap\'s Hint 1 rings f4, "You can win their queen."; card 4\'s Hint 1 what castling runs into (release 2, B5: no threat beside their mate), never praise for O-O; card 1\'s Qxe5 at 700: See it leaves "Hint" (the automatic hint counts as it shows), Try again adds it and says so; never "No more hints" while one is unseen', async () => {
     const A = keyed();
     const hint = (key, tier, n) => JSON.parse(A.ev(`(function () { ${OPEN} ${TRY} var a = openAt('${key}', ${tier}); a.hints = ${n}; a.hintAfter = true; var d = displayFor(a), hm = hintMarks(a);
       return JSON.stringify({ r2: d.row2, rings: hm.rings.map(function (x) { return sqName(x.sq) + ' ' + x.kind; }), arrows: hm.arrows.map(function (x) { return sqName(x.from) + sqName(x.to); }), kind: hm.dz ? hm.dz.kind : null }); })()`));
@@ -217,14 +226,12 @@ module.exports = function (h) {
       eq(JSON.stringify([q.r2, q.rings, q.kind]), JSON.stringify(['You can win their queen.', ['f4 target'], 'win']), 'the queen trap\'s Hint 1 at tier ' + t);
     }
     const c4 = [1, 2, 3].map((t) => hint(CARD4, t, 1));
-    /* (the spec's seven-word forms, "Stop the mate and guard your knight." and "Two threats: mate on f2 and Bxc3+.", lead the
-       ladder; a hint's frame leaves row 2 six words, so its six-word rungs show: build note 5) */
-    eq(JSON.stringify(c4.map((x) => x.r2)), JSON.stringify(['Stop the mate, guard your knight.', 'Two threats: Qxf2 mate and Bxc3+.', 'Two threats: Qxf2 mate and Bxc3+.']), 'card 4\'s Hint 1');
-    ok(c4.every((x) => x.kind === 'two' && JSON.stringify(x.rings) === JSON.stringify(['f2 attacked', 'c3 attacked']) && JSON.stringify(x.arrows) === JSON.stringify(['f6f2', 'd4c3'])), 'both threats drawn: ' + JSON.stringify(c4));
-    const ladder = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY} var a = openAt('${CARD4}', 1); a.hints = 1; a.hintAfter = true; var l1 = dangerWords(a, hintMarks(a).dz);
-      var b = openAt('${CARD4}', 2); b.hints = 1; b.hintAfter = true; return JSON.stringify([l1[0], dangerWords(b, hintMarks(b).dz)[0]]); })()`));
-    eq(JSON.stringify(ladder), JSON.stringify(['Stop the mate and guard your knight.', 'Two threats: mate on f2 and Bxc3+.']), 'the spec\'s forms first on the ladder');
-    ok(!c4.some((x) => /stops|Castling|O-O/.test(x.r2)), 'never praise for the game move');
+    /* (release 2, B5: beside their mate no other move is a threat, so V2.3's two threats are gone: O-O
+       stopped the mate, and Hint 1 is what castling runs into, the bishop that takes on c3 drawn as the
+       danger the game move ran into) */
+    eq(JSON.stringify(c4.map((x) => x.r2)), JSON.stringify(['See what castling runs into.', 'See what O-O runs into.', 'See what O-O runs into.']), 'card 4\'s Hint 1');
+    ok(c4.every((x) => x.kind === null && JSON.stringify(x.rings) === JSON.stringify(['d4 threat']) && JSON.stringify(x.arrows) === JSON.stringify(['d4c3'])), 'the bishop and its arrow: ' + JSON.stringify(c4));
+    ok(!c4.some((x) => /stops|met |Two threats/.test(x.r2)), 'never praise for the game move, never a second threat beside the mate');
     /* the automatic hint, counted as it shows */
     const qx = await tryOn(A, CARD1, 1, 'f5e5', ['f4e5'], -900);
     eq(qx.bar, 'See it | Try again', 'card 1, Qxe5, at 700');
@@ -243,16 +250,17 @@ module.exports = function (h) {
   });
 
   /* ── V2.4 ── */
-  test('V2.4 one reason for the found move: card 2 at 700 after a miss "Pawn to f5 guards your knight.", See why ending "Better: pawn to f5. It guards your knight."; the queen trap "Be3 traps their queen."; the Kb2 card one reason in the row, See why and Details; the pawn race\'s Kxf5 stops the pawn, never "wins the pawn"; card 1\'s Better branch at 2000 four or more steps, ending on its figure with "Your chances"', async () => {
+  test('V2.4 one reason for the found move: card 2 at 700 after a miss "Pawn to f5 guards your knight.", See why ending "Better: pawn to f5. It guards your knight."; the queen trap "Be3 traps their queen."; the Kb2 card one reason in the row, See why and Details (at 700 its band, release 2 B7); the pawn race\'s Kxf5 stops the pawn, never "wins the pawn"; card 1\'s Better branch at 2000 four or more steps, ending on its figure with "Your chances"', async () => {
     const A = keyed();
     const c2 = settledOf(A, CARD2, 1);
     eq(c2.r2, 'Pawn to f5 guards your knight.', 'card 2 at 700');
     eq(c2.caps[c2.caps.length - 1], 'Better: pawn to f5. It guards your knight.', 'card 2\'s See why ends on the reason');
     eq(settledOf(A, CARD2, 2).caps.slice(-1)[0], 'Better: f5. It guards your knight.', 'at 1600');
     for (const t of [2, 3]) eq(settledOf(A, QTRAP, t).r2, 'Be3 traps their queen.', 'the queen trap at tier ' + t);
+    /* (release 2, B7: at tier 1 a mate in 7 is no "checkmate": its band, and See why's last step says it as a better move does) */
     for (const t of [1, 2]) {
-      const k = settledOf(A, KB2, t), say = t === 1 ? 'King to b2 forces checkmate.' : 'Kb2 forces mate.';
-      eq(JSON.stringify([k.r2, k.caps.slice(-1)[0], k.details.indexOf(say) >= 0]), JSON.stringify([say, say, true]), 'the Kb2 card at tier ' + t + ': one reason, three places');
+      const k = settledOf(A, KB2, t), say = t === 1 ? 'King to b2 keeps you winning.' : 'Kb2 forces mate.', cap = t === 1 ? 'Better: king to b2. It keeps you winning.' : say;
+      eq(JSON.stringify([k.r2, k.caps.slice(-1)[0], k.details.indexOf(say) >= 0]), JSON.stringify([say, cap, true]), 'the Kb2 card at tier ' + t + ': one reason, three places');
     }
     for (const t of [1, 2, 3]) {
       const r = settledOf(A, RACE, t), all = [r.r2, r.check].concat(r.caps, r.details).join(' | ');
@@ -268,10 +276,12 @@ module.exports = function (h) {
   });
 
   /* ── V2.5 ── */
-  test('V2.5 Details, Explore and figures: card 4\'s Details at 1600 "Their threats: Qxf2 mate, Bxc3+. O-O met only the mate." (700 in words); card 1\'s "Rg1 met neither."; tier 1 Details in words with no notation and no figure; every figure labelled ("Your chances: 36% before, 16% after.", the chip beside a tier 3 frame\'s); SAN keeps its signs', async () => {
+  test('V2.5 Details, Explore and figures: card 4\'s Details names no threat O-O left (release 2, B5: the mate alone, and O-O stopped it); card 1\'s "Their threats: gxf5, cxd3+. Rg1 met neither."; tier 1 Details in words with no notation and no figure; every figure labelled ("Your chances: 36% before, 16% after.", the chip beside a tier 3 frame\'s); SAN keeps its signs', async () => {
     const A = keyed();
-    eq(settledOf(A, CARD4, 2).details.filter((x) => /^Their threats?:/.test(x)).join(' | '), 'Their threats: Qxf2 mate, Bxc3+. O-O met only the mate.', 'card 4 at 1600');
-    eq(settledOf(A, CARD4, 1).details.filter((x) => /^Their threats?:/.test(x)).join(' | '), 'Their threats: checkmate on f2, and their bishop takes your knight.', 'card 4 at 700');
+    /* (release 2, B5: beside their mate no other move is a threat, so card 4 has the one, the mate O-O
+       stopped, and Details names no threat the game move left standing) */
+    eq(settledOf(A, CARD4, 2).details.filter((x) => /^Their threats?:/.test(x)).join(' | '), '', 'card 4 at 1600');
+    eq(settledOf(A, CARD4, 1).details.filter((x) => /^Their threats?:/.test(x)).join(' | '), '', 'card 4 at 700');
     eq(settledOf(A, CARD1, 2).details.filter((x) => /^Their threats?:/.test(x)).join(' | '), 'Their threats: gxf5, cxd3+. Rg1 met neither.', 'card 1 at 1600');
     const SAN = /(?:\b[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|\b[a-h]x[a-h][1-8]|\b[a-h][18]=[QRBN]|\bO-O(?:-O)?)[+#]?/;
     const keys = JSON.parse(A.ev(`JSON.stringify(allMistakes().filter(trainable).slice(0, 40).map(function (it) { return it.key; }))`));

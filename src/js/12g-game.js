@@ -190,7 +190,7 @@ function foilLook(it, prio) {
     b.ok = 1;
     /* the threat comes after, never holding the card: Hint 2 reads it once
        it is in (until then the board's own attacks) */
-    it.thP = foilThreat(pre, sign > 0, false, key).then(function (th) { if (!stale(myGen) && th !== undefined) b.th = th; });
+    it.thP = foilThreat(pre, sign > 0, false, key, { w: 100 - wBest, cp: -sign * x.bl.cp }).then(function (th) { if (!stale(myGen) && th !== undefined) b.th = th; });
   });
   foilPending[key] = p.then(function () { delete foilPending[key]; return it; }, function () { delete foilPending[key]; return it; });
   return foilPending[key];
@@ -199,8 +199,9 @@ function foilLook(it, prio) {
    250,000 nodes), read by the fact sheet's rule (factsThreats); a quiet
    move kept only when a search from after it confirms what it wins where
    its line settles. Resolves with [uci, mate, gain, piece won] or null (none,
-   or the player in check); undefined when no search could run */
-function foilThreat(pre, pov, prio, key) {
+   or the player in check); undefined when no search could run. base: where
+   they stand now ({w, cp}, their side: B5's gain of 10 or more) */
+function foilThreat(pre, pov, prio, key, base) {
   if (checkersOf(pre).length) return Promise.resolve(null);
   var nst = dzNullState(pre), fen = stateFen(nst);
   var settleWins = function (ucis) {
@@ -213,7 +214,7 @@ function foilThreat(pre, pov, prio, key) {
   return engineEval(fen, { nodes: DEEP_NODES }, prio, { multipv: 2, tag: key }).then(function (r) {
     if (!r || r.stopped) return undefined;
     var lines = r.lines && r.lines.length ? r.lines : [{ cp: r.cp, mate: r.mate, pv: r.pv || [] }];
-    var c = factsThreats(pre, lines, pov, true)[0];
+    var c = factsThreats(pre, lines, pov, true, base)[0];
     if (!c) return null;
     var m = uciToMove(nst, c.u);
     if (!m) return null;
@@ -231,8 +232,12 @@ function foilThreat(pre, pov, prio, key) {
     return engineEval(stateFen(after), { nodes: DEEP_NODES }, prio, { tag: key }).then(function (r2) {
       if (!r2 || r2.stopped) return null;
       var sw = settleWins([c.u].concat(r2.pv || []));
-      /* the gain is theirs: the player's loss, the piece it wins */
-      return -sw.gain >= 1 && sw.wins ? [c.u, 0, -sw.gain, sw.wins] : null;
+      /* the gain is theirs: the player's loss, the piece it wins; a capture
+         names the piece it takes, so its line nets at least what a capture's
+         loss must (a pawn 1, else 2: foil:184215516284:61's Nxe2 is met by
+         exf4, a trade of loose pieces, never "would take your knight") */
+      var need = nst.b[m.to] ? (pType(nst.b[m.to]) === 'P' ? 1 : 2) : 1;
+      return -sw.gain >= need && sw.wins ? [c.u, 0, -sw.gain, sw.wins] : null;
     }, function () { return null; });
   }, function () { return undefined; });
 }
@@ -241,7 +246,8 @@ function foilThreat(pre, pov, prio, key) {
    (a capture, or a quiet move that wins a piece); the only move when its
    search's next line is 10 points worse ("Only one move holds here."); the
    player's pieces taking would win for them (dangerAttacked) where no
-   search ran; none: "Any good move passes here." No mark on the answer's
+   search ran, in words alone (B5: no red ring where no search confirms the
+   capture); none: "Any good move passes here." No mark on the answer's
    to-square nor on the game move's (a fine answer too). {kind, rings,
    arrows, ...} */
 function foilDanger(a) {
@@ -259,7 +265,7 @@ function foilDanger(a) {
   if (b.om) return { kind: 'only', rings: [], arrows: [] };
   if (th === undefined) {
     var pk = dangerPick(dangerAttacked(st, pov).map(function (x) { return { sq: x[0], p: st.b[x[0]], by: x.slice(1) }; }), [], skip);
-    if (pk) return { kind: 'attacked', named: pk.named, second: pk.second, rings: pk.rings, arrows: pk.arrows.map(function (x) { return { from: x.from, to: x.to, kind: 'threat', key: 'danger' }; }) };
+    if (pk) return { kind: 'attacked', named: pk.named, second: pk.second, rings: [], arrows: [] };
   }
   return { kind: 'none', rings: [], arrows: [] };
 }

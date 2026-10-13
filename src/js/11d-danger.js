@@ -4,7 +4,12 @@
    beside the deeper look and kept on the mistake record as b.dz:
      at  the player's pieces (not the king) on the card's own position that
          taking would win for them (the static exchange on the square, dzSee:
-         a piece its king or a pawn guards well enough is not in danger):
+         a piece its king or a pawn guards well enough is not in danger),
+         and (B5, release 2) once a search ran, only where it confirms it:
+         one of their threats the search kept (th and the next one) takes
+         it for a gain where its line settles (dzConfirmed); before any
+         search (no key, the engine still loading) the exchange's list,
+         said in words alone, never ringed (dangerView's searched).
          [[square, attacker squares...], ...], the most valuable piece first,
          its cheapest attacker first; only attackers that may legally take
          (not pinned off the line, a king only where nothing guards)
@@ -38,8 +43,9 @@
          before is no such danger: taking away a guard is a safety check
          missed
      v, k  the version (DZ_V) and a signature of the lines and scores it was
-         read from (dzSig): a change to either reads it again */
-var DZ_V = 3;
+         read from (dzSig): a change to either reads it again (DZ_V 4,
+         release 2: B5's threats, a search's lines only) */
+var DZ_V = 4;
 var DZ_STEP = { threat: 1, missedMaterial: 2, missedTactic: 2, mateMissed: 2, slipped: 4, openingSlip: 5, drift: 5, endgame: 5 };
 var DZ_NODES = 250000;
 function dzSig(b) {
@@ -62,7 +68,8 @@ function dangerCard(it) {
   var played = pu ? uciToMove(pre, pu) : null, best = b.bu && pre ? uciToMove(pre, b.bu) : null;
   if (!played || !best || b.bu === pu) return null;
   var fs = factsSettle(b, g.color === 'white');
-  var cls = classifyMistake(pre, pu, { pv: unpackUci(b.lu), mate: b.mb, settle: fs.b }, { pv: unpackUci(b.ru), mate: b.ma, settle: fs.g }, b.wb, b.wa, b.p);
+  var kth = factsOf(b) && !factsOf(b).x ? factsOf(b).th : undefined;
+  var cls = classifyMistake(pre, pu, { pv: unpackUci(b.lu), mate: b.mb, settle: fs.b }, { pv: unpackUci(b.ru), mate: b.ma, settle: fs.g, th: kth }, b.wb, b.wa, b.p);
   return { it: it, key: it.key, pre: pre, played: played, playedUci: pu, best: best, cls: cls };
 }
 /* the same position with them to move: castling kept, no en passant */
@@ -89,6 +96,19 @@ function dangerAttacked(st, pov) {
     out.push([sq].concat(by));
   }
   return out.sort(function (x, y) { return val(y[0]) - val(x[0]) || x[0] - y[0]; });
+}
+/* B5 (release 2): the attacked pieces (dangerAttacked's list on st) a
+   search confirms: one of their threats ts ([uci, mate, gain], from the
+   null-move search's lines, read by factsThreats' rule) takes the piece and
+   gains them material where its line settles. The static exchange alone
+   never puts a piece in danger (the board's red ring, "saves") */
+function dzConfirmed(st, list, ts) {
+  var nst = dzNullState(st), hit = {};
+  (ts || []).forEach(function (t) {
+    var m = t && !t[1] && t[2] >= 1 ? uciToMove(nst, t[0]) : null, q = m ? (m.ep >= 0 ? m.ep : m.to) : -1;
+    if (q >= 0 && nst.b[q]) hit[q] = 1;
+  });
+  return (list || []).filter(function (x) { return !!hit[x[0]]; });
 }
 /* the static exchange on square sq, side by (true: White) taking first:
    what they net in pawns when both sides take there in turn, the cheapest
@@ -149,7 +169,10 @@ function dangerSaves(a) {
    mate, pawns], a mate first, then the biggest gain; [] when none */
 function dangerThreats(a, r) {
   var lines = r && r.lines && r.lines.length ? r.lines : r && r.pv ? [{ cp: r.cp, mate: r.mate, pv: r.pv }] : [];
-  return factsThreats(a.pre, lines, myPov(a.it));
+  /* (B5: a threat gains them 10 or more on where they stand: the card's
+     best line, from their side) */
+  var eb = a.it.b.eb, base = eb != null ? { w: 100 - winPct(eb), cp: -eb } : null;
+  return factsThreats(a.pre, lines, myPov(a.it), false, base);
 }
 /* their threat still stands once the game move is on the board: the same
    piece makes the same move there and takes the same piece (a mate in one
@@ -220,11 +243,16 @@ function dzRaises(a, th, sv, s) {
 /* the facts for card a; r: the null-move search's answer, null when it
    found nothing, undefined when none ran */
 function dangerFacts(a, r) {
-  var b = a.it.b, pov = myPov(a.it), d = { v: DZ_V, k: dzSig(b), at: dangerAttacked(a.pre, pov), sv: dangerSaves(a) }, all = [], key = factsOf(b);
+  var b = a.it.b, pov = myPov(a.it), d = { v: DZ_V, k: dzSig(b), at: [], sv: dangerSaves(a) }, all = [], key = factsOf(b);
   if (dzInCheck(a)) d.th = null;
   /* the card's key has them already: no search of its own (V1.1) */
   else if (key && !key.x && r === undefined) { all = (key.th || []).slice(); d.th = all[0] || null; }
   else if (r !== undefined) { all = r ? dangerThreats(a, r) : []; d.th = all[0] || null; }
+  /* (B5: once a search ran, in danger only where it confirms the capture;
+     before one, the exchange's list stands in, never drawn: dangerView's
+     searched) */
+  var at = dangerAttacked(a.pre, pov);
+  d.at = d.th === undefined ? at : dzConfirmed(a.pre, at, all);
   d.st = dangerStep(a, d.th, all.slice(1), d.sv);
   return d;
 }

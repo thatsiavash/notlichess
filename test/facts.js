@@ -51,9 +51,10 @@ module.exports = function (h) {
     eq(JSON.stringify([r.illegal.n, r.illegal.k, r.illegal.ok]), JSON.stringify([0, 0, false]), 'an illegal move ends the line');
   });
 
-  test('V1.1 the record: every fixture card\'s key (test/truth/facts.js, the repo\'s Stockfish at 1,000,000 nodes) holds the answer, three lines, the refutation, the only move, a forced mate, their threats, both settled lines, the answer\'s reason and Hint 2\'s moves, in about 300 to 800 bytes; the 1,000,000-node facts the spec names: the Kb2 card forces mate, card 2\'s answer is f5, card 4\'s threats are Qxf2 mate then Bxc3, card 1\'s gxf5, 184434540700:103\'s Nxg3 and never e5', () => {
+  test('V1.1 the record: every fixture card\'s key (test/truth/facts.js, the repo\'s Stockfish at 1,000,000 nodes) holds the answer, three lines, the refutation, the only move, a forced mate, their threats, both settled lines, the answer\'s reason and Hint 2\'s moves, in about 300 to 800 bytes; the 1,000,000-node facts the spec names: the Kb2 card forces mate, card 2\'s answer is f5, card 4\'s threat is Qxf2 mate alone (B5), card 1\'s gxf5, 184434540700:103\'s Nxg3 and never e5', () => {
     const cards = FACTS.cards, keys = Object.keys(cards);
-    eq(FACTS.v, 1, 'FACTS_V'); eq(FACTS.nodes, 1000000, 'searched at 1,000,000 nodes');
+    /* (release 2, B1: FACTS_V 2, every search on a clean engine, a winning card's lines at 4,000,000 nodes) */
+    eq(FACTS.v, 2, 'FACTS_V'); eq(FACTS.nodes, 1000000, 'searched at 1,000,000 nodes');
     ok(keys.length >= 85, keys.length + ' keys');
     const bad = [];
     keys.forEach((k) => {
@@ -68,7 +69,8 @@ module.exports = function (h) {
     eq(bad.length, 0, bad.slice(0, 5).join(' | '));
     ok(cards[KB2].fm > 0 && cards[KB2].why.r === 'mate', 'the Kb2 card forces mate: ' + JSON.stringify([cards[KB2].fm, cards[KB2].why]));
     eq(cards[CARD2].a, 'f7f5', 'card 2\'s answer is f5');
-    eq(JSON.stringify(cards[CARD4].th), JSON.stringify([['f6f2', 1, 0], ['d4c3', 0, 3]]), 'card 4: Qxf2 mate, then Bxc3');
+    /* (release 2, B5: a threat within 5 points of their best line, so beside the mate Bxc3 is none) */
+    eq(JSON.stringify(cards[CARD4].th), JSON.stringify([['f6f2', 1, 0]]), 'card 4: Qxf2 mate alone');
     eq(cards[CARD2].th[0][0], 'e2e4', 'card 2: Qxe4');
     eq(cards[CARD1].th[0][0], 'g6f5', 'card 1: gxf5');
     const t103 = cards['184434540700:103'].th;
@@ -79,7 +81,7 @@ module.exports = function (h) {
     const A = boot({ storage: keyedStorage() });
     const rec = JSON.parse(A.ev(`(function () { var b = model().byKey['${CARD2}'].b; return JSON.stringify({ bu: b.bu, kp: b.kp, eb: b.eb, lu: b.lu, v: b.v }); })()`));
     const k = FACTS.cards[CARD2];
-    eq(JSON.stringify([rec.bu, rec.kp, rec.eb, rec.lu, rec.v]), JSON.stringify(['f7f5', 1, k.l[0][1], k.l[0][3], 2]), 'the record follows its key');
+    eq(JSON.stringify([rec.bu, rec.kp, rec.eb, rec.lu, rec.v]), JSON.stringify(['f7f5', FACTS.v, k.l[0][1], k.l[0][3], 2]), 'the record follows its key');
     A.ev(`(function () { ${OPEN} ${TRY} window.readyEngine(); var a = openAt('${CARD2}', 2); a.t0 = Date.now() - 30000; window.__evals = []; a.tapped = true; gradeMove(uciToMove(a.st, 'd7d5')); return 1; })()`);
     await settle();
     const r = JSON.parse(A.ev(`(function (a) { a.settle = 2; var d = displayFor(a); return JSON.stringify({ best: a.bestUci, phase: a.phase, result: a.result, near: a.near && a.near.deep, alt: !!a.alt, searched: window.__evals.length, row1: d.row1, row2: d.row2 }); })(ui.session.active)`));
@@ -148,7 +150,7 @@ module.exports = function (h) {
     eq(B.ev(`(SF.state = 'ready', todayPlan().keys.length > 0)`), true, 'the engine up: the stored cards are dealt, each waiting for its look');
   });
 
-  test('V1.2 a move within 4 points counts as found: the rook ending at 1600, Kb7 first: "Found it" ("Kb7 is as good as Rxa7."), counted first try in the headline, one rung, Details "Step 1 of 3 · back in 3 days", the main move a thin green arrow on the settled frame; card 2, f5: "Found it", a step up; at tier 1 "Just as good as the main answer."', async () => {
+  test('V1.2 a move within 4 points counts as found: the rook ending at 1600, Kb7 first: "Found it" ("Kb7 is as good as Rxa7."), counted first try in the headline, one rung, Details "Step 1 of 3 · back in 3 days", the main move a thin green arrow on the settled frame; card 2, f5: "Found it", a step up; at tier 1 its own reason ("King to b7 attacks their pawn.", release 2 B7)', async () => {
     const A = boot({ storage: keyedStorage() });
     const play = (key, tier, u) => {
       A.ev(`(function () { ${OPEN} ${TRY} window.readyEngine(); var a = openAt('${key}', ${tier}); a.t0 = Date.now() - 30000; a.tapped = true; gradeMove(uciToMove(a.st, '${u}')); return 1; })()`);
@@ -168,7 +170,8 @@ module.exports = function (h) {
     eq(A.ev(`(function (a) { return [a.result, displayFor(a).row1, ui.session.sum[a.key].m].join(' / '); })(ui.session.active)`), 'first / Found it / up', 'card 2, f5: found, a step up');
     play(ROOK, 1, 'c7b7');
     await settle();
-    eq(A.ev(`(function (a) { a.settle = 2; return displayFor(a).row2; })(ui.session.active)`), 'Just as good as the main answer.', 'tier 1');
+    /* (release 2, B7: a found-band move gets its own reason, read from its own line, never "Just as good as the main answer.") */
+    eq(A.ev(`(function (a) { a.settle = 2; return displayFor(a).row2; })(ui.session.active)`), 'King to b7 attacks their pawn.', 'tier 1');
   });
 
   test('V1.2 "works too" only for a safe win more than 4 points below the best: "That works too", "The main move was X." (tier 1 in words), it holds, and the summary gives it no first-try tick; after Show the answer a move in the shown move\'s found band plays as the shown move does (graded shown)', async () => {

@@ -750,6 +750,9 @@ def h_label(R, text, lb):
         return U('no board')
     b = chess.Board(shown)
     if text == 'Your game move':
+        # B8: tier 1's ghost names the game move in words, or "Your game move" where those do not fit
+        if kind == 'ghost':
+            return (T if mk.get('sq') == (R.played or '')[2:4] else F)('ghost on %s, game move to %s' % (mk.get('sq'), (R.played or '')[2:4]))
         if kind != 'game':
             return U(kind)
         u = (mk.get('from') or '') + (mk.get('to') or '')

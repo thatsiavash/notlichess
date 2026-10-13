@@ -13,7 +13,7 @@ import chess
 import cfg, chk, sf, gamedata
 from claims import Rec, T, F, M, U, N
 import handlers as H1, handlers2 as H2, handlers3 as H3
-import handlers_v1 as HV, handlers_v2 as HV2, handlers_gate as HG, handlers_xp as HXP
+import handlers_v1 as HV, handlers_v2 as HV2, handlers_gate as HG, handlers_xp as HXP, handlers_b as HB
 # v2 slice 1's forms, read before the older ones
 H2.SETTLED[:0] = HV.SETTLED
 H1.VERDICT[:0] = HV.VERDICT
@@ -25,6 +25,11 @@ H1.HINT[:0] = HV2.HINT
 H2.SETTLED[:0] = HV2.SETTLED
 H3.DETAILS[:0] = HV2.DETAILS
 H3.FOIL[:0] = HV2.FOIL
+# release 2 slice B's forms (B2, B6, B7), read before every older one
+H1.REASON[:0] = HB.REASON
+H2.SETTLED[:0] = HB.SETTLED
+H3.DETAILS[:0] = HB.DETAILS
+H1.HINT[:0] = HB.HINT
 _story0 = H2.h_story
 
 
@@ -84,6 +89,9 @@ def classify(R, field, text):
             return ('foil verdict', H3.FOIL)
         if text.startswith('The answer: '):
             return ('answer', [(r'^The answer: (.+)$', h_answer)])
+        # B8: a card that opens on its drawn Hint 1 keeps its task in row 1
+        if text == 'Find a better move':
+            return ('task', [(r'^Find a better move$', HG.h_task_t1)])
         return (None, None)
     if field == 'chip':
         return ('chip', [(r'^(Their move|Safety check|Your chances)$', h_chip)])

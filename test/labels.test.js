@@ -508,7 +508,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
                 if (/^(hits two|fork)$/.test(t) && !mFork({ nodes: [{}, { after: aft, move: m, piece: pType(pos.b[m.from]) }, {}, { piece: 'K' }], povWhite: !!pos.w })) bad('no fork');
                 if (/^(stuck|pinned)$/.test(t) && !mPin({ nodes: [{}, { after: aft }], povWhite: !!pos.w })) bad('no pin');
               }
-              else if (t === 'Your game move') { if (!arrowOf(f, mk) || mk.kind !== 'game' || mk.from !== a.played.from || mk.to !== a.played.to) bad('not on the game arrow'); }
+              /* (or, at tier 1, on the game move's ghost where its words have no room: release 2, B8, no SAN in a tier 1 label) */
+              else if (t === 'Your game move') { if ((!arrowOf(f, mk) || mk.kind !== 'game' || mk.from !== a.played.from || mk.to !== a.played.to) && !(a.tier === 1 && mk.kind === 'ghost' && (f.opts.ghosts || []).some(function (g) { return g.sq === mk.sq && g.sq === a.played.to; }))) bad('not on the game arrow'); }
               else if (t === 'Lost piece' || t === 'lost') {
                 var tk = (f.opts.tokens || []).filter(function (x) { return x.sq === mk.sq && x.kind === 'lost'; })[0];
                 if (!tk || colorW(tk.p) !== myPov(a.it)) bad('no lost token of yours there');
@@ -557,7 +558,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
   });
 
   await test('first sight: the first card ever shows "Your game move"; a worked example, whose band and bar leave a label one word, shows none on a fresh profile (hint 1\'s danger never teaches, its "takes" waits for the threat to have); the game arrow outranks a threat, a threat a lost piece, a lost piece the ghost, and any first-sight label a short one; a short label of a kind that has not taught itself never shows, even where its first-sight words do not fit', () => {
-    const A = boot();
+    /* (release 2, B5: hint 1's danger is drawn only where the key's search confirmed it, so the cards boot keyed) */
+    const A = boot({ storage: Object.assign(base(), { 'nl:games:cc:tester': keyedFixture() }) });
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       var res = { worked: [], plain: [], gameOnly: 0, takes: 0, firstEver: 0 };
       playerTier = function () { return 1; };
@@ -703,7 +705,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
     eq(B.ev('window.__label()'), '', 'no storage: the next card does not teach it again');
   });
 
-  await test('the worked example (S9): a tier-1 player\'s first card of a family opens with hint 1 drawn, the band saying it ("Hint 1 of 2", or "Hint 1 of 3" where Hint 3 follows, what the game move runs into) and Hint 2 in the bar, as every band that says it; Hint gives hint 2; a solve records hint, notes a first look and counts the family; never at tiers 2 and 3, on a relearn card, or with storage unreadable', () => {
+  await test('the worked example (S9): a tier-1 player\'s first card of a family opens with hint 1 drawn, the band saying it (its task in row 1, release 2 B8, and what the game move runs into) and Hint 2 in the bar, as every band that says it; Hint gives hint 2; a solve records hint, notes a first look and counts the family; never at tiers 2 and 3, on a relearn card, or with storage unreadable', () => {
     /* the first card ever has taught the game arrow (S18) */
     const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
@@ -718,8 +720,9 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
         var drawn = hm.rings.concat(hm.arrows).every(function (m) { return (f.opts.rings || []).concat(f.opts.arrows || []).some(function (x) { return x.kind === m.kind && (x.sq === m.sq || (x.from === m.from && x.to === m.to)); }); });
         /* the band says the hint: a rung of its own ladder, fitted to the words the bar leaves */
         var hx = hintText(a);
-        /* "Hint 1 of 2", or "Hint 1 of 3" where Hint 3 can follow (F9.2) */
-        res.open.push([a.hints, a.predraw, drawn, d.row1 === CARD_COPY[hintMax(a) === 3 ? 'H4' : 'H1'](), !!d.row2 && hx.cands.concat([hx.fall]).indexOf(d.row2) >= 0, hm.danger ? ['See what ' + sanOf(a.pre, a.played) + ' runs into.', 'See what ' + moveWords(a.pre, a.played) + ' runs into.'].indexOf(d.row2) >= 0 : true, d.buttons.map(function (b) { return b.label; }).join(' | ')].join(' / '));
+        /* "Hint 1 of 2", or "Hint 1 of 3" where Hint 3 can follow (F9.2); release 2 (B8): opening on its
+           drawn hint, row 1 keeps the card's task ("Find a better move"), the hint's words in row 2 */
+        res.open.push([a.hints, a.predraw, drawn, d.row1 === CARD_COPY.T7(), !!d.row2 && hx.cands.concat([hx.fall]).indexOf(d.row2) >= 0, hm.danger ? ['See what ' + sanOf(a.pre, a.played) + ' runs into.', 'See what ' + moveWords(a.pre, a.played) + ' runs into.'].indexOf(d.row2) >= 0 : true, d.buttons.map(function (b) { return b.label; }).join(' | ')].join(' / '));
         /* the band and the button agree at every showing: a miss, See it, Try again */
         var chk = function (what) { var dd = displayFor(a), hb = dd.buttons.filter(function (b) { return b.act === 'hint'; })[0]; res.agree++; if (/^Hint 1 of [23]$/.test(dd.row1) && (!hb || hb.label !== 'Hint 2')) res.disagree.push(it.key + ' ' + what + ': ' + (hb && hb.label)); };
         a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null;
@@ -995,7 +998,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
 
   /* V5.2, board marks never hide each other: the testers' two frames */
   await test('V5.2: card 1 (every See why step, found and shown) and the Kb2 card (Hint 1), tiers 1 to 3, boards of 316, 384 and 720 px: no label touches an occupied square (a ghost\'s included); on Hint 1 the threat arrow is drawn whole, over the game arrow, which drops to 30% (and is whole again once no threat is drawn)', () => {
-    const A = boot();
+    /* (release 2, B5: hint 1's danger is drawn only where the key's search confirmed it, so the cards boot keyed) */
+    const A = boot({ storage: Object.assign(base(), { 'nl:games:cc:tester': keyedFixture() }) });
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       var out = [], frames = 0, labels = 0, res = {};
       /* the label's box against every occupied square of the frame (pieces and ghosts), in board units */
@@ -1043,7 +1047,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
       });
       return JSON.stringify({ out: out, frames: frames, labels: labels, res: res }); })()`));
     eq(r.out.length, 0, r.out.length + ' labels on an occupied square: ' + r.out.slice(0, 4).join(' | '));
-    ok(r.res.steps >= 6 && r.frames >= 3 * (2 * r.res.steps + 1) && r.labels > 10, 'frames walked ' + r.frames + ', labels ' + r.labels + ', story steps ' + r.res.steps);
+    /* (keyed, B5: card 1's story is the key's, its found and shown walks sharing frames) */
+    ok(r.res.steps >= 6 && r.frames >= 3 * (r.res.steps + 3) && r.labels > 10, 'frames walked ' + r.frames + ', labels ' + r.labels + ', story steps ' + r.res.steps);
     [1, 2, 3].forEach((t) => {
       const x = r.res['t' + t];
       if (t === 1 || x.bad) {
@@ -1123,7 +1128,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
      line nets nothing) showed a program value. No string the fixture's cards put on screen carries one, at
      help levels 1 to 3: the copy lint's strings, every frame's board description and live region, Details
      on the answered frames; that card's tier 3 Details says the step's line; and the guard itself */
-  await test('no program value on screen (null, undefined, NaN): every frame of every card at tiers 1 to 3, with and without the fact sheets, with its board description, live region and Details; 184434540700:103 at tier 3 says its step\'s line; the guard drops what carries one', () => {
+  await test('no program value on screen (null, undefined, NaN): every frame of every card at tiers 1 to 3, with and without the fact sheets, with its board description, live region and Details; 184434540700:103 at tier 3 says its step\'s line or what b3 wins (slice B); the guard drops what carries one', () => {
     const r = lintRun();
     ok(r.progRead > 30000 && r.arias > 4000, 'strings read for a program value: ' + r.progRead + ', board descriptions ' + r.arias);
     eq(r.prog.length, 0, r.prog.length + ' strings with a program value (first: ' + r.prog.slice(0, 4).join(' || ') + ')');
@@ -1144,7 +1149,9 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
       return JSON.stringify(out); })()`));
     eq(x.keyed, 'wins', '184434540700:103 is keyed, its reason "wins"');
     ok(!/null|undefined|NaN/.test(x.details), 'Details: ' + x.details.replace(/\s+/g, ' ').slice(0, 300));
-    eq(x.check, x.step, 'the check line falls back to the step\'s own line');
+    /* (release 2 slice B: the reason now has words where its fact holds, b3's win by promotion, "wins material"
+       at tiers 2 and 3; never a program value, and the step's own line where the reason has none) */
+    ok(!/null|undefined|NaN/.test(x.check) && (x.check === x.step || x.check === 'b3 wins material. Rd3 missed it.'), 'the check line: ' + x.check);
     eq(JSON.stringify(x.guard), '[true,true,true,true,true,false,false]', 'progVal: "b3null", "NaN%", "[object", "undefined", and a lone "null" word are program values; "annulled" and "Nullify" are not');
     eq(x.fit, 'Rxd3 wins.', 'the fit ladder skips a form with a program value');
     eq(x.drop, '|Rxd3 wins.', 'noProg drops it');
@@ -1170,7 +1177,8 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
       ok(g2.length === 2 && g2.every((r) => /after your game move/.test(r.s)), key + ': game mode\'s Hint 2 after a miss at tiers 2 and 3: ' + JSON.stringify(g2.map((r) => r.s)));
     });
     const c4 = rings.filter((r) => r.key === '184268949378:16' && r.tier === 2 && r.what === 'hint 1');
-    eq(c4.map((r) => r.s).join(), 'Red ring: they could checkmate on f2.', 'card 4 at tier 2, Hint 1: the mate stands on the board described');
+    /* (release 2, B5: O-O stopped card 4's mate, and beside it no other move is a threat, so its Hint 1 rings no mate) */
+    eq(c4.map((r) => r.s).join(), '', 'card 4 at tier 2, Hint 1: no mate ring, O-O stopped the mate');
   });
 
   /* V4.3 and V4.8: the rules themselves, on the lines the testers misread */

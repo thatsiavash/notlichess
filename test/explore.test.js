@@ -440,14 +440,15 @@ const flush = (A) => new Promise((r) => setImmediate(r)).then(() => new Promise(
     eq(JSON.stringify(claim('4k3/8/8/3n4/8/8/8/3QK3 w - - 0 1', ['d1d5', 'e8e7', 'e1e2'], 850)), '{"n":3,"w":"the knight"}', 'a knight won and kept');
     eq(claim('4k3/8/2p5/3n4/8/8/8/3QK3 w - - 0 1', ['d1d5', 'c6d5'], -600), null, 'a line that ends on their capture counts nothing');
     eq(claim('4k3/8/8/3n4/8/8/8/3QK3 w - - 0 1', ['d1d5', 'e8e7', 'e1e2'], 300), null, 'a count far past the score is a line cut short');
-    eq(JSON.stringify(claim('8/8/1k3Kn1/5p2/8/8/8/8 w - - 0 62', ['f6f5', 'g6f8', 'f5f6', 'b6c5', 'f6e7'], 0)), '{"n":1,"w":"the pawn"}', 'Kxf5 wins the pawn');
+    eq(JSON.stringify(claim('8/8/1k3Kn1/5p2/8/8/8/8 w - - 0 62', ['f6f5', 'g6f8', 'f5f6', 'b6c5', 'f6e7'], 0)), 'null', 'Kxf5 wins a pawn: a single pawn is no count Explore names (release 2, B4)');
     /* 184425961982:122's shape: the knight taken only on the line's last ply is not won */
     eq(claim('8/8/1k3Kn1/5p2/8/8/8/8 w - - 0 62', ['f6f5', 'b6c5', 'f5g6'], 0), null, 'never "a knight and a pawn" on a line still in motion');
     /* the sentence: Stockfish's pick says what its line wins, counted the same way */
     const pick = XP(A, '8/8/1k3Kn1/5p2/8/8/8/8 w - - 0 62', 'f6f5', [{ cp: 0, mate: null, pv: ['f6f5', 'b6c5', 'f5g6'] }], [{ cp: 0, mate: null, pv: ['b6c5', 'f5g6'] }]);
     ok(/^Kxf5 is Stockfish's pick\.$/.test(pick.v.text), 'no count on the pick: ' + pick.v.text);
     const pick2 = XP(A, '8/8/1k3Kn1/5p2/8/8/8/8 w - - 0 62', 'f6f5', [{ cp: 0, mate: null, pv: ['f6f5', 'g6f8', 'f5f6'] }], [{ cp: 0, mate: null, pv: ['g6f8', 'f5f6', 'b6c5', 'f6e7'] }]);
-    eq(pick2.v.text, 'Kxf5 is Stockfish\'s pick. It wins the pawn.', 'the pawn it wins');
+    /* (release 2, B4: a single pawn is no count Explore names: a deeper search often finds it back) */
+    eq(pick2.v.text, 'Kxf5 is Stockfish\'s pick.', 'the pawn it wins, not named');
     /* the classifier's own counts leave its sentences; the better move's gain is said as counted */
     eq(A.ev(`xpBare('Qh3 ignores Black\\'s threat: cxd3+ takes your bishop. You lose a queen and a bishop.', { t: 'threat' }, null)`), 'Qh3 ignores Black\'s threat: cxd3+ takes your bishop.', 'the count goes');
     eq(A.ev(`xpBare('Nf3 walks into a pin: you lose the knight.', { t: 'pinAllowed' }, null)`), 'Nf3 walks into a pin.', 'the count of a pin goes');

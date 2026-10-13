@@ -1391,7 +1391,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(r.one), JSON.stringify({ castle: 'castling on the king\'s side', long: 'castling on the queen\'s side', only: 'castling', takes: 'rook takes on a8', ep: 'pawn takes on d6', promo: 'pawn to a8 to make a queen',
       twin: 'rook from a8 to d8', lone: 'rook to d8', pawns: 'pawn from c4 takes on d5', units: '6 true' }), 'moves in words');
     eq(r.out.length, 0, r.out.length + ' faults, first: ' + r.out.slice(0, 3).join(' | '));
-    ok(r.n.t2 > 40 && r.n.hint > 10 && r.n.m3 > 20 && r.n.v1 > 50 && r.n.r4 > 40 && r.n.cap > 250, JSON.stringify(r.n));
+    /* (release 2, B6: the game move again names pieces more often than moves: "Then their knight attacks your queen.") */
+    ok(r.n.t2 > 40 && r.n.hint > 10 && r.n.m3 > 10 && r.n.v1 > 50 && r.n.r4 > 40 && r.n.cap > 250, JSON.stringify(r.n));
   });
 
   await test('S1 to S8, S10, S11 and the answered frame fit 26 / 40 / 60 characters and 15 words at every tier, the board\'s label included, in plain words', () => {
@@ -1419,7 +1420,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       var st = stateFromFen('4k3/8/8/3q4/8/8/8/3QK3 w - - 0 1'), line = buildLine(st, 'd1d4', ['d5d4', 'e1e2'], false);
       a.st = st;
       try { return plainCapture({ nodes: [] }, 1, 0) + ' / ' + missWhy(a, { lossG: 9, lossAt: 1, gameLine: line }, 1, null, false, null, { pv: ['d1d4', 'd5d4', 'e1e2'], wBest: 50 }).cands.join(' / ') + ' / ' + lostWords(a, ['B', 'Q', 'R']); } finally { captureWord = cw; a.st = keep; } })()`),
-    "null / Their queen takes your queen. / \u2655\u2656\u2657", 'three kinds of piece: the reply named, the loss in pieces');
+    "null / Qxd4 takes your queen. / Their queen takes your queen. / \u2655\u2656\u2657", 'three kinds of piece: the reply named (in SAN first at tier 2, release 2 B6), the loss in pieces');
     const r = JSON.parse(A.ev(`(function () { ${OPEN}
       /* the band's caps: row 1 26 characters, row 2 40 and 7
          words, a caption 60 and 8; the chip one short label */
@@ -1493,8 +1494,12 @@ const SIM = `function simRun(seed, days, plan, noRule) {
          words ("the exchange" is spelled out as the rook and what it went for) */
       var plain = function (what, s) { if (/exchange/.test(s)) out.push(what + ' says ' + s); };
       /* F1.2: their one reply named (tier 3 its SAN), a trade in the board's pieces, a danger left standing
-         ("Qxc4, and your queen is still attacked."), where the game stands now, tier 1's plain words */
-      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|After \\S+, you'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|Their (?:pawn|knight|bishop|rook|queen|king) takes your (?:pawn|knight|bishop|rook|queen)\\.|\\S+ takes your (?:pawn|knight|bishop|rook|queen)\\.|Most of your advantage is gone\\.|You are still better, but less so\\.|After \\S+, (the game is even|(White|Black) is (better|winning))\\.|Now (the game is even|(White|Black) is (better|winning))\\.|(\\S+, and y|Y)our (?:pawn|knight|bishop|rook|queen) is still attacked\\.|That helps (White|Black)\\.|There's a stronger move here\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) takes your (?:pawn|knight|bishop|rook|queen)\\.|Then \\S+ forces mate\\.|Then they can force checkmate\\.|Then \\S+: their pawn becomes a (?:queen|rook|bishop|knight)\\.|Their pawn will become a (?:queen|rook|bishop|knight)\\.|After \\S+ \\S+, \\S+ (?:forks|is mate)\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) forks (?:both (?:pawn|knight|bishop|rook|queen|king)s|(?:pawn|knight|bishop|rook|queen|king) and (?:pawn|knight|bishop|rook|queen|king))\\.|Safe, but (?:then .+|their pawn will become a (?:queen|rook|bishop|knight)\\.|only \\d+% for you\\.|(?:the game is even|(?:White|Black) is (?:better|winning)) now\\.|there's a stronger move\\.)|After \\S+, you are still better\\.)$/;
+         ("Qxc4, and your queen is still attacked."), where the game stands now, tier 1's plain words;
+         release 2 (B6): what follows a take-back ("After the trade, Qxc3+ forks.", "Nothing lost, but
+         there's a better move."), a take-back that fails ("Bxc3+, and bxc3 Qxc3+ forks.", "If you take
+         back, ...", "Taking back loses your knight."), two captures, what their reply attacks or
+         threatens, and tier 1's "Now White is ahead." */
+      var M3 = /^(Then \\S+ is checkmate\\.|(White|Black) could checkmate you\\.|You'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|After \\S+, you'd lose (?:(?:a|an|the|two|three) [a-z ]+|material|[\\u2654-\\u265f]+(?: for [\\u2654-\\u265f]+)?)\\.|Their (?:pawn|knight|bishop|rook|queen|king) takes your (?:pawn|knight|bishop|rook|queen)\\.|\\S+ takes your (?:pawn|knight|bishop|rook|queen)\\.|Most of your advantage is gone\\.|You are still better, but less so\\.|After \\S+, (the game is even|(White|Black) is (better|winning))\\.|Now (the game is even|(White|Black) is (better|winning))\\.|(\\S+, and y|Y)our (?:pawn|knight|bishop|rook|queen) is still attacked\\.|That helps (White|Black)\\.|There's a stronger move here\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) takes your (?:pawn|knight|bishop|rook|queen)\\.|Then \\S+ forces mate\\.|Then they can force checkmate\\.|Then \\S+: their pawn becomes a (?:queen|rook|bishop|knight)\\.|Their pawn will become a (?:queen|rook|bishop|knight)\\.|After \\S+ \\S+, \\S+ (?:forks|is mate)\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) forks (?:both (?:pawn|knight|bishop|rook|queen|king)s|(?:pawn|knight|bishop|rook|queen|king) and (?:pawn|knight|bishop|rook|queen|king))\\.|Safe, but (?:then .+|their pawn will become a (?:queen|rook|bishop|knight)\\.|only \\d+% for you\\.|(?:the game is even|(?:White|Black) is (?:better|winning)) now\\.|there's a stronger move\\.)|After \\S+, you are still better\\.|You are still ahead, but less so\\.|Now (White|Black) is ahead\\.|Then (?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) attacks your (?:pawn|knight|bishop|rook|queen)\\.|Then (?:\\S+ threatens mate|they threaten mate)\\.|After the trade, (?:\\S+ takes your (?:pawn|knight|bishop|rook|queen)|you lose your (?:pawn|knight|bishop|rook|queen)|(?:their (?:pawn|knight|bishop|rook|queen|king)|\\S+) forks|they can checkmate|\\S+ is mate)\\.|Nothing lost, but there's a better move\\.|(?:Their (?:pawn|knight|bishop|rook|queen|king)|\\S+) takes your (?:pawn|knight|bishop|rook|queen) and (?:pawn|knight|bishop|rook|queen)\\.|\\S+ is checkmate\\.|\\S+, and \\S+ (?:loses .+|allows (?:\\S+ )?mate|\\S+ forks)\\.|If you take back, (?:you lose .+|they can checkmate|their (?:pawn|knight|bishop|rook|queen|king) forks)\\.|Taking back (?:loses .+|allows (?:checkmate|mate|a fork))\\.)$/;
       /* "You'd lose material." only when no form before it fits beside row
          1 and the widest bar this miss shows: as the ladder's one word for a
          trade ("a rook for a knight" is never said as its net), or as the
@@ -2011,8 +2016,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         var sents = cap.match(/[^.]+\\./g) || [cap];
         var head = sents[0];
         /* a move is named without its check sign on every rung (the check form says it in words), but
-           V2.2's fork, which says no check otherwise ("Qxc3+ forks your king and rook.") */
-        if (/[+#]/.test(cap.replace(/^(\\S+)[+#] forks /, '$1 forks '))) fail('a check or mate sign');
+           V2.2's fork, which says no check otherwise ("Qxc3+ forks your king and rook."), and the game
+           move's own step (release 2, B8: "Qg6+, your game move.") */
+        if (/[+#]/.test(cap.replace(/^(\\S+)[+#] forks /, '$1 forks ').replace(/^(\\S+)[+#](, your game move)?\\./, '$1$2.'))) fail('a check or mate sign');
         /* the story's end says what the better move saves (F1.4): tier 3's only-move line where it is
            true, "Better: Qe6 saves your queen." on B1, else "Your queen is safe." after the ply (below) */
         var lastStep = !game && i === S.steps.length - 1, m0;
@@ -2022,7 +2028,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           if (m0[1] !== bare(san) || !lastStep || S.alt || cmp.saves.indexOf(PW[m0[2]]) < 0) fail('saves what the better move does not save');
           return;
         }
-        if (game && s.k === 0) { if (head !== bare(gameSan(a)) + '.' && cap !== bare(gameSan(a)) + ', your game move.') fail('does not start with the game move ' + gameSan(a)); }
+        if (game && s.k === 0) { if (head !== bare(gameSan(a)) + '.' && head !== gameSan(a) + '.' && cap !== bare(gameSan(a)) + ', your game move.' && cap !== gameSan(a) + ', your game move.') fail('does not start with the game move ' + gameSan(a)); }
         else if (firstB) {
           if (head !== 'Better: ' + bare(san) + '.' && cap !== 'Your ' + bare(san) + ' works too.') fail('does not name the better move ' + san);
           /* "yours" only for your own move's line, never the engine's best */
@@ -2052,7 +2058,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
           } else if (j === 0 && (m = /^(\\S+) could take your (\\w+)( with check)?\\.$/.exec(x))) { form = 'could take'; ok = couldStep && blow && !!nd.captured && isW(nd.captured) === pov && pType(nd.captured) === PW[m[2]] && (!m[3] || checkersOf(nd.after).length > 0); }
           else if (j === 0 && /^\\S+ could give check\\.$/.test(x)) { form = 'could check'; ok = couldStep && blow && !nd.captured && checkersOf(nd.after).length > 0 && !isMate(nd.after); }
           else if (j === 0 && /^\\S+ would be checkmate\\.$/.test(x)) { form = 'could mate'; ok = couldStep && isMate(nd.after); }
-          else if (j === 0 && (m = /^They could play (\\S+)\\.$/.exec(x))) { form = 'could play'; ok = couldStep && blow && m[1] === bare(san) && !nd.captured && !checkersOf(nd.after).length; }
+          /* (release 2, B4: a capture is played, never "could take", where its line wins more: Kxa3 starts a mate) */
+          /* (and, C5 (c), where the two moves' scores differ by more than 2 pawns beyond it: swingOf) */
+          else if (j === 0 && (m = /^They could play (\\S+)\\.$/.exec(x))) { var big = !!nd.captured && (c.lossG >= MOTIF_VAL[pType(nd.captured)] + 2 || swingOf(a.it.b) > MOTIF_VAL[pType(nd.captured)] + 2); form = 'could play'; ok = couldStep && blow && m[1] === bare(san) && (!nd.captured || big) && (!checkersOf(nd.after).length || big); }
           else if (j === 0 && /^\\S+, check\\.$/.test(x)) { form = 'check'; ok = checkersOf(nd.after).length > 0 && !isMate(nd.after); }
           /* V2.2: a fork the ply makes, its targets the other side's pieces it attacks from where it lands */
           else if (j === 0 && (m = /^(\\S+?)[+#]? forks (?:(your|their) (\\w+) and (\\w+)|both (your|their) (\\w+)s)\\.$/.exec(x))) {
@@ -2854,7 +2862,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(col(2, 'also')), JSON.stringify([false, false, true, true, true]), 'under 3 games decided: "Also seen"');
     eq(JSON.stringify(col(2, 'n')), JSON.stringify(['decided 16 games · 38 positions', 'decided 6 games · 7 positions', 'decided 2 games · 27 positions', 'decided one game · 10 positions', 'decided no games · 9 positions']), 'games decided and positions');
     eq(JSON.stringify(col(1, 'n')), JSON.stringify(['cost you 16 games · 38 positions', 'cost you 6 games · 7 positions', 'cost you 2 games · 27 positions', 'cost you one game · 10 positions', 'cost you no games · 9 positions']), 'tier 1: what they cost you');
-    eq(JSON.stringify(col(2, 'line')), JSON.stringify(['Moves that let them win material.', 'Moves that exposed your king or allowed mate.', 'Moves with no tactic that made your position worse.', 'Moves that missed a free piece, a tactic or a mate.', 'Moves that let a winning position get away.']), 'plain lines, tier 2');
+    /* (slice E: at tiers 2 and 3 a skill of 5 or more positions in 2 or more kinds has the glance in its plain line's place) */
+    eq(JSON.stringify(col(2, 'line')), JSON.stringify(['', '', '', '', 'Moves that let a winning position get away.']), 'plain lines, tier 2: Finishing wins\' (one kind), the others the glance');
     eq(JSON.stringify(col(3, 'line')), JSON.stringify(col(2, 'line')), 'tier 3 the same');
     eq(JSON.stringify(col(1, 'line')), JSON.stringify(['Moves that let them take your pieces.', 'Moves that put your king in danger.', 'Moves with no trick that made things worse.', 'Free pieces and mates you missed.', 'Times you were winning and let it go.']), 'plain lines, tier 1');
     eq(JSON.stringify(col(2, 'prog')), JSON.stringify(['38 not started', '7 not started', '27 not started', '10 not started', '9 not started']), 'nothing practised yet: all not started');
@@ -3409,7 +3418,11 @@ const SIM = `function simRun(seed, days, plan, noRule) {
 
   /* ── slice 5: Today and the way back ── */
   await test('F5.1: Today shows card 1 as it opens, beside its caption, Start and the week; the board is the card\'s own opening frame (the red arrow, never the First look\'s hint nor the answer), a tap on it starts; while the games are read a still square waits in its place', () => {
-    const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
+    /* (card 1 with its key: release 2's B5 draws the First look's danger ring only where the key's search
+       confirmed the capture) */
+    const d1 = JSON.parse(FIX), K1 = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'facts-fixture.json'), 'utf8')).cards['184455333378:68'];
+    d1.games.forEach((g) => (g.bl || []).forEach((b) => { if (g.id + ':' + b.p === '184455333378:68') b.k = K1; }));
+    const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1', 'nl:games:cc:tester': JSON.stringify(d1) }) });
     const r = JSON.parse(A.ev(`(function () {
       var norm = function (s) { return String(s).replace(/(checkglow|ah)b\\d+/g, '$1B'); }, out = {};
       [1, 2].forEach(function (tier) {
@@ -4260,8 +4273,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       enrichState.running = false;
       out.idle = /checking-line/.test(insAt(2));
       all.forEach(function (it) { delete factsState.failed[it.key]; }); SF.state = st0;
-      /* every pattern sheet lists the positions it counts */
-      out.sheets = patternStats().filter(function (s) { return s.count > 0; }).map(function (s) { var h = sheetHtml('pattern:' + s.key); return [s.key, s.count, (h.match(/<div class="ex" /g) || []).length, (/<p class="sheet-sum">(\\d+) positions?/.exec(h) || [])[1]].join(':'); })
+      /* every kind of a skill of two kinds or more, its sheet filtered to it, lists the positions it counts (slice E) */
+      out.sheets = patternStats().filter(function (s) { return s.count > 0 && familyOf(s.key).types.length > 1; }).map(function (s) { var h = sheetHtml('family:' + familyOf(s.key).key + ':' + s.key); return [s.key, s.count, (h.match(/<div class="ex" /g) || []).length, (new RegExp('aria-pressed="true"[^>]*><span class="fs-name">[^<]*</span><span class="fs-n">(\\\\d+)').exec(h) || [])[1]].join(':'); })
         .filter(function (x) { var p = x.split(':'); return !(+p[1] === +p[2] && +p[1] === +p[3]); });
       var rep = insightReport(), lead = insText(insAt(2));
       out.rows = rep.families.reduce(function (a, f) { return a + f.lost; }, 0);
@@ -4275,7 +4288,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(/^l\d+ c\d+ g\d+$|^c\d+ g\d+$/.test(r.bar), 'the bar by steps: ' + r.bar);
     eq(r.checking, 'Checking 12 more positions…', 'while the background check runs');
     eq(r.idle, false, 'not once it stops');
-    eq(JSON.stringify(r.sheets), '[]', 'every pattern sheet lists every position it counts: ' + r.sheets.join(' | '));
+    eq(JSON.stringify(r.sheets), '[]', 'every kind\'s filtered sheet lists every position it counts: ' + r.sheets.join(' | '));
     eq(String(r.rows), r.losses, 'the skill rows sum to the headline\'s games');
     eq(r.perGame[0], r.perGame[1], 'the per-game figure is (deciding + other) / games: ' + r.perGame.join(', '));
   });
@@ -4760,6 +4773,154 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       return JSON.stringify({ notes: notes, looked: looked }); })()`));
     eq(JSON.stringify(r.notes), JSON.stringify(['Type your username first.', 'Type your username first.', 'Type your username first.']), 'the words, each time');
     eq(r.looked, 0, 'nothing looked up');
+  });
+
+  /* ── release 2, slice E: Insights depth, glance then drill ── */
+  /* KINDS: a skill's sheet read back: its kind rows (name, count, games, bar width, pressed), Practise
+     (its words, count and spec), When (caption, rows), Since (its words), the positions shown, Show all */
+  const KINDS = `function sheetOf(k) {
+  var h = sheetHtml(k), g = function (re) { var m = re.exec(h); return m ? m[1] : null; }, rows = [], m, re = /<a class="fs-kind[^"]*" role="button" tabindex="0" aria-pressed="(\\w+)" data-act="famKind" data-k="([^"]*)" data-kind="(\\w+)"><span class="fs-name">([^<]*)<\\/span><span class="fs-n">([^<]*)<\\/span><span class="fs-bar" aria-hidden="true"><i class="(kb\\d)" data-b="[^"]*" style="width:([\\d.]+)%/g;
+  while ((m = re.exec(h))) rows.push({ on: m[1] === 'true', k: m[2], kind: m[3], name: m[4], n: +m[5].split(' ')[0], right: m[5], cls: m[6], w: +m[7] });
+  var go = /<a class="btn-big fs-go" data-icon="play" data-act="drill" data-spec="([^"]*)">([^<]*)<\\/a>/.exec(h);
+  var when = /<section class="fs-sec" aria-label="When in your games">([\\s\\S]*?)<\\/section>/.exec(h), since = /<section class="fs-sec" aria-label="Since you started">([\\s\\S]*?)<\\/section>/.exec(h);
+  var txt = function (x) { return x.replace(/<[^>]+>/g, '\\n').split('\\n').map(function (y) { return y.trim(); }).filter(Boolean); };
+  return { rows: rows, go: go ? go[2].replace(/\\u00a0/g, ' ') : null, spec: go ? JSON.parse(go[1].replace(/&quot;/g, '"')) : null, when: when ? txt(when[1]) : null, since: since ? txt(since[1]) : null,
+    ex: (h.match(/<div class="ex" /g) || []).length, all: /class="btn-quiet fs-all"/.test(h), def: g(/<p class="fs-def">([^<]*)</), hidden: (h.match(/<span class="fs-bar" aria-hidden="true">/g) || []).length, bars: (h.match(/data-b=/g) || []).length };
+}
+function glanceOf(h) {
+  return String(h).split(/(?=<a class="fam-row)/).filter(function (p) { return /^<a class="fam-row/.test(p); }).map(function (p) {
+    var cap = /<span class="fr-cap">([^<]*)<span class="fr-kinds" aria-hidden="true">([\\s\\S]*?)<\\/span><\\/span>/.exec(p);
+    return { name: /class="fr-name">([^<]*)</.exec(p)[1], n: +((/(\\d+) positions?/.exec(p) || [])[1] || 0), line: (/class="fr-line">([^<]*)</.exec(p) || [])[1] || null, cap: cap ? cap[1] : null,
+      segs: cap ? (cap[2].match(/<i class="kb\\d" style="flex-grow:\\d+"><\\/i>/g) || []).map(function (x) { return [+/kb(\\d)/.exec(x)[1], +/flex-grow:(\\d+)/.exec(x)[1]]; }) : [] };
+  });
+}`;
+  await test('Insights depth (slice E): at Normal and Less help a skill with 5 or more positions in 2 or more kinds has "Most often X (a), then Y (b)." over a bar of its kinds (one segment each, largest first, at most five, the first slate, the second text-3, the rest grey) in place of its plain line; the segments and the sheet\'s kind rows sum to its positions and the caption\'s numbers are its top two rows; Finishing wins (one kind) keeps its row; More help\'s rows unchanged', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS} ${KINDS}
+      SF.state = 'failed';
+      var out = {};
+      [1, 2, 3].forEach(function (t) {
+        var g = glanceOf(insAt(t));
+        out[t] = g.map(function (x) {
+          var fam = FAMILIES.filter(function (f) { return f.name === x.name; })[0], s = sheetOf('family:' + fam.key);
+          return { fam: fam.key, n: x.n, line: x.line, plain: skillLine(fam.key, t), cap: x.cap, segs: x.segs, rows: s.rows.map(function (y) { return [y.name, y.n, y.right, y.cls]; }), def: s.def, hidden: s.hidden === s.bars };
+        });
+      });
+      return JSON.stringify(out); })()`));
+    [2, 3].forEach((t) => {
+      r[t].forEach((x) => {
+        const sum = x.rows.reduce((a, y) => a + y[1], 0);
+        if (x.rows.length) eq(sum, x.n, t + ' ' + x.fam + ': the kind rows sum to the row\'s positions');
+        ok(x.rows.every((y, i) => !i || y[1] <= x.rows[i - 1][1]), t + ' ' + x.fam + ': largest first');
+        eq(x.def, x.plain, t + ' ' + x.fam + ': the plain line moves to the sheet');
+        ok(x.hidden, 'every bar aria-hidden');
+        if (x.n >= 5 && x.rows.length >= 2) {
+          eq(x.line, null, t + ' ' + x.fam + ': no plain line on the row');
+          eq(x.segs.reduce((a, y) => a + y[1], 0), x.n, t + ' ' + x.fam + ': the segments sum to the row\'s positions');
+          ok(x.segs.length === Math.min(5, x.rows.length) && x.segs.slice(0, 4).every((y, i) => y[1] === x.rows[i][1]), t + ' ' + x.fam + ': one segment a kind, the rest merged into a fifth: ' + JSON.stringify(x.segs));
+          eq(x.segs.map((y) => y[0]).join(''), '012222'.slice(0, x.segs.length), 'slate, text-3, then grey');
+          const low = (s) => s[0].toLowerCase() + s.slice(1);
+          eq(x.cap, 'Most often ' + low(x.rows[0][0]) + ' (' + x.rows[0][1] + '), then ' + low(x.rows[1][0]) + ' (' + x.rows[1][1] + ').', t + ' ' + x.fam + ': the caption is the top two kind rows');
+        } else {
+          eq(x.cap, null, t + ' ' + x.fam + ': no glance');
+          eq(x.line, x.plain, t + ' ' + x.fam + ': the row as before');
+        }
+      });
+    });
+    eq(JSON.stringify(r[2].map((x) => x.cap)), JSON.stringify(['Most often lost to a tactic (16), then forks (5).', 'Most often walking into mate (4), then exposed your king (3).', 'Most often opening slips (10), then endgame mistakes (9).', 'Most often missed tactics (8), then free pieces missed (2).', null]), 'the fixture\'s captions (Forks before Ignored threats: 5 each, 3 games decided each, then the registry\'s order); Finishing wins (one kind) unchanged');
+    eq(JSON.stringify(r[1].map((x) => [x.line, x.cap])), JSON.stringify(r[1].map((x) => [x.plain, null])), 'More help: every row its plain line, no glance');
+    eq(JSON.stringify(r[2][0].rows.map((x) => x[0])), JSON.stringify(['Lost to a tactic', 'Forks', 'Ignored threats', 'Runaway pawns', 'Hanging pieces', 'Hidden attacks', 'Bad trades', 'Pins and skewers']), 'Piece safety\'s kinds at Normal');
+    eq(JSON.stringify(r[1][0].rows.map((x) => x[0])), JSON.stringify(['Lost pieces to a trick', 'Forks', 'Missed their attacks', 'Runaway pawns', 'Pieces left unguarded', 'Hidden attacks', 'Bad trades', 'Pinned pieces']), 'More help\'s plain names');
+    eq(r[2][0].rows[0][2], '16 · decided 5 games', '"16 · decided 5 games"');
+    eq(r[1][0].rows[0][2], '16 · cost you 5 games', 'More help: what it cost you');
+    eq(r[2][0].rows[6][2], '2', 'none decided: the count alone');
+    eq(JSON.stringify(r[2][1].rows.map((x) => x[0])), JSON.stringify(['Walking into mate', 'Exposed your king']), '"King safety" the kind is "Exposed your king"');
+    eq(JSON.stringify(r[2][4].rows), '[]', 'a skill of one kind: no What kind');
+  });
+
+  await test('Insights depth (slice E): a kind pressed filters the sheet: it alone pressed, slate, the others grey, Show all; Practise counts what its drill deals (8 at most), every one of that kind, and the drill started deals exactly that; every position of the kind shown; When counts it alone; the hidden-chart rules on the fixture; Since you started counts every kind, from 20 games since (19: the trend line); More help has no When and no Since; the Details chip opens the sheet filtered', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${INS} ${KINDS} ${OPEN}
+      SF.state = 'failed';
+      playerTier = function () { return 2; };
+      var out = { kinds: [], drills: [] };
+      insightReport().families.forEach(function (agg) {
+        kindsOf(agg).forEach(function (s) {
+          var h = sheetOf('family:' + agg.fam.key + ':' + s.key), deal = drillItems(h.spec || { type: 'none' }, 8);
+          out.kinds.push({ fam: agg.fam.key, kind: s.key, count: s.count, go: h.go, spec: h.spec, deal: deal.length, same: deal.every(function (it) { return patternOf(it.b) === s.key; }),
+            ex: h.ex, when: h.when, pressed: h.rows.filter(function (y) { return y.on; }).map(function (y) { return y.kind + ':' + y.cls + ':' + y.k; }), others: h.rows.filter(function (y) { return !y.on; }).map(function (y) { return y.cls; }).join(''), all: h.all, rows: h.rows.length });
+        });
+      });
+      /* a filtered drill, started as its button starts it */
+      ['family:safety:forkAllowed', 'family:safety:material', 'family:quiet:openingSlip'].forEach(function (k) {
+        var h = sheetOf(k), n = +/: (\\d+) positions?$/.exec(h.go)[1];
+        startDrill(h.spec);
+        var keys = ui.session.keys.filter(function (x) { return model().byKey[x]; });
+        out.drills.push([k, n, keys.length, keys.every(function (x) { return patternOf(model().byKey[x].b) === k.split(':')[2]; }), ui.session.label]);
+        ui.session = null;
+      });
+      out.open = ['safety', 'king', 'quiet', 'chances', 'conversion'].map(function (k) { var h = sheetOf('family:' + k); return [k, h.go, h.when, h.since, h.ex, h.all]; });
+      playerTier = function () { return 1; };
+      out.t1 = ['safety', 'quiet'].map(function (k) { var h = sheetOf('family:' + k); return [h.go, h.when, h.since, h.rows.length, h.ex]; });
+      out.t1f = sheetOf('family:safety:pinAllowed').go;
+      playerTier = function () { return 2; };
+      /* since you started, with 19 games since, then 24 with half the mistakes */
+      var keep = data.games.slice();
+      noteStart(Date.now() - 3600e3);
+      window.__nlTest.seedAfterGames({ n: 19 });
+      out.s19 = ['safety', 'safety:forkAllowed', 'king'].map(function (k) { return sheetOf('family:' + k).since; });
+      data.games = keep.slice(); modelDirty();
+      window.__nlTest.seedAfterGames({ n: 24, halved: true });
+      out.s24 = ['safety', 'safety:forkAllowed'].map(function (k) { return sheetOf('family:' + k).since; });
+      out.s24b = (/aria-label="Since you started">[\\s\\S]*?<\\/section>/.exec(sheetHtml('family:safety')) || [''])[0].match(/class="kb\\d" data-b="s:\\w" style="width:[\\d.]+%/g);
+      playerTier = function () { return 1; };
+      out.s24t1 = sheetOf('family:safety').since;
+      data.games = keep; modelDirty();
+      /* the Details chip */
+      playerTier = function () { return 2; };
+      var it = allMistakes().filter(function (x) { return trainable(x) && patternOf(x.b) === 'forkAllowed'; })[0], a = openCard(it);
+      reveal(); SF.state = 'ready';
+      out.chip = (/<a class="pchip" data-act="sheet" data-k="([^"]*)">([^<]*)</.exec(detailsHtml()) || []).slice(1);
+      SF.state = 'failed'; ui.session = null;
+      out.pattern = sheetOf('pattern:forkAllowed').rows.filter(function (y) { return y.on; }).map(function (y) { return y.kind; });
+      return JSON.stringify(out); })()`));
+    r.kinds.forEach((x) => {
+      const multi = x.rows >= 2;
+      if (!multi) { eq(x.pressed.length, 0, x.kind + ': a skill of one kind is never filtered'); return; }
+      eq(JSON.stringify(x.pressed), JSON.stringify([x.kind + ':kb0:family:' + x.fam]), x.kind + ': it alone pressed, slate, pressing it again shows all');
+      ok(/^(kb2)*$/.test(x.others) && x.all, x.kind + ': the others grey, Show all');
+      eq(x.deal, Math.min(8, x.count), x.kind + ': its drill deals 8 at most of its own');
+      ok(x.same && x.spec.type === 'pattern' && x.spec.key === x.kind, x.kind + ': every one of that kind');
+      ok(new RegExp(': ' + x.deal + ' positions?$').test(x.go), x.kind + ': the button says what the drill deals: ' + x.go);
+      eq(x.ex, x.count, x.kind + ': every position of the kind shown');
+      if (x.when) {
+        const n = x.when.slice(2).filter((y) => /^\d+$/.test(y)).map(Number);
+        eq(n.reduce((a, y) => a + y, 0), x.count, x.kind + ': When counts that kind only');
+        ok(new RegExp(' of ' + x.count + '\\.$').test(x.when[1]), x.kind + ': its caption over the kind: ' + x.when[1]);
+      } else ok(x.count < 10 || x.fam === 'quiet', x.kind + ': When hidden only under 10 positions in view or on Quiet moves');
+    });
+    eq(r.kinds.filter((x) => x.kind === 'forkAllowed')[0].go, 'Practise forks you allowed: 5 positions', '"Practise forks you allowed: 5 positions"');
+    eq(r.kinds.filter((x) => x.kind === 'material')[0].when[1], 'Most in the middlegame: 12 of 16.', 'a kind of 10 or more has its own When');
+    r.drills.forEach((d) => { eq(d[2], d[1], d[0] + ': the drill deals exactly the count shown'); ok(d[3], d[0] + ': all of that kind'); });
+    eq(JSON.stringify(r.drills.map((d) => d[4])), JSON.stringify(['Forks', 'Lost to a tactic', 'Opening slips']), 'the drill named by its kind');
+    const open = Object.fromEntries(r.open.map((x) => [x[0], x.slice(1)]));
+    eq(open.safety[0], 'Practise piece safety: 8 positions', '"Practise piece safety: 8 positions"');
+    eq(JSON.stringify(open.safety[1]), JSON.stringify(['When in your games', 'Most in the middlegame: 22 of 38.', 'Opening', '7', 'Middlegame', '22', 'Endgame', '9']), 'Piece safety\'s When, in game order');
+    eq(open.king[1], null, 'King safety (7) shows no When');
+    eq(open.conversion[1], null, 'Finishing wins (9) shows no When');
+    eq(open.quiet[1], null, 'Quiet moves never (its kinds are the phases)');
+    ok(r.open.every((x) => x[3] === null), 'no Since before a set is finished');
+    eq(JSON.stringify(r.open.map((x) => [x[4], x[5]])), JSON.stringify([[4, false], [4, false], [4, false], [4, false], [4, false]]), 'unfiltered: the four examples, no Show all');
+    eq(JSON.stringify(r.t1.map((x) => [x[1], x[2]])), JSON.stringify([[null, null], [null, null]]), 'More help: no When, no Since');
+    eq(r.t1[0][0], 'Practise piece safety: 8 positions', 'More help: What kind, Practise and the positions');
+    ok(r.t1[0][3] === 8 && r.t1[0][4] === 4, 'More help: its kinds and the positions');
+    eq(r.t1f, 'Practise pins you allowed: 1 position', 'More help\'s practice words');
+    eq(JSON.stringify(r.s19), JSON.stringify([['Since you started', 'Your trend shows from 20 games since you started: 19 so far.'], ['Since you started', 'Your trend shows from 20 games since you started: 19 so far.'], null]), 'with 19 games since, the trend line replaces the chart (King safety: too few before for a trend)');
+    eq(JSON.stringify(r.s24), JSON.stringify([['Since you started', 'Probably fewer. More games will tell.', 'Before: 0.8 a game', 'Since: 0.3 a game'], ['Since you started', 'Probably fewer. More games will tell.', 'Before: 0.8 a game', 'Since: 0.3 a game']]), 'from 20 games since: before and since under the calibrated word, every kind even when filtered');
+    eq(JSON.stringify(r.s24b), JSON.stringify(['class="kb2" data-b="s:b" style="width:100%', 'class="kb0" data-b="s:s" style="width:32.9%']), 'before grey, since slate, to scale');
+    eq(r.s24t1, null, 'More help: no Since');
+    eq(JSON.stringify(r.chip), JSON.stringify(['family:safety:forkAllowed', 'Walked into a fork ›']), 'the Details chip opens the sheet filtered');
+    eq(JSON.stringify(r.pattern), JSON.stringify(['forkAllowed']), 'the retired pattern sheet opens as the filtered sheet');
   });
 
   results.forEach((l) => console.log(l));

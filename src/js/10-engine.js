@@ -102,7 +102,7 @@ function engineEval(fen, movetime, priority, opts) {
   return new Promise(function (resolve, reject) {
     var job = { fen: fen, movetime: movetime || 80, resolve: resolve, reject: reject,
                 mpv: opts.multipv || 1, moves: opts.searchmoves || null, prio: !!priority, tag: opts.tag || null,
-                onInfo: opts.onInfo || null, lanes: opts.lanes || null, hash: opts.hash || 0, xp: opts.xp || null };
+                onInfo: opts.onInfo || null, lanes: opts.lanes || null, hash: opts.hash || 0, xp: opts.xp || null, fresh: !!opts.fresh };
     /* a player is waiting on priority jobs; the scan can wait */
     if (priority) {
       var at = 0;
@@ -280,6 +280,11 @@ function slotWire(slot) {
 /* the kept analyst's limit for background work: a few milliseconds, whatever
    depth the reading setting asks of the scan */
 var RESERVE_NODES = 18000;
+/* B1: a fresh job (a fact sheet's search, a try's re-check) starts from a
+   clean engine with the options the truth harness searches with, so the same
+   question gets the same answer in every browser, whatever the worker ran
+   before: ucinewgame, Hash 32 and Threads 1 are its first commands */
+var FRESH_HASH = 32;
 function enginePump() {
   if (!SF.queue.length) return;
   if (!SF.workers.length) {
@@ -313,6 +318,12 @@ function enginePump() {
     if (qi >= 0) {
       var job = SF.queue.splice(qi, 1)[0];
       slot.pending.push(job);
+      if (job.fresh) {
+        slot.w.postMessage('ucinewgame');
+        slot.w.postMessage('setoption name Hash value ' + FRESH_HASH);
+        slot.w.postMessage('setoption name Threads value 1');
+        slot.hash = FRESH_HASH;
+      }
       if (slot.mpv !== job.mpv) {
         slot.w.postMessage('setoption name MultiPV value ' + job.mpv);
         slot.mpv = job.mpv;
