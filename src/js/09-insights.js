@@ -238,6 +238,63 @@ function decidedWords(lost, tier) {
   if (!(lost > 0)) return tier === 1 ? 'cost you no games' : 'decided no games';
   return (tier === 1 ? 'cost you ' : 'decided ') + fmtGames(lost);
 }
+/* ── a skill's kinds (Insights depth: glance, then drill) ────────────────
+   Each pattern of a skill is one kind: its name at Normal and Less help,
+   its plainer name at More help, and what its drill practises after
+   "Practise" ("Practise forks you allowed: 5 positions"), the same two
+   ways. Content's words: plain, 7 words at most, no notation; the kind
+   that shared its skill's name ("King safety") is "Exposed your king", as
+   its Details chip names it */
+var KIND = {
+  hung: ['Hanging pieces', 'Pieces left unguarded', 'pieces you left hanging', 'pieces you left unguarded'],
+  threat: ['Ignored threats', 'Missed their attacks', 'threats you missed', 'attacks you missed'],
+  forkAllowed: ['Forks', 'Forks', 'forks you allowed', 'forks you allowed'],
+  pinAllowed: ['Pins and skewers', 'Pinned pieces', 'pins and skewers you allowed', 'pins you allowed'],
+  discoveredAllowed: ['Hidden attacks', 'Hidden attacks', 'hidden attacks you allowed', 'hidden attacks you allowed'],
+  badTrade: ['Bad trades', 'Bad trades', 'trades that went wrong', 'trades that went wrong'],
+  material: ['Lost to a tactic', 'Lost pieces to a trick', 'tactics you allowed', 'tricks that won your pieces'],
+  promotion: ['Runaway pawns', 'Runaway pawns', 'pawns you let through', 'pawns you let through'],
+  mateAllowed: ['Walking into mate', 'Walking into checkmate', 'mates you walked into', 'checkmates you walked into'],
+  kingSafety: ['Exposed your king', 'Left your king open', 'moves that exposed your king', 'moves that left your king open'],
+  missedMaterial: ['Free pieces missed', 'Free pieces missed', 'free pieces you missed', 'free pieces you missed'],
+  missedTactic: ['Missed tactics', 'Missed winning tricks', 'tactics you missed', 'winning tricks you missed'],
+  mateMissed: ['Missed checkmates', 'Missed checkmates', 'checkmates you missed', 'checkmates you missed'],
+  slipped: ['Wins let slip', 'Wins that got away', 'wins you let slip', 'wins that got away'],
+  openingSlip: ['Opening slips', 'Mistakes in the opening', 'opening slips', 'mistakes in the opening'],
+  drift: ['Planless middlegame moves', 'Moves with no plan', 'middlegame moves without a plan', 'moves with no plan'],
+  endgame: ['Endgame mistakes', 'Endgame mistakes', 'endgame mistakes', 'endgame mistakes']
+};
+function kindName(key, tier) { var k = KIND[key]; return k ? k[tier === 1 ? 1 : 0] : patternInfo(key).plural; }
+function kindPractise(key, tier) { var k = KIND[key]; return k ? k[tier === 1 ? 3 : 2] : patternInfo(key).plural.toLowerCase(); }
+/* a skill's kinds with positions (agg: an insightReport family), largest
+   first, ties by the games each decided, then as the focus weighs them,
+   then the registry's order; their counts add up to the skill's */
+function kindsOf(agg) {
+  return agg.patterns.filter(function (s) { return s.count > 0; }).sort(function (x, y) {
+    return y.count - x.count || lostOf(y.items) - lostOf(x.items) || y.cost - x.cost || x.info.rank - y.info.rank;
+  });
+}
+/* where in the game a position came: its stored phase (the classifier's
+   own, by the pieces left: Quiet moves' kinds are these), read again from
+   the board where an older record has none */
+var PHASES = [['open', 'Opening', 'the opening'], ['mid', 'Middlegame', 'the middlegame'], ['end', 'Endgame', 'the endgame']];
+function phaseOfItem(it) {
+  if (it.b.ph) return it.b.ph;
+  var pre = it.g.mv ? stateAtPly(it.g.mv, it.b.p) : null;
+  return pre ? phaseOf(pre, it.b.p) : 'mid';
+}
+/* a skill's mistakes per game before and since the start (V4.8's counts,
+   every kind), with its calibrated word: { b, s (per game), say } once
+   skillVerdict gives one; { need, so } (games since so far, toward 20)
+   while it waits and will give one; null otherwise (no start, too few of
+   its mistakes before for a trend ever to show) */
+function sinceSkill(k) {
+  var st = sinceStats();
+  if (!st || !st.before.n || !st.before.famN || (st.before.fam[k] || 0) < 10) return null;
+  var B = st.before, S = st.since, v = skillVerdict(B, S, k);
+  if (v) return { b: B.fam[k] / B.famN, s: (S.fam[k] || 0) / S.famN, say: SINCE_SAY[v], unchecked: st.unchecked };
+  return S.famN < 20 ? { need: 20, so: S.famN, unchecked: st.unchecked } : null;
+}
 /* the positions the background check (V1.1's fact sheets) still has to
    look at, once it has started and while the engine can run it: every
    position without its key, as enrichTargets queues them (C1: a count it

@@ -1116,6 +1116,15 @@ body.in-session{padding-bottom:0}
 .fr-bar .sk-c{background:var(--honey)}
 .fr-bar .sk-l + .sk-c{box-shadow:inset 2px 0 0 var(--surface-1)}
 .fr-bar .sk-g{min-width:0;background:none}
+/* the glance (Insights depth, Normal and Less help): the caption in the
+   plain line's place, over a 6 px bar of the skill's kinds, 2 px apart,
+   its outer ends rounded: the first slate, the second text-3, the rest the
+   border's grey (kb0 to kb2, below) */
+.fr-cap{grid-column:1/-1;grid-row:2;display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+.fr-kinds{display:flex;gap:2px;height:6px;margin:6px 0 2px}
+.fr-kinds i{display:block;flex-basis:0;min-width:6px;height:100%}
+.fr-kinds i:first-child{border-radius:3px 0 0 3px}
+.fr-kinds i:last-child{border-radius:0 3px 3px 0}
 .fr-prog{grid-column:1/-1;grid-row:4;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
 .fr-go{align-self:center;color:var(--text-3);font-size:var(--fs-heading);font-weight:800}
 /* since you started: a card under the lead (F6.2); scoped to Insights,
@@ -1182,10 +1191,44 @@ body.in-session{padding-bottom:0}
 .habit-block{background:var(--surface-2);border-radius:var(--r-btn);padding:14px 16px;margin:16px 0}
 .habit-block .plan{margin-top:8px}
 .sheet-acts{margin:0 0 8px}
-.pat-list{margin:20px 0 0;border-top:1px solid var(--divider)}
-.pat-row{display:flex;align-items:center;gap:12px;min-height:52px;border-bottom:1px solid var(--divider);color:var(--text-1);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;padding:0 4px}
-.pat-row span:first-child{flex:1 1 auto;font-weight:700}
-.pat-row:hover{background:var(--surface-2);color:var(--text-1)}
+/* a skill's sheet (Insights depth): its plain line under the summary;
+   What kind, a 52 px toggle per kind (name, count and games, a 6 px bar
+   scaled to the largest: text-3, or the chosen one slate on surface-2
+   and the others the border's grey); When in your games and Since you
+   started side by side in the modal; each bar grows from 0 on first paint
+   (fs-grow, its delay inline) and eases on a filter (fs-eased) */
+.sheet .sheet-check{font-size:var(--fs-small);line-height:var(--lh-small);margin:4px 52px 12px 0}
+.sheet .fs-def{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:0 0 8px}
+.fs-h{display:block;margin:24px 0 8px}
+.fs-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;column-gap:12px;min-height:48px;margin-top:12px}
+.fs-head .fs-h{margin:0}
+.fs-all{min-height:48px}
+.fs-kinds{border-top:1px solid var(--divider)}
+.fs-kind{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:12px;min-height:52px;padding:8px 8px 10px;border-bottom:1px solid var(--divider);color:var(--text-1);cursor:pointer;transition:background-color 200ms var(--ease)}
+.fs-kind.is-on{background:var(--surface-2)}
+.fs-name{flex:1 1 auto;min-width:0;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1);overflow-wrap:anywhere}
+.fs-n{margin-left:auto;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);text-align:right;font-variant-numeric:tabular-nums}
+.fs-bar{flex:0 0 100%;display:block;height:6px;margin-top:4px}
+.fs-bar i{display:block;height:100%;border-radius:3px;transform-origin:left center;animation:fs-grow 240ms var(--ease) both;transition:width 200ms var(--ease),background-color 200ms var(--ease)}
+.fs-eased .fs-bar i{animation:none}
+@keyframes fs-grow{from{transform:scaleX(0)}}
+.kb0{background:var(--slate)}
+.kb1{background:var(--text-3)}
+.kb2{background:var(--border)}
+.fs-row{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:12px;padding:5px 0}
+.fs-row .fs-name{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+.sheet .fs-cap{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 4px}
+.sheet .fs-say{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1);margin:0 0 4px}
+.fs-go{white-space:normal;text-align:left;padding:10px 16px}
+.fs-fade{animation:fs-fade 150ms var(--ease)}
+@keyframes fs-fade{from{opacity:0}}
+@media (hover:hover){.fs-kind:hover{background:var(--surface-2)}}
+@media (min-width:700px){
+  .fs-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));column-gap:24px}
+  .sheet .ex-list{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+/* a narrow phone: a kind's count and games under its name */
+@media (max-width:380px){.fs-kind .fs-n{flex-basis:100%;margin-left:0;text-align:left}}
 .ex-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(136px,1fr));gap:12px;margin:12px 0}
 .ex{cursor:pointer}
 .ex .board{box-shadow:none;border-radius:8px}
@@ -1345,6 +1388,9 @@ html:has(.recap-acts){scroll-padding-bottom:calc(72px + env(safe-area-inset-bott
   .cue-days .day-chip{flex:0 0 44px}
   .fr-main{grid-template-columns:minmax(0,1fr)}
   .fr-n{grid-column:1;grid-row:auto;text-align:left;white-space:normal}
+  .sheet .ex-list{grid-template-columns:minmax(0,1fr)}
+  .sk-grid{grid-template-columns:minmax(0,1fr)}
+  .sk-foot{flex-wrap:wrap}
   .recap-acts{flex-wrap:wrap}
 }
 /* under 320 px the bar's buttons stack, the honey one at the foot; a back

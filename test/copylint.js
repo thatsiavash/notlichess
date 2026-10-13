@@ -23,7 +23,7 @@
 // generic), against the baseline in data/copylint-baseline.json: today's violations, so a new one fails
 // and one that went away must leave the baseline too (it only shrinks; the card strings and Insights
 // are clear: `t1card`, `ins`). NL_LINT_WRITE=1 node test/labels.test.js writes the baseline afresh.
-// Insights is read with how we count and, after every frame, since you started in both its states (with
+// Insights is read with how we count, each skill's sheet (and filtered to each kind) and, after every frame, since you started in both its states (with
 // how we count's line on the start day's threshold).
 // Beginner teaching (slice 9), at tiers 1 and 2: every lesson's three frames and its own position, every
 // practice position's frames (open, hints, a miss and its reason, a close move, found and settled, the
@@ -263,6 +263,11 @@ const COLLECT = (OPEN, FRAMES) => `(function () { ${OPEN} ${FRAMES}
     renderInsights();
     screen(tier, 'insights', box.innerHTML);
     screen(tier, 'insights', sheetHtml('count'));
+    /* each skill's sheet, and filtered to each of its kinds (slice E) */
+    insightReport().families.forEach(function (agg) {
+      screen(tier, 'insights', sheetHtml('family:' + agg.fam.key));
+      kindsOf(agg).forEach(function (s) { screen(tier, 'insights', sheetHtml('family:' + agg.fam.key + ':' + s.key)); });
+    });
     ui.view = 'train';
   });
   /* since you started (F6.2), after every frame is read (what it sets up is put back): its waiting

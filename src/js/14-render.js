@@ -3141,7 +3141,7 @@ function detailsHtml() {
   var cl = checkLine(a), th = noProg(threatsLine(a)), ck = noProg(clockLine(a));
   if (th === cl) th = '';
   h += '</div>' + (th ? '<p class="dt-more">' + esc(th) + '</p>' : '') + (ck ? '<p class="dt-more dt-clock">' + esc(ck) + '</p>' : '')
-    + '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
+    + '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="family:' + familyOf(t).key + ':' + t + '">' + esc(info.name) + ' ›</a>'
     + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>'
     + (a.held === 'slow' ? '<p class="dt-more dt-held">' + esc(heldLine(a)) + '</p>' : a.held === 'guess' ? '<p class="dt-more dt-held">' + GUESS_HELD + '</p>' : '')
     + '<p class="habit">' + esc(cl) + '</p>';
@@ -3530,12 +3530,28 @@ function skillRowsHtml(list, focus, tier) {
     return '<a class="fam-row' + (on ? ' is-focus' : '') + '" data-act="sheet" data-k="family:' + k + '">'
       + '<span class="sk-glyph" data-icon="' + ((SKILL[k] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
       + '<span class="fr-main"><span class="fr-name">' + esc(a.fam.name) + (on ? '<span class="pill">Start here</span>' : '') + '</span>'
-        + '<span class="fr-line">' + esc(skillLine(k, tier)) + '</span>'
+        + (kindGlance(a, tier) || '<span class="fr-line">' + esc(skillLine(k, tier)) + '</span>')
         + '<span class="fr-n">' + decidedWords(a.lost, tier) + ' · ' + plur(a.count, 'position') + '</span>'
         + stepBarHtml(a.steps)
         + '<span class="fr-prog">' + progressWords(a) + '</span></span>'
       + '<span class="fr-go" aria-hidden="true">›</span></a>';
   }).join('') + '</div>';
+}
+/* the glance (Insights depth), at Normal and Less help, for a skill with 5
+   or more positions in 2 or more kinds, in place of its plain line (which
+   moves to its sheet): "Most often lost to a tactic (18), then ignored
+   threats (7)." over a 6 px bar of its kinds, one segment each, largest
+   first, by positions (6 px at least), the fifth on holding the rest:
+   the first slate, the second text-3, the rest the border's grey. The bar
+   is a picture of the words beside it (aria-hidden); '' otherwise */
+function kindGlance(a, tier) {
+  var kinds = kindsOf(a);
+  if (tier < 2 || a.count < 5 || kinds.length < 2) return '';
+  var segs = kinds.slice(0, 4).map(function (s) { return s.count; });
+  if (kinds.length > 4) segs.push(kinds.slice(4).reduce(function (n, s) { return n + s.count; }, 0));
+  var lc = function (s) { return kindName(s.key, tier).replace(/^./, function (c) { return c.toLowerCase(); }); };
+  return '<span class="fr-cap">Most often ' + esc(lc(kinds[0])) + ' (' + kinds[0].count + '), then ' + esc(lc(kinds[1])) + ' (' + kinds[1].count + ').'
+    + '<span class="fr-kinds" aria-hidden="true">' + segs.map(function (n, i) { return '<i class="kb' + Math.min(i, 2) + '" style="flex-grow:' + n + '"></i>'; }).join('') + '</span></span>';
 }
 /* since you started (F6.2): under 10 games since, the before number and
    the count toward 10 (with a meter), or, while fewer than 20 games before
@@ -3756,61 +3772,137 @@ function sheetHtml(kind) {
   if (parts[0] === 'count') return countHtml();
   /* a skill's card (F9.5) */
   if (parts[0] === 'skill') return skillSheetHtml(k);
-  if (parts[0] === 'family') {
-    var fam = FAMILIES.filter(function (f) { return f.key === k; })[0];
-    var agg = insightReport().families.filter(function (a) { return a.fam.key === k; })[0];
-    if (!fam || !agg) return '';
-    var focus = currentFocus(), nDrill = drillItems({ type: 'family', fam: k }, 8).length;
-    /* its patterns, whose counts add up to its own (V4.8), each with the
-       losses it decided */
-    var rows = agg.patterns.slice().sort(function (x, y) { return lostOf(y.items) - lostOf(x.items) || y.cost - x.cost || y.count - x.count; }).map(function (s) {
-      var lost = lostOf(s.items);
-      return '<a class="pat-row" data-act="sheet" data-k="pattern:' + s.key + '"><span>' + esc(s.info.plural) + '</span><span class="dim">' + s.count
-        + (lost ? ' · decided ' + fmtGames(lost) : '') + '</span><span class="fr-go" aria-hidden="true">›</span></a>';
-    }).join('');
-    return '<div class="kicker">Skill</div><h3>' + esc(fam.name) + '</h3>'
-      + '<p class="sheet-sum">' + (agg.lost ? 'Decided ' + fmtGames(agg.lost) + ' of yours. ' : '') + plur(agg.count, 'position') + ' from your games.'
-        + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
-      + '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(familyStep(k), playerTier())) + '</div></div>'
-      + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'family', fam: k, label: fam.name })) + '">Drill ' + plur(nDrill, 'position') + '</a>' : '')
-      + (focus && focus.fam === k ? '<span class="pill">Focus</span>' : '') + '</div>'
-      + (rows ? '<div class="pat-list">' + rows + '</div>' : '')
-      + examplesHtml({ type: 'family', fam: k }, 4, 'Examples from your games');
-  }
-  if (parts[0] === 'pattern') {
-    var info = PATTERN[k];
-    var s = patternStats().filter(function (x) { return x.key === k; })[0];
-    if (!info) return '';
-    var fk = familyOf(k), plost = s ? lostOf(s.items) : 0;
-    /* its count is the positions it lists (V4.8: Forks "5 positions" shows
-       all 5) */
-    return '<a class="sheet-back" data-act="sheet" data-k="family:' + fk.key + '">‹ ' + esc(fk.name) + '</a><h3>' + esc(info.plural) + '</h3>'
-      + '<p class="sheet-sum">' + (s ? plur(s.count, 'position') + ' from your games' + (plost ? ', which decided ' + fmtGames(plost) : '') + '.' + (s.fixed ? ' ' + s.fixed + ' learned.' : '') : 'None in your games yet.') + '</p>'
-      + '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(patternStep(k), playerTier())) + '</div></div>'
-      + (s ? '<div class="acts-row sheet-acts"><a class="btn-big" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'pattern', key: k, label: info.plural })) + '">Drill ' + plur(Math.min(8, s.count), 'position') + '</a></div>' : '')
-      + (s ? examplesHtml({ type: 'pattern', key: k }, s.count) : '');
-  }
+  /* a skill's sheet, filtered to one kind (family:safety:forkAllowed); the
+     pattern sheet it retired opens as that */
+  if (parts[0] === 'family') return familySheetHtml(k, parts[2]);
+  if (parts[0] === 'pattern' && PATTERN[k]) return familySheetHtml(familyOf(k).key, k);
   return '';
+}
+/* ── a skill's sheet (Insights depth: glance, then drill) ────────────────
+   The header (kicker, name, what it decided, its plain line); What kind:
+   a 52 px toggle per kind (aria-pressed), sorted as the glance, its name,
+   "18 · decided 4 games" and a 6 px bar scaled to the largest kind, one
+   pressed filtering the sheet ("Show all" by the heading); Practise, its
+   count what the drill deals (8 at most), and the check (the kind's when
+   filtered); at Normal and Less help, When in your games (opening,
+   middlegame, endgame, from 10 positions in view, never on Quiet moves,
+   whose kinds are these) and Since you started (every kind, before and
+   since a game, under the calibrated word, or the games still to come);
+   then the positions: four, or every one of the kind chosen. Every bar is
+   a picture of the words beside it (aria-hidden). pat: the kind chosen
+   (none for a skill of one kind). On first paint each bar grows from 0,
+   30 ms after the one before, all within 400 ms (fs-grow, app.css) */
+var FS_STAGGER = 30, FS_LAST = 160;
+function familySheetHtml(k, pat) {
+  var fam = FAMILIES.filter(function (f) { return f.key === k; })[0];
+  var agg = insightReport().families.filter(function (a) { return a.fam.key === k; })[0];
+  if (!fam || !agg) return '';
+  var tier = playerTier(), kinds = kindsOf(agg), focus = currentFocus(), bi = 0;
+  var sel = kinds.length >= 2 ? kinds.filter(function (s) { return s.key === pat; })[0] || null : null;
+  var pct = function (n, max) { return max > 0 ? Math.round(n * 1000 / max) / 10 : 0; };
+  var bar = function (cls, w, id) {
+    return '<span class="fs-bar" aria-hidden="true"><i class="' + cls + '" data-b="' + id + '" style="width:' + w + '%;animation-delay:' + Math.min(bi++ * FS_STAGGER, FS_LAST) + 'ms"></i></span>';
+  };
+  var row = function (name, n, b) { return '<div class="fs-row"><span class="fs-name">' + name + '</span>' + (n === '' ? '' : '<span class="fs-n">' + n + '</span>') + b + '</div>'; };
+  /* while the background check runs, one line tops the sheet (C1) */
+  var h = checkingHtml('sheet-check') + '<div class="kicker">Skill</div><h3>' + esc(fam.name) + '</h3>'
+    + '<p class="sheet-sum">' + (agg.lost ? 'Decided ' + fmtGames(agg.lost) + ' of yours. ' : '') + plur(agg.count, 'position') + ' from your games.'
+      + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
+    + '<p class="fs-def">' + esc(skillLine(k, tier)) + '</p>';
+  if (kinds.length >= 2) {
+    h += '<div class="fs-head"><h4 class="kicker fs-h">What kind</h4>' + (sel ? '<a class="btn-quiet fs-all" data-act="famKind" data-k="family:' + k + '">Show all</a>' : '') + '</div>'
+      + '<div class="fs-kinds">' + kinds.map(function (s) {
+        var on = sel === s, lost = lostOf(s.items);
+        return '<a class="fs-kind' + (on ? ' is-on' : '') + '" role="button" tabindex="0" aria-pressed="' + on + '" data-act="famKind" data-k="family:' + k + (on ? '' : ':' + s.key) + '" data-kind="' + s.key + '">'
+          + '<span class="fs-name">' + esc(kindName(s.key, tier)) + '</span><span class="fs-n">' + s.count + (lost ? ' · ' + decidedWords(lost, tier) : '') + '</span>'
+          + bar(on ? 'kb0' : sel ? 'kb2' : 'kb1', pct(s.count, kinds[0].count), 'k:' + s.key) + '</a>';
+      }).join('') + '</div>';
+  }
+  /* Practise: the drill of what is in view */
+  var spec = sel ? { type: 'pattern', key: sel.key, label: kindName(sel.key, tier) } : { type: 'family', fam: k, label: fam.name };
+  var nDrill = drillItems(spec, 8).length;
+  h += '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(sel ? patternStep(sel.key) : familyStep(k), tier)) + '</div></div>'
+    + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big fs-go" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify(spec)) + '">Practise '
+      + esc(sel ? kindPractise(sel.key, tier) : fam.name.toLowerCase()) + ': ' + nDrill + '\u00a0position' + (nDrill === 1 ? '' : 's') + '</a>' : '')
+    + (focus && focus.fam === k ? '<span class="pill">Focus</span>' : '') + '</div>';
+  /* When in your games, over the positions in view */
+  var items = sel ? sel.items : kinds.reduce(function (a, s) { return a.concat(s.items); }, []), when = '', since = '';
+  if (tier >= 2 && k !== 'quiet' && items.length >= 10) {
+    var ph = { open: 0, mid: 0, end: 0 };
+    items.forEach(function (it) { ph[phaseOfItem(it)]++; });
+    var top = Math.max(ph.open, ph.mid, ph.end), most = PHASES.filter(function (p) { return ph[p[0]] === top; });
+    var cap = most.length === 1 ? 'Most in ' + most[0][2] + ': ' + top + ' of ' + items.length + '.'
+      : most.length === 2 ? 'Most in ' + most[0][2] + ' and ' + most[1][2] + ': ' + top + ' each of ' + items.length + '.'
+      : 'As many in each part of the game: ' + top + ' each of ' + items.length + '.';
+    when = '<section class="fs-sec" aria-label="When in your games"><h4 class="kicker fs-h">When in your games</h4><p class="fs-cap">' + cap + '</p>'
+      + PHASES.map(function (p) { return row(p[1], ph[p[0]], bar('kb1', pct(ph[p[0]], top), 'p:' + p[0])); }).join('') + '</section>';
+  }
+  /* Since you started: every kind, filtered or not */
+  var ss = tier >= 2 ? sinceSkill(k) : null, d1 = function (x) { return (Math.round(x * 10) / 10).toFixed(1); };
+  if (ss) {
+    var big = ss.say ? Math.max(ss.b, ss.s) : 0;
+    since = '<section class="fs-sec" aria-label="Since you started"><h4 class="kicker fs-h">Since you started</h4>'
+      + (ss.say ? '<p class="fs-say">' + ss.say + '</p>' + row('Before: ' + d1(ss.b) + ' a game', '', bar('kb2', pct(ss.b, big), 's:b')) + row('Since: ' + d1(ss.s) + ' a game', '', bar('kb0', pct(ss.s, big), 's:s'))
+        : '<p class="fs-cap">Your trend shows from ' + ss.need + ' games since you started: ' + ss.so + ' so far.</p>') + '</section>';
+  }
+  if (when || since) h += '<div class="fs-pair">' + when + since + '</div>';
+  return h + examplesHtml(sel ? { type: 'pattern', key: sel.key } : { type: 'family', fam: k }, sel ? sel.count : 4, 'Your positions');
+}
+/* a kind row pressed (kind: family:k:pattern, or family:k for every kind
+   again): the sheet is drawn filtered in place, its scroll and the
+   keyboard kept (Show all hands it to the row it unpressed); each bar
+   eases from its old width and colour to the new in 200 ms, and the
+   positions fade in over 150 ms (reduced motion: all at once) */
+function famFilter(kind) {
+  var sh = document.querySelector('#overlay .sheet');
+  if (!sh || !/^(family|pattern):/.test(String(ui.sheet))) return;
+  var body = sheetHtml(kind);
+  if (!body) return;
+  var was = {}, olds = sh.querySelectorAll('[data-b]'), i;
+  for (i = 0; i < olds.length; i++) was[olds[i].getAttribute('data-b')] = [olds[i].getBoundingClientRect().width, getComputedStyle(olds[i]).backgroundColor];
+  var oldPos = (sh.querySelector('.ex-list') || {}).innerHTML, ae = document.activeElement, prev = String(ui.sheet).split(':');
+  var fk = ae && sh.contains(ae) ? ae.getAttribute('data-kind') || (/\bfs-all\b/.test(ae.className) ? prev[prev[0] === 'pattern' ? 1 : 2] : null) : null;
+  var y = sh.scrollTop;
+  ui.sheet = kind;
+  sh.classList.add('fs-eased');
+  sh.innerHTML = '<a class="close" data-act="closeSheet" aria-label="Close">×</a>' + body;
+  var h3 = sh.querySelector('h3');
+  if (h3) h3.id = 'sheet-title';
+  sh.scrollTop = y;
+  var nows = sh.querySelectorAll('[data-b]'), to = [];
+  for (i = 0; i < nows.length; i++) {
+    var w = was[nows[i].getAttribute('data-b')];
+    if (!w) continue;
+    to.push([nows[i], nows[i].style.width]);
+    nows[i].style.transition = 'none'; nows[i].style.width = w[0] + 'px'; nows[i].style.backgroundColor = w[1];
+  }
+  void sh.offsetWidth;
+  to.forEach(function (x) { x[0].style.transition = ''; x[0].style.width = x[1]; x[0].style.backgroundColor = ''; });
+  var pos = sh.querySelector('.ex-list');
+  if (pos && pos.innerHTML !== oldPos) pos.classList.add('fs-fade');
+  var back = fk ? sh.querySelector('[data-kind="' + fk + '"]') : null;
+  if (back) back.focus({ preventScroll: true });
 }
 /* a decisive mistake loses a game, or turns a win into a draw */
 /* how a decisive mistake is named: said no stronger than the evidence */
-function decisiveWords(g, b) {
-  if (b && b.dw === 'slip') return 'let the win slip';
+function decisiveWords(g, b, tier) {
+  /* (a skill's positions at More help: no "slip", slice E) */
+  if (b && b.dw === 'slip') return tier === 1 ? 'let the win get away' : 'let the win slip';
   if (b && b.dw === 'turn') return 'was where the game turned';
   return g.res === 'draw' ? 'cost you the win' : 'lost the game';
 }
-/* positions of a sheet's skill or pattern as small boards: n of them, under
-   the kicker (a pattern's sheet lists every one it counts, V4.8; a skill's
-   shows a few, as examples) */
+/* positions of a skill's sheet as small boards: n of them, under the
+   heading (filtered to a kind, every one it counts, V4.8; else a few, as
+   examples), each opening One position */
 function examplesHtml(spec, n, kicker) {
   var items = drillItems(spec, n || 4);
   if (!items.length) return '';
-  return '<div class="kicker" style="margin-top:24px">' + (kicker || 'From your games') + '</div><div class="ex-list">' + items.map(function (it) {
+  return '<h4 class="kicker fs-h fs-pos">' + (kicker || 'From your games') + '</h4><div class="ex-list">' + items.map(function (it) {
     var pre = stateAtPly(it.g.mv, it.b.p);
     if (!pre) return '';
     return '<div class="ex" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'One position' })) + '">'
       + boardSvg(pre, { flip: it.g.color === 'black', decor: true, bad: [uciToMove(pre, uciOfSan(it.g.mv, it.b.p)) || { from: 0, to: 0 }].map(function (m) { return m.from; }).concat([(uciToMove(pre, uciOfSan(it.g.mv, it.b.p)) || { to: 0 }).to]) })
-      + '<span>vs ' + esc(it.g.opp) + ' · ' + gameDateLine(it.g) + (it.b.d ? '<br><span class="dot-bad" aria-hidden="true"></span> ' + decisiveWords(it.g, it.b) : '') + '</span></div>';
+      + '<span>vs ' + esc(it.g.opp) + ' · ' + gameDateLine(it.g) + (it.b.d ? '<br><span class="dot-bad" aria-hidden="true"></span> ' + decisiveWords(it.g, it.b, playerTier()) : '') + '</span></div>';
   }).join('') + '</div>';
 }
 

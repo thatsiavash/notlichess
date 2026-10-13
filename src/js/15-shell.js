@@ -657,6 +657,8 @@ document.addEventListener('click', function (e) {
     case 'endSession': endSession(); break;
     case 'drill': { var sp = parseSpec(t); if (sp) startDrill(sp); break; }
     case 'sheet': openSheet(k); break;
+    /* a kind pressed in a skill's sheet: the sheet filters to it, or shows all again */
+    case 'famKind': famFilter(k); break;
     case 'closeSheet': if (e.target === t) closeSheet(); break;
     case 'hint': if (!tooSoon(a)) giveHint(); break;
     case 'reveal': if (!tooSoon(a)) reveal(); break;
