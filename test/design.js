@@ -86,6 +86,7 @@ module.exports = function designChecks(A) {
   if (tiny.length) no('type: meaningful text at 12 px: ' + tiny.slice(0, 5).join(', '));
   /* the page's own markup and scripts set no size of their own (the board's coordinates are board units) */
   const js = fs.readdirSync(path.join(SRC, 'js')).filter((f) => /\.js$/.test(f)).map((f) => fs.readFileSync(path.join(SRC, 'js', f), 'utf8')).join('\n');
+  if (/\.board use\.lift\{[^}]*transform/.test(rules)) no('board: the lifted piece is scaled by CSS; a transform-origin on a <use> placed by x and y scales about the board corner in Chromium (boardSvg gives it an SVG transform about its square)');
   if (/font-size\s*:/.test(js) || /font-size\s*:/.test(page.replace(/<style>[\s\S]*<\/style>/, ''))) no('type: a font-size set outside app.css');
 
   /* ── colour ── */

@@ -289,9 +289,18 @@ function boardSvg(st, opts) {
             + (acol * SZ - x) + 'px,' + (arow * SZ - y) + 'px)"';
         }
         /* the selected piece lifts (F3.1): selecting redraws the board
-           anyway, so the lift costs no extra paint */
+           anyway, so the lift costs no extra paint. The lift is an SVG
+           transform about the piece's own square (its middle, 90% down):
+           a CSS transform-origin on a <use> placed by x and y scales about
+           the board's corner in Chromium, so a piece far from it slid down
+           and to the right */
+        var lift = '';
+        if (!animAttr && opts.sel === sq) {
+          var lx = x + SZ / 2, ly = y + SZ * 0.9;
+          lift = ' class="lift" transform="translate(' + lx + ' ' + (ly - 1.5) + ') scale(1.07) translate(' + (-lx) + ' ' + (-ly) + ')"';
+        }
         var use = '<use href="#pc-' + PIECE_ID[p] + '" x="' + x + '" y="' + y
-          + '" width="' + SZ + '" height="' + SZ + '" data-sq="' + sq + '"' + (animAttr || (opts.sel === sq ? ' class="lift"' : '')) + '/>';
+          + '" width="' + SZ + '" height="' + SZ + '" data-sq="' + sq + '"' + (animAttr || lift) + '/>';
         if (animAttr) slide = use; else pcs += use;
       }
       if (opts.dots && opts.dots.indexOf(sq) >= 0) {
