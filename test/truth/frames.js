@@ -10,11 +10,88 @@ TA.settledFrames = function (a, tag) {
   a.settle = 1; TA.snap(a, tag + ' S0 marks');
   a.settle = 2; TA.snap(a, tag + ' S0 settled');
   TA.details(a, tag + ' S0 settled');
+  if (!a.foil && !a.prac) TA.summary(a, tag);
   if (a.foil || a.prac) return;
-  try { seeWhy(); } catch (e) {}
+  TA.storyFrames(a, tag);
+};
+/* a frame that carries only what the caller adds (the summary's lines, Explore's words): the card's
+   context as TA.snap keeps it, with the card's own strings left out (they are read on its frames) */
+TA.snapLite = function (a, frame, extra) {
+  var r = TA.snap(a, frame, extra);
+  r.row1 = r.row2 = r.cap = r.chip = r.tag = r.src = r.strip = r.live = r.aria = '';
+  r.buttons = []; r.label0 = r.label1 = null; r.marks = {};
+  return r;
+};
+/* release 2's C5 (f): what the summary of this showing says of the card: its tile's computed fact
+   (tier 3) and its "Keep in mind" lines, as the set's summary would draw them */
+TA.summary = function (a, tag) {
+  var ss = ui.session, e = ss && ss.sum && ss.sum[a.key];
+  if (!e) return null;
+  var r = TA.snapLite(a, tag + ' summary');
+  r.keep = keepLines(ss, [a.key], a.tier || 2);
+  r.tile = e.f && e.l ? e.l : '';
+  return r;
+};
+/* See why's steps after the answer shown or found */
+TA.storyFrames = function (a, tag) {
+  try { seeWhy(); } catch (e) { return; }
   var S = null;
   try { S = buildStory(a); } catch (e) { TA.snap(a, tag + ' story error ' + e); return; }
   for (var i = 0; i < S.steps.length; i++) { a.view = { mode: 'story', i: i }; a.animMove = null; TA.snap(a, tag + ' story ' + i); }
+};
+/* release 2's C5 (f): Explore after the answer (startExplore, from the card's own position), one move
+   at a time from there; TA.xpReady says when its searches are in, TA.xpSnap reads the sentence, the
+   rows and what they were said on */
+TA.xpStart = function () {
+  var a = ui.session && ui.session.active;
+  if (!a || !xpOpen(a)) return 0;
+  startExplore({ via: 'audit' });
+  return a.explore ? 1 : 0;
+};
+TA.xpPlay = function (u) {
+  var a = ui.session.active, ex = a && a.explore;
+  if (!ex) return 'none';
+  if (ex.at !== 0) exploreGo(0);
+  var m = uciToMove(ex.nodes[0].st, u);
+  if (!m) return 'illegal';
+  explorePlay(m, false);
+  return 'ok';
+};
+TA.xpReady = function () {
+  var a = ui.session && ui.session.active, ex = a && a.explore;
+  if (!ex) return 'none';
+  var C = xpCur(ex), P = ex.at > 0 ? ex.nodes[ex.at - 1] : null;
+  if (xpGameOver(C.st) || xpSpoil(C) || C.down) return 'ready';
+  var cr = ex.res[C.key], pr = P ? ex.res[P.key] : null;
+  if (!cr || cr.step < 2) return 'wait';
+  if (P && !xpSpoil(P) && !xpGameOver(P.st) && (!pr || pr.step < 2)) return 'wait';
+  return 'ready';
+};
+TA.xpSnap = function (frame, extra) {
+  var a = ui.session.active, ex = a.explore, n = xpCur(ex), P = ex.at > 0 ? ex.nodes[ex.at - 1] : null;
+  var L = function (ls) { return (ls || []).map(function (l) { return l ? { pv: l.pv.slice(0, 10), cp: l.cp, mate: l.mate } : null; }); };
+  var r = TA.snapLite(a, frame, extra), rows = null;
+  try { rows = xpRows(a, ex); } catch (e) { rows = null; }
+  r.xp = { say: sayAt(a, ex, ex.at), fen: n.fen, parent: P ? P.fen : null, move: n.mv ? n.mv.uci : null, san: n.mv ? n.mv.san : null,
+           byYou: n.mv ? !!n.mv.byYou : null, spoil: !!xpSpoil(n),
+           rows: (rows || []).map(function (w) { return { uci: w.uci, first: w.first, cont: w.cont || '', chip: w.chip || '', words: w.words || '', label: w.label || '', li: w.li }; }),
+           lines: L(xpShown(ex, n)), parentLines: P && ex.res[P.key] ? L(ex.res[P.key].lines) : null };
+  return r;
+};
+/* release 2's C5 (f): every legal check and capture of the player on the card's position */
+TA.checksCaptures = function (key) {
+  var it = itemOf(key), pre = it && stateAtPly(it.g.mv, it.b.p);
+  if (!pre) return '[]';
+  return JSON.stringify(legalMoves(pre).filter(function (m) { var x = cloneState(pre); applyMove(x, m); return !!pre.b[m.to] || checkedKingSq(x) != null || (m.ep != null && m.ep >= 0); }).map(moveUci));
+};
+/* the card's own answer played (a forcing line played through), then its settled frames */
+TA.solve = function (key, tag) {
+  var a = TA.open(key);
+  if (!a) return 'none';
+  if (!a.sol) solved(uciToMove(a.st, a.bestUci), a.bestUci, null);
+  else { while (a.solIdx < a.sol.length) { var lm = uciToMove(a.st, a.sol[a.solIdx]); if (a.solIdx % 2 === 0) noteWon(a, lm); applyMove(a.st, lm); a.lastMove = [lm.from, lm.to]; a.solIdx++; } finishCard('first'); }
+  TA.settledFrames(a, tag);
+  return 'ok';
 };
 TA.cardSync = function (key) {
   var a = TA.open(key);
@@ -49,11 +126,11 @@ TA.cardSync = function (key) {
   TA.settledFrames(a, 'best');
   /* the answer shown, played, settled */
   a = TA.open(key); reveal(); a.animMove = null; TA.snap(a, 'shown');
-  if (!a.sol) { playIt(false); a.animMove = null; TA.snap(a, 'shown, played'); a.settle = 2; TA.snap(a, 'shown, settled'); TA.details(a, 'shown, settled'); }
+  if (!a.sol) { playIt(false); a.animMove = null; TA.snap(a, 'shown, played'); a.settle = 2; TA.snap(a, 'shown, settled'); TA.details(a, 'shown, settled'); TA.summary(a, 'shown'); TA.storyFrames(a, 'shown'); }
   else {
     var guard = 0;
     while (showDue(a) && guard++ < 12) { playIt(false); if (a.reply) { theirReply(a, false); replyDone(a, a.reply); } a.animMove = null; }
-    a.view = { mode: 's0' }; a.settle = 2; TA.snap(a, 'shown line, settled'); TA.details(a, 'shown line, settled');
+    a.view = { mode: 's0' }; a.settle = 2; TA.snap(a, 'shown line, settled'); TA.details(a, 'shown line, settled'); TA.summary(a, 'shown line');
   }
   return 'ok';
 };

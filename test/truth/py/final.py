@@ -51,6 +51,15 @@ def finalize(pas, adj=None):
         staged.append(r)
     # tier 1's Details lines no checker reads take their tier 2 line's final verdict (t1words.py)
     t1words.pair(staged)
+    # tier 1's Explore sentence is tier 2's in words: it takes the verdict of the tier 2 sentence said of
+    # the same move on the same card (release 2's C5 (f))
+    xp2 = {(r['pass'], r['key'], r['frame']): r for r in staged if r['tier'] == 2 and r.get('type') == 'explore'}
+    for r in staged:
+        if r['tier'] == 1 and r.get('type') == 'explore' and r['verdict'] == 'untestable':
+            x = xp2.get((r['pass'], r['key'], r['frame']))
+            if x:
+                r['verdict'], r['note'] = x['verdict'], 'tier 1 words of the tier 2 sentence "%s": %s' % (x['text'], x['note'])
+                r['t1words'] = x['id']
     for r in staged:
         if r['text'] in INSTR:
             r['verdict'], r['note'] = 'none', 'an instruction, no claim'

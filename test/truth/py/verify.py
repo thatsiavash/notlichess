@@ -13,7 +13,7 @@ import chess
 import cfg, chk, sf, gamedata
 from claims import Rec, T, F, M, U, N
 import handlers as H1, handlers2 as H2, handlers3 as H3
-import handlers_v1 as HV, handlers_v2 as HV2, handlers_gate as HG
+import handlers_v1 as HV, handlers_v2 as HV2, handlers_gate as HG, handlers_xp as HXP
 # v2 slice 1's forms, read before the older ones
 H2.SETTLED[:0] = HV.SETTLED
 H1.VERDICT[:0] = HV.VERDICT
@@ -126,7 +126,7 @@ def classify(R, field, text):
             h = R.r.get('row1', '')
             t = 'hint 3' if h.startswith('Hint 3') else 'hint 2' if h.startswith('Hint 2') else 'hint 1'
             return ((('game ' if fr.startswith('game') else '') + t), H1.HINT)
-        if fr.startswith('forcing') or fr.startswith('game forcing'):
+        if fr.startswith('forcing') or fr.startswith('game forcing') or re.search(r' phase reply$', fr):
             return ('forcing line', H2.FORCING)
         if fr == 'game open' or (fr.startswith('game') and re.match(r'^Move \d+', text)):
             return ('game row', H3.GAME)
@@ -275,6 +275,36 @@ def claims_of(r, games, unread=None):
         lb = r.get(lf)
         if lb and lb.get('text'):
             out.append((R, 'label', lb['text'], 'label', ('LABEL', lb), None))
+    # release 2's C5 (f): Explore's sentence and rows, and the summary's lines of this showing
+    xp = r.get('xp')
+    if xp:
+        say = xp.get('say') or ''
+        if say and not re.search(r'is thinking\u2026$', say):
+            if HG.BROKEN.search(say):
+                out.append((R, 'xp', say, 'broken words', HG.h_broken, None))
+            elif xp.get('spoil') or re.match(r'^(This is one of your own positions|.+ is played\. The computer rates each move\.$)', say):
+                out.append((R, 'xp', say, 'explore', lambda R, m, t: N('Explore keeps quiet on a card still to come, or names the move only'), None))
+            else:
+                out.append((R, 'xp', say, 'explore', HXP.h_xp_say, None))
+        for w in xp.get('rows') or []:
+            if w.get('label'):
+                out.append((R, 'xprow', w['label'], 'explore row', HXP.h_xp_row, None))
+    for f in ('keep', 'tile'):
+        for d in ([r[f]] if f == 'tile' and r.get(f) else r.get(f) or [] if f == 'keep' else []):
+            if HG.BROKEN.search(d):
+                out.append((R, 'summary', d, 'broken words', HG.h_broken, None))
+                continue
+            typ, fn, m = details_handler(R, d)
+            if fn:
+                out.append((R, 'summary', d, 'summary', fn, m))
+            elif unread is not None and not H3.DETAIL_SKIP.match(d):
+                unread.append(('summary', d))
+    # release 2's C5 (g): the frame's strings about one move or threat, against each other
+    try:
+        for t, v in HG.surfaces(R, r):
+            out.append((R, 'frame', t, 'surfaces', HG.h_surface, v))
+    except Exception as e:
+        out.append((R, 'frame', 'surfaces of ' + R.frame, 'surfaces', HG.h_surface, ('error', '%s: %s' % (type(e).__name__, e))))
     for d in r.get('details') or []:
         if HG.BROKEN.search(d):
             out.append((R, 'details', d, 'broken words', HG.h_broken, None))
@@ -309,18 +339,24 @@ def sig(R, field, text, typ):
     fam = family(R.frame)
     if typ in ('reason', 'practice reason', 'verdict'):
         fam = re.sub(r'^(two tries: |game )', '', fam)
-    return (R.r.get('pass'), R.tier, R.key, typ, field, text, t, g, st, c.get('solIdx'), lb, R.x.get('u'), fam if typ in ('settled', 'foil line', 'details', 'broken words', 'hint 1', 'hint 2', 'hint 3', 'game hint 1', 'game hint 2', 'forcing line', 'answer') else '')
+    return (R.r.get('pass'), R.tier, R.key, typ, field, text, t, g, st, c.get('solIdx'), lb, R.x.get('u'), fam if typ in ('settled', 'foil line', 'details', 'broken words', 'hint 1', 'hint 2', 'hint 3', 'game hint 1', 'game hint 2', 'forcing line', 'answer', 'explore', 'explore row', 'summary', 'surfaces') else '')
 
 
 def run_one(item):
     R, field, text, typ, fn, m = item
     try:
-        if isinstance(fn, tuple) and fn[0] == 'LABEL':
-            v = H3.h_label(R, text, fn[1])
-        elif fn is None:
-            v = U('form not read')
-        else:
-            v = fn(R, m, text)
+        # release 2's C5 (d): "Now X", "lets X", "allows X" first, for what was possible before the move
+        v = HG.newness(R, typ, field, text) if field != 'label' else None
+        if v is None:
+            if isinstance(fn, tuple) and fn[0] == 'LABEL':
+                v = H3.h_label(R, text, fn[1])
+            elif fn is None:
+                v = U('form not read')
+            else:
+                v = fn(R, m, text)
+        # (b) See why's band words, (e) B5's threats, (c) material words that understate
+        if field != 'label':
+            v = HG.post_check(R, typ, field, text, v)
     except Exception as e:
         v = ('error', '%s: %s' % (type(e).__name__, traceback.format_exc().splitlines()[-3:]))
     return v
@@ -341,6 +377,8 @@ def items_of(pas, keys=None, only=None, unread=None):
     for which in cfg.DUMPS[pas]:
         fn = cfg.out('dump-%s.jsonl' % which)
         if not os.path.exists(fn):
+            if which in cfg.OPTIONAL_DUMPS:
+                continue
             sys.exit('no dump %s (run node test/truth/gate.js --pass %s first)' % (fn, pas))
         with open(fn) as f:
             for line in f:

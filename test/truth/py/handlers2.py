@@ -548,7 +548,13 @@ def better_cap(R, text, notes):
 def works_too_cap(R, text):
     s = R.step
     y = R.ctx.get('yours') or []
-    wt, wb = two(s['before'], s['move'], R.best if s['from'] <= 1 else (R.ctx.get('sol') or [R.best])[s['from'] - 1], R.color)
+    due = R.best if s['from'] <= 1 else (R.ctx.get('sol') or [R.best])[s['from'] - 1]
+    # release 2's C5 (a)
+    if s['move'] != due:
+        up, why = ranks_above(s['before'], s['move'], due, R.color)
+        if up:
+            return F('"works too" for a move that ranks above the main move: ' + why)
+    wt, wb = two(s['before'], s['move'], due, R.color)
     # v1: a safe win's 70% edge with the methodology's band-edge noise (TOL)
     return (T if wb - wt <= 6 or (wt >= 70 - TOL and wb >= 70 - TOL) else M)('yours %.0f%%, the answer %.0f%%' % (wt, wb))
 

@@ -10,7 +10,9 @@ ROOT = None
 OUT = None
 PASSES = ('live', 'stored', 'practice')
 # the dumps each pass reads (the practice pass's records say pass 'screens', as the audit's did)
-DUMPS = {'live': ('live', 'live-game'), 'stored': ('stored', 'stored-game'), 'practice': ('practice',)}
+DUMPS = {'live': ('live', 'live-game', 'live-seeds'), 'stored': ('stored', 'stored-game'), 'practice': ('practice',)}
+# the seeded cases (release 2's C5 (i)): a run from before them has no such dump
+OPTIONAL_DUMPS = ('live-seeds',)
 
 
 def parser(desc):
@@ -73,8 +75,8 @@ def jsonl(name):
 def budget(n):
     """every node budget of the checks set to n: the modules' DEEP, MID and LIGHT, and the budgets bound
     as default arguments (two(..., nodes=DEEP), eval_side(fen, nodes=1000000), mate_lines(fen, nodes=DEEP))"""
-    import chk, claims, handlers, handlers2, handlers3, handlers_v1, handlers_v2, handlers_gate
-    mods = (claims, handlers, handlers2, handlers3, handlers_v1, handlers_v2, handlers_gate)
+    import chk, claims, handlers, handlers2, handlers3, handlers_v1, handlers_v2, handlers_gate, handlers_xp
+    mods = (claims, handlers, handlers2, handlers3, handlers_v1, handlers_v2, handlers_gate, handlers_xp)
     for mod in mods:
         for name in ('DEEP', 'MID', 'LIGHT'):
             if hasattr(mod, name):

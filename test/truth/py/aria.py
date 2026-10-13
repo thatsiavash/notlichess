@@ -77,8 +77,11 @@ def check_sentence(s, b, r):
         if not piece_is(b, m.group(2), m.group(1)):
             return 'false', 'no %s on %s' % (m.group(1), m.group(2))
         sq = chess.parse_square(m.group(2))
-        if chk.in_danger(b, sq):
+        # release 2's C5 (e): the exchange's word confirmed by a search
+        if chk.in_danger_deep(b, sq):
             return 'true', ''
+        if chk.in_danger(b, sq):
+            return 'misleading', 'the exchange says it can be taken, but no capture of it nets them material at depth'
         return ('misleading' if chk.attackers_legal(b, sq) else 'false'), 'attacked: %s, but taking it does not pay' % bool(chk.attackers_legal(b, sq))
     m = re.match(r'^Red ring: they could checkmate on ' + SQ + r'\.$', s)
     if m:
@@ -157,6 +160,8 @@ def main():
     seen = set()
     cnt = collections.Counter()
     for which in cfg.DUMPS[a.pas]:
+        if which in cfg.OPTIONAL_DUMPS and not os.path.exists(cfg.out('dump-%s.jsonl' % which)):
+            continue
         with open(cfg.out('dump-%s.jsonl' % which)) as f:
             for line in f:
                 r = json.loads(line)
