@@ -2939,6 +2939,30 @@ const BAR = `(function () {
     eq(r.out.length, 0, r.out.join(' | '));
   });
 
+  /* the lifted piece (F3.1) scales about its own square: a CSS transform-origin on a <use> placed by
+     x and y scaled it about the board's corner in Chromium, so a piece far from it slid down and right */
+  await test('a selected piece lifts about its own square, at every square and from both sides', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { var out = [], n = 0;
+      var st = stateFromFen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+      [false, true].forEach(function (flip) {
+        for (var sq = 0; sq < 64; sq++) {
+          if (!st.b[sq]) continue;
+          var svg = boardSvg(st, { flip: flip, sel: sq }), lifts = (svg.match(/class="lift"/g) || []).length;
+          var m = new RegExp('<use[^>]*x="([\\\\d.]+)" y="([\\\\d.]+)" width="([\\\\d.]+)"[^>]*data-sq="' + sq + '" class="lift" transform="translate\\\\(([-\\\\d.]+) ([-\\\\d.]+)\\\\) scale\\\\(1\\\\.07\\\\) translate\\\\(([-\\\\d.]+) ([-\\\\d.]+)\\\\)"').exec(svg);
+          n++;
+          if (lifts !== 1) out.push((flip ? 'b ' : 'w ') + sq + ': ' + lifts + ' lifted');
+          if (!m) { out.push((flip ? 'b ' : 'w ') + sq + ': no lift about a point'); continue; }
+          var x = +m[1], y = +m[2], s = +m[3], cx = x + s / 2, cy = y + s * 0.9;
+          if (Math.abs(+m[4] - cx) > 1e-6 || Math.abs(+m[5] - (cy - 1.5)) > 1e-6 || Math.abs(+m[6] + cx) > 1e-6 || Math.abs(+m[7] + cy) > 1e-6)
+            out.push((flip ? 'b ' : 'w ') + sq + ': pivot ' + m.slice(4).join(' ') + ', not ' + cx + ' ' + cy);
+        }
+      });
+      return JSON.stringify({ out: out, n: n }); })()`));
+    eq(r.n, 64, 'every piece of both sides, from both sides of the board');
+    eq(r.out.length, 0, r.out.join(' | '));
+  });
+
   await test('the sound context is made inside the player\'s gesture, never inside a timed beat; a piece picked up taps', () => {
     const A = boot();
     A.ev(DOM);
