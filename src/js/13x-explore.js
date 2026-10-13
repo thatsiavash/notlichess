@@ -585,7 +585,11 @@ function xpRows(a, ex) {
     var plies = tier === 3 ? (touch ? 4 : 6) : 2, cont = [];
     for (var k = 1; k <= plies && k < sans.length; k++) cont.push(((xpPly(n.st) + k) % 2 === 0 ? xpNum(n.st, k) : '') + sans[k]);
     row.cont = cont.join(' ');
-    row.label = first + (cont.length ? ', then ' + sans.slice(1, plies + 1).join(' ') : '') + '. ' + (myMate != null || drawn ? row.chip + '.' : 'Your winning chances ' + row.chip.replace('You ', '') + '.');
+    /* a figure that is no number is left out (progVal) */
+    if (progVal(row.chip)) row.chip = '';
+    /* its name starts with the words it shows, in their order (WCAG 2.5.3):
+       "You 50%, 35.Qe6, then b5 36.b3." */
+    row.label = (row.chip ? row.chip + ', ' : '') + row.num + first + (row.cont ? ', then ' + row.cont : '') + '.';
     return row;
   });
 }

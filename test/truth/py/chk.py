@@ -91,6 +91,19 @@ def in_danger(b, sq):
     return see_square(x, sq) > 0
 
 
+def in_danger_deep(b, sq, nodes=1000000):
+    """release 2's C5 (e): in_danger confirmed by a search (static exchange never decides alone): a
+    capture of the piece that the exchange favours, whose settled line nets them a pawn or more"""
+    if not in_danger(b, sq):
+        return False
+    p = b.piece_at(sq)
+    x = b if b.turn != p.color else null(b)
+    for c in [m for m in x.legal_moves if m.to_square == sq and see_capture(x, m) > 0]:
+        if settled_delta(x.fen(), x.turn, [c.uci()], nodes)['delta'] >= 1:
+            return True
+    return False
+
+
 def attacked_past_check(b, sq):
     """the piece on sq cannot be taken at once only because its opponent, to move, is in check: every
     legal answer to the check leaves it on sq, still attacked by them (pk:m41a's Qa5+: the bishop on d3
@@ -194,33 +207,54 @@ def quiet_after(b, pv, i):
     return True
 
 
+SETTLE_PLIES = 12   # release 2's C5 (e): a line is read on to 12 plies where no settle point agrees
+
+
 def settled_delta(fen0, color, prefix, nodes=1000000, maxply=10):
     """the material `color` has gained (+) or lost (-) from position fen0, after the moves `prefix` and
     Stockfish's line from there, read at the last settled point (quiet_after) within maxply plies of
-    the line (the first one too: 'first'); with the line and its score for `color`"""
+    the line (the first one too: 'first'); with the line and its score for `color`.
+    Release 2's C5 (e): a settle point stands only where the material it leaves agrees with the line's
+    own score (within 2 pawns; or the line mates; or a decided position where the score runs ahead of
+    the material the same way); where none does, the material is read on to the line's end within 12
+    plies ('agree' False; 'at' stays the last settle point): two quiet plies under a mating attack are
+    no settle point."""
     b0 = chess.Board(fen0)
     base = mat_diff(b0, color)
     b = b0.copy(stack=False)
     for u in prefix:
         b.push(chess.Move.from_uci(u))
     if b.is_game_over():
-        return {'delta': mat_diff(b, color) - base, 'first': mat_diff(b, color) - base, 'pv': [], 'cp': None, 'mate': None, 'over': b.result(), 'at': 0}
+        return {'delta': mat_diff(b, color) - base, 'first': mat_diff(b, color) - base, 'pv': [], 'cp': None, 'mate': None, 'over': b.result(), 'at': 0, 'agree': True}
     e = eval_side(b.fen(), nodes, color)
     pv = e['pv']
-    pts = []
+    pts, mats = [], []
     x = b.copy(stack=False)
-    for i in range(0, min(len(pv), maxply) + 1):
-        if quiet_after(b, pv, i) and (i >= 1 or not prefix or True):
-            pts.append((i, mat_diff(x, color) - base))
+    for i in range(0, min(len(pv), max(maxply, SETTLE_PLIES)) + 1):
+        if i <= maxply and quiet_after(b, pv, i):
+            pts.append((i, mat_diff(x, color) - base, mat_diff(x, color)))
+        mats.append((i, mat_diff(x, color) - base, mat_diff(x, color)))
         if i < len(pv):
             mv = chess.Move.from_uci(pv[i])
             if mv not in x.legal_moves:
                 break
             x.push(mv)
     if not pts:
-        pts = [(min(len(pv), maxply), mat_diff(x, color) - base)]
+        pts = [mats[min(len(mats) - 1, maxply)]]
     firsts = [p for p in pts if p[0] >= 1] or pts
-    return {'delta': pts[-1][1], 'first': firsts[0][1], 'pv': pv, 'at': pts[-1][0], 'cp': e['cp'], 'mate': e['mate'], 'win': e['win']}
+    sc = e['cp'] / 100.0
+
+    def agree(p):
+        m = p[2]
+        return e['mate'] is not None or abs(m - sc) <= 2 or (m * sc > 0 and abs(sc) >= abs(m) and abs(sc) >= 5)
+    ok = [p for p in pts if agree(p)]
+    if agree(pts[-1]):
+        pick, good = pts[-1], True
+    elif ok:
+        pick, good = ok[-1], True
+    else:
+        pick, good = mats[-1], agree(mats[-1])
+    return {'delta': pick[1], 'first': firsts[0][1], 'pv': pv, 'at': pts[-1][0], 'cp': e['cp'], 'mate': e['mate'], 'win': e['win'], 'agree': good}
 
 
 def ledger_value(s):
@@ -237,10 +271,11 @@ def ledger_value(s):
         tot = 0
         for chunk in re.split(r',| and ', phrase):
             chunk = chunk.strip()
-            m = re.match(r'^(a|an|the|one|two|three|four|five)\s+(pawn|knight|bishop|rook|queen)s?$', chunk)
+            m = re.match(r'^(a|an|the|one|two|three|four|five)\s+(pawn|knight|bishop|rook|queen|piece)s?$', chunk)
             if not m:
                 return None
-            tot += words[m.group(1)] * VAL[NAME[m.group(2)]]
+            # "a piece": a knight or a bishop (Explore's row "gives up a rook for a piece")
+            tot += words[m.group(1)] * (3 if m.group(2) == 'piece' else VAL[NAME[m.group(2)]])
         return tot
     if s in ('material',):
         return 1, False

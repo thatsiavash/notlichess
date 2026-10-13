@@ -46,6 +46,10 @@ def h_as_good(R, m, text):
             return F('"%s" is not the main move %s' % (m.group(2), due))
     if u == due:
         return F('your move is the main move itself')
+    # release 2's C5 (a): "as good as" understates a move that forces mate or scores 4 or more above
+    up, why = ranks_above(base, u, due, R.color)
+    if up:
+        return F('"as good as" for a move that ranks above the main move: ' + why)
     wt, wb = two(base, u, due, R.color, DEEP)
     note = '%s %.0f%%, the main move %s %.0f%%' % (u, wt, due, wb)
     if wb - wt <= 4:
@@ -65,6 +69,10 @@ def h_main_move(R, m, text):
     if z.uci() != due:
         return F('"%s" is %s, the main move is %s' % (m.group(1), z.uci(), due))
     if u and u != due:
+        # release 2's C5 (a): false when your move forces mate or scores 4 or more above it
+        up, why = ranks_above(base, u, due, R.color)
+        if up:
+            return F('"The main move was %s" under a move that ranks above it: %s' % (m.group(1), why))
         wt, wb = two(base, u, due, R.color, DEEP)
         note = 'the main move %s %.0f%%, yours %s %.0f%%' % (due, wb, u, wt)
         return T(note) if wb >= wt - 4 else M('your move is better than the main move: ' + note)

@@ -94,6 +94,40 @@ def two(fen, a, b, color, nodes=DEEP):
     return wa, wb
 
 
+def pair(fen, a, b, color, nodes=None):
+    """two moves side by side from fen (the search two() asks, so one answer serves both): for each,
+    {'win', 'mate', 'cp'} for `color` (mate > 0: `color` mates)"""
+    nodes = nodes or DEEP
+    bd = chess.Board(fen)
+    flip = color != bd.turn
+    out = {}
+    if a != b:
+        for l in sf.go(fen, nodes, 2, [a, b])['lines']:
+            if l.get('pv') and l['pv'][0] in (a, b) and l['pv'][0] not in out:
+                m = l.get('mate')
+                out[l['pv'][0]] = {'win': win_pct(chk.line_score(l, flip)), 'mate': (-m if flip else m) if m is not None else None, 'cp': chk.line_score(l, flip)}
+    for u in (a, b):
+        if u not in out:
+            e = chk.eval_side(fen, nodes, color, searchmoves=[u])
+            out[u] = {'win': e['win'], 'mate': e['mate'], 'cp': e['cp']}
+    return out[a], out[b]
+
+
+def ranks_above(fen, u, ans, color, nodes=None):
+    """release 2's C5 (a): move u ranks above the answer `ans` at depth when it forces mate and the answer
+    does not (or mates later), or scores 4 or more win points above it: then "works too", "also holds"
+    and "The main move was X" are false. (above, note)"""
+    x, y = pair(fen, u, ans, color, nodes)
+    note = '%s %s, the answer %s %s' % (u, ('mate %d' % x['mate']) if x['mate'] is not None else '%.0f%%' % x['win'], ans, ('mate %d' % y['mate']) if y['mate'] is not None else '%.0f%%' % y['win'])
+    xm = x['mate'] is not None and x['mate'] > 0
+    ym = y['mate'] is not None and y['mate'] > 0
+    if xm and (not ym or x['mate'] < y['mate']):
+        return True, note + ': the try forces mate%s' % ('' if not ym else ' sooner')
+    if not xm and not ym and x['win'] - y['win'] >= 4:
+        return True, note + ': the try scores %.0f points above it' % (x['win'] - y['win'])
+    return False, note
+
+
 def band_of(w):
     return 'winning' if w < 20 else 'better' if w < 40 else 'even' if w < 60 else 'still better'
 

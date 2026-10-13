@@ -20,7 +20,7 @@ function renderFirstVisit(prefill) {
       + '<button class="btn-big" data-icon="search" data-act="findUser" id="findBtn">Find my mistakes</button>'
     + '</div>'
     + '<div id="whichSite" aria-live="polite"></div>'
-    + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</p>'
+    + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. ' + clarityLine() + '</p>'
     + '<figure class="proof"><figcaption>What a 1350 rapid player saw</figcaption>'
       + '<blockquote>In 169 of their 237 losses, one move turned the game for good. Piece safety decided 107.</blockquote></figure>'
     + '</div>'
@@ -34,10 +34,7 @@ function renderFirstVisit(prefill) {
       + valueItem('Free, no account', 'Nothing to buy. Open source.')
     + '</div>'
     + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device.</p>'
-    /* the usage-recording question, at the landing's foot (V5.5) */
-    + (consentAsked() ? '' : consentCardHtml())
     + '</div>';
-  consentWatch();
   var input = el('firstUser');
   if (input) {
     input.focus();
@@ -46,30 +43,63 @@ function renderFirstVisit(prefill) {
     input.addEventListener('input', function () { engineLoad().catch(function () {}); }, { once: true });
   }
 }
+/* a site that asked us to wait (F3): "chess.com is busy and asked us to
+   wait. Trying again in 60 s.", the seconds ticking down on screen
+   (.busy-n) and, at zero, the lookup tried again by itself, once, while
+   live() still holds (the same lookup, the same screen); a newer count ends
+   an older one. Try now ends the site's wait at once (busyNow) and tries */
+var busyTick = { seq: 0, until: 0 };
+function busyCountdown(until, live, retry) {
+  /* a screen drawn again under a count that runs keeps that count */
+  if (busyTick.until === until && busyTick.live && busyTick.live()) return;
+  var seq = ++busyTick.seq;
+  busyTick.until = until; busyTick.live = live;
+  var step = function () {
+    if (seq !== busyTick.seq || !live()) return;
+    /* every count on the page (a first load's card is on Today and on the
+       Games tab) */
+    var left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+    [].forEach.call(document.querySelectorAll('.busy-n'), function (n) { n.textContent = left + ' s'; });
+    if (left <= 0) { busyTick.seq++; retry(); return; }
+    setTimeout(step, 1000);
+  };
+  setTimeout(step, 1000);
+}
+function busyNow(sites) { [].concat(sites).forEach(function (s) { if (s === 'chess.com') ccBackoffUntil = 0; else backoffUntil = 0; }); }
+function busySecs(until) { return Math.max(1, Math.ceil((until - Date.now()) / 1000)); }
+/* the count's words, its seconds ticking only for the eye (a screen reader
+   hears the line once) */
+function busyWhen(until) { var s = busySecs(until) + ' s'; return 'Trying again in <span class="busy-n" aria-hidden="true">' + s + '</span><span class="sr-only">' + s + '</span>.'; }
 /* the name on both sites at once: one found, go; both, ask which; neither,
-   say so. A site that does not answer counts as not found there */
+   say so. A site that does not answer counts as not found there; a site
+   busy (F3) says so at once and counts down to trying again, the button
+   usable meanwhile, and a name found on the other site goes ahead (r6) */
 var findSeq = 0;
-function findUser(name) {
+function findUser(name, now) {
   name = String(name || '').trim();
   /* Find my mistakes with the box empty: say what it needs (V5.8) */
   if (!name) { notice('Type your username first.'); var box0 = el('firstUser'); if (box0 && box0.focus) box0.focus(); return; }
   if (!/^[a-zA-Z0-9_-]{2,30}$/.test(name)) { notice('That is not a chess.com or lichess username: letters, numbers, underscore and hyphen only.'); return; }
   /* only the latest lookup acts: an earlier one answering late is ignored */
   var seq = ++findSeq;
+  if (now) busyNow(['chess.com', 'lichess']);
   var btn = el('findBtn'), box = el('whichSite');
   if (btn) { btn.textContent = 'Looking…'; btn.classList.add('btn-off'); }
   if (box) box.innerHTML = '';
-  /* only a real 404 means "no account there"; anything else is "no answer" */
-  var failed = function (e) { return e && e.code === 404 ? null : { err: true }; };
-  var li = getJSON('/api/user/' + encodeURIComponent(name), { quiet: true }).then(function (u) {
+  /* only a real 404 means "no account there"; a 429 is a busy site;
+     anything else is "no answer" */
+  var failed = function (e) { return e && e.code === 404 ? null : e && e.code === 429 ? { busy: true, site: e.site, wait: e.wait || BUSY_SECS } : { err: true }; };
+  /* (each its own: ccJSON marks its options absolute) */
+  var ask = function () { return { quiet: true, noWait: true }; };
+  var li = getJSON('/api/user/' + encodeURIComponent(name), ask()).then(function (u) {
     if (!u || u.disabled || u.closed) return null;
     var best = null;
     ['rapid', 'blitz', 'bullet', 'classical'].forEach(function (p) { var pf = u.perfs && u.perfs[p]; if (pf && pf.games && (!best || pf.games > best.games)) best = { p: p, games: pf.games, r: pf.rating }; });
     return { site: 'lichess', name: u.username || name, best: best };
   }, failed);
-  var cc = ccJSON('/player/' + encodeURIComponent(name), { quiet: true }).then(function (p) {
+  var cc = ccJSON('/player/' + encodeURIComponent(name), ask()).then(function (p) {
     if (!p) return null;
-    return ccJSON('/player/' + encodeURIComponent(name) + '/stats', { quiet: true }).then(function (st) {
+    return ccJSON('/player/' + encodeURIComponent(name) + '/stats', ask()).then(function (st) {
       var best = null;
       [['chess_rapid', 'rapid'], ['chess_blitz', 'blitz'], ['chess_bullet', 'bullet']].forEach(function (k) {
         var v = st && st[k[0]], n = v && v.record ? (v.record.win || 0) + (v.record.loss || 0) + (v.record.draw || 0) : 0;
@@ -83,19 +113,29 @@ function findUser(name) {
     box = el('whichSite'); btn = el('findBtn');
     if (btn) { btn.textContent = 'Find my mistakes'; btn.classList.remove('btn-off'); }
     if (!box) return;
-    var found = res.filter(function (f) { return f && !f.err; }), silent = res.some(function (f) { return f && f.err; });
+    var found = res.filter(function (f) { return f && !f.err && !f.busy; }), busy = res.filter(function (f) { return f && f.busy; });
+    var down = res.filter(function (f) { return f && f.err; }), silent = !!(busy.length || down.length);
     /* one site has it and the other surely does not, or only one of the
-       two accounts has rated games: go */
+       two accounts has rated games: go; so too where the other site is
+       only busy (r6: a name found on the other site goes ahead) */
     var played = found.filter(function (f) { return f.best; });
     if (found.length === 2 && played.length === 1 && !silent) found = played;
-    if (found.length === 1 && !silent) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
+    if (found.length === 1 && !down.length) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
     if (!found.length && !silent) {
       box.innerHTML = '<p class="which-none">Neither chess.com nor lichess has an account called ' + esc(name) + '. Check the spelling.</p>';
       return;
     }
+    /* busy (F3): said at once, counting down to trying again by itself */
+    if (!found.length && busy.length) {
+      var sites = busy.map(function (f) { return f.site; }), until = Date.now() + Math.max.apply(null, busy.map(function (f) { return f.wait; })) * 1000;
+      box.innerHTML = '<p class="which-none which-busy">' + sites.join(' and ') + (sites.length > 1 ? ' are' : ' is') + ' busy and asked us to wait. ' + busyWhen(until)
+        + ' <a class="btn-quiet" data-act="findNow">Try now</a></p>';
+      busyCountdown(until, function () { var inp = el('firstUser'); return seq === findSeq && !cfg.user && !!inp && inp.value.trim() === name; }, function () { findUser(name); });
+      return;
+    }
     if (!found.length) {
-      var down = res.filter(function (f) { return f && f.err; }).length === 2 ? 'chess.com or lichess' : (res[0] && res[0].err ? 'chess.com' : 'lichess');
-      box.innerHTML = '<p class="which-none">Could not reach ' + down + '. Check your connection and try again.</p>';
+      var unreached = down.length === 2 ? 'chess.com or lichess' : (res[0] && res[0].err ? 'chess.com' : 'lichess');
+      box.innerHTML = '<p class="which-none">Could not reach ' + unreached + '. Check your connection and try again.</p>';
       return;
     }
     /* both: ask which. One while the other did not answer: only the site
@@ -162,95 +202,43 @@ function returnEvents() {
   } catch (e) {}
 }
 
-/* ── usage recording, only with a yes (V5.5) ─────────────────────────────
-   Microsoft Clarity records clicks and the screen (all text hidden) only
-   for a player who said yes in this browser (nl:consent "yes"): before it
-   the page loads no tag, so no cookie and no recording, and track() and
-   measureTag() drop what they are given. The question is a slim card at
-   the foot of the landing, or of Today for a player who arrives another
-   way, never over the board and never during a set (#consent-slot is
-   hidden there). It is asked once: once the card has been on screen, no
-   answer counts as no ("no" is kept), and the choice lives on in
-   Settings, Your data */
+/* ── usage recording (the owner: on for every visitor, and said) ─────────
+   Microsoft Clarity records clicks and the screen, with all text hidden
+   (every container is data-clarity-mask), for every visitor: its tag loads
+   once a page, at boot, and track() and measureTag() send their measures to
+   it. There is no question and no setting (it replaced V5.5's yes); the
+   page never calls Clarity's consent API, as Clarity applies its own
+   consent mode to visitors from the EEA, the UK and Switzerland (no cookie
+   before a consent signal). It is said, in plain words, on the landing, in
+   the footer and in Settings, Your data (clarityLine) */
 var CLARITY_TAG = 'https://www.clarity.ms/tag/y95daq5rao';
-var clarityState = { on: false, stopped: false }, consentIO = null;
-function consentYes() { return store.get('nl:consent', '') === 'yes'; }
-function consentAsked() { return !!store.get('nl:consent', ''); }
-/* the measures go to Clarity: a yes, and its tag on this page (clarityLoad
-   alone defines window.clarity), not stopped since */
-function clarityLive() { return consentYes() && !clarityState.stopped && typeof window.clarity === 'function'; }
-/* the tag, once a page, and only with a yes (boot, and the yes itself).
-   Calls made before it arrives wait in Clarity's queue, the player's
-   consent first, through Clarity's consent API (ads never) */
+var CLARITY_PRIVACY = 'https://privacy.microsoft.com/privacystatement';
+var clarityState = { on: false };
+/* the measures go to Clarity once its tag is asked for (clarityLoad alone
+   defines window.clarity) */
+function clarityLive() { return clarityState.on && typeof window.clarity === 'function'; }
+/* the tag, once a page. Calls made before it arrives wait in Clarity's
+   queue. A device that kept the old yes or no (nl:consent) drops it */
 function clarityLoad() {
-  if (clarityState.on || !consentYes()) return;
+  if (clarityState.on) return;
   clarityState.on = true;
+  store.del('nl:consent');
   try {
     var c = window.clarity = window.clarity || function () { (c.q = c.q || []).push(arguments); };
     var t = document.createElement('script');
     t.async = true;
     t.src = CLARITY_TAG;
     (document.head || document.body).appendChild(t);
-    clarityConsent(true);
     /* the campaign of a link (the head script kept it, the address lost it) */
     var utm = linkStore.get('nl:utm');
     if (utm) c('set', 'utm_source', String(utm).slice(0, 40));
   } catch (e) {}
 }
-function clarityConsent(on) {
-  try { window.clarity('consentv2', { ad_Storage: 'denied', analytics_Storage: on ? 'granted' : 'denied' }); } catch (e) {}
-}
-/* Settings turns it off: Clarity is told, its cookies go, this page's
-   recording stops, and the next page loads no tag */
-function clarityOff() {
-  if (!clarityState.on || clarityState.stopped) return;
-  clarityState.stopped = true;
-  clarityConsent(false);
-  try { window.clarity('consent', false); } catch (e) {}
-  /* the recorder stops (queued after its start when it is still loading) */
-  try { window.clarity('stop'); } catch (e) {}
-}
-/* the question, its two answers alike: neither is the easy one */
-function consentCardHtml() {
-  return '<div class="consent" id="consent" role="group" aria-labelledby="consent-q">'
-    + '<p class="consent-q" id="consent-q"><b>Help improve notlichess?</b> Microsoft Clarity would record clicks and screens, with all text hidden.</p>'
-    + '<div class="consent-acts"><a class="btn-line" data-act="consentYes">Yes</a><a class="btn-line" data-act="consentNo">No thanks</a></div></div>';
-}
-/* Today's foot (the slot after #trainbox): the card until it is answered
-   or has been seen */
-function consentPaint() {
-  var slot = el('consent-slot');
-  if (!slot) return;
-  slot.innerHTML = consentAsked() ? '' : consentCardHtml();
-  consentWatch();
-}
-/* on screen (half of it, at least): asked, and no answer is a no */
-function consentWatch() {
-  if (consentIO) { consentIO.disconnect(); consentIO = null; }
-  var card = el('consent');
-  if (!card || consentAsked()) return;
-  var seen = function () { if (!consentAsked()) store.set('nl:consent', 'no'); };
-  if (typeof IntersectionObserver === 'undefined') { seen(); return; }
-  consentIO = new IntersectionObserver(function (es) {
-    if (!es.some(function (x) { return x.isIntersecting; })) return;
-    consentIO.disconnect(); consentIO = null;
-    seen();
-  }, { threshold: 0.5 });
-  consentIO.observe(card);
-}
-/* an answer on the card; Settings' switch (consentSet) after that */
-function consentAnswer(yes) {
-  consentSet(yes);
-  if (yes) notice('Thank you. Settings can turn it off.');
-}
-function consentSet(yes) {
-  store.set('nl:consent', yes ? 'yes' : 'no');
-  if (consentIO) { consentIO.disconnect(); consentIO = null; }
-  var card = el('consent');
-  if (card && card.remove) card.remove();
-  if (!yes) clarityOff();
-  else if (clarityState.on && !clarityState.stopped) clarityConsent(true);
-  else clarityLoad();
+/* what it does, said where the page says what it keeps: the landing, the
+   footer, Settings (a line, never a switch) */
+function clarityLine() {
+  return 'notlichess uses Microsoft Clarity to see how the site is used. It records clicks and screens, with all text hidden. '
+    + '<a class="say-link" href="' + CLARITY_PRIVACY + '">Microsoft\'s privacy statement</a>';
 }
 /* "2026-W41": the ISO week a time falls in (weeks start on Monday; week 1
    holds the year's first Thursday) */
@@ -349,9 +337,10 @@ function renderNarration() {
 }
 function finishNarration() {
   if (!data.narrate) return;
-  var n = allMistakes().filter(trainable).length;
+  var n = allMistakes().filter(trainable).length, ge = data.sections.games === 'fail' ? data.gamesErr : null;
+  /* a load that failed is no account without games (F9): Today says what happened */
   narrLine('done', n ? 'Found your first ' + n + ' mistake' + (n === 1 ? '' : 's') + '. Stockfish keeps reading the rest while you train.'
-    : (data.games.length ? 'Games are in. Stockfish is now reading them for mistakes.' : 'No rated live games found on this account.'));
+    : (data.games.length ? 'Games are in. Stockfish is now reading them for mistakes.' : ge ? ge.site + (ge.busy ? ' is busy.' : ' did not answer.') : 'No rated live games found on this account.'));
   setTimeout(function () {
     data.narrate = false;
     data.freshOnboard = true;
@@ -399,7 +388,7 @@ function computeGreeting() {
 function boot() {
   gen++;
   var myGen = gen;
-  /* usage recording, for a player who said yes (V5.5) */
+  /* usage recording, for every visitor, and said (clarityLine) */
   clarityLoad();
   /* the saved formats belong to one player: another player starts from
      their own profile */
@@ -412,10 +401,11 @@ function boot() {
   /* a link's player lives in this tab only (sessionStorage), and the page
      title never names anyone */
   document.title = 'notlichess.org';
-  /* a new day opens on Today (V4.4): the last tab comes back only on the
-     day it was left; a link to #insights still opens Insights */
-  if (ui.view === 'insights') {
-    var linked = /^#(insights|coach)$/.test(location.hash || '') && !reloadedPage();
+  /* a new day opens on Today (V4.4): the last tab (Games or Insights) comes
+     back only on the day it was left; a link to #games or #insights still
+     opens it (a reload is no link) */
+  if (ui.view !== 'train') {
+    var linked = /^#/.test(location.hash || '') && viewOfHash(location.hash) === ui.view && !reloadedPage();
     if (!linked && store.get('nl:viewDay', '') !== dayStamp()) ui.view = 'train';
     else store.set('nl:viewDay', dayStamp());
   }
@@ -486,28 +476,45 @@ function adoptFresh(old, fresh) {
 }
 
 /* ── progress between devices, as a file ────────────────────────────────── */
+/* the player's progress keys: in storage, and in this visit's memory (a
+   write the browser refused, out of room or with storage that throws,
+   lives only there: F2) */
+function progressKeys() {
+  var u = playerId(), seen = {};
+  var mine = function (k) { return !!k && (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u || k === 'nl:foil:' + u || k === 'nl:skill:' + u || k === 'nl:help:' + u); };
+  Object.keys(mem).forEach(function (k) { if (mine(k)) seen[k] = 1; });
+  try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (mine(k)) seen[k] = 1; } } catch (e) {}
+  return Object.keys(seen).sort();
+}
+/* the file holds what this visit holds: each key's value as the store
+   reads it now (its memory's where a write was refused), and every
+   position the schedule knows. Only then does the notice say where it went
+   and how much it holds ("Saved 12 positions to notlichess-tester-2026-10-
+   12.json."); a file that could not be made says so */
 function exportProgress() {
-  var u = playerId(), out = { v: 1, user: cfg.user, src: cfg.src, at: Date.now(), keys: {} };
+  var out = { v: 1, user: cfg.user, src: cfg.src, at: Date.now(), keys: {} }, name = progressFileName(), text = '', n = 0;
+  progressKeys().forEach(function (k) { var v = store.get(k, null); if (v != null) out.keys[k] = v; });
   try {
-    for (var i = 0; i < localStorage.length; i++) {
-      var k = localStorage.key(i);
-      if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u || k === 'nl:foil:' + u || k === 'nl:skill:' + u || k === 'nl:help:' + u)
-        out.keys[k] = JSON.parse(localStorage.getItem(k));
-    }
-  } catch (e) {}
-  var blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
-  var a = document.createElement('a'), name = progressFileName();
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    text = JSON.stringify(out);
+    var back = JSON.parse(text), file = back.keys[srsKey()] || {}, live = srsLoad();
+    n = Object.keys(file).length;
+    /* every position the schedule holds this visit, and every key, in the file */
+    if (Object.keys(live).some(function (k) { return !file[k]; }) || Object.keys(out.keys).some(function (k) { return !(k in back.keys); })) throw new Error('short');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  } catch (e) {
+    notice('The progress file could not be made in this browser. Try again, or save it from another browser.');
+    return;
+  }
   track('export_done');
   /* a backup made: the next prompt waits 30 practice days (F5.4), Settings
      says when (V4.5), and the player is told where it went */
   backupSaved();
-  notice('Saved to ' + name + '.');
+  notice(n ? 'Saved ' + plur(n, 'position') + ' to ' + name + '.' : 'Saved to ' + name + '.');
   renderSettings();
 }
 /* "notlichess-tester-2026-10-11.json": the player and the day (V4.5) */
@@ -586,7 +593,9 @@ document.addEventListener('click', function (e) {
     return;
   }
   var act = t.getAttribute('data-act'), k = t.getAttribute('data-k');
-  if (t.tagName === 'INPUT') return;
+  /* a field or a select (the Games tab's filters) is its own: its change
+     event acts */
+  if (t.tagName === 'INPUT' || t.tagName === 'SELECT') return;
   if (act !== 'closeSheet' || e.target === t) e.preventDefault();
   /* input first: a running slide ends and whatever was staged catches up
      (while the forcing reply slides, the tap is dropped); then a bar slot
@@ -612,6 +621,8 @@ document.addEventListener('click', function (e) {
     }
     case 'setUser': setUser(el('firstUser') ? el('firstUser').value : ''); break;
     case 'findUser': findUser(el('firstUser') ? el('firstUser').value : ''); break;
+    /* a busy site's Try now (F3): its wait ends, and the lookup goes again */
+    case 'findNow': findUser(el('firstUser') ? el('firstUser').value : '', true); break;
     case 'pickSite': { var nm2 = t.getAttribute('data-n') || (el('firstUser') ? el('firstUser').value : ''); cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm2); break; }
     case 'useOtherSite': { var nm = cfg.user; cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm); break; }
     case 'logout': {
@@ -706,17 +717,21 @@ document.addEventListener('click', function (e) {
     case 'size': store.set('nl:sessionSize', parseInt(k, 10)); renderSettings(); renderTrain(); break;
     case 'scanDepth': store.set('nl:scanDepth', k === 'thorough' ? 'thorough' : 'std'); track('scan_' + (k === 'thorough' ? 'thorough_on' : 'standard')); renderSettings(); autoScan(); setTimeout(autoEnrich, 500); break;
     case 'weekGoal': setWeekGoal(parseInt(k, 10)); renderSettings(); renderTrain(); break;
-    case 'reload': checkForGames(); break;
-    /* Today's games rail: every game, not four (F5.1) */
-    case 'allGames': {
-      ui.allGames = true;
-      var lgr = el('latest');
-      if (lgr) { lgr.outerHTML = latestGamesHtml(); var lgn = document.querySelectorAll('#latest .lg-row')[LATEST_N]; if (lgn) { makeFocusable(el('latest')); lgn.focus({ preventScroll: true }); } }
+    /* Try again, or a busy site's Try now (F3: its wait ends first) */
+    case 'reload': if (k === 'now' && data.gamesErr && data.gamesErr.busy) busyNow(data.gamesErr.site); checkForGames(true); break;
+    /* the Games tab (slice D): 30 more rows; the filters cleared, the
+       keyboard on the first of them */
+    case 'gamesMore': gamesMore(); break;
+    case 'gamesClear': {
+      gamesFilterSet(GF0);
+      renderGames();
+      var gf0 = document.querySelector('#gamesbox select');
+      if (gf0 && gf0.focus) gf0.focus();
       break;
     }
     /* the way back (F5.2, F5.4): the diagnosis's report, the reminder, the backup */
     case 'reportOpen': closeSheet(); track('reveal_open'); setView('insights'); break;
-    case 'cueSlot': ui.cueSlot = CUE_AT[k] ? k : null; cuePaint(); break;
+    case 'cueSlot': cuePick(k); break;
     case 'cueAdd': cueAdd(k, false); break;
     case 'cueGcal': cueAdd(k, true); break;
     case 'cueNo': cueNotNow(); break;
@@ -727,9 +742,6 @@ document.addEventListener('click', function (e) {
     case 'importProgress': importProgress(); break;
     case 'installApp': installApp(); break;
     case 'installLater': installLater(); break;
-    /* the usage-recording question (V5.5) */
-    case 'consentYes': consentAnswer(true); break;
-    case 'consentNo': consentAnswer(false); break;
     case 'engineRetry': SF.state = 'idle'; SF.crashes = []; engineLoad().then(function () { autoScan(); }, function () {}); renderAll(); break;
     case 'resetProgress': {
       if (!armedTap('reset')) break;
@@ -803,15 +815,17 @@ document.addEventListener('change', function (e) {
   if (!t || !t.getAttribute) return;
   var act = t.getAttribute('data-act');
   if (act === 'sound') { cfg.sound = !!t.checked; saveCfg('sound'); }
-  /* Settings' usage recording, on or off (V5.5) */
-  if (act === 'consent') consentSet(!!t.checked);
+  /* a filter on the Games tab (slice D) */
+  if (act === 'gf') gamesFilterPick(t.getAttribute('data-k'), t.value);
 });
 document.addEventListener('keydown', function (e) {
   /* a held Enter sends the typed move once (its auto-repeat would send it
      again, or an empty box, as soon as the board takes moves again) */
   if (e.target && e.target.id === 'kbmove' && e.key === 'Enter') { e.preventDefault(); if (!e.repeat) typedMove(e.target.value); return; }
-  /* typing belongs to the field, but Esc from the move field leaves exploring */
-  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !(e.target.id === 'kbmove' && e.key === 'Escape')) return;
+  /* typing belongs to the field, but Esc from the move field leaves
+     exploring, and Esc from any control in a sheet (a Settings switch: F5)
+     closes it */
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !(e.key === 'Escape' && (e.target.id === 'kbmove' || ui.sheet))) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   /* a held key acts once: the keyboard's auto-repeat never reaches the
      button that took the pressed one's place (a held Enter would go through
@@ -819,6 +833,18 @@ document.addEventListener('keydown', function (e) {
      Arrows keep repeating, to step through a line. Space repeats freely off
      a card, where it scrolls the page */
   if (e.repeat && (/^(Enter|\?|Escape)$/.test(e.key) || (e.key === ' ' && ui.session && ui.session.active))) { e.preventDefault(); return; }
+  /* the view tabs (F6): the arrows (and Home, End) move between them, the
+     tab pattern, and the keyboard stays on the tab */
+  var vt = e.target && e.target.closest && e.target.closest('#views [role="tab"]');
+  if (vt && /^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key)) {
+    e.preventDefault();
+    var vi = VIEWS.map(function (v) { return v[0]; }).indexOf(ui.view), vn = VIEWS.length;
+    var to = e.key === 'Home' ? 0 : e.key === 'End' ? vn - 1 : (vi + (e.key === 'ArrowRight' ? 1 : vn - 1)) % vn;
+    setView(VIEWS[to][0]);
+    var tt = el('tab-' + VIEWS[to][0]);
+    if (tt && tt.focus) tt.focus({ preventScroll: true });
+    return;
+  }
   if (e.key === 'Tab' && ui.sheet) {
     /* focus stays inside the open sheet */
     var sh = document.querySelector('#overlay .sheet');
@@ -934,9 +960,10 @@ function typedMove(txt) {
   else if (guessing) makeGuess(a, m);
   else { if (a.phase === 'tried') clearTry(a); gradeMove(m); }
 }
-/* Enter and Space on focusable actions; the view tabs keep their own role */
+/* Enter and Space on focusable actions; the view tabs keep their own role,
+   and a select (the Games tab's filters) is focusable as it is */
 function makeFocusable(root) {
-  var list = (root || document).querySelectorAll('[data-act]:not([href]):not(button):not(input):not(.scrim):not([tabindex])');
+  var list = (root || document).querySelectorAll('[data-act]:not([href]):not(button):not(input):not(select):not(.scrim):not([tabindex])');
   for (var i = 0; i < list.length; i++) {
     if (list[i].id === 'astat-ic' && !list[i].textContent) continue;
     list[i].setAttribute('tabindex', '0');
@@ -968,7 +995,7 @@ document.addEventListener('keydown', function (e) {
 });
 
 /* ── board input: tap-tap and drag, on the card's own board only ─────────── */
-var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null, held: false };
+var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null, held: false, captured: false };
 function sqFromEvent(e) {
   var el2 = document.elementFromPoint(e.clientX, e.clientY);
   var sqEl = el2 && el2.closest ? el2.closest('#bwrap [data-sq]') : null;
@@ -1006,9 +1033,19 @@ function boardState(a) {
   if (a.phase === 'checking') return { st: checkingFrame(a), live: false, checking: true };
   return { st: a.st, live: false };
 }
+/* a swipe that starts on a board scrolls the page (r6 design M2): every
+   board lets the page pan (app.css), and on the card's board only a touch
+   that picks up a piece the board takes now holds the gesture for its drag
+   (its touchstart comes after the pointerdown that picked it up). Held so,
+   a touch sends no click: the tap that puts a lifted piece down again is
+   played at its pointerup instead (pointerFinish) */
+document.addEventListener('touchstart', function (e) {
+  if (pointerState.dragFrom >= 0 && e.target && e.target.closest && e.target.closest('#bwrap')) { e.preventDefault(); pointerState.captured = true; }
+}, { passive: false });
 document.addEventListener('pointerdown', function (e) {
   var a = ui.session && ui.session.active;
   pointerState.held = false;
+  pointerState.captured = false;
   if (!a || !e.target.closest || !e.target.closest('#bwrap')) return;
   var sq = sqFromEvent(e);
   if (sq < 0) return;
@@ -1110,7 +1147,13 @@ function pointerFinish(e, cancelled) {
       sessionClick(sq);
     } else if (!pointerState.moved && pointerState.justSelected) {
       pointerState.suppressClick = true;
+    } else if (!pointerState.moved && pointerState.captured && sq === from) {
+      /* a held touch sends no click: the tap on the piece already lifted
+         puts it down here, as its click would */
+      pointerState.suppressClick = true;
+      sessionClick(sq);
     }
+    pointerState.captured = false;
     pointerState.justSelected = false;
     /* a result that arrived mid-drag is drawn now */
     if (a.explore && a.explore.dirty) { a.explore.dirty = false; renderCard(); }
@@ -1176,10 +1219,17 @@ window.addEventListener('resize', function () { if (xpActive()) fitRows(); });
 document.addEventListener('pointercancel', function (e) { pointerFinish(e, true); });
 
 /* ── games: checking for new ones, formats, limits ───────────────────────── */
-function checkForGames() {
+/* user: the player asked (the refresh, Try again): a check that fails says
+   so in a notice too (F10) */
+function checkForGames(user) {
   if (data.sections.games === 'loading') return;
-  notice('Checking for new games…');
+  data.userCheck = !!user;
+  /* a first load tried again shows its reading card in Today's place; the
+     Games tab's button says it is checking (slice D) */
+  if (data.games.length) notice('Checking for new games…');
   loadGames().then(function () { setTimeout(autoScan, 500); });
+  if (!data.games.length) renderTrain();
+  renderGames();
 }
 var perfFetchTimer = null;
 function perfsChanged() {

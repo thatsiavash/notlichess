@@ -10,9 +10,14 @@
 
 /* ── 1. Storage, tolerant of file:// and private windows ─────────────── */
 
-var mem = {};
+/* every value set this visit is kept in memory too (mem); where the
+   browser refused its write (out of room, or storage that throws), the
+   copy in memory is the newer one and is read back instead (memOnly), so
+   this visit and the progress file never fall back to an older value */
+var mem = {}, memOnly = {};
 var store = {
   get: function (k, fallback) {
+    if (memOnly[k]) return k in mem ? mem[k] : fallback;
     try {
       var v = localStorage.getItem(k);
       if (v === null) return k in mem ? mem[k] : fallback;
@@ -21,11 +26,12 @@ var store = {
   },
   set: function (k, v) {
     mem[k] = v;
-    try { localStorage.setItem(k, JSON.stringify(v)); return true; }
-    catch (e) { return false; }
+    try { localStorage.setItem(k, JSON.stringify(v)); delete memOnly[k]; return true; }
+    catch (e) { memOnly[k] = 1; return false; }
   },
   del: function (k) {
     delete mem[k];
+    delete memOnly[k];
     try { localStorage.removeItem(k); } catch (e) {}
   }
 };
@@ -92,8 +98,9 @@ var ui = {
   view: (function () {
     var h = (location.hash || '').replace('#', '');
     if (h === 'coach') h = 'insights';
-    if (h === 'insights' || h === 'train') return h;
-    return store.get('nl:view', 'train') === 'insights' ? 'insights' : 'train';
+    if (h === 'insights' || h === 'train' || h === 'games') return h;
+    var v = store.get('nl:view', 'train');
+    return v === 'insights' || v === 'games' ? v : 'train';
   })(),
   open: {},            /* which cards have their "+ n more" list open */
   openSkill: null,     /* which profile row is showing its evidence */
@@ -152,16 +159,36 @@ function gameHref(id, color, ply) {
 }
 
 /* ── 5. API layer ────────────────────────────────────────────────────── */
-/* Lichess policy is one request at a time, and 429 carries no Retry-After,
-   so we serialise every call and back off blind for 60s. */
+/* Lichess policy is one request at a time, and its 429 carries no
+   Retry-After, so we serialise every call and back off for 60 s after a
+   429, each site on its own clock (backoffUntil lichess's, ccBackoffUntil
+   chess.com's), or for as long as a readable Retry-After says (F3). A
+   lookup the player waits on (opts.noWait) never sits out a backoff in the
+   queue: it fails at once as busy, with the seconds left, and the screen
+   says so and tries again by itself (Try now ends the wait: busyNow) */
 
 var chain = Promise.resolve();
-var backoffUntil = 0;
+var backoffUntil = 0, ccBackoffUntil = 0;
 var lastLimitNotice = 0;
+var BUSY_SECS = 60;
+function siteOfPath(path, opts) { return opts && opts.abs && String(path).indexOf(CC) === 0 ? 'chess.com' : 'lichess'; }
+function backoffOf(site) { return site === 'chess.com' ? ccBackoffUntil : backoffUntil; }
+/* a site busy (a 429): err.code 429, err.site, err.wait (seconds) */
+function busyError(site, secs) { var e = new Error('rate-limited'); e.code = 429; e.site = site; e.wait = Math.max(1, Math.ceil(secs)); return e; }
+/* the wait a 429 asks for: its Retry-After (seconds or a date) where the
+   site lets the page read it, else 60 s; 1 s to 10 min */
+function retryAfterSecs(res) {
+  var h = null;
+  try { h = res && res.headers && res.headers.get ? res.headers.get('Retry-After') : null; } catch (e) { h = null; }
+  var s = h == null ? NaN : /^\s*\d+\s*$/.test(h) ? parseInt(h, 10) : (Date.parse(h) - Date.now()) / 1000;
+  return isFinite(s) ? Math.min(600, Math.max(1, Math.ceil(s))) : BUSY_SECS;
+}
 
-function queued(fn) {
+function queued(fn, site, opts) {
+  opts = opts || {};
   var run = function () {
-    var wait = Math.max(0, backoffUntil - Date.now());
+    var wait = Math.max(0, backoffOf(site) - Date.now());
+    if (wait && opts.noWait) return Promise.reject(busyError(site, wait / 1000));
     return new Promise(function (r) { setTimeout(r, wait); }).then(fn);
   };
   var p = chain.then(run, run);
@@ -171,7 +198,7 @@ function queued(fn) {
 
 function request(path, opts) {
   opts = opts || {};
-  var headers = { Accept: opts.accept || 'application/json' };
+  var headers = { Accept: opts.accept || 'application/json' }, site = siteOfPath(path, opts);
   return queued(function () {
     return fetch(opts.abs ? path : L + path, {
       method: opts.method || 'GET',
@@ -180,19 +207,20 @@ function request(path, opts) {
       redirect: opts.manualRedirect ? 'manual' : 'follow'
     }).then(function (res) {
       if (res.status === 429) {
-        backoffUntil = Date.now() + 60000;
+        var secs = retryAfterSecs(res), until = Date.now() + secs * 1000;
+        if (site === 'chess.com') ccBackoffUntil = Math.max(ccBackoffUntil, until); else backoffUntil = Math.max(backoffUntil, until);
         /* background jobs (the scan, feed refreshes) ride the backoff
            silently; only work the user is waiting on gets a notice, and
            at most one every five minutes */
         if (!opts.quiet && Date.now() - lastLimitNotice > 300000) {
           lastLimitNotice = Date.now();
-          notice((/chess\.com/.test(String(res.url || '')) ? 'chess.com' : 'lichess') + ' asked us to slow down. Picking the work back up in a minute.');
+          notice(site + ' is busy and asked us to wait. Picking the work back up in ' + secs + ' s.');
         }
-        var err = new Error('rate-limited'); err.code = 429; throw err;
+        throw busyError(site, secs);
       }
       return res;
     });
-  });
+  }, site, opts);
 }
 
 function getJSON(path, opts) {
@@ -206,7 +234,7 @@ function getJSON(path, opts) {
 /* ndjson, streamed. onLine is called per record as it arrives. */
 function getND(path, onLine, opts) {
   opts = opts || {};
-  return request(path, { accept: 'application/x-ndjson', manualRedirect: opts.manualRedirect, quiet: opts.quiet })
+  return request(path, { accept: 'application/x-ndjson', manualRedirect: opts.manualRedirect, quiet: opts.quiet, noWait: opts.noWait })
     .then(function (res) {
       /* Handoff §3: /api/puzzle/* answers 303 to an HTML login page when the
          token is missing or lacks the scope. With redirect:'manual' that
@@ -328,7 +356,7 @@ function ccJSON(path, opts) {
   opts.abs = true;
   return request(CC + path, opts).then(function (res) {
     if (res.status === 404) { var e = new Error('404'); e.code = 404; throw e; }
-    if (!res.ok) throw new Error('cc ' + res.status);
+    if (!res.ok) { var e2 = new Error('cc ' + res.status); e2.code = res.status; throw e2; }
     return res.json();
   });
 }
@@ -543,10 +571,17 @@ function loadCachedGames() {
   var c = store.get(cacheKey(), null);
   if (!c || !c.games) return { games: [], ts: 0, perfs: '' };
   if (c.v !== CACHE_VERSION) return { games: [], ts: 0, perfs: '' };
+  /* the games packed for room come back as records Insights reads, and
+     the games left out for room are named (F8) */
+  var games = c.packed && c.packed.length ? c.games.concat(c.packed.map(unpackGame)).sort(function (x, y) { return y.ts - x.ts; }) : c.games;
+  data.gone = c.gone || []; data.goneFor = cacheKey();
   /* a cache built for other formats keeps its games (and their analysis);
      it only asks for a full fetch so the new format's history arrives */
-  if (c.perfs !== trackedPerfs().sort().join(',')) return { games: c.games, ts: 0, perfs: c.perfs, hd: 0, fetchedAt: c.fetchedAt };
-  return c;
+  if (c.perfs !== trackedPerfs().sort().join(',')) return { games: games, ts: 0, perfs: c.perfs, hd: 0, fetchedAt: c.fetchedAt, gone: c.gone };
+  var r = {}, k;
+  for (k in c) if (k !== 'packed') r[k] = c[k];
+  r.games = games;
+  return r;
 }
 
 function trimGames(games) {
@@ -563,13 +598,24 @@ function trimGames(games) {
   return out;
 }
 
+/* a game kept for Insights alone, when even the lean copy does not fit
+   (F8): the fields its counts read (the result, colour, ratings, clock,
+   opening and the win-chance series; no movetext, no cards), as one list in
+   this order, so a full browser keeps every game Insights counts */
+var PACKED = ['id', 'ts', 'perf', 'color', 'res', 'plies', 'myR', 'oppR', 'rd', 'opp', 'tc', 'clockPct', 'status', 'opening', 'analysed', 'scanned', 'wp'];
+function packGame(g) { return PACKED.map(function (k) { return g[k] == null ? null : g[k]; }); }
+function unpackGame(a) {
+  var g = { bl: null, mv: null };
+  PACKED.forEach(function (k, i) { if (a && a[i] != null) g[k] = a[i]; });
+  return g;
+}
 /* room: a practice write the browser refused (practiceWrite), tried again
    after each step of the ladder below that wrote a smaller cache; the
    ladder stops at the first step where it fits, since practice cannot be
    fetched again and games can */
 function saveGames(games, room) {
   if (!cfg.user) return { games: games };
-  var live = trimGames(games);
+  var live = trimGames(games), prevGone = data.gone && data.goneFor === cacheKey() ? data.gone : loadCachedGames().gone || [];
   var copy = function (g, lean) {
     var c = {}, k;
     for (k in g) {
@@ -588,20 +634,36 @@ function saveGames(games, room) {
     fetchedAt: data.fetchedAt || (loadCachedGames().fetchedAt || 0),
     perfs: trackedPerfs().sort().join(',')
   };
-  var write = function (list, lean) {
-    var p = {}, k;
+  /* the games left out for room, [id, ts, perf], so Insights says its
+     numbers come from fewer games (F8): those before, and those this write
+     leaves out, less any it holds again */
+  var goneOf = function (list) {
+    var have = {}, out = [], seen = {};
+    list.forEach(function (g) { have[g.id] = 1; });
+    prevGone.concat(live.filter(function (g) { return !have[g.id]; }).map(function (g) { return [g.id, g.ts, g.perf]; }))
+      .forEach(function (x) { if (x && !have[x[0]] && !seen[x[0]]) { seen[x[0]] = 1; out.push(x); } });
+    return out;
+  };
+  /* pack: the games without cards as packGame's lists */
+  var write = function (list, lean, pack) {
+    var p = {}, k, gone = goneOf(list);
     for (k in head) p[k] = head[k];
-    p.games = list.map(function (g) { return copy(g, lean); });
-    return store.set(cacheKey(), p);
+    p.games = list.filter(function (g) { return !pack || g.bl; }).map(function (g) { return copy(g, lean); });
+    if (pack) p.packed = list.filter(function (g) { return !g.bl; }).map(packGame);
+    if (gone.length) p.gone = gone;
+    var ok = store.set(cacheKey(), p);
+    if (ok) { data.gone = gone; data.goneFor = cacheKey(); }
+    return ok;
   };
   var out = function (list) { var p = {}, k; for (k in head) p[k] = head[k]; p.games = list; return p; };
   var fits = function () { return !room || room(); };
   if (!room && !data.leanSave && write(live, false)) return out(live);
   /* out of room, cheapest losses first: retained movetext, then other
-     accounts' game caches (their practice history stays), then old games
-     that hold no cards; games with cards are the last to go */
+     accounts' game caches (their practice history stays), then each game
+     with no cards packed (packGame: what Insights counts stays), then old
+     games that hold no cards; games with cards are the last to go */
   data.leanSave = true;
-  if (write(live, true) && fits()) return out(live);
+  if (!data.packSave && write(live, true) && fits()) return out(live);
   try {
     var mine = cacheKey(), drop = [];
     for (var i = 0; i < localStorage.length; i++) {
@@ -612,25 +674,36 @@ function saveGames(games, room) {
     if (drop.length) notice('This browser ran out of room, so the saved games of the other player' + (drop.length > 1 ? 's' : '')
       + ' here were cleared. Their practice history is kept, and their games come back on their next visit.');
   } catch (e) {}
-  if (write(live, true) && fits()) return out(live);
+  if (!data.packSave && write(live, true) && fits()) return out(live);
+  data.packSave = true;
+  if (write(live, true, true) && fits()) return out(live);
   var keep = live.slice();
   for (var cut = 0; cut < 6; cut++) {
     var plain = keep.filter(function (g) { return !g.bl; });
     if (!plain.length) break;
     var gone = plain.slice(Math.floor(plain.length / 2));
     keep = keep.filter(function (g) { return gone.indexOf(g) === -1; });
-    if (write(keep, true) && fits()) { storageNotice(keep.length, true); return out(keep); }
+    if (write(keep, true, true) && fits()) { storageNotice(keep.length, true); return out(keep); }
   }
   keep = keep.slice(0, Math.ceil(keep.length / 2));
-  if (write(keep, true) && fits()) storageNotice(keep.length, false);
+  if (write(keep, true, true) && fits()) storageNotice(keep.length, false);
   return out(keep);
 }
 /* all: every game you practise from is still kept (the last step of the
-   ladder drops some of those too, and then the notice does not say so) */
+   ladder drops some of those too, and then the notice does not say so).
+   Once a visit; Insights says it for as long as it holds (goneGames) */
 function storageNotice(n, all) {
   if (data.storageWarned) return;
   data.storageWarned = true;
-  notice('This browser is short on storage, so ' + n + ' games are kept' + (all ? ', including every game you practise from.' : '.'));
+  notice('This browser is out of room, so ' + n + ' games are kept' + (all ? ', including every game you practise from.' : '.'));
+}
+/* the games of the window that the browser had no room for (F8): kept
+   apart by saveGames, so Insights names how many it does not count */
+function goneGames() {
+  var gone = data.gone && data.goneFor === cacheKey() ? data.gone : loadCachedGames().gone || [], have = {};
+  if (!gone.length) return [];
+  data.games.forEach(function (g) { have[g.id] = 1; });
+  return gone.filter(function (x) { return x && !have[x[0]] && trackedPerfs().indexOf(x[2]) !== -1 && x[1] >= windowCut(x[2]); });
 }
 
 /* evals=true AND division=true together are what make
@@ -688,7 +761,8 @@ function fetchGames(meId, onProgress, onFirstPaint) {
     pay.all = data.ccHistDone;
     return pay;
   }).catch(function (err) {
-    if (cached.games.length) { cached.all = false; return cached; }
+    /* the saved games stand in, and the failure goes with them (F10) */
+    if (cached.games.length) { cached.all = false; cached.err = err; return cached; }
     throw err;
   });
 }

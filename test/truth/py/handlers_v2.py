@@ -594,6 +594,9 @@ def reason_check(R, mv_text, pred, base=None):
         t = NAME[m.group(1)]
         if not [q for q in pieces_of(b, R.color, t) if chk.in_danger(b, q)]:
             return F('"saves": your %s was not in danger' % m.group(1))
+        # release 2's C5 (e): the danger confirmed by a search, not the exchange alone
+        if not [q for q in pieces_of(b, R.color, t) if chk.in_danger_deep(b, q, DEEP)]:
+            return M('"saves": the exchange puts your %s in danger, but no capture of it nets them material at depth' % m.group(1))
         s = chk.settled_delta(fen, R.color, [x.uci()], DEEP)
         lost = lost_types(fen, [x.uci()] + s['pv'][:(s.get('at') or 10) + 2], R.color)
         return (F if t in lost else T)('its line loses %s' % [PNAME[q] for q in lost])

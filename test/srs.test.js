@@ -31,9 +31,11 @@ function test(name, fn) {
   try { fn(); passed++; } catch (e) { failed++; console.log('FAIL ' + name + ': ' + e.message); }
 }
 function eq(a, b, what) { if (a !== b) throw new Error((what || 'value') + ' expected ' + JSON.stringify(b) + ', got ' + JSON.stringify(a)); }
-/* intervals of three days or more are spread by up to 15% either way */
+/* an interval in whole days (C2: due on a date, from its local midnight, never within 8 hours of the
+   answer, so a due date a few hours short of N days away is N days on); intervals of three days or
+   more are spread by up to 15% either way, in whole days */
 function near(ms, days, what) {
-  const d = Math.round(ms / DAY * 10) / 10, tol = days >= 3 ? days * 0.15 + 0.05 : 0.05;
+  const d = Math.ceil(ms / DAY - 1e-9), tol = days >= 3 ? Math.floor(days * 0.15 + 0.5) : 0;
   if (Math.abs(d - days) > tol) throw new Error((what || 'interval') + ' expected ' + days + ' days, got ' + d);
 }
 const T0 = Date.UTC(2026, 8, 7, 15, 0, 0);   /* a Monday afternoon */
@@ -261,13 +263,13 @@ test('two open tabs: a position spread or queued in one tab stays so when the ot
   s.srsRecord(card('b'), 'first', { ms: 8000 });
   s.srsLoad();                                                        /* this tab has read both */
   const other = s.store.get(s.srsKey(), {});                          /* the other tab spreads one and queues the other */
-  other.a = Object.assign({}, other.a, { sp: T0 + 1000, due: T0 + 12 * DAY });
+  other.a = Object.assign({}, other.a, { sp: T0 + 1000, due: s.dayStart(T0, 12) });
   other.b = Object.assign({}, other.b, { q: T0 + 1000, due: null });
   s.store.set(s.srsKey(), other);
   s.advance(0.01);
   s.srsRecord(card('c'), 'first', { ms: 45000 });                     /* this tab saves */
   const disk = s.store.get(s.srsKey(), {});
-  eq(JSON.stringify([disk.a.sp, disk.a.due, disk.b.q, disk.b.due]), JSON.stringify([T0 + 1000, T0 + 12 * DAY, T0 + 1000, null]), 'the spreading and the queue survive');
+  eq(JSON.stringify([disk.a.sp, disk.a.due, disk.b.q, disk.b.due]), JSON.stringify([T0 + 1000, s.dayStart(T0, 12), T0 + 1000, null]), 'the spreading and the queue survive');
   s.advance(0.01);
   s.srsRecord(card('a'), 'first', { ms: 45000 });                     /* an answer after it wins */
   eq(s.store.get(s.srsKey(), {}).a.sp, undefined, 'answered later: the answer stands');
@@ -277,6 +279,59 @@ test('a miss note breaks the run at once and reports the run it broke', () => {
   s.srsRecord(card(), 'first', { ms: 8000 });
   eq(s.srsNoteMiss(card()), 1, 'broken run');
   eq(s.srsLoad()[card().key].streak, 0, 'streak');
+});
+
+/* ── due dates by whole days (C2) and the spread (C3) ───────────────────── */
+test('C2: a position is due on a date: a 3-day find at 9 pm is due from local midnight 3 days on (not 9 pm), counted 3 days by date; a miss at 11:30 pm is not due again at midnight but 8 hours after it; the grade reads the date: found on that date (0:30) it climbs, the evening before (10 pm, inside the old 12-hour look-ahead) it does not', () => {
+  const s = sandbox(T0 + 6 * 3600e3);                                  /* Monday 9 pm */
+  const r = s.srsRecord(card(), 'first', { ms: 45000 });               /* box 1: 3 days */
+  eq(r.due, s.dayStart(s.clock.now, 3), 'due from Thursday\'s midnight');
+  eq(s.daysFrom(s.clock.now, r.due), 3, 'three days by date');
+  const late = sandbox(T0 + 8.5 * 3600e3);                             /* Monday 11:30 pm */
+  const m = late.srsRecord(card(), 'fail', {});
+  eq(m.due, late.clock.now + 8 * 3600e3, 'a miss at 11:30 pm: due at 7:30 am, not at midnight');
+  eq(late.daysFrom(late.clock.now, m.due), 1, 'still tomorrow by date');
+  const a = sandbox(T0 + 6 * 3600e3);
+  a.srsRecord(card(), 'first', { ms: 45000 });
+  a.clock.now = a.dayStart(a.clock.now, 3) + 0.5 * 3600e3;             /* Thursday 0:30 */
+  eq(a.srsRecord(card(), 'first', { ms: 45000 }).box, 2, 'found on its date, just after midnight: it climbs');
+  const b = sandbox(T0 + 6 * 3600e3);
+  b.srsRecord(card(), 'first', { ms: 45000 });
+  b.clock.now = b.dayStart(b.clock.now, 3) - 2 * 3600e3;               /* Wednesday 10 pm */
+  const rb = b.srsRecord(card(), 'first', { ms: 45000 });
+  eq(rb.box, 1, 'the evening before its date: practice, no climb');
+  eq(b.daysFrom(T0, rb.due), 3, 'and its date stays (8 hours after that answer at the earliest: 6 am)');
+  eq(rb.due, b.clock.now + 8 * 3600e3, 'at 6 am');
+});
+test('C3: the spread keeps whole days, and the step before learned never comes back under 16 days (16 to 18); a card spread at 0.86 is found on its 16-day date and is learned (before: 13.8 days, a gap under 15.5, and 35 more days to wait); the learned test counts days by date (11 pm to 7 am 16 days on is 16 days)', () => {
+  const s = sandbox(T0);
+  const factor = (k) => { let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) | 0; return 0.85 + (Math.abs(h) % 1000) / 1000 * 0.3; };
+  const bad = [];
+  for (let i = 0; i < 2000; i++) {
+    const k = '1842' + (i * 7919) + ':' + (i % 90);
+    const d3 = s.spreadDays(3, k), d7 = s.spreadDays(7, k), d16 = s.spreadDays(16, k), d35 = s.spreadDays(35, k);
+    if (d3 !== 3 || d7 < 6 || d7 > 8 || d16 < 16 || d16 > 18 || d35 < 30 || d35 > 40 || [d7, d16, d35].some((d) => d !== Math.round(d))) bad.push(k + ': ' + [d3, d7, d16, d35].join(','));
+  }
+  eq(bad.length, 0, 'whole days, the 16-day step 16 to 18: ' + bad.slice(0, 3).join(' | '));
+  let key = null;
+  for (let i = 0; i < 5000 && !key; i++) { const k = 'g' + i + ':40'; if (Math.abs(factor(k) - 0.86) < 0.004) key = k; }
+  ok3(!!key, 'a key spread at 0.86');
+  const L = sandbox(T0);
+  L.srsRecord(card(key), 'first', { ms: 8000 });                       /* box 2, streak 1 */
+  let r = L.srsLoad()[key];
+  L.clock.now = r.due + 7 * 3600e3;                                    /* its date, 7 am */
+  r = L.srsRecord(card(key), 'first', { ms: 8000 });                   /* box 3, streak 2 */
+  eq(L.daysFrom(L.clock.now, r.due), 16, 'the step before learned: 16 days, not ' + Math.round(16 * factor(key) * 10) / 10);
+  L.clock.now = r.due + 7 * 3600e3;                                    /* its 16-day date, 7 am */
+  r = L.srsRecord(card(key), 'first', { ms: 8000 });
+  eq(r.learned, true, 'found on its date: learned');
+  const D = sandbox(T0 + 8 * 3600e3), k2 = card('g2:4');              /* Monday 11 pm; its 16-day step is 16 */
+  D.srsRecord(k2, 'first', { ms: 8000 });
+  D.clock.now = D.dayStart(D.srsLoad()[k2.key].due) + 23 * 3600e3;    /* its date, 11 pm */
+  r = D.srsRecord(k2, 'first', { ms: 8000 });                          /* box 3, streak 2 */
+  eq(D.daysFrom(D.clock.now, r.due), 16, 'due 16 days on');
+  D.clock.now = D.dayStart(D.clock.now, 16) + 7 * 3600e3;              /* 16 days on by date, 7 am: 15 days 8 hours */
+  eq(D.srsRecord(k2, 'first', { ms: 8000 }).learned, true, '16 days by date is learned');
 });
 
 /* ── days ───────────────────────────────────────────────────────────────── */

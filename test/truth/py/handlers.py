@@ -468,6 +468,10 @@ def h_verdict(R, m, text):
             break
         base = after(R.pre, *y[:at]).fen()
         due = sol[at] if sol and at < len(sol) else R.best
+        # release 2's C5 (a): never "works too" for a move that forces mate or scores 4 or more above the main one
+        up, why = ranks_above(base, u, due, R.color)
+        if up:
+            return F('"works too" for a move that ranks above the main move: ' + why)
         wt, wb = two(base, u, due, R.color)
         # v1: a safe win's 70% edge with the methodology's band-edge noise (TOL)
         if wb - wt <= 6 or (wt >= 70 - TOL and wb >= 70 - TOL):

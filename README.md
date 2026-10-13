@@ -10,9 +10,12 @@ the better move played out, and what really happened in your game. Insights
 rank your mistakes by the games they decided.
 
 One static HTML file plus the engine. No server, no account, no ads. Your
-games and progress are saved in this browser, not on our servers. With your
-yes, Microsoft Clarity records clicks and the screen, with all text hidden,
-to show how the site is used; until then the page loads nothing from it.
+games and progress are saved in this browser, not on our servers.
+notlichess uses Microsoft Clarity to see how the site is used: it records
+clicks and screens, with all text hidden, and the site says so on the
+landing page, in the footer and in Settings. The page never calls Clarity's
+consent API: Clarity applies its own consent mode to visitors from the EEA,
+the UK and Switzerland (no cookies until a consent signal).
 
 ## Run it
 

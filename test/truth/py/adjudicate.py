@@ -88,6 +88,8 @@ def main():
         import re
         seen = set()
         for which in cfg.DUMPS[a.pas]:
+            if which in cfg.OPTIONAL_DUMPS and not os.path.exists(cfg.out('dump-%s.jsonl' % which)):
+                continue
             with open(cfg.out('dump-%s.jsonl' % which)) as f:
                 for line in f:
                     r = json.loads(line)

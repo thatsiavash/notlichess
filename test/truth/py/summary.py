@@ -198,6 +198,10 @@ def main():
         built = hashlib.sha1(f.read()).hexdigest()[:12]
     same = built == run.get('index')
     deep = all(max(run.get('passes', {}).get(p, {}).get('rechecks', []) or [0]) >= 4000000 for p in res) and run.get('nodes', 1000000) >= 1000000
+    # release 2's C5 (h): the keys a browser builds, against 8,000,000 nodes (keys.js, py/keys.py)
+    krows = cfg.jsonl('final-keys.jsonl')
+    kbad = [r for r in krows if r['verdict'] in ('false', 'untestable', 'error')]
+    kinfo = load_json('keys.json', {})
 
     P('')
     P('== gate 1')
@@ -213,6 +217,8 @@ def main():
         (walked_ok, 'every card dealt and every foil walked at every tier%s' % (': ' + '; '.join(walk_notes) if walk_notes else '')),
         (same, 'the run is of the checkout\'s current build (index.html %s; the run read %s)' % (built, run.get('index', '?'))),
         (deep, 'the first pass at 1M or more, and what it flags rechecked at 4M or more on every pass (%s)' % '; '.join('%s %s' % (p, ', '.join(cfg.nodes_word(n) for n in run.get('passes', {}).get(p, {}).get('rechecks', [])) or 'none') for p in res)),
+        (bool(krows) and not kbad, 'every key a browser builds holds against an 8,000,000-node 3-line search (C5 (h)): %s' % (
+            '%d cards, %d false, %d unchecked; %d set aside by a browser, %d answers unlike the fixture\'s' % (len(krows), sum(1 for r in kbad if r['verdict'] == 'false'), sum(1 for r in kbad if r['verdict'] != 'false'), kinfo.get('set aside', 0), kinfo.get('differ', 0)) if krows else 'not run (keys.js, py/keys.py)')),
     ]
     for ok, text in checks:
         P('[%s] %s' % ('pass' if ok else 'FAIL', text))
@@ -280,6 +286,42 @@ def main():
         P('== stale adjudications: written for a claim this run no longer shows (prune with adjudicate.py --prune)')
         for e in sl:
             P('  %s t%s %s | %s | %s | "%s" (%s)' % (e['pass'], e['tier'], e['key'], e['frame'], e['field'], e['text'], e['verdict']))
+    if krows:
+        P('')
+        P('== keys as browsers make them (C5 (h)): each fixture card\'s key built by the checkout\'s factsCompute on a browser worker that ran other searches first (keys.js, %s workers, %s s), against an 8,000,000-node 3-line search' % (kinfo.get('workers', '?'), kinfo.get('secs', '?')))
+        for r in sorted(krows, key=lambda r: (r['verdict'] != 'false', r['key'])):
+            if r['verdict'] in ('false', 'untestable', 'error') or 'the fixture\'s answer' in str(r.get('note')):
+                P('  [%s] %s | %s | %s' % (r['verdict'], r['key'], r['text'], str(r['note'])[:400]))
+        P('  repro: node test/truth/keys.js --out %s --keys KEY (the key, in keys-built.json), then python3 test/truth/py/keys.py --out %s --keys KEY' % (cfg.OUT, cfg.OUT))
+    # release 2's C5 (i): exp2250-r2's seeded cases, each with what the gate says of its frames
+    sfile = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'seeds.json')
+    if os.path.exists(sfile) and 'live' in res:
+        seeds = json.load(open(sfile))['seeds']
+        # a seed's claims are those its own frames show, wherever the audit met each first (a See why
+        # line the main walk showed too is checked once, under the main walk's frame)
+        import verify
+        ids, G = collections.defaultdict(set), verify.games()
+        if os.path.exists(cfg.out('dump-live-seeds.jsonl')):
+            with open(cfg.out('dump-live-seeds.jsonl')) as f:
+                for line in f:
+                    r = json.loads(line)
+                    for sd in seeds:
+                        tag = 'seed ' + ','.join(sd['ids'])
+                        if r.get('key') == sd['key'] and r.get('frame', '').startswith(tag + ' '):
+                            for it in verify.claims_of(r, G, None):
+                                ids[(tag, sd['key'])].add(verify.claim_id(verify.sig(it[0], it[1], it[2], it[3])))
+        P('')
+        P('== exp2250-r2\'s seeded cases (C5 (i), seeds.json): each case\'s false and misleading claims (on release 1 each case has one; after release 2 none may)')
+        for sd in seeds:
+            tag = 'seed ' + ','.join(sd['ids'])
+            want = ids.get((tag, sd['key'])) or set()
+            rs = [r for r in res['live'] if r['key'] == sd['key'] and (r['frame'].startswith(tag + ' ') or r['id'] in want)]
+            bad = [r for r in rs if r['verdict'] in ('false', 'misleading')]
+            P('  %s %s (%s): %d claims, %d false, %d misleading%s' % (','.join(sd['ids']), sd['key'], sd['case'][:110], len(rs), sum(1 for r in bad if r['verdict'] == 'false'),
+              sum(1 for r in bad if r['verdict'] == 'misleading'), '' if rs else ' (not walked: run the full gate)'))
+            for r in sorted(bad, key=lambda r: (r['verdict'] != 'false', r['tier']))[:6]:
+                fr = r['frame'][len(tag) + 1:] if r['frame'].startswith(tag + ' ') else r['frame'] + ' (met first there)'
+                P('      [%s] t%s %s | %s | "%s": %s' % (r['verdict'], r['tier'], fr[:60], r['type'], r['text'][:120], str(r['note'])[:160]))
     pw = load_json('pracworks.json', None)
     if pw is not None:
         P('')

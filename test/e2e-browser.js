@@ -223,7 +223,9 @@
     /* Today offers a start, or says the day is done (the daily cap on new positions) */
     ok('Today offers a start or a finished day', !!($('[data-act=startToday]') || $('[data-act=keepGoing]') || /Today's set is done|Nothing due/.test(text('#trainbox'))), text('#trainbox').slice(0, 120));
     ok('the header is the mark and the gear only', !!$('#bar .brand-name') && !!$('#bar [data-act=settings]') && !/▼|▲/.test(text('#bar')), text('#bar'));
-    ok('Today shows the latest games rail', !!$('#latest .lg-row'));
+    ok('Today holds the day\'s practice only: no game rows, no games list (slice D)', !$('#trainbox .lg-row') && !$('#latest') && !/Your latest games|Clean game vs/.test(text('#trainbox')), text('#trainbox').slice(0, 120));
+    ok('three tabs in order, Today shown: Today, Games, Insights (slice D)', [].map.call($$('#views [role=tab]'), (t) => t.textContent.trim()).join('|') === 'Today|Games|Insights' && $('#tab-train').getAttribute('aria-selected') === 'true'
+      && [].every.call($$('#views [role=tab]'), (t) => rectOf(t).right <= vw() + 0.5 && rectOf(t).top === rectOf($('#tab-train')).top), [].map.call($$('#views [role=tab]'), (t) => t.textContent.trim() + '@' + Math.round(rectOf(t).left) + '-' + Math.round(rectOf(t).right)).join(' '));
     layoutCheck('Today');
     ok('no em dash anywhere on Today', text('#main').indexOf('—') === -1);
     /* F5.1: card 1 as it opens beside its caption (the red arrow of the game move, never a hint or the answer),
@@ -242,14 +244,45 @@
     /* V4.7: the focus card is one tap target with a chevron (no Practise or Details), Start the only button above the games */
     const fc = $('.focus');
     ok('the focus card is one tap target with a chevron that opens its skill (V4.7)', !fc || (fc.matches('a.focus-go[data-act=sheet]') && !!fc.querySelector('.focus-chev') && !fc.querySelector('.btn-line, .btn-big, [data-act=drill]')), fc ? fc.outerHTML.slice(0, 120) : 'no focus card');
-    const lg = $('#latest');
-    ok('Start is the only button above the games on a phone (V4.7)', innerWidth >= 600 || !lg || [].filter.call($$('#trainbox .btn-big, #trainbox .btn-line, #trainbox .btn-quiet'), (e) => shown(e) && rectOf(e).top < rectOf(lg).top).map((e) => e.getAttribute('data-act')).join(',') === 'startToday',
-      [].filter.call($$('#trainbox .btn-big, #trainbox .btn-line, #trainbox .btn-quiet'), (e) => shown(e) && rectOf(e).top < (lg ? rectOf(lg).top : 0)).map((e) => e.getAttribute('data-act')).join(','));
-    ok('each game row 64 px or more, its name on two lines at most, its meta on one, its state never wrapped (the design lead\'s review of slice 4)', $$('#latest .lg-row').length === 4 && !!$('#latest [data-act=allGames]')
-      && [].every.call($$('#latest .lg-row'), (r) => { const nm = r.querySelector('.lg-name'), mt = r.querySelector('.lg-who small'), st = r.querySelector('.lg-state');
-        return rectOf(r).height >= 63.5 && nm.offsetHeight <= 41 && mt.offsetHeight <= 21 && st.scrollWidth <= st.clientWidth + 1 && st.offsetHeight <= 42; }),
-      [].map.call($$('#latest .lg-row'), (r) => Math.round(rectOf(r).height)).join(','));
+    ok('Start is the only button above the focus card on a phone (V4.7)', innerWidth >= 600 || !fc || [].filter.call($$('#trainbox .btn-big, #trainbox .btn-line, #trainbox .btn-quiet'), (e) => shown(e) && rectOf(e).top < rectOf(fc).top).map((e) => e.getAttribute('data-act')).join(',') === 'startToday',
+      [].filter.call($$('#trainbox .btn-big, #trainbox .btn-line, #trainbox .btn-quiet'), (e) => shown(e) && rectOf(e).top < (fc ? rectOf(fc).top : 0)).map((e) => e.getAttribute('data-act')).join(','));
+    /* a wide screen: the focus card beside the hero, where the games were (no empty column) */
+    if (innerWidth >= 1000 && fc && $('.hero')) ok('a wide Today: the focus card beside the hero, no empty column (slice D)', rectOf(fc).left > rectOf($('.hero')).right && Math.abs(rectOf(fc).top - rectOf($('.hero')).top) < 60, [rectOf($('.hero')).right, rectOf(fc).left, rectOf($('.hero')).top, rectOf(fc).top].map(Math.round).join(' / '));
     ok('the tab\'s title counts the positions due (F5.4)', document.title === (T.stats().due ? '(' + T.stats().due + ') ' : '') + 'notlichess.org', document.title + ' / ' + T.stats().due);
+
+    /* ── the Games tab (slice D) ─────────────────────────────────────── */
+    click('#tab-games');
+    await until(() => $('#gamesbox .lg-row'), 8000);
+    ok('the Games tab opens on its tab: #games, its panel shown and Today\'s hidden, one h1', location.hash === '#games' && $('#tab-games').getAttribute('aria-selected') === 'true' && !$('#view-games').hidden && $('#view-train').hidden
+      && $$('h1').length - $$('[hidden] h1').length === 1, location.hash + ' ' + $$('h1').length);
+    layoutCheck('Games');
+    ok('no em dash, NaN or undefined on the Games tab', !/NaN|undefined|—/.test(text('#gamesbox')));
+    const gTotal = T.ev('scopedGames().length'), gRows = $$('#gamesbox .lg-row'), gMore = $('#gamesbox [data-act=gamesMore]');
+    ok('the newest 30 rows, newest first, then Show N more (never every game at once)', gRows.length === Math.min(30, gTotal) && (gTotal <= 30 ? !gMore : !!gMore && gMore.textContent === 'Show ' + Math.min(30, gTotal - 30) + ' more')
+      && T.ev(`(function () { var ids = [].map.call(document.querySelectorAll('#gamesbox .lg-row'), function (r) { return r.getAttribute('data-g'); }), ts = ids.map(function (id) { return data.games.filter(function (g) { return g.id === id; })[0].ts; }); return ts.every(function (t, i) { return !i || t <= ts[i - 1]; }); })()`),
+      gRows.length + ' rows of ' + gTotal + ', ' + (gMore ? gMore.textContent : 'no more'));
+    ok('Check for new games at the top, the count beside the filters', !!$('#gamesbox .gl-refresh[data-act=reload]') && rectOf($('#gamesbox .gl-refresh')).bottom <= rectOf(gRows[0]).top && /^\d+ games$/.test(text('#gl-count')), text('#gl-count'));
+    /* each row: two lines on a wide screen, one part a line under 640 px, nothing cut, named by its sentence in reading order */
+    const rowBad = [].filter.call(gRows, (r) => { const nm = r.querySelector('.lg-name'), mt = r.querySelector('.lg-who small'), st = r.querySelector('.lg-state'), sr = r.querySelector('.sr-only');
+      const lines = innerWidth >= 640 ? rectOf(r).height <= 66 : true, meta = innerWidth < 360 || mt.offsetHeight <= 21;
+      return !(rectOf(r).height >= 63.5 && nm.offsetHeight <= 41 && meta && lines && st.scrollWidth <= st.clientWidth + 1 && mt.scrollWidth <= mt.clientWidth + 1
+        && /^(Won against|Lost to|Drew with) [^,]+( \(\d+\))?, [^.]+\. (Rapid|Blitz|Bullet|Classical), (today|yesterday|\d{1,2} \w+( \d{4})?), (White|Black)(, \d+ moves?)?(, your rating \d+)?\.$/.test(sr.textContent)
+        && /^vs .+ \d+ · you \d+$/.test(nm.textContent) && / · (White|Black) · \d+ moves?$/.test(mt.textContent)); });
+    ok('each row: result, "vs opponent 1388 · you 1351", "Rapid · 27 Sept · White · 36 moves", what it holds; two lines wide, one part a line on a phone, nothing cut, read as one sentence', rowBad.length === 0,
+      rowBad.slice(0, 2).map((r) => Math.round(rectOf(r).height) + ' ' + r.innerText.replace(/\n/g, ' / ')).join(' | '));
+    /* a filter: losses only, the count says it; one that keeps nothing says so, and clears */
+    const pick = async (k, v) => { const sl = $('#gamesbox select[data-k=' + k + ']'); sl.value = v; sl.dispatchEvent(new Event('change', { bubbles: true })); await sleep(200); };
+    await pick('r', 'loss');
+    ok('the Losses filter keeps the losses, the count says "N of M games"', $$('#gamesbox .lg-row').length > 0 && [].every.call($$('#gamesbox .lg-row'), (r) => !!r.querySelector('.lg-L')) && /^\d+ of \d+ games$/.test(text('#gl-count'))
+      && $('#gamesbox select[data-k=r]').parentNode.classList.contains('gf-on'), text('#gl-count'));
+    await pick('p', 'clean');
+    ok('a filter that keeps nothing says so, with a way to clear it', /^No games match these filters\./.test(text('#gamesbox .gl-none')) && !!$('#gamesbox [data-act=gamesClear]') && /^0 of \d+ games$/.test(text('#gl-count')), text('#gamesbox .gl-none'));
+    layoutCheck('Games, no game kept');
+    click('#gamesbox [data-act=gamesClear]');
+    await sleep(200);
+    ok('Clear filters: every game again, the keyboard on the first filter', $$('#gamesbox .lg-row').length === Math.min(30, gTotal) && /^\d+ games$/.test(text('#gl-count')) && document.activeElement === $('#gamesbox select'), text('#gl-count') + ' / ' + focusName());
+    T.ev("setView('train'); 'ok'");
+    await sleep(300);
 
     /* ── a session: solve the first card ─────────────────────────────── */
     click('[data-act=startToday]') || click('[data-act=keepGoing]')
@@ -823,7 +856,7 @@
        F5.4: the first summary asks when you will practise, after the habit card, never in the sticky bar */
     const dg = $('.recap-page .diag') || $('.recap-page .diag-line'), rr = $('.recap-page .result-row');
     ok('the summary leads with the diagnosis above the result row, with See your report (F5.2)', !!dg && (!rr || !!(dg.compareDocumentPosition(rr) & Node.DOCUMENT_POSITION_FOLLOWING))
-      && (!$('.recap-page .diag') || (!!$('.diag [data-act=reportOpen]') && /^(In \d+ of your \d+ losses, one move (turned the game for good|cost you the game)\.|So far: in \d+ of your \d+ losses|Your report builds as you practise: \d+ of \d+ games read\.|Your mistakes, grouped)/.test(text('.diag h3, .diag .diag-so')))),
+      && (!$('.recap-page .diag') || (!!$('.diag [data-act=reportOpen]') && /^(In \d+ of your \d+ losses, one move (turned the game for good|cost you the game)\.|So far: in \d+ of your \d+ losses|Your report builds as you practise: \d+ of \d+ games read\.|Your mistakes, grouped)/.test(text('.diag .diag-h, .diag .diag-so')))),
       dg ? dg.innerText.replace(/\n+/g, ' / ').slice(0, 120) : 'none');
     const cue = $('#cue'), hab = $('.recap-habit');
     ok('the first summary asks "When will you practise?" after the habit card, never in the bar (F5.4)', !!cue && /When will you practise\?/.test(cue.innerText) && $$('#cue [data-act=cueSlot]').length === 3 && !!$('#cue [data-act=cueNo]')
@@ -878,6 +911,20 @@
     ok('reveal-only cards do not earn the day on their own', T.ev('ui.session ? (ui.session.attempted || 0) + (ui.session.carried || 0) >= 3 : false') || T.ev('dayLoad().sessions || 0') === sessionsBefore);
     click('[data-act=endSession]');
     await sleep(300);
+
+    /* ── the Games tab, a game's positions (slice D): after the set, so the first card ever stays the set's ── */
+    click('#tab-games');
+    await until(() => $('#gamesbox .lg-row'), 8000);
+    /* a game opens its positions in move order; × comes back to the Games tab, the keyboard on that game */
+    const gRow = $('#gamesbox .lg-row[data-act=drill]'), gId = gRow && gRow.getAttribute('data-g');
+    if (gRow) {
+      gRow.click();
+      await until(() => T.card().phase === 'guess', 30000);
+      ok('a game opens its positions in move order (V4.7), from the Games tab', T.ev(`(function () { var ss = ui.session; if (!ss || !ss.spec || ss.spec.type !== 'game' || ss.back !== 'games') return false; var p = ss.keys.map(function (k) { return itemOf(k).b.p; }); return p.every(function (x, i) { return !i || x > p[i - 1]; }); })()`), JSON.stringify(T.ev('ui.session && ui.session.spec')));
+      click('.sb-end');
+      await sleep(400);
+      ok('× goes back to the Games tab, the keyboard on that game', T.ev('ui.view') === 'games' && !T.ev('!!ui.session') && location.hash === '#games' && !!document.activeElement && document.activeElement.getAttribute('data-g') === gId, T.ev('ui.view') + ' ' + location.hash + ' ' + focusName());
+    } else ok('a game with positions on the Games tab', false, 'none');
 
     /* ── Insights, a sheet, settings ─────────────────────────────────── */
     T.ev("setView('insights'); 'ok'");

@@ -270,6 +270,8 @@ button{font-family:inherit}
 .which-q{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:800;color:var(--text-1);margin:12px 0 8px}
 .which-row{display:flex;flex-wrap:wrap;gap:12px}
 .which-none{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:12px 0 0}
+/* a busy site's line (F3): its count, and Try now beside it */
+.which-busy .btn-quiet{margin-left:4px}
 .value{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:16px;margin-top:48px}
 .value-item{background:var(--surface-1);border-radius:var(--r-card);padding:20px}
 .value-item b{display:block;font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin-bottom:6px}
@@ -283,16 +285,9 @@ button{font-family:inherit}
 .ex-sub{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0}
 .landing .value{grid-column:1/-1}
 .landing .first-foot.small{grid-column:1/-1;margin-top:24px}
-/* the usage-recording question (V5.5): a slim card at the foot of the
-   landing or of Today, its two answers alike; never during a set */
-.consent{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin:32px 0 0;padding:16px 20px;background:var(--surface-1);border-radius:var(--r-card)}
-.consent-q{flex:1 1 280px;margin:0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
-.consent-q b{font-weight:700;color:var(--text-1)}
-.consent-acts{display:flex;flex-wrap:wrap;gap:12px}
-.consent-acts .btn-line{min-width:112px}
-.landing .consent{grid-column:1/-1}
-.consent-slot .consent{max-width:720px;margin:8px 0 24px}
-body.in-session .consent-slot{display:none}
+/* the usage-recording line's link (the landing, the footer, Settings):
+   underlined, as words in a sentence */
+.say-link{text-decoration:underline;text-underline-offset:2px}
 @media (max-width:1000px){
   .landing{grid-template-columns:1fr;padding-top:32px}
   .landing .src-pick{width:100%}
@@ -322,9 +317,16 @@ body.in-session .consent-slot{display:none}
 
 /* today: one card, one primary action ─────────────────────────────────── */
 .today{max-width:720px;padding:24px 0 10px}
-.today-grid{max-width:1200px;display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
-@media (min-width:1000px){.today-grid{grid-template-columns:minmax(0,1fr) 380px;gap:32px;align-items:start}}
-.today-main{min-width:0}
+/* Today is the day's practice (slice D): the hero and why these, the focus
+   card beside them on a wide screen (where the games were), one column
+   when there is no focus card */
+.today-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
+.today-grid.has-side{max-width:1200px}
+@media (min-width:1000px){
+  .today-grid.has-side{grid-template-columns:minmax(0,1fr) 380px;gap:32px;align-items:start}
+  .today-side > :first-child{margin-top:0}
+}
+.today-main,.today-side{min-width:0}
 .since{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 16px}
 .hero{background:var(--surface-1);border-radius:var(--r-card);padding:28px 28px 24px}
 .hero h2{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);margin:0 0 8px;letter-spacing:-.005em;font-variant-numeric:lining-nums tabular-nums}
@@ -390,12 +392,38 @@ a.focus-go:hover .focus-chev{background:var(--text-1)}
 .focus .plan{background:var(--surface-2);border-radius:var(--r-btn);padding:12px 14px;margin:12px 0 0}
 .status{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:16px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .status:empty{display:none}
-/* the latest games: each a way into its own mistakes */
-.latest{background:var(--surface-1);border-radius:var(--r-card);padding:16px 20px 12px}
-.latest-head{display:flex;align-items:center;justify-content:space-between;margin:-8px -10px 4px 0}
-.latest-head .kicker{margin:0}
+/* the Games tab (slice D): what is new and the newest clean game, then
+   "Your games" with Check for new games, one row of filters (selects, the
+   one in use outlined in honey) and the count, the rows in a card, Show 30
+   more, and the foot line */
+.games{max-width:880px;padding:24px 0 10px}
+.games > .since,.games > .clean-line{margin:0 0 16px}
+.gl-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0 16px}
+.gl-h{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:0}
+.gl-refresh{margin-right:-4px}
+.gl-refresh.is-busy{color:var(--text-2);cursor:default}
+.gl-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin:8px 0 12px}
+.gl-filters{display:flex;flex-wrap:wrap;gap:8px;min-width:0;max-width:100%}
+.gf{position:relative;display:inline-flex;max-width:100%}
+.gf select{-webkit-appearance:none;appearance:none;min-height:44px;max-width:100%;padding:0 36px 0 14px;border:2px solid var(--border);border-radius:var(--r-chip);
+  background:var(--surface-2);color:var(--text-1);font-family:inherit;font-size:var(--fs-body);line-height:20px;font-weight:700;cursor:pointer;text-overflow:ellipsis}
+.gf::after{content:"";position:absolute;right:12px;top:50%;width:16px;height:16px;margin-top:-8px;background:var(--text-2);pointer-events:none;transform:rotate(90deg);
+  -webkit-mask:var(--ic-fwd) center/contain no-repeat;mask:var(--ic-fwd) center/contain no-repeat}
+.gf-on select{border-color:var(--honey);background:var(--honey-14)}
+.gl-count{margin:0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums}
+.gl-body .gl-check{margin:0 0 8px}
+.gl-rows,.gl-none{background:var(--surface-1);border-radius:var(--r-card);padding:6px 20px}
+.gl-none{padding:20px}
+.gl-none p{margin:0 0 4px;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1)}
+.gl-more{min-height:44px;margin:8px 0 0}
+.gl .lg-foot{margin:12px 0 4px}
+/* a row: the result, then the opponent and their rating over the type, the
+   day, the side, the moves and the player's rating; at its right what it
+   holds, its positions learned or in practice under that */
 .lg-row{display:flex;align-items:center;gap:12px;min-height:64px;padding:10px 8px;margin:0 -8px;border-top:1px solid var(--divider);border-radius:12px;color:inherit}
-.latest .latest-head + .lg-row{border-top:0}
+.gl-rows .lg-row:first-child{border-top:0}
+/* a check for new games that failed (F10), under the head */
+.lg-note{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:4px 0 8px}
 .lg-row.is-open{cursor:pointer}
 .lg-row.is-open:hover{background:var(--surface-2);color:inherit}
 a.lg-row{color:inherit}
@@ -404,26 +432,31 @@ a.lg-row{color:inherit}
 .lg-L{background:var(--coral-14);color:var(--coral)}
 .lg-D{background:var(--slate-14);color:var(--slate)}
 .lg-who{flex:1 1 auto;min-width:0;font-size:var(--fs-body);line-height:var(--lh-small);font-weight:700;color:var(--text-1);overflow-wrap:anywhere}
-.lg-who .dim{font-weight:600}
+.lg-who .dim,.lg-who .lg-me{font-weight:600}
+.lg-me{color:var(--text-3)}
 .lg-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.lg-who small{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* the state on its own lines, never wrapping ("4 mistakes", then "1 cost
-   the game"); only a long name wraps (the design lead's review of slice 4) */
+/* the meta wraps rather than lose a part */
+.lg-who small{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin-top:2px}
+/* what it holds never wraps ("4 mistakes", "1 cost the game" beside it);
+   only a long name or the meta may */
 .lg-state{flex:none;white-space:nowrap;text-align:right;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1)}
-.lg-state i{display:block;font-style:normal;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin-top:2px}
-.latest .lg-all{min-height:44px;margin:4px 0 0}
+.lg-state i{display:inline;font-style:normal;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin-left:8px}
 .lg-state i::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--coral);margin-right:6px;vertical-align:0}
+.lg-state .gl-prac{display:block;font-weight:600;color:var(--text-2);margin-top:2px}
 .lg-state.ok{color:var(--leaf)}
 .lg-state.dim{color:var(--text-3)}
 .lg-foot{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;margin:8px 0 4px}
-/* a narrow phone (V4.7): name and rating, then the meta, then the state,
-   one line each under the result, so nothing is cut short */
-@media (max-width:399px){
+/* a phone (V4.7's rule, at the width the longer rows need): the name and
+   rating, the meta, what it holds, its positions, one part a line under
+   the result, so nothing is cut short */
+@media (max-width:639px){
   .lg-row{flex-wrap:wrap;align-items:flex-start;row-gap:2px}
   .lg-who{flex:1 1 calc(100% - 44px)}
-  .lg-who small{white-space:normal}
   .lg-state{flex:1 1 100%;padding-left:44px;text-align:left}
-  .lg-state i{display:inline;margin:0 0 0 8px}
+}
+@media (max-width:860px){
+  .games{padding-top:16px}
+  .gl-rows{padding:4px 16px}
 }
 /* the first minute: every state takes the Today card's place, one shape */
 .finding{background:var(--surface-1);border-radius:var(--r-card);padding:20px 22px}
@@ -435,21 +468,21 @@ a.lg-row{color:inherit}
 .rp-bar i{display:block;height:100%;background:var(--honey);border-radius:3px;transition:width var(--dur-3) var(--ease)}
 .rp-n{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);white-space:nowrap}
 a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:2px 6px}
-/* phones: the latest games sit right under the Today card, the way back in after a game */
+/* one column (phones, and up to 999 px): the welcome, the hero, why these
+   and the checking line, the focus card, then the reading status */
+@media (max-width:999px){
+  .today-grid{display:flex;flex-direction:column;gap:0}
+  .today-grid .today-main,.today-grid .today-side{display:contents}
+  .today-grid .welcome-line{order:0}
+  .today-grid .hero{order:1}
+  .today-grid .why-these,.today-grid .focus-check{order:2}
+  .today-grid .focus{order:3;margin-top:16px}
+  .today-grid .status{order:5}
+}
 @media (max-width:860px){
   .hero{padding:20px}
   .hero .btn-big{width:100%;min-height:52px}
   .hero .btn-big[data-icon]::before{width:22px;height:22px}
-  .today-grid{display:flex;flex-direction:column;gap:0}
-  .today-grid .today-main{display:contents}
-  .today-grid .welcome-line,.today-grid .since,.today-grid .clean-line{order:0}
-  .today-grid .hero{order:1}
-  .today-grid .why-these{order:2}
-  /* the focus card above the games (F5.1) */
-  .today-grid .focus{order:3;margin-top:16px}
-  .today-grid .latest{order:4;margin-top:16px}
-  .today-grid .status{order:5}
-  .latest{padding:12px 16px 8px}
 }
 /* a wide screen: the board a little larger beside its caption */
 @media (min-width:861px){
@@ -507,12 +540,16 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .evalbar.pending{background:var(--surface-2)}
 .evalbar.pending .evalbar-fill,.evalbar.pending .evalbar-fill-h{opacity:0}
 .board-wrap{position:relative;flex:1;min-width:0;container-type:inline-size}
-.board{width:100%;display:block;user-select:none;border-radius:4px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);touch-action:none}
+/* every board lets a swipe scroll the page and a pinch zoom it (r6 design
+   M2); the card's board pans the page up and down, a sideways swipe stays
+   its own (the story's steps), and a touch that lifts a piece holds the
+   gesture for its drag (15-shell.js) */
+.board{width:100%;display:block;user-select:none;border-radius:4px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);touch-action:manipulation}
+#bwrap .board{touch-action:pan-y}
 /* coordinates in the page's own font (boardSvg colours them: dark brown on
    light squares, white bold on dark) */
 .board text{font-family:var(--font)}
 .board rect[data-sq],.board use[data-sq]{cursor:pointer}
-#bwrap.static .board{touch-action:pan-y}
 #bwrap.static .board rect[data-sq],#bwrap.static .board use[data-sq]{cursor:default}
 .board use.drag-src{opacity:.35}
 /* a selected piece lifts (boardSvg gives it the transform about its own
@@ -957,6 +994,10 @@ body.in-session{padding-bottom:0}
 .cue-when{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 12px}
 .cue-acts{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px}
 .cue-acts .btn-line{min-height:44px}
+/* the summary's controls, reached by Tab, scroll 16 px clear of its sticky
+   bar (F7; the page's scroll padding is the bar: html:has(.recap-acts)) */
+.recap-page [data-act],.recap-page a[href]{scroll-margin-bottom:16px}
+.cue-set .cue-cal{color:var(--text-3)}
 .cue-set .chips{margin:8px 0}
 .cue-set .cue-when{margin:8px 0}
 /* the reminder's seven days (V4.6), M to S, sharing a narrow phone's row */
@@ -1039,8 +1080,17 @@ body.in-session{padding-bottom:0}
 .ins > .kicker{color:var(--text-3)}
 .ins h2{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);max-width:20em;margin:8px 0 10px;font-variant-numeric:lining-nums tabular-nums}
 .ins .lead{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-2);margin:0;max-width:40em}
-/* while the background check runs, its count (V4.8: counts may still shrink) */
-.ins-checking{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:6px 0 0}
+/* while the background check runs, its count (V4.8: counts may still
+   shrink), beside every count it can change (C1): under the lead, a
+   section's heading, Today's focus card and games, the summary's report */
+.ins-checking,.checking-line{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:6px 0 0}
+.ins-h + .ins-checking,.since-h + .ins-checking{margin:-4px 0 12px}
+.today-grid .focus-check{margin:12px 0 0}
+.today-side .focus-check + .focus{margin-top:8px}
+.diag .diag-check{margin:0 0 8px}
+.diag-line + .diag-check{margin:-8px 0 16px}
+/* the games this browser had no room for (F8): said under the window's line */
+.ins-gone{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:4px 0 0;max-width:40em}
 .ins-h{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:32px 0 12px}
 .ins-h.ins-also{margin-top:24px}
 .fam-list{background:var(--surface-1);border-radius:var(--r-card);overflow:hidden}
@@ -1232,6 +1282,105 @@ body.in-session{padding-bottom:0}
 @media (max-width:860px){.notice{bottom:86px}}
 @media (max-width:600px){
   .brand{gap:8px}
+}
+
+/* large text and zoom (F1, r6 design M1): a phone at 200% (195 px wide),
+   at 130% (277 to 300 px), and every width between, cut no word and scroll
+   no page sideways. Where the words fit, nothing here changes a thing ──── */
+/* the band's rows wrap rather than cut a word: their heights are floors,
+   met exactly where the words fit them (390 and 360 px, the desktop) */
+.bd-top{height:auto;min-height:28px;overflow:visible}
+.bd-r1{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.bd-r2{height:auto;min-height:48px;display:block;overflow:visible}
+.bd-cap{height:auto;min-height:76px;display:block;overflow:visible}
+.coach.exploring .bd-r2{display:-webkit-box;height:24px;min-height:0;overflow:hidden}
+@container (max-height:175px){.coach.exploring .bd-r2{display:none}}
+@media (min-width:861px){
+  .bd-top{min-height:var(--lh-verdict)}
+  .bd-r2{min-height:52px}
+  .bd-cap{min-height:82px}
+  .coach.exploring .bd-r2{height:26px}
+}
+/* a summary's controls reached by Tab stop 16 px above its sticky bar
+   (F7, r6 design M3: the page's scroll padding is the bar and the safe
+   area) */
+html:has(.recap-acts){scroll-padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+@media (max-width:359px){
+  /* the card flows: the board, the panel under it as tall as its words, the
+     page scrolling under the bar fixed at the foot (its height, --cbar-h,
+     kept clear under the panel's last line) */
+  .card{height:auto;min-height:100vh;min-height:100dvh;overflow:visible}
+  .card > .panel{flex:none;padding-bottom:calc(var(--cbar-h, 64px) + 12px)}
+  .coach,.coach:not(.exploring){flex:none;min-height:0;container-type:normal}
+  .coach.exploring .bd-r2{display:block;height:auto;overflow:visible}
+  .strip{flex-wrap:wrap}
+  .story-strip{flex-wrap:wrap}
+  /* exploring: the trail and each row wrap, every row shown (fitRows) */
+  .xp-head{height:auto;min-height:44px;flex-wrap:wrap}
+  .xp-trail{flex-wrap:wrap;white-space:normal;overflow:visible}
+  .xp-row{height:auto;min-height:44px;flex-wrap:wrap;row-gap:2px;white-space:normal;padding-top:6px;padding-bottom:6px}
+  .xp-cont{overflow:visible;text-overflow:clip}
+  /* the bar: labels wrap, gaps narrow; its height follows its rows */
+  .sticky-acts{gap:8px}
+  .sticky-acts > *{white-space:normal;overflow:visible;text-overflow:clip}
+  .guess-acts,.done-acts{height:auto;min-height:calc(64px + env(safe-area-inset-bottom))}
+  .guess-acts .btn-line,.guess-acts .btn-big,.guess-acts .btn-quiet,.done-acts .btn-line,.done-acts .btn-big{min-width:0;padding:4px 8px;line-height:var(--lh-small)}
+  /* pages: nothing wider than its column; the landing's and a no-account
+     page's headline in the title's size, so its longest word fits */
+  .view-tab{padding:12px 10px 9px}
+  .first h1{font-size:var(--fs-title);line-height:var(--lh-title);overflow-wrap:break-word}
+  .first-form .btn-big,.hero .btn-big{min-width:0;white-space:normal}
+  .btn-big,.btn-line,.chip{white-space:normal}
+  .hero-first{flex-wrap:wrap}
+  .hero-board{width:min(136px,100%)}
+  .wk-row{flex-wrap:wrap;row-gap:6px}
+  .lg-name{display:block;overflow:visible}
+  .lg-state{white-space:normal}
+  .gl-rows{padding:4px 12px}
+  .gf select{padding:0 30px 0 10px}
+  .gf::after{right:8px}
+  .dg-row{flex-wrap:wrap;row-gap:0}
+  .dg-n{white-space:normal}
+  .chips.cue-days{flex-wrap:wrap}
+  .cue-days .day-chip{flex:0 0 44px}
+  .fr-main{grid-template-columns:minmax(0,1fr)}
+  .fr-n{grid-column:1;grid-row:auto;text-align:left;white-space:normal}
+  .recap-acts{flex-wrap:wrap}
+}
+/* under 320 px the bar's buttons stack, the honey one at the foot; a back
+   chevron keeps its row with the outlined button beside it */
+@media (max-width:319px){
+  .sticky-acts{flex-wrap:wrap}
+  .sticky-acts > .btn-line,.sticky-acts > .btn-big,.sticky-acts > .btn-quiet{flex:1 1 100%}
+  .sticky-acts > .slot-empty{display:none}
+  .sticky-acts > .nav-btn{flex:0 0 48px}
+  .sticky-acts > .nav-btn ~ .btn-line{flex:1 1 0}
+  .sticky-acts > .btn-big{order:2}
+  .recap-acts > .btn-big,.recap-acts > .btn-line{flex:1 1 100%}
+  .recap-acts > .btn-big{order:2}
+  html:has(.recap-acts){scroll-padding-bottom:calc(144px + env(safe-area-inset-bottom))}
+}
+/* the three tabs (slice D), one row at every width: tighter under 290 px;
+   under 250 (a phone at 200%) the strip runs edge to edge in 14 px words
+   so all three still fit at 195 px. Should they not (larger system text),
+   the strip scrolls sideways inside itself, never the page, the tab open
+   scrolled into view (setView), its focus ring drawn inside it */
+@media (max-width:289px){
+  .view-tab{padding:12px 6px 9px}
+  .tab-dot{margin-left:5px}
+}
+/* a game row under 300 px: the result letter above, so the words have the
+   row's whole width */
+@media (max-width:299px){
+  .lg-who{flex:1 1 100%}
+  .lg-state{padding-left:0}
+}
+@media (max-width:249px){
+  .views{margin-left:calc(4px - var(--gutter));margin-right:calc(4px - var(--gutter));overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  .views::-webkit-scrollbar{display:none}
+  .view-tab{flex:none;padding:12px 4px 9px;font-size:var(--fs-small)}
+  .tab-dot{margin-left:4px}
+  .view-tab:focus-visible{outline-offset:-3px}
 }
 
 /* reduced motion: every end state at once; a press changes colour instead

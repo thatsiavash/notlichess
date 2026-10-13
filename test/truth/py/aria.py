@@ -77,8 +77,11 @@ def check_sentence(s, b, r):
         if not piece_is(b, m.group(2), m.group(1)):
             return 'false', 'no %s on %s' % (m.group(1), m.group(2))
         sq = chess.parse_square(m.group(2))
-        if chk.in_danger(b, sq):
+        # release 2's C5 (e): the exchange's word confirmed by a search
+        if chk.in_danger_deep(b, sq):
             return 'true', ''
+        if chk.in_danger(b, sq):
+            return 'misleading', 'the exchange says it can be taken, but no capture of it nets them material at depth'
         return ('misleading' if chk.attackers_legal(b, sq) else 'false'), 'attacked: %s, but taking it does not pay' % bool(chk.attackers_legal(b, sq))
     m = re.match(r'^Red ring: they could checkmate on ' + SQ + r'\.$', s)
     if m:
@@ -94,6 +97,26 @@ def check_sentence(s, b, r):
             if mg:
                 return 'misleading', 'no mate there on the board shown; only after the game move (%s), which the sentence does not say' % [z.uci() for z in mg]
         return 'untestable', 'no mate there now, nor after the game move'
+    m = re.match(r'^Red ring: after your game move, they could checkmate on ' + SQ + r'\.$', s)
+    if m:
+        # their mate there after the game move (finding 16's red ring, now said as such)
+        if not c.get('pre') or not c.get('played'):
+            return 'untestable', 'no game move in the frame'
+        y = chess.Board(c['pre'])
+        y.push(chess.Move.from_uci(c['played']))
+        mg = [z for z in chk.mates_in_one(y) if chess.square_name(z.to_square) == m.group(1)]
+        return ('true' if mg else 'false'), 'their mates there after the game move: %s' % [z.uci() for z in mg]
+    m = re.match(r'^Red ring: after both your tries, they could checkmate on ' + SQ + r'\.$', s)
+    if m:
+        tw = re.match(r'^two tries: (\S+)', r.get('frame') or '')
+        if not tw or not c.get('played') or not c.get('st'):
+            return 'untestable', 'both tries'
+        res = []
+        for u in (c['played'], tw.group(1)):
+            x = chess.Board(c['st'])
+            x.push(chess.Move.from_uci(u))
+            res.append((u, any(chess.square_name(z.to_square) == m.group(1) for z in chk.mates_in_one(x))))
+        return ('true' if all(ok for u, ok in res) else 'false'), 'after each try: %s' % res
     m = re.match(r'^Gold ring: your ' + PW + ' on ' + SQ + r' blocks their mate\.$', s)
     if m:
         x = chk.null(b) if b.turn == me else b.copy()
@@ -137,6 +160,8 @@ def main():
     seen = set()
     cnt = collections.Counter()
     for which in cfg.DUMPS[a.pas]:
+        if which in cfg.OPTIONAL_DUMPS and not os.path.exists(cfg.out('dump-%s.jsonl' % which)):
+            continue
         with open(cfg.out('dump-%s.jsonl' % which)) as f:
             for line in f:
                 r = json.loads(line)

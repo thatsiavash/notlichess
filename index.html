@@ -7,8 +7,8 @@
 <script>
 /* a link like /?u=name&src=lichess: the name moves into this tab's
    sessionStorage and leaves the address at once, so no analytics ever sees
-   it (Microsoft Clarity loads only after the player's yes, 15-shell.js,
-   and gets the campaign as a tag) */
+   it (Microsoft Clarity loads at boot, after this, 15-shell.js, and gets
+   the campaign as a tag) */
 (function () { try {
   var p = new URLSearchParams(location.search), u = p.get('u') || p.get('user'), s = p.get('src');
   if (p.get('utm_source')) sessionStorage.setItem('nl:utm', p.get('utm_source'));
@@ -316,6 +316,8 @@ button{font-family:inherit}
 .which-q{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:800;color:var(--text-1);margin:12px 0 8px}
 .which-row{display:flex;flex-wrap:wrap;gap:12px}
 .which-none{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:12px 0 0}
+/* a busy site's line (F3): its count, and Try now beside it */
+.which-busy .btn-quiet{margin-left:4px}
 .value{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:16px;margin-top:48px}
 .value-item{background:var(--surface-1);border-radius:var(--r-card);padding:20px}
 .value-item b{display:block;font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin-bottom:6px}
@@ -329,16 +331,9 @@ button{font-family:inherit}
 .ex-sub{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0}
 .landing .value{grid-column:1/-1}
 .landing .first-foot.small{grid-column:1/-1;margin-top:24px}
-/* the usage-recording question (V5.5): a slim card at the foot of the
-   landing or of Today, its two answers alike; never during a set */
-.consent{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin:32px 0 0;padding:16px 20px;background:var(--surface-1);border-radius:var(--r-card)}
-.consent-q{flex:1 1 280px;margin:0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
-.consent-q b{font-weight:700;color:var(--text-1)}
-.consent-acts{display:flex;flex-wrap:wrap;gap:12px}
-.consent-acts .btn-line{min-width:112px}
-.landing .consent{grid-column:1/-1}
-.consent-slot .consent{max-width:720px;margin:8px 0 24px}
-body.in-session .consent-slot{display:none}
+/* the usage-recording line's link (the landing, the footer, Settings):
+   underlined, as words in a sentence */
+.say-link{text-decoration:underline;text-underline-offset:2px}
 @media (max-width:1000px){
   .landing{grid-template-columns:1fr;padding-top:32px}
   .landing .src-pick{width:100%}
@@ -368,9 +363,16 @@ body.in-session .consent-slot{display:none}
 
 /* today: one card, one primary action ─────────────────────────────────── */
 .today{max-width:720px;padding:24px 0 10px}
-.today-grid{max-width:1200px;display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
-@media (min-width:1000px){.today-grid{grid-template-columns:minmax(0,1fr) 380px;gap:32px;align-items:start}}
-.today-main{min-width:0}
+/* Today is the day's practice (slice D): the hero and why these, the focus
+   card beside them on a wide screen (where the games were), one column
+   when there is no focus card */
+.today-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:24px}
+.today-grid.has-side{max-width:1200px}
+@media (min-width:1000px){
+  .today-grid.has-side{grid-template-columns:minmax(0,1fr) 380px;gap:32px;align-items:start}
+  .today-side > :first-child{margin-top:0}
+}
+.today-main,.today-side{min-width:0}
 .since{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 16px}
 .hero{background:var(--surface-1);border-radius:var(--r-card);padding:28px 28px 24px}
 .hero h2{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);margin:0 0 8px;letter-spacing:-.005em;font-variant-numeric:lining-nums tabular-nums}
@@ -436,12 +438,38 @@ a.focus-go:hover .focus-chev{background:var(--text-1)}
 .focus .plan{background:var(--surface-2);border-radius:var(--r-btn);padding:12px 14px;margin:12px 0 0}
 .status{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:16px 0 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .status:empty{display:none}
-/* the latest games: each a way into its own mistakes */
-.latest{background:var(--surface-1);border-radius:var(--r-card);padding:16px 20px 12px}
-.latest-head{display:flex;align-items:center;justify-content:space-between;margin:-8px -10px 4px 0}
-.latest-head .kicker{margin:0}
+/* the Games tab (slice D): what is new and the newest clean game, then
+   "Your games" with Check for new games, one row of filters (selects, the
+   one in use outlined in honey) and the count, the rows in a card, Show 30
+   more, and the foot line */
+.games{max-width:880px;padding:24px 0 10px}
+.games > .since,.games > .clean-line{margin:0 0 16px}
+.gl-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0 16px}
+.gl-h{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:0}
+.gl-refresh{margin-right:-4px}
+.gl-refresh.is-busy{color:var(--text-2);cursor:default}
+.gl-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin:8px 0 12px}
+.gl-filters{display:flex;flex-wrap:wrap;gap:8px;min-width:0;max-width:100%}
+.gf{position:relative;display:inline-flex;max-width:100%}
+.gf select{-webkit-appearance:none;appearance:none;min-height:44px;max-width:100%;padding:0 36px 0 14px;border:2px solid var(--border);border-radius:var(--r-chip);
+  background:var(--surface-2);color:var(--text-1);font-family:inherit;font-size:var(--fs-body);line-height:20px;font-weight:700;cursor:pointer;text-overflow:ellipsis}
+.gf::after{content:"";position:absolute;right:12px;top:50%;width:16px;height:16px;margin-top:-8px;background:var(--text-2);pointer-events:none;transform:rotate(90deg);
+  -webkit-mask:var(--ic-fwd) center/contain no-repeat;mask:var(--ic-fwd) center/contain no-repeat}
+.gf-on select{border-color:var(--honey);background:var(--honey-14)}
+.gl-count{margin:0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums}
+.gl-body .gl-check{margin:0 0 8px}
+.gl-rows,.gl-none{background:var(--surface-1);border-radius:var(--r-card);padding:6px 20px}
+.gl-none{padding:20px}
+.gl-none p{margin:0 0 4px;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--text-1)}
+.gl-more{min-height:44px;margin:8px 0 0}
+.gl .lg-foot{margin:12px 0 4px}
+/* a row: the result, then the opponent and their rating over the type, the
+   day, the side, the moves and the player's rating; at its right what it
+   holds, its positions learned or in practice under that */
 .lg-row{display:flex;align-items:center;gap:12px;min-height:64px;padding:10px 8px;margin:0 -8px;border-top:1px solid var(--divider);border-radius:12px;color:inherit}
-.latest .latest-head + .lg-row{border-top:0}
+.gl-rows .lg-row:first-child{border-top:0}
+/* a check for new games that failed (F10), under the head */
+.lg-note{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:4px 0 8px}
 .lg-row.is-open{cursor:pointer}
 .lg-row.is-open:hover{background:var(--surface-2);color:inherit}
 a.lg-row{color:inherit}
@@ -450,26 +478,31 @@ a.lg-row{color:inherit}
 .lg-L{background:var(--coral-14);color:var(--coral)}
 .lg-D{background:var(--slate-14);color:var(--slate)}
 .lg-who{flex:1 1 auto;min-width:0;font-size:var(--fs-body);line-height:var(--lh-small);font-weight:700;color:var(--text-1);overflow-wrap:anywhere}
-.lg-who .dim{font-weight:600}
+.lg-who .dim,.lg-who .lg-me{font-weight:600}
+.lg-me{color:var(--text-3)}
 .lg-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.lg-who small{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* the state on its own lines, never wrapping ("4 mistakes", then "1 cost
-   the game"); only a long name wraps (the design lead's review of slice 4) */
+/* the meta wraps rather than lose a part */
+.lg-who small{display:block;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin-top:2px}
+/* what it holds never wraps ("4 mistakes", "1 cost the game" beside it);
+   only a long name or the meta may */
 .lg-state{flex:none;white-space:nowrap;text-align:right;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1)}
-.lg-state i{display:block;font-style:normal;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin-top:2px}
-.latest .lg-all{min-height:44px;margin:4px 0 0}
+.lg-state i{display:inline;font-style:normal;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin-left:8px}
 .lg-state i::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--coral);margin-right:6px;vertical-align:0}
+.lg-state .gl-prac{display:block;font-weight:600;color:var(--text-2);margin-top:2px}
 .lg-state.ok{color:var(--leaf)}
 .lg-state.dim{color:var(--text-3)}
 .lg-foot{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;margin:8px 0 4px}
-/* a narrow phone (V4.7): name and rating, then the meta, then the state,
-   one line each under the result, so nothing is cut short */
-@media (max-width:399px){
+/* a phone (V4.7's rule, at the width the longer rows need): the name and
+   rating, the meta, what it holds, its positions, one part a line under
+   the result, so nothing is cut short */
+@media (max-width:639px){
   .lg-row{flex-wrap:wrap;align-items:flex-start;row-gap:2px}
   .lg-who{flex:1 1 calc(100% - 44px)}
-  .lg-who small{white-space:normal}
   .lg-state{flex:1 1 100%;padding-left:44px;text-align:left}
-  .lg-state i{display:inline;margin:0 0 0 8px}
+}
+@media (max-width:860px){
+  .games{padding-top:16px}
+  .gl-rows{padding:4px 16px}
 }
 /* the first minute: every state takes the Today card's place, one shape */
 .finding{background:var(--surface-1);border-radius:var(--r-card);padding:20px 22px}
@@ -481,21 +514,21 @@ a.lg-row{color:inherit}
 .rp-bar i{display:block;height:100%;background:var(--honey);border-radius:3px;transition:width var(--dur-3) var(--ease)}
 .rp-n{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);white-space:nowrap}
 a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:2px 6px}
-/* phones: the latest games sit right under the Today card, the way back in after a game */
+/* one column (phones, and up to 999 px): the welcome, the hero, why these
+   and the checking line, the focus card, then the reading status */
+@media (max-width:999px){
+  .today-grid{display:flex;flex-direction:column;gap:0}
+  .today-grid .today-main,.today-grid .today-side{display:contents}
+  .today-grid .welcome-line{order:0}
+  .today-grid .hero{order:1}
+  .today-grid .why-these,.today-grid .focus-check{order:2}
+  .today-grid .focus{order:3;margin-top:16px}
+  .today-grid .status{order:5}
+}
 @media (max-width:860px){
   .hero{padding:20px}
   .hero .btn-big{width:100%;min-height:52px}
   .hero .btn-big[data-icon]::before{width:22px;height:22px}
-  .today-grid{display:flex;flex-direction:column;gap:0}
-  .today-grid .today-main{display:contents}
-  .today-grid .welcome-line,.today-grid .since,.today-grid .clean-line{order:0}
-  .today-grid .hero{order:1}
-  .today-grid .why-these{order:2}
-  /* the focus card above the games (F5.1) */
-  .today-grid .focus{order:3;margin-top:16px}
-  .today-grid .latest{order:4;margin-top:16px}
-  .today-grid .status{order:5}
-  .latest{padding:12px 16px 8px}
 }
 /* a wide screen: the board a little larger beside its caption */
 @media (min-width:861px){
@@ -553,12 +586,16 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .evalbar.pending{background:var(--surface-2)}
 .evalbar.pending .evalbar-fill,.evalbar.pending .evalbar-fill-h{opacity:0}
 .board-wrap{position:relative;flex:1;min-width:0;container-type:inline-size}
-.board{width:100%;display:block;user-select:none;border-radius:4px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);touch-action:none}
+/* every board lets a swipe scroll the page and a pinch zoom it (r6 design
+   M2); the card's board pans the page up and down, a sideways swipe stays
+   its own (the story's steps), and a touch that lifts a piece holds the
+   gesture for its drag (15-shell.js) */
+.board{width:100%;display:block;user-select:none;border-radius:4px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.4);touch-action:manipulation}
+#bwrap .board{touch-action:pan-y}
 /* coordinates in the page's own font (boardSvg colours them: dark brown on
    light squares, white bold on dark) */
 .board text{font-family:var(--font)}
 .board rect[data-sq],.board use[data-sq]{cursor:pointer}
-#bwrap.static .board{touch-action:pan-y}
 #bwrap.static .board rect[data-sq],#bwrap.static .board use[data-sq]{cursor:default}
 .board use.drag-src{opacity:.35}
 /* a selected piece lifts (boardSvg gives it the transform about its own
@@ -1003,6 +1040,10 @@ body.in-session{padding-bottom:0}
 .cue-when{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:0 0 12px}
 .cue-acts{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px}
 .cue-acts .btn-line{min-height:44px}
+/* the summary's controls, reached by Tab, scroll 16 px clear of its sticky
+   bar (F7; the page's scroll padding is the bar: html:has(.recap-acts)) */
+.recap-page [data-act],.recap-page a[href]{scroll-margin-bottom:16px}
+.cue-set .cue-cal{color:var(--text-3)}
 .cue-set .chips{margin:8px 0}
 .cue-set .cue-when{margin:8px 0}
 /* the reminder's seven days (V4.6), M to S, sharing a narrow phone's row */
@@ -1085,8 +1126,17 @@ body.in-session{padding-bottom:0}
 .ins > .kicker{color:var(--text-3)}
 .ins h2{font-size:var(--fs-title);line-height:var(--lh-title);font-weight:900;color:var(--text-1);max-width:20em;margin:8px 0 10px;font-variant-numeric:lining-nums tabular-nums}
 .ins .lead{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-2);margin:0;max-width:40em}
-/* while the background check runs, its count (V4.8: counts may still shrink) */
-.ins-checking{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:6px 0 0}
+/* while the background check runs, its count (V4.8: counts may still
+   shrink), beside every count it can change (C1): under the lead, a
+   section's heading, Today's focus card and games, the summary's report */
+.ins-checking,.checking-line{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:6px 0 0}
+.ins-h + .ins-checking,.since-h + .ins-checking{margin:-4px 0 12px}
+.today-grid .focus-check{margin:12px 0 0}
+.today-side .focus-check + .focus{margin-top:8px}
+.diag .diag-check{margin:0 0 8px}
+.diag-line + .diag-check{margin:-8px 0 16px}
+/* the games this browser had no room for (F8): said under the window's line */
+.ins-gone{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:4px 0 0;max-width:40em}
 .ins-h{font-size:var(--fs-heading);line-height:var(--lh-heading);font-weight:800;color:var(--text-1);margin:32px 0 12px}
 .ins-h.ins-also{margin-top:24px}
 .fam-list{background:var(--surface-1);border-radius:var(--r-card);overflow:hidden}
@@ -1280,6 +1330,105 @@ body.in-session{padding-bottom:0}
   .brand{gap:8px}
 }
 
+/* large text and zoom (F1, r6 design M1): a phone at 200% (195 px wide),
+   at 130% (277 to 300 px), and every width between, cut no word and scroll
+   no page sideways. Where the words fit, nothing here changes a thing ──── */
+/* the band's rows wrap rather than cut a word: their heights are floors,
+   met exactly where the words fit them (390 and 360 px, the desktop) */
+.bd-top{height:auto;min-height:28px;overflow:visible}
+.bd-r1{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+.bd-r2{height:auto;min-height:48px;display:block;overflow:visible}
+.bd-cap{height:auto;min-height:76px;display:block;overflow:visible}
+.coach.exploring .bd-r2{display:-webkit-box;height:24px;min-height:0;overflow:hidden}
+@container (max-height:175px){.coach.exploring .bd-r2{display:none}}
+@media (min-width:861px){
+  .bd-top{min-height:var(--lh-verdict)}
+  .bd-r2{min-height:52px}
+  .bd-cap{min-height:82px}
+  .coach.exploring .bd-r2{height:26px}
+}
+/* a summary's controls reached by Tab stop 16 px above its sticky bar
+   (F7, r6 design M3: the page's scroll padding is the bar and the safe
+   area) */
+html:has(.recap-acts){scroll-padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+@media (max-width:359px){
+  /* the card flows: the board, the panel under it as tall as its words, the
+     page scrolling under the bar fixed at the foot (its height, --cbar-h,
+     kept clear under the panel's last line) */
+  .card{height:auto;min-height:100vh;min-height:100dvh;overflow:visible}
+  .card > .panel{flex:none;padding-bottom:calc(var(--cbar-h, 64px) + 12px)}
+  .coach,.coach:not(.exploring){flex:none;min-height:0;container-type:normal}
+  .coach.exploring .bd-r2{display:block;height:auto;overflow:visible}
+  .strip{flex-wrap:wrap}
+  .story-strip{flex-wrap:wrap}
+  /* exploring: the trail and each row wrap, every row shown (fitRows) */
+  .xp-head{height:auto;min-height:44px;flex-wrap:wrap}
+  .xp-trail{flex-wrap:wrap;white-space:normal;overflow:visible}
+  .xp-row{height:auto;min-height:44px;flex-wrap:wrap;row-gap:2px;white-space:normal;padding-top:6px;padding-bottom:6px}
+  .xp-cont{overflow:visible;text-overflow:clip}
+  /* the bar: labels wrap, gaps narrow; its height follows its rows */
+  .sticky-acts{gap:8px}
+  .sticky-acts > *{white-space:normal;overflow:visible;text-overflow:clip}
+  .guess-acts,.done-acts{height:auto;min-height:calc(64px + env(safe-area-inset-bottom))}
+  .guess-acts .btn-line,.guess-acts .btn-big,.guess-acts .btn-quiet,.done-acts .btn-line,.done-acts .btn-big{min-width:0;padding:4px 8px;line-height:var(--lh-small)}
+  /* pages: nothing wider than its column; the landing's and a no-account
+     page's headline in the title's size, so its longest word fits */
+  .view-tab{padding:12px 10px 9px}
+  .first h1{font-size:var(--fs-title);line-height:var(--lh-title);overflow-wrap:break-word}
+  .first-form .btn-big,.hero .btn-big{min-width:0;white-space:normal}
+  .btn-big,.btn-line,.chip{white-space:normal}
+  .hero-first{flex-wrap:wrap}
+  .hero-board{width:min(136px,100%)}
+  .wk-row{flex-wrap:wrap;row-gap:6px}
+  .lg-name{display:block;overflow:visible}
+  .lg-state{white-space:normal}
+  .gl-rows{padding:4px 12px}
+  .gf select{padding:0 30px 0 10px}
+  .gf::after{right:8px}
+  .dg-row{flex-wrap:wrap;row-gap:0}
+  .dg-n{white-space:normal}
+  .chips.cue-days{flex-wrap:wrap}
+  .cue-days .day-chip{flex:0 0 44px}
+  .fr-main{grid-template-columns:minmax(0,1fr)}
+  .fr-n{grid-column:1;grid-row:auto;text-align:left;white-space:normal}
+  .recap-acts{flex-wrap:wrap}
+}
+/* under 320 px the bar's buttons stack, the honey one at the foot; a back
+   chevron keeps its row with the outlined button beside it */
+@media (max-width:319px){
+  .sticky-acts{flex-wrap:wrap}
+  .sticky-acts > .btn-line,.sticky-acts > .btn-big,.sticky-acts > .btn-quiet{flex:1 1 100%}
+  .sticky-acts > .slot-empty{display:none}
+  .sticky-acts > .nav-btn{flex:0 0 48px}
+  .sticky-acts > .nav-btn ~ .btn-line{flex:1 1 0}
+  .sticky-acts > .btn-big{order:2}
+  .recap-acts > .btn-big,.recap-acts > .btn-line{flex:1 1 100%}
+  .recap-acts > .btn-big{order:2}
+  html:has(.recap-acts){scroll-padding-bottom:calc(144px + env(safe-area-inset-bottom))}
+}
+/* the three tabs (slice D), one row at every width: tighter under 290 px;
+   under 250 (a phone at 200%) the strip runs edge to edge in 14 px words
+   so all three still fit at 195 px. Should they not (larger system text),
+   the strip scrolls sideways inside itself, never the page, the tab open
+   scrolled into view (setView), its focus ring drawn inside it */
+@media (max-width:289px){
+  .view-tab{padding:12px 6px 9px}
+  .tab-dot{margin-left:5px}
+}
+/* a game row under 300 px: the result letter above, so the words have the
+   row's whole width */
+@media (max-width:299px){
+  .lg-who{flex:1 1 100%}
+  .lg-state{padding-left:0}
+}
+@media (max-width:249px){
+  .views{margin-left:calc(4px - var(--gutter));margin-right:calc(4px - var(--gutter));overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  .views::-webkit-scrollbar{display:none}
+  .view-tab{flex:none;padding:12px 4px 9px;font-size:var(--fs-small)}
+  .tab-dot{margin-left:4px}
+  .view-tab:focus-visible{outline-offset:-3px}
+}
+
 /* reduced motion: every end state at once; a press changes colour instead
    of sinking ─────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion:reduce){
@@ -1329,9 +1478,14 @@ notlichess.org runs in your browser and needs JavaScript turned on. Your games a
 
 /* ── 1. Storage, tolerant of file:// and private windows ─────────────── */
 
-var mem = {};
+/* every value set this visit is kept in memory too (mem); where the
+   browser refused its write (out of room, or storage that throws), the
+   copy in memory is the newer one and is read back instead (memOnly), so
+   this visit and the progress file never fall back to an older value */
+var mem = {}, memOnly = {};
 var store = {
   get: function (k, fallback) {
+    if (memOnly[k]) return k in mem ? mem[k] : fallback;
     try {
       var v = localStorage.getItem(k);
       if (v === null) return k in mem ? mem[k] : fallback;
@@ -1340,11 +1494,12 @@ var store = {
   },
   set: function (k, v) {
     mem[k] = v;
-    try { localStorage.setItem(k, JSON.stringify(v)); return true; }
-    catch (e) { return false; }
+    try { localStorage.setItem(k, JSON.stringify(v)); delete memOnly[k]; return true; }
+    catch (e) { memOnly[k] = 1; return false; }
   },
   del: function (k) {
     delete mem[k];
+    delete memOnly[k];
     try { localStorage.removeItem(k); } catch (e) {}
   }
 };
@@ -1411,8 +1566,9 @@ var ui = {
   view: (function () {
     var h = (location.hash || '').replace('#', '');
     if (h === 'coach') h = 'insights';
-    if (h === 'insights' || h === 'train') return h;
-    return store.get('nl:view', 'train') === 'insights' ? 'insights' : 'train';
+    if (h === 'insights' || h === 'train' || h === 'games') return h;
+    var v = store.get('nl:view', 'train');
+    return v === 'insights' || v === 'games' ? v : 'train';
   })(),
   open: {},            /* which cards have their "+ n more" list open */
   openSkill: null,     /* which profile row is showing its evidence */
@@ -1471,16 +1627,36 @@ function gameHref(id, color, ply) {
 }
 
 /* ── 5. API layer ────────────────────────────────────────────────────── */
-/* Lichess policy is one request at a time, and 429 carries no Retry-After,
-   so we serialise every call and back off blind for 60s. */
+/* Lichess policy is one request at a time, and its 429 carries no
+   Retry-After, so we serialise every call and back off for 60 s after a
+   429, each site on its own clock (backoffUntil lichess's, ccBackoffUntil
+   chess.com's), or for as long as a readable Retry-After says (F3). A
+   lookup the player waits on (opts.noWait) never sits out a backoff in the
+   queue: it fails at once as busy, with the seconds left, and the screen
+   says so and tries again by itself (Try now ends the wait: busyNow) */
 
 var chain = Promise.resolve();
-var backoffUntil = 0;
+var backoffUntil = 0, ccBackoffUntil = 0;
 var lastLimitNotice = 0;
+var BUSY_SECS = 60;
+function siteOfPath(path, opts) { return opts && opts.abs && String(path).indexOf(CC) === 0 ? 'chess.com' : 'lichess'; }
+function backoffOf(site) { return site === 'chess.com' ? ccBackoffUntil : backoffUntil; }
+/* a site busy (a 429): err.code 429, err.site, err.wait (seconds) */
+function busyError(site, secs) { var e = new Error('rate-limited'); e.code = 429; e.site = site; e.wait = Math.max(1, Math.ceil(secs)); return e; }
+/* the wait a 429 asks for: its Retry-After (seconds or a date) where the
+   site lets the page read it, else 60 s; 1 s to 10 min */
+function retryAfterSecs(res) {
+  var h = null;
+  try { h = res && res.headers && res.headers.get ? res.headers.get('Retry-After') : null; } catch (e) { h = null; }
+  var s = h == null ? NaN : /^\s*\d+\s*$/.test(h) ? parseInt(h, 10) : (Date.parse(h) - Date.now()) / 1000;
+  return isFinite(s) ? Math.min(600, Math.max(1, Math.ceil(s))) : BUSY_SECS;
+}
 
-function queued(fn) {
+function queued(fn, site, opts) {
+  opts = opts || {};
   var run = function () {
-    var wait = Math.max(0, backoffUntil - Date.now());
+    var wait = Math.max(0, backoffOf(site) - Date.now());
+    if (wait && opts.noWait) return Promise.reject(busyError(site, wait / 1000));
     return new Promise(function (r) { setTimeout(r, wait); }).then(fn);
   };
   var p = chain.then(run, run);
@@ -1490,7 +1666,7 @@ function queued(fn) {
 
 function request(path, opts) {
   opts = opts || {};
-  var headers = { Accept: opts.accept || 'application/json' };
+  var headers = { Accept: opts.accept || 'application/json' }, site = siteOfPath(path, opts);
   return queued(function () {
     return fetch(opts.abs ? path : L + path, {
       method: opts.method || 'GET',
@@ -1499,19 +1675,20 @@ function request(path, opts) {
       redirect: opts.manualRedirect ? 'manual' : 'follow'
     }).then(function (res) {
       if (res.status === 429) {
-        backoffUntil = Date.now() + 60000;
+        var secs = retryAfterSecs(res), until = Date.now() + secs * 1000;
+        if (site === 'chess.com') ccBackoffUntil = Math.max(ccBackoffUntil, until); else backoffUntil = Math.max(backoffUntil, until);
         /* background jobs (the scan, feed refreshes) ride the backoff
            silently; only work the user is waiting on gets a notice, and
            at most one every five minutes */
         if (!opts.quiet && Date.now() - lastLimitNotice > 300000) {
           lastLimitNotice = Date.now();
-          notice((/chess\.com/.test(String(res.url || '')) ? 'chess.com' : 'lichess') + ' asked us to slow down. Picking the work back up in a minute.');
+          notice(site + ' is busy and asked us to wait. Picking the work back up in ' + secs + ' s.');
         }
-        var err = new Error('rate-limited'); err.code = 429; throw err;
+        throw busyError(site, secs);
       }
       return res;
     });
-  });
+  }, site, opts);
 }
 
 function getJSON(path, opts) {
@@ -1525,7 +1702,7 @@ function getJSON(path, opts) {
 /* ndjson, streamed. onLine is called per record as it arrives. */
 function getND(path, onLine, opts) {
   opts = opts || {};
-  return request(path, { accept: 'application/x-ndjson', manualRedirect: opts.manualRedirect, quiet: opts.quiet })
+  return request(path, { accept: 'application/x-ndjson', manualRedirect: opts.manualRedirect, quiet: opts.quiet, noWait: opts.noWait })
     .then(function (res) {
       /* Handoff §3: /api/puzzle/* answers 303 to an HTML login page when the
          token is missing or lacks the scope. With redirect:'manual' that
@@ -1647,7 +1824,7 @@ function ccJSON(path, opts) {
   opts.abs = true;
   return request(CC + path, opts).then(function (res) {
     if (res.status === 404) { var e = new Error('404'); e.code = 404; throw e; }
-    if (!res.ok) throw new Error('cc ' + res.status);
+    if (!res.ok) { var e2 = new Error('cc ' + res.status); e2.code = res.status; throw e2; }
     return res.json();
   });
 }
@@ -1862,10 +2039,17 @@ function loadCachedGames() {
   var c = store.get(cacheKey(), null);
   if (!c || !c.games) return { games: [], ts: 0, perfs: '' };
   if (c.v !== CACHE_VERSION) return { games: [], ts: 0, perfs: '' };
+  /* the games packed for room come back as records Insights reads, and
+     the games left out for room are named (F8) */
+  var games = c.packed && c.packed.length ? c.games.concat(c.packed.map(unpackGame)).sort(function (x, y) { return y.ts - x.ts; }) : c.games;
+  data.gone = c.gone || []; data.goneFor = cacheKey();
   /* a cache built for other formats keeps its games (and their analysis);
      it only asks for a full fetch so the new format's history arrives */
-  if (c.perfs !== trackedPerfs().sort().join(',')) return { games: c.games, ts: 0, perfs: c.perfs, hd: 0, fetchedAt: c.fetchedAt };
-  return c;
+  if (c.perfs !== trackedPerfs().sort().join(',')) return { games: games, ts: 0, perfs: c.perfs, hd: 0, fetchedAt: c.fetchedAt, gone: c.gone };
+  var r = {}, k;
+  for (k in c) if (k !== 'packed') r[k] = c[k];
+  r.games = games;
+  return r;
 }
 
 function trimGames(games) {
@@ -1882,13 +2066,24 @@ function trimGames(games) {
   return out;
 }
 
+/* a game kept for Insights alone, when even the lean copy does not fit
+   (F8): the fields its counts read (the result, colour, ratings, clock,
+   opening and the win-chance series; no movetext, no cards), as one list in
+   this order, so a full browser keeps every game Insights counts */
+var PACKED = ['id', 'ts', 'perf', 'color', 'res', 'plies', 'myR', 'oppR', 'rd', 'opp', 'tc', 'clockPct', 'status', 'opening', 'analysed', 'scanned', 'wp'];
+function packGame(g) { return PACKED.map(function (k) { return g[k] == null ? null : g[k]; }); }
+function unpackGame(a) {
+  var g = { bl: null, mv: null };
+  PACKED.forEach(function (k, i) { if (a && a[i] != null) g[k] = a[i]; });
+  return g;
+}
 /* room: a practice write the browser refused (practiceWrite), tried again
    after each step of the ladder below that wrote a smaller cache; the
    ladder stops at the first step where it fits, since practice cannot be
    fetched again and games can */
 function saveGames(games, room) {
   if (!cfg.user) return { games: games };
-  var live = trimGames(games);
+  var live = trimGames(games), prevGone = data.gone && data.goneFor === cacheKey() ? data.gone : loadCachedGames().gone || [];
   var copy = function (g, lean) {
     var c = {}, k;
     for (k in g) {
@@ -1907,20 +2102,36 @@ function saveGames(games, room) {
     fetchedAt: data.fetchedAt || (loadCachedGames().fetchedAt || 0),
     perfs: trackedPerfs().sort().join(',')
   };
-  var write = function (list, lean) {
-    var p = {}, k;
+  /* the games left out for room, [id, ts, perf], so Insights says its
+     numbers come from fewer games (F8): those before, and those this write
+     leaves out, less any it holds again */
+  var goneOf = function (list) {
+    var have = {}, out = [], seen = {};
+    list.forEach(function (g) { have[g.id] = 1; });
+    prevGone.concat(live.filter(function (g) { return !have[g.id]; }).map(function (g) { return [g.id, g.ts, g.perf]; }))
+      .forEach(function (x) { if (x && !have[x[0]] && !seen[x[0]]) { seen[x[0]] = 1; out.push(x); } });
+    return out;
+  };
+  /* pack: the games without cards as packGame's lists */
+  var write = function (list, lean, pack) {
+    var p = {}, k, gone = goneOf(list);
     for (k in head) p[k] = head[k];
-    p.games = list.map(function (g) { return copy(g, lean); });
-    return store.set(cacheKey(), p);
+    p.games = list.filter(function (g) { return !pack || g.bl; }).map(function (g) { return copy(g, lean); });
+    if (pack) p.packed = list.filter(function (g) { return !g.bl; }).map(packGame);
+    if (gone.length) p.gone = gone;
+    var ok = store.set(cacheKey(), p);
+    if (ok) { data.gone = gone; data.goneFor = cacheKey(); }
+    return ok;
   };
   var out = function (list) { var p = {}, k; for (k in head) p[k] = head[k]; p.games = list; return p; };
   var fits = function () { return !room || room(); };
   if (!room && !data.leanSave && write(live, false)) return out(live);
   /* out of room, cheapest losses first: retained movetext, then other
-     accounts' game caches (their practice history stays), then old games
-     that hold no cards; games with cards are the last to go */
+     accounts' game caches (their practice history stays), then each game
+     with no cards packed (packGame: what Insights counts stays), then old
+     games that hold no cards; games with cards are the last to go */
   data.leanSave = true;
-  if (write(live, true) && fits()) return out(live);
+  if (!data.packSave && write(live, true) && fits()) return out(live);
   try {
     var mine = cacheKey(), drop = [];
     for (var i = 0; i < localStorage.length; i++) {
@@ -1931,25 +2142,36 @@ function saveGames(games, room) {
     if (drop.length) notice('This browser ran out of room, so the saved games of the other player' + (drop.length > 1 ? 's' : '')
       + ' here were cleared. Their practice history is kept, and their games come back on their next visit.');
   } catch (e) {}
-  if (write(live, true) && fits()) return out(live);
+  if (!data.packSave && write(live, true) && fits()) return out(live);
+  data.packSave = true;
+  if (write(live, true, true) && fits()) return out(live);
   var keep = live.slice();
   for (var cut = 0; cut < 6; cut++) {
     var plain = keep.filter(function (g) { return !g.bl; });
     if (!plain.length) break;
     var gone = plain.slice(Math.floor(plain.length / 2));
     keep = keep.filter(function (g) { return gone.indexOf(g) === -1; });
-    if (write(keep, true) && fits()) { storageNotice(keep.length, true); return out(keep); }
+    if (write(keep, true, true) && fits()) { storageNotice(keep.length, true); return out(keep); }
   }
   keep = keep.slice(0, Math.ceil(keep.length / 2));
-  if (write(keep, true) && fits()) storageNotice(keep.length, false);
+  if (write(keep, true, true) && fits()) storageNotice(keep.length, false);
   return out(keep);
 }
 /* all: every game you practise from is still kept (the last step of the
-   ladder drops some of those too, and then the notice does not say so) */
+   ladder drops some of those too, and then the notice does not say so).
+   Once a visit; Insights says it for as long as it holds (goneGames) */
 function storageNotice(n, all) {
   if (data.storageWarned) return;
   data.storageWarned = true;
-  notice('This browser is short on storage, so ' + n + ' games are kept' + (all ? ', including every game you practise from.' : '.'));
+  notice('This browser is out of room, so ' + n + ' games are kept' + (all ? ', including every game you practise from.' : '.'));
+}
+/* the games of the window that the browser had no room for (F8): kept
+   apart by saveGames, so Insights names how many it does not count */
+function goneGames() {
+  var gone = data.gone && data.goneFor === cacheKey() ? data.gone : loadCachedGames().gone || [], have = {};
+  if (!gone.length) return [];
+  data.games.forEach(function (g) { have[g.id] = 1; });
+  return gone.filter(function (x) { return x && !have[x[0]] && trackedPerfs().indexOf(x[2]) !== -1 && x[1] >= windowCut(x[2]); });
 }
 
 /* evals=true AND division=true together are what make
@@ -2007,7 +2229,8 @@ function fetchGames(meId, onProgress, onFirstPaint) {
     pay.all = data.ccHistDone;
     return pay;
   }).catch(function (err) {
-    if (cached.games.length) { cached.all = false; return cached; }
+    /* the saved games stand in, and the failure goes with them (F10) */
+    if (cached.games.length) { cached.all = false; cached.err = err; return cached; }
     throw err;
   });
 }
@@ -3443,10 +3666,29 @@ function loadNarrPreview() {
   }).catch(function () {});
 }
 
+/* why the games did not load (F3, F9, F10): a busy site (429: busy, the
+   site and when its wait ends), a site that answered with an error, or no
+   answer at all (net: the connection) */
+function loadErrOf(err) {
+  var site = (err && err.site) || (isCC() ? 'chess.com' : 'lichess');
+  return { busy: !!(err && err.code === 429), site: site, until: Date.now() + ((err && err.wait) || BUSY_SECS) * 1000, net: !(err && err.code), code: (err && err.code) || null };
+}
+/* a returning player's check that failed (F10): said under their games'
+   head on the Games tab (refreshWords), and in a notice when they asked
+   for it */
+function refreshFailed(e) {
+  data.refreshErr = e;
+  if (data.userCheck) notice(refreshWords(e));
+  data.userCheck = false;
+}
+function refreshWords(e) {
+  return 'Couldn\'t check for new games: ' + e.site + (e.busy ? ' is busy. Your practice is ready.' : ' did not answer. Your saved games are still here.');
+}
 function loadGames() {
   var myGen = gen;
   data.sections.games = 'loading';
   data.gamesErr = null;
+  data.refreshErr = null;
   data.gamesCount = 0;
   renderHeader(); renderFoot();
   var meId = String(cfg.user).toLowerCase();
@@ -3499,11 +3741,14 @@ function loadGames() {
     modelDirty();
     buildSeries();
     renderHeader();
-    if (!data.narrate) renderTrain();
+    if (!data.narrate) { renderTrain(); renderGames(); }
   }).then(function (payload) {
     if (stale(myGen)) return;
     data.games = payload.games;
     data.sections.games = 'ok';
+    /* the saved games came back in place of new ones: the check failed (F10) */
+    if (payload.err) refreshFailed(loadErrOf(payload.err));
+    else data.userCheck = false;
     if (data.narrate) {
       var totalRead = payload.games.length;
       var byP = {};
@@ -3521,14 +3766,18 @@ function loadGames() {
     retainMovetext();
     saveGames(data.games);
     renderHeader(); renderFoot();
-    if (!data.narrate) { renderTrain(); renderInsights(); renderViews(); }
+    if (!data.narrate) { renderTrain(); renderGames(); renderInsights(); renderViews(); }
     topUpFormats();
     setTimeout(autoScan, 800);   /* fresh games always wake the engine */
   }).catch(function (err) {
     if (stale(myGen)) return;
     data.sections.games = 'fail';
-    data.gamesErr = err && err.code === 429 ? (isCC() ? 'chess.com' : 'lichess') + ' asked us to slow down. Try again in a minute.' : '';
-    renderTrain(); renderFoot();
+    data.gamesErr = loadErrOf(err);
+    /* a returning player keeps their games: the check that failed says so
+       under them (F10); a first load says it in Today's place (F3, F9) */
+    if (data.games.length) refreshFailed(data.gamesErr);
+    else data.userCheck = false;
+    renderTrain(); renderGames(); renderFoot();
   });
 }
 
@@ -4986,7 +5235,7 @@ function relabelLater() {
       });
     });
     if (n) { modelDirty(); scheduleSave(); relabelTimer = setTimeout(step, 40); }
-    else { relabelTimer = null; if (!ui.session) { renderTrain(); if (ui.view === 'insights') renderInsights(); } }
+    else { relabelTimer = null; if (!ui.session) { renderTrain(); if (ui.view === 'insights') renderInsights(); if (ui.view === 'games') gamesPaint(); } }
   }, 200);
 }
 function allMistakes() { return model().items; }
@@ -5109,8 +5358,9 @@ function patternStats() {
     s.pts += Math.max(0, it.b.wb - it.b.wa) / 100;
     s.items.push(it);
     var rec = srs[it.key];
-    /* one back in the queue (F7.1) is to go again */
-    if (!rec || rec.q) s.fresh++;
+    /* "not started" is never shown (C3): one back in the queue (F7.1) was
+       practised, so it stays in practice, its steps at 0 (skillSteps) */
+    if (!rec) s.fresh++;
     else if (isLearned(rec)) s.fixed++;
     else { s.practising++; if (rec.due == null || rec.due <= now) s.due++; }
     var age = (now - it.g.ts) / 864e5;
@@ -5157,17 +5407,35 @@ function coverage() {
    (their best reply guessed right once, F10.1) }.
    The ladder (days): 1, 3, 7, 16, 35, 90. A position is Learned after its
    third clean solve in a row, the last one 16 or more days after the one
-   before (at tiers 2 and 3 that one in game mode, under 30 s or 60 s at
-   tier 3: F8.3; at tier 3 a forcing card also needs their best reply
-   guessed right once: F10.1); it then returns once, 90 days later, as a
-   spot check, and a clean spot check retires it. Intervals of three days
-   or more are spread by up to 15% either way, fixed per position, so one
-   busy day does not come back as one busy day. An answer before the due
-   date never moves the date later (a clean find changes nothing; a hint or
-   a miss may bring it sooner). */
+   before, counted by date (at tiers 2 and 3 that one in game mode, under
+   30 s or 60 s at tier 3: F8.3; at tier 3 a forcing card also needs their
+   best reply guessed right once: F10.1); it then returns once, 90 days
+   later, as a spot check, and a clean spot check retires it. Intervals of
+   three days or more are spread by up to 15% either way, in whole days and
+   fixed per position, so one busy day does not come back as one busy day;
+   the 16-day step only ever later (C3). A position is due on a date (C2,
+   dueOn): the day of its answer plus its interval, from local midnight,
+   never within 8 hours of the answer; the set, the grade, "Tomorrow", the
+   learned test and the day words all read that date. An answer before the
+   due date never moves the date later (a clean find changes nothing; a
+   hint or a miss may bring it sooner). */
 
 var SRS_DAYS = [1, 3, 7, 16, 35, 90];
 var DAY = 864e5;
+/* local midnight of the day ms falls on, k days later (DST-safe) */
+function dayStart(ms, k) { var d = new Date(ms); d.setHours(0, 0, 0, 0); if (k) d.setDate(d.getDate() + k); return d.getTime(); }
+/* whole calendar days from the day of a to the day of b */
+function daysFrom(a, b) { return Math.round((dayStart(b) - dayStart(a)) / DAY); }
+/* the due date of an answer at time at with an interval of days (C2): that
+   day plus the interval in whole days, from local midnight, and never
+   within 8 hours of the answer (a find at 11 pm is not due again at
+   midnight, but at 7 am) */
+var DUE_GAP = 8 * 3600 * 1000;
+function dueOn(at, days) { return Math.max(dayStart(at, Math.max(1, Math.round(days))), at + DUE_GAP); }
+/* the gap the find that makes a position learned needs, in days by date:
+   the step before learned (16 days) is never spread below it (C3) */
+var LEARN_GAP = 16;
+function learnGapMet(rec, now) { return !!rec.ls && daysFrom(rec.ls, now) >= LEARN_GAP; }
 var srsRevision = 0;
 var srsMem = null;
 /* progress is kept per site and player: one handle on two sites is two people */
@@ -5175,9 +5443,19 @@ function playerId() { return (typeof isCC === 'function' && isCC() ? 'cc:' : '')
 function srsKey() { return 'nl:srs:' + playerId(); }
 function srsLoad() {
   if (srsMem && srsMem.key === srsKey()) return srsMem.map;
-  srsMem = { key: srsKey(), map: store.get(srsKey(), {}) };
+  srsMem = { key: srsKey(), map: srsDays(store.get(srsKey(), {})) };
   return srsMem.map;
 }
+/* a due time read as its date (C2): from that day's midnight, never within
+   8 hours of the last answer. A record kept before due dates were whole
+   days (release 1: its answer plus its interval, to the hour, and a 12-hour
+   look-ahead) comes due on the day it named; a date already whole stays as
+   it is */
+function srsDay(r) {
+  if (r && typeof r.due === 'number') r.due = Math.max(dayStart(r.due), (r.last || 0) + DUE_GAP);
+  return r;
+}
+function srsDays(map) { Object.keys(map || {}).forEach(function (k) { srsDay(map[k]); }); return map || {}; }
 /* when a record last changed: answered, spread or queued (F7.1) */
 function srsTouched(r) { return Math.max(r.last || 0, r.sp || 0, r.q || 0); }
 function srsSave(map) {
@@ -5189,6 +5467,7 @@ function srsSave(map) {
     var d = disk[k], m = map[k];
     if (!m || srsTouched(d) > srsTouched(m)) map[k] = d;
   });
+  srsDays(map);
   srsMem = { key: srsKey(), map: map };
   practiceWrite(srsKey(), map);
   srsRevision++;
@@ -5222,11 +5501,17 @@ function isLearned(rec) { return !!(rec && rec.learned); }
    long (F8.3: 30 s, 60 s at tier 3) */
 var LEARN_MS = 30000, LEARN_MS_T3 = 60000;
 function learnMs(tier) { return tier >= 3 ? LEARN_MS_T3 : LEARN_MS; }
+/* an interval spread by up to 15% either way, fixed per position, in whole
+   days. The step before learned (16 days and more) never comes back sooner
+   than 16 days (C3): a find before its 16th day could not make the
+   position learned, and it would wait 35 days more (40% to 47% of them
+   did) */
 function spreadDays(days, key) {
   if (days < 3) return days;
   var h = 0, s = String(key);
   for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return days * (0.85 + (Math.abs(h) % 1000) / 1000 * 0.3);
+  var d = Math.round(days * (0.85 + (Math.abs(h) % 1000) / 1000 * 0.3));
+  return days >= LEARN_GAP ? Math.max(LEARN_GAP, d) : d;
 }
 /* result: 'first' (no miss, no hint), 'hint' (a hint, or good-then-best),
    'retry' (solved after a miss), 'fail' (shown the answer), 'skip'.
@@ -5246,24 +5531,27 @@ function srsRecord(it, result, info) {
   var anew = fresh || !!rec.q;
   if (rec.q) { rec.box = 0; rec.streak = 0; rec.due = null; rec.learned = false; delete rec.rs; delete rec.retired; delete rec.q; }
   var wasLearned = !!rec.learned;
-  /* a spread position is graded as due, so it still climbs (F7.1) */
-  var dueNow = anew || !!rec.sp || rec.due == null || rec.due <= now + 12 * 3600 * 1000;
-  var prevGap = rec.ls ? now - rec.ls : 0;
+  /* due by its date (C2: from its day's midnight, never within 8 hours of
+     its last answer); a spread position is graded as due, so it still
+     climbs (F7.1) */
+  var dueNow = anew || !!rec.sp || rec.due == null || rec.due <= now;
+  /* the last find came 16 days or more before this one, by date (C3) */
+  var gapMet = learnGapMet(rec, now);
   /* their best reply guessed right, on any showing (F10.1): kept for good */
   if (info.guessRight) rec.pg = 1;
   if (result === 'skip') {
     rec.skips = (rec.skips || 0) + 1;
-    if (dueNow) rec.due = now + DAY;
+    if (dueNow) rec.due = dueOn(now, 1);
   } else if (!dueNow && result !== 'retry' && result !== 'fail') {
     /* found before its due date (practice, a drill): never an early
        review that moves the date (F7.1). A clean find changes nothing; a
        hint brings it back no later than a hint would */
-    if (result === 'hint') rec.due = Math.min(rec.due, now + spreadDays(Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)), it.key) * DAY);
+    if (result === 'hint') rec.due = Math.min(rec.due, dueOn(now, spreadDays(Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)), it.key)));
   } else if (result === 'first' && info.alt) {
     /* a move that works too is a pass, not the lesson: sooner, like a hint */
-    rec.due = now + Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)) * DAY;
+    rec.due = dueOn(now, Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)));
     rec.ls = now;
-  } else if (result === 'first' && info.tier >= 2 && !anew && !rec.learned && prevGap >= 15.5 * DAY && (rec.streak || 0) >= 2
+  } else if (result === 'first' && info.tier >= 2 && !anew && !rec.learned && gapMet && (rec.streak || 0) >= 2
              && !(info.game && info.ms != null && info.ms < learnMs(info.tier))) {
     /* F8.3: at tiers 2 and 3 the find that would make a position learned
        must be clean in game mode and quick (learnMs); a slower one, or one
@@ -5271,15 +5559,15 @@ function srsRecord(it, result, info) {
        as it was (info.held says why, for Details and what moved). Its reason
        comes first where F10.1 would hold it too */
     info.held = info.game ? 'slow' : 'cued';
-    rec.due = now + spreadDays(SRS_DAYS[rec.box], it.key) * DAY;
+    rec.due = dueOn(now, spreadDays(SRS_DAYS[rec.box], it.key));
     rec.ls = now;
-  } else if (result === 'first' && info.guess && !rec.pg && !anew && !rec.learned && prevGap >= 15.5 * DAY && (rec.streak || 0) >= 2) {
+  } else if (result === 'first' && info.guess && !rec.pg && !anew && !rec.learned && gapMet && (rec.streak || 0) >= 2) {
     /* F10.1: at tier 3 a forcing card is learned only once their best reply
        was guessed right; until then the find that would make it learned
        holds its step: the same interval again, its run as it was (info.held
        says why, for Details and what moved) */
     info.held = 'guess';
-    rec.due = now + spreadDays(SRS_DAYS[rec.box], it.key) * DAY;
+    rec.due = dueOn(now, spreadDays(SRS_DAYS[rec.box], it.key));
     rec.ls = now;
   } else if (result === 'first') {
     /* a first sighting solved fast may still be a lucky guess: a week, not 16 days */
@@ -5289,13 +5577,13 @@ function srsRecord(it, result, info) {
     /* the run's first clean find, for "Found 3 times over 23 days." */
     if (!(rec.streak > 0)) rec.rs = now;
     rec.streak = (rec.streak || 0) + 1;
-    if (!anew && prevGap >= 15.5 * DAY && rec.streak >= 3) rec.learned = true;
+    if (!anew && gapMet && rec.streak >= 3) rec.learned = true;
     if (spotCheck) { rec.retired = 1; rec.due = null; }
-    else rec.due = now + spreadDays(rec.learned ? SRS_DAYS[SRS_DAYS.length - 1] : SRS_DAYS[rec.box], it.key) * DAY;
+    else rec.due = dueOn(now, spreadDays(rec.learned ? SRS_DAYS[SRS_DAYS.length - 1] : SRS_DAYS[rec.box], it.key));
     rec.ls = now;
   } else if (result === 'hint') {
     /* hard, not failed: the schedule holds its place, a little sooner */
-    rec.due = now + spreadDays(Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)), it.key) * DAY;
+    rec.due = dueOn(now, spreadDays(Math.max(1, Math.round(SRS_DAYS[rec.box] / 2)), it.key));
     rec.ls = now;
   } else if (result === 'retry') {
     rec.streak = 0;
@@ -5303,7 +5591,7 @@ function srsRecord(it, result, info) {
     delete rec.retired;
     delete rec.rs;
     rec.box = Math.max(0, rec.box - 2);
-    rec.due = now + SRS_DAYS[rec.box] * DAY;
+    rec.due = dueOn(now, SRS_DAYS[rec.box]);
   } else {
     rec.lapses = (rec.lapses || 0) + 1;
     rec.streak = 0;
@@ -5311,11 +5599,11 @@ function srsRecord(it, result, info) {
     delete rec.retired;
     delete rec.rs;
     rec.box = rec.box >= 3 ? 1 : 0;
-    rec.due = now + SRS_DAYS[rec.box] * DAY;
+    rec.due = dueOn(now, SRS_DAYS[rec.box]);
   }
   /* a miss before its due date brings it back tomorrow (F7.1) */
-  if (!dueNow && (result === 'retry' || result === 'fail')) rec.due = Math.min(rec.due, now + DAY);
-  if (info.gameMove) { rec.box = 0; rec.due = now + DAY; rec.learned = false; }
+  if (!dueNow && (result === 'retry' || result === 'fail')) rec.due = Math.min(rec.due, dueOn(now, 1));
+  if (info.gameMove) { rec.box = 0; rec.due = dueOn(now, 1); rec.learned = false; }
   /* answered: back on its own schedule */
   if (result !== 'skip') delete rec.sp;
   if ((rec.lapses || 0) >= 4) rec.tricky = 1;
@@ -5327,6 +5615,7 @@ function srsRecord(it, result, info) {
      practice log's review number */
   if (result !== 'skip') rec.n = (rec.n || 0) + 1;
   rec.last = now;
+  srsDay(rec);
   map[it.key] = rec;
   srsSave(map);
   dayBump(result, anew, info.attempted);
@@ -5468,9 +5757,11 @@ function practiceDays() { return countedDays().length; }
    week, and a week whose first practice follows 7 or more days without one
    (a return). The week under way takes today as its first practice day
    while none has counted yet, so a Saturday starter reads "1 of 2 days this
-   week" and a Sunday return "0 of 1 day". ms: a time in the week; days:
-   the counted days (countedDays). { goal, cut: 'first', 'back' or '' (the
-   goal stood) } */
+   week" and a Sunday return "0 of 1 day". A short week with exactly the
+   goal's days left says why too (C4: a first practice on a Thursday with
+   goal 4 reads "0 of 4 days this week (your first week)"). ms: a time in
+   the week; days: the counted days (countedDays). { goal, cut: 'first',
+   'back' or '' (the goal stood) } */
 function weekGoalInfo(ms, days) {
   days = days || countedDays();
   var mon = mondayOf(ms), g = weekGoalAt(ms), now0 = new Date(); now0.setHours(0, 0, 0, 0);
@@ -5480,7 +5771,7 @@ function weekGoalInfo(ms, days) {
   var prev = days.filter(function (t) { return t < first; }).pop();
   var kind = prev == null ? 'first' : Math.round((first - prev) / DAY) >= 7 ? 'back' : '';
   var left = 7 - (new Date(first).getDay() + 6) % 7;
-  return kind && left < g ? { goal: left, cut: kind } : { goal: g, cut: '' };
+  return kind && left <= g ? { goal: left, cut: kind } : { goal: g, cut: '' };
 }
 /* consistency counted in weeks: the run of Monday-to-Sunday weeks that met
    the goal (a short week its own, V4.4), this week included once it is
@@ -5720,8 +6011,8 @@ function fmtGames(x) {
    One per family of 08-srs.js: a glyph (Lucide) and one plain line, tier 1
    first, then tiers 2 and 3. A skill's bar fills by steps (V4.8: each of
    its positions its rungs out of 3); its words count the positions:
-   learned, in practice (practised, not learned yet), not started (never
-   practised, or back in the queue) */
+   learned, in practice (shown, not learned yet: one back in the queue
+   too), not started (never shown: C3) */
 var SKILL = {
   safety: { glyph: 'shield', line: ['Moves that let them take your pieces.', 'Moves that let them win material.'] },
   king: { glyph: 'crown', line: ['Moves that put your king in danger.', 'Moves that exposed your king or allowed mate.'] },
@@ -5770,13 +6061,29 @@ function decidedWords(lost, tier) {
   if (!(lost > 0)) return tier === 1 ? 'cost you no games' : 'decided no games';
   return (tier === 1 ? 'cost you ' : 'decided ') + fmtGames(lost);
 }
-/* the positions the background check still has to look at, while it runs
-   (V4.8: Insights says so, as counts may shrink when a look takes one out):
-   the deeper look's queue (V1.1's fact sheets, once they run in the
-   background, count here instead) */
+/* the positions the background check (V1.1's fact sheets) still has to
+   look at, once it has started and while the engine can run it: every
+   position without its key, as enrichTargets queues them (C1: a count it
+   can change says "Checking 12 more positions…" beside it, and settles
+   before it is shown without). 0 with the engine down, where nothing more
+   is checked and nothing changes */
 function checkingLeft() {
-  if (SF.state === 'failed') return 0;
-  return enrichState.running ? enrichTargets().length : 0;
+  if (SF.state === 'failed' || !(enrichState.running || enrichState.done > 0)) return 0;
+  return allMistakes().filter(function (it) { return trainable(it) && !factsOf(it.b) && !factsState.failed[it.key]; }).length;
+}
+/* "Checking 12 more positions…" while the check runs, beside the counts it
+   can change (C1); cls: the line's own class */
+function checkingHtml(cls) {
+  var n = checkingLeft();
+  return n ? '<p class="checking-line' + (cls ? ' ' + cls : '') + '">Checking ' + plur(n, 'more position') + '…</p>' : '';
+}
+/* a game whose positions the check has all looked at (C1: since you
+   started counts these only): each one keyed, set aside, or one it cannot
+   read; with the engine down, or a game it never reads (out of the window,
+   no moves), nothing more will change */
+function gameChecked(g) {
+  if (SF.state === 'failed' || !g.bl || !g.mv || !inScope(g)) return true;
+  return g.bl.every(function (b) { return b.x || !b.bu || (b.sc && !b.d) || !!factsOf(b) || !!factsState.failed[mKey(g, b)]; });
 }
 /* the window as dates: "21 to 27 Sept 2026", "28 Aug to 3 Sept 2026",
    "3 Nov 2025 to 27 Sept 2026" */
@@ -5796,9 +6103,12 @@ function dateSpan(t0, t1) {
    stored series at that threshold. Before: the format's games with a
    series before the start (its 12 months, and at least its newest 150), 20
    at least, else the first games after the start fill it; since: the games
-   after those. Counts always; a verdict only from 10 games since, by
-   learning's calibrated rule (sinceVerdict). b keeps the before numbers for
-   when those games have left this browser (the cache keeps the newest) */
+   after those, each once the background check has looked at all its
+   positions (C1, gameChecked: a game waiting for it would count positions
+   the check may yet take out, so the comparison waits for it). Counts
+   always; a verdict only from 10 games since, by learning's calibrated
+   rule (sinceVerdict). b keeps the before numbers for when those games
+   have left this browser (the cache keeps the newest) */
 var SINCE_MIN = 10, BASE_MIN = 20;
 function startKey() { return 'nl:start:' + playerId(); }
 /* the first finished set notes the start (at: a time, for testing and for
@@ -5883,9 +6193,10 @@ function skillVerdict(B, S, f) {
 }
 /* the before and since numbers: { t, thr, before: { n, mean, v, clean, fam,
    fsq, famN, opp }, since: { n, total, mean, clean, fam, fsq, famN, opp },
-   need, verdict } (verdict a key of SINCE_SAY, 'wait' under 10 games
-   since; need the games still to come before the before count has its 20);
-   null before the start */
+   need, verdict, unchecked } (verdict a key of SINCE_SAY, 'wait' under 10
+   games since; need the games still to come before the before count has
+   its 20; unchecked the games before or since the check has still to
+   finish, C1); null before the start */
 function sinceStats() {
   var s = startLoad();
   if (!s) return null;
@@ -5895,7 +6206,10 @@ function sinceStats() {
   var year = s.t - 365 * DAY;
   var pre = games.filter(function (g) { return g.ts <= s.t; }).sort(function (x, y) { return y.ts - x.ts; })
     .filter(function (g, i) { return i < 150 || g.ts >= year; });
-  var post = games.filter(function (g) { return g.ts > s.t; }).sort(function (x, y) { return x.ts - y.ts || (x.id < y.id ? -1 : 1); });
+  var post = games.filter(function (g) { return g.ts > s.t && gameChecked(g); }).sort(function (x, y) { return x.ts - y.ts || (x.id < y.id ? -1 : 1); });
+  /* the games the check has still to finish: a game since waits for it,
+     and a game before may still lose a position to it */
+  var unchecked = games.filter(function (g) { return (g.ts > s.t || pre.indexOf(g) >= 0) && !gameChecked(g); }).length;
   /* one count over the positions Insights shows (V4.8: the per-game figure
      is the deciding and the other big mistakes over the games), each skill's
      its own positions, in the games whose positions reach down to the
@@ -5928,7 +6242,7 @@ function sinceStats() {
   B.mean = B.n ? B.total / B.n : 0;
   B.v = B.n > 1 ? (B.sq - B.n * B.mean * B.mean) / (B.n - 1) : 0;
   S.mean = S.n ? S.total / S.n : 0;
-  return { t: s.t, thr: thr, before: B, since: S, need: Math.max(0, BASE_MIN - B.n), verdict: S.n < SINCE_MIN ? 'wait' : sinceVerdict(B, S) };
+  return { t: s.t, thr: thr, before: B, since: S, need: Math.max(0, BASE_MIN - B.n), verdict: S.n < SINCE_MIN ? 'wait' : sinceVerdict(B, S), unchecked: unchecked };
 }
 /* the standard normal's distribution function (Abramowitz and Stegun 26.2.17) */
 function normCdf(z) {
@@ -5954,12 +6268,12 @@ var SINCE_SAY = { fewer: 'Fewer than before.', probably_fewer: 'Probably fewer. 
    their big mistakes against what as many games had before practice
    started (the before count, the only usual there is), "Since your last
    visit: 3 games, 4 big mistakes (before you started: about 6)." Only once
-   every one of those games is read; '' otherwise */
+   every one of those games is read and checked (C1); '' otherwise */
 function sinceVisitWords(fresh) {
   var tp = trackedPerfs();
   fresh = fresh.filter(function (g) { return tp.indexOf(g.perf) !== -1; });
   var st = fresh.length ? sinceStats() : null;
-  if (!st || st.since.n < SINCE_MIN || !st.before.n || fresh.some(function (g) { return !g.wp || !st.thr[g.perf]; })) return '';
+  if (!st || st.since.n < SINCE_MIN || !st.before.n || fresh.some(function (g) { return !g.wp || !st.thr[g.perf] || !gameChecked(g); })) return '';
   var n = 0;
   fresh.forEach(function (g) { n += bigCardsAt(g, st.thr[g.perf]).n; });
   return 'Since your last visit: ' + plur(fresh.length, 'game') + ', ' + (n ? plur(n, 'big mistake') : 'no big mistakes') + ' (before you started: about ' + Math.round(st.before.mean * fresh.length) + ').';
@@ -6622,13 +6936,18 @@ function autoEnrich() {
   if (scanState.running && ui.session) { setTimeout(autoEnrich, 4000); return; }
   var next = enrichTargets()[0];
   if (!next) return;
+  /* the first card of a run: the counts it can change say so (C1) */
+  var first = !enrichState.running && !enrichState.done;
   enrichState.running = true;
+  if (first) checkingPaint();
   ensureFacts(next, false).then(function () {
     enrichState.running = false;
     enrichState.done++;
     var rl = el('recheck-line');
     if (rl) rl.textContent = recheckText(recheckCount());
     scheduleSave();
+    /* each key in: those counts are drawn again, settled once none is left */
+    checkingPaint();
     setTimeout(autoEnrich, 200);
   });
 }
@@ -7705,10 +8024,12 @@ function buildCandidates(n, spec, fill, o) {
   while (fill && out.length < n && fi < mine.length) out.push(mine[fi++]);
   return out;
 }
-/* the positions due, the most valuable first: by the end of the next 12
-   hours, now or, with o (todayPlan's context), at o.at in records o.srs */
+/* the positions due, the most valuable first: those whose date has come
+   (C2: due from that day's midnight, never within 8 hours of the last
+   answer, so a set looks no hours ahead), now or, with o (todayPlan's
+   context), at o.at in records o.srs */
 function dueCards(spec, o) {
-  var srs = (o && o.srs) || srsLoad(), end = ((o && o.at) || Date.now()) + 12 * 3600 * 1000;
+  var srs = (o && o.srs) || srsLoad(), end = (o && o.at) || Date.now();
   var filter = spec ? specFilter(spec) : null;
   return allMistakes().filter(function (it) {
     var r = srs[it.key];
@@ -7746,26 +8067,22 @@ function spreadCards() {
    to the queue (no date, their history kept: they return as new when
    there is room); of the rest, the most valuable set's worth stays due and
    the others spread over the next 21 days, each onto the first day with
-   room, no day above one set. Due here: by the end of the day, or within
-   the 12 hours a set looks ahead, whichever is later */
+   room, no day above one set. Due here: by the end of the day (C2: a date,
+   so one answered late last night and due this morning counts) */
 var SPREAD_DAYS = 21;
-/* local midnight of the day ms falls on, k days later (DST-safe) */
-function dayStart(ms, k) { var d = new Date(ms); d.setHours(0, 0, 0, 0); if (k) d.setDate(d.getDate() + k); return d.getTime(); }
-/* whole calendar days from the day of a to the day of b */
-function daysFrom(a, b) { return Math.round((dayStart(b) - dayStart(a)) / DAY); }
 /* what the day's first opening at time at would do, without doing it:
    { due, keep, queue, spread [{ it, day }], left (due for want of room) };
    srs0: the records to read (a copy, for a later day's set: planOn). A
    paused set keeps its positions out only today: it is gone by tomorrow */
 function absorbPlan(at, srs0) {
   var srs = srs0 || srsLoad(), m = model(), size = sessionSize(), f = currentFocus(), fam = f && f.fam;
-  var horizon = Math.max(dayStart(at, 1), at + 12 * 3600 * 1000), due = [], perDay = {};
+  var horizon = dayStart(at, 1), due = [], perDay = {};
   var paused = dayStamp(new Date(at)) === dayStamp() ? savedSession() : null, skip = {};
   if (paused) paused.keys.forEach(function (k) { skip[k] = 1; });
   Object.keys(srs).forEach(function (k) {
     var r = srs[k], it = m.byKey[k];
     if (!r || r.hidden || r.due == null || !it || !trainable(it)) return;
-    if (r.due <= horizon) { if (!skip[k]) due.push(it); return; }
+    if (r.due < horizon) { if (!skip[k]) due.push(it); return; }
     var d = daysFrom(at, r.due);
     if (d <= SPREAD_DAYS) perDay[d] = (perDay[d] || 0) + 1;
   });
@@ -7795,8 +8112,8 @@ function absorbOpen() {
   if (!cfg.user || absorbToday()) return null;
   var now = Date.now(), od = overdueCount(), p = absorbPlan(now), srs = srsLoad(), prev = store.get(absorbKey(), null);
   p.queue.forEach(function (it) { var r = srs[it.key]; r.q = now; r.due = null; delete r.sp; });
-  /* a spread position comes due at noon of its day: all that day */
-  p.spread.forEach(function (x) { var r = srs[x.it.key]; r.sp = now; r.due = dayStart(now, x.day) + 12 * 3600 * 1000; });
+  /* a spread position comes due on its day, from its midnight (C2) */
+  p.spread.forEach(function (x) { var r = srs[x.it.key]; r.sp = now; r.due = dayStart(now, x.day); });
   if (p.queue.length || p.spread.length) srsSave(srs);
   var s = { d: dayStamp(), due: p.due, sp: p.spread.length, q: p.queue.length, left: p.left.length };
   store.set(absorbKey(), s);
@@ -7887,7 +8204,7 @@ function todayPlan(o) {
 function planOn(d) {
   var at = dayStart(Date.now(), d) + 12 * 3600 * 1000, srs = JSON.parse(JSON.stringify(srsLoad())), p = absorbPlan(at, srs);
   p.queue.forEach(function (it) { var r = srs[it.key]; r.q = at; r.due = null; delete r.sp; });
-  p.spread.forEach(function (x) { var r = srs[x.it.key]; r.sp = at; r.due = dayStart(at, x.day) + 12 * 3600 * 1000; });
+  p.spread.forEach(function (x) { var r = srs[x.it.key]; r.sp = at; r.due = dayStart(at, x.day); });
   var plan = todayPlan({ at: at, srs: srs, day: {} });
   plan.absorb = p;
   return plan;
@@ -7905,16 +8222,22 @@ function startSession(mode, keys, label, spec, opts) {
   if (carried) { d0.carry = 0; daySave(d0); }
   /* one position opened from a summary goes back to that summary (I8) */
   var from = spec && spec.type === 'one' && ui.session && ui.session.finished ? ui.session : null;
+  /* a set opened on the Games tab (a game's positions) goes back there
+     (slice D): Back, × and the summary's way back. Its place in the
+     history is the tab's own, so one Back leaves it */
+  var back = !from && ui.view === 'games' ? 'games' : null;
   /* the sets of a day keep the size of the one played (a lesson is no
      position, F9.3) */
   if (mode === 'today' || mode === 'more') store.set('nl:setSize', keys.filter(function (k) { return !isLessonKey(k); }).length);
   ui.session = { mode: mode, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, carried: carried, rev: reviewKeys(keys) };
   if (from) ui.session.from = from;
+  if (back) ui.session.back = back;
   if (opts && opts.firstTime) ui.session.firstTime = true;
   data.freshOnboard = false;
   logSet(mode, keys);
   saveSession();
-  setView('train', false);
+  setView('train', !!back);
+  if (back) window.scrollTo(0, 0);
   pushSessionState();
   loadCard();
   track('session_start_' + mode);
@@ -7933,7 +8256,7 @@ function reviewKeys(keys) {
    practice positions and lessons: F9.3, F9.4), how many positions are
    overdue and whether the day's load is healthy */
 function logSet(mode, keys) {
-  var srs = srsLoad(), end = Date.now() + 12 * 3600 * 1000, due = 0, fresh = 0, q = 0, sp = 0, fo = 0, pk = 0, seen = {}, n = 0;
+  var srs = srsLoad(), end = Date.now(), due = 0, fresh = 0, q = 0, sp = 0, fo = 0, pk = 0, seen = {}, n = 0;
   keys.forEach(function (k) {
     if (seen[k]) return;
     seen[k] = 1; n++;
@@ -8000,8 +8323,8 @@ function nextSetSize() {
   var max = sessionSize();
   return Math.max(Math.min(5, max), Math.min(max, store.get('nl:setSize', max)));
 }
-function morePracticeKeys() {
-  var size = nextSetSize(), srs = srsLoad(), now = Date.now(), recent = 3 * 3600 * 1000, keys = [];
+function morePracticeKeys(n) {
+  var size = n || nextSetSize(), srs = srsLoad(), now = Date.now(), recent = 3 * 3600 * 1000, keys = [];
   var add = function (it) { if (keys.length < size && keys.indexOf(it.key) < 0) keys.push(it.key); };
   dueCards().forEach(add);
   if (keys.length < size) spreadCards().forEach(add);
@@ -8022,6 +8345,46 @@ function keepGoing() {
   var keys = morePracticeKeys();
   if (!keys.length) { notice('You have practised every position from your games so far.'); return; }
   startSession('more', withPractice(withFoils(keys, 'more'), 'more'), 'Next set');
+}
+/* a position taken out of a set before it was answered (loadCard and
+   factsSwap: the deeper look found no real mistake, or nothing it could
+   ask) gives its slot to the next one the set would deal (C1), so a set
+   keeps its size ("Position 5 of 5"): Today's set the next due position,
+   else the next new one; a next set the next of its own order
+   (morePracticeKeys); a drill the next of its kind. The others move up a
+   place, as before, and the one that joins comes last among the set's own
+   positions (before the ones back for another try), so a first set keeps
+   its head (keepFirstThree). A game's walk-through, one position from a
+   summary, a pack, a foil and a practice position give up their slot */
+function setAside(ss) {
+  var fill = setFill(ss, ss.keys[ss.idx]);
+  ss.keys.splice(ss.idx, 1);
+  if (fill) {
+    var seen = {}, at = ss.keys.length;
+    for (var i = 0; i < ss.keys.length; i++) {
+      var k = ss.keys[i];
+      if (seen[k] && ss.relearnOf && ss.relearnOf[k]) { at = i; break; }
+      seen[k] = 1;
+    }
+    ss.keys.splice(Math.max(at, ss.idx), 0, fill);
+    /* a review that joins counts as one in the recall after a break (V4.4) */
+    if (ss.rev && reviewKeys([fill])[fill]) ss.rev[fill] = 1;
+  }
+  keepFirstThree(ss);
+  saveSession();
+}
+function setFill(ss, gone) {
+  var sp = ss.spec || {}, have = {};
+  /* only a position of the set's own, unanswered: never one back for
+     another try, nor a foil, a practice position or a lesson */
+  if (!gone || isFoilKey(gone) || isPracKey(gone) || isLessonKey(gone) || (ss.results && ss.results[gone]) || ss.keys.indexOf(gone) !== ss.idx) return null;
+  if (ss.mode !== 'today' && ss.mode !== 'more' && !(ss.mode === 'drill' && sp.type && sp.type !== 'game' && sp.type !== 'one')) return null;
+  ss.keys.concat(ss.relearn || []).forEach(function (k) { have[k] = 1; });
+  var ok = function (it) { return !!it && !have[it.key] && dealable(it); }, pick;
+  if (ss.mode === 'drill') pick = drillItems(sp, ss.keys.length + 40).filter(ok)[0];
+  else if (ss.mode === 'more') pick = morePracticeKeys(ss.keys.length + 40).map(itemOf).filter(ok)[0];
+  else pick = dueCards().filter(ok)[0] || buildCandidates(ss.keys.length + 20).filter(ok)[0];
+  return pick ? pick.key : null;
 }
 function resumeSession() {
   var s = savedSession();
@@ -8174,10 +8537,16 @@ function finishSession() {
      player's own positions: Today's set and "since you started" wait */
   if (triedEnough(ss, 0)) { countDay(ss, 0); day = dayLoad(); if (!pack) day.sessions = (day.sessions || 0) + 1; }
   else if (!pack) day.short = 1;
-  daySave(day);
-  /* the day's first set after 7 or more days away: its summary says what was
-     remembered (V4.4) and may ask for a backup (V4.5) */
+  /* the day's first set after 7 or more days away may ask for a backup
+     (V4.5); the day's first summary of Today's set or a next set with
+     reviews after such a break says what was remembered (V4.4), once, and
+     never a drill's (C4) */
   if (!pack && day.sessions === 1) ss.away = daysAway();
+  if ((ss.mode === 'today' || ss.mode === 'more') && !day.recall && recallOf(ss, ss.keys, playerTier()).n) {
+    ss.recall = daysAway();
+    if (ss.recall) day.recall = 1;
+  }
+  daySave(day);
   /* the first finished set starts "since you started" (F6.2) */
   if (day.sessions) noteStart();
   /* the routine line, once, on a first summary at tiers 2 and 3 (F2.3) */
@@ -8228,13 +8597,30 @@ function endSession(fromPop) {
   var keep = !ss.finished && (done > 0 || (open && (open.misses || open.hints || open.attempts)));
   if (keep) saveSession(); else store.del(sessKey());
   ui.session = null;
-  if (!fromPop && history.state && history.state.nlSession) { try { history.replaceState(null, '', location.pathname + '#train'); } catch (e) {} }
+  /* a set opened on the Games tab leaves its own place in the history (the
+     tab's entry is under it), so the next Back goes on from the tab */
+  var toGames = ss.back === 'games';
+  if (!fromPop && history.state && history.state.nlSession) { try { if (toGames) history.back(); else history.replaceState(null, '', location.pathname + '#train'); } catch (e) {} }
+  if (keep) notice('Set paused. ' + countsWords(ss), { act: 'resume', label: 'Resume' });
+  /* a game's positions opened on the Games tab: back to it, the keyboard
+     on that game's row (else the Games tab) */
+  if (toGames) {
+    renderTrain();
+    setView('games', true);
+    var gid = ss.spec && ss.spec.id, row = gid != null && document.querySelector('#gamesbox [data-g="' + String(gid).replace(/"/g, '') + '"]');
+    makeFocusable(el('gamesbox'));
+    var gt = row || document.querySelector('#views .view-tab.view-on');
+    if (gt && gt.focus) gt.focus();
+    return;
+  }
   renderViews();
   renderTrain();
   window.scrollTo(0, 0);
-  if (keep) notice('Set paused. ' + countsWords(ss), { act: 'resume', label: 'Resume' });
   makeFocusable(el('trainbox'));
-  var st = document.querySelector('#trainbox .hero .btn-big, #trainbox .hero [data-act]');
+  /* the keyboard goes to Today's main button (Resume, Start, the next set),
+     never to the hero's board, which a screen reader does not see (F6);
+     with none, to the Today tab */
+  var st = document.querySelector('#trainbox .hero .acts .btn-big') || document.querySelector('#trainbox .hero .acts [data-act]') || document.querySelector('#views .view-tab.view-on');
   if (st) st.focus({ preventScroll: true });
 }
 
@@ -9741,15 +10127,16 @@ function loadCard() {
     return;
   }
   /* a foil goes too with the engine down: its game move cannot be checked;
-     so does a position with no fact sheet (V1.1: only keyed cards then) */
-  if (!it || (it.foil ? SF.state === 'failed' : !dealable(it)) || it.b.x) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
+     so does a position with no fact sheet (V1.1: only keyed cards then).
+     A position taken out gives its slot to the next one (C1, setAside) */
+  if (!it || (it.foil ? SF.state === 'failed' : !dealable(it)) || it.b.x) { setAside(ss); loadCard(); return; }
   var myGen = gen, key = it.key;
   var go = function () {
     if (ss.loadingKey === key) ss.loadingKey = null;
     if (stale(myGen) || ui.session !== ss || ss.keys[ss.idx] !== key) return;
-    if (it.b.x || (it.foil && !foilReady(it))) { ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
+    if (it.b.x || (it.foil && !foilReady(it))) { setAside(ss); loadCard(); return; }
     var a = cardFor(it);
-    if (!a) { it.b.x = 'moves'; ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); loadCard(); return; }
+    if (!a) { it.b.x = 'moves'; setAside(ss); loadCard(); return; }
     /* a first session's head card that the deeper look turned into a
        forcing line goes back behind one that asks for one move, if any */
     if (a.sol && ss.firstTime && ss.idx < 3) {
@@ -9830,7 +10217,7 @@ function factsSwap(a) {
   a.keyDue = false;
   var it = a.it;
   if (it.b.x) {
-    ss.keys.splice(ss.idx, 1); keepFirstThree(ss); saveSession(); stageReset();
+    setAside(ss); stageReset();
     notice('On a deeper look that position was not a real mistake, so it was removed.');
     loadCard();
     return true;
@@ -11379,7 +11766,7 @@ function repeatedDanger(a) {
   if (!p || isW(p) === myPov(a.it)) return null;
   var skip = function (f, q) { return f === due.to || q === due.to; };
   return { kind: 'rep', mate: x.mate, took: x.took, lost: x.lost && y.lost, from: from, to: to, san: x.san || '',
-           rings: skip(to, to) ? [] : [{ sq: to, kind: 'attacked', mate: x.mate }], arrows: skip(from, to) ? [] : [{ from: from, to: to, kind: 'threat', key: 'tries' }] };
+           rings: skip(to, to) ? [] : [{ sq: to, kind: 'attacked', mate: x.mate, key: 'tries' }], arrows: skip(from, to) ? [] : [{ from: from, to: to, kind: 'threat', key: 'tries' }] };
 }
 /* hint 1's danger: the game line's first reply after the game move, when it
    captures or checks (threatOf) and the game line really loses (material,
@@ -11718,7 +12105,7 @@ function noteResult(ss, a, result, again, prev, left) {
   if (!again) {
     var rec = a.rec || srsRec(a.it);
     e.m = ladderMove(cat, prev, rec, a.held); e.p = rungsOf(rec);
-    if (e.m === 'learned') { e.n = rec.streak || 3; if (rec.rs) e.d = Math.round((Date.now() - rec.rs) / DAY); }
+    if (e.m === 'learned') { e.n = rec.streak || 3; if (rec.rs) e.d = daysFrom(rec.rs, Date.now()); }
   }
   (ss.sum = ss.sum || {})[k] = e;
 }
@@ -11729,7 +12116,7 @@ function logPrev(a) {
   /* why it was in the set (F7.1): spread to a later day, back from the
      queue (its ladder starting again), or practice before its due date */
   return r ? { n: r.n, last: r.last, lf: r.lf, streak: r.q ? 0 : r.streak || 0, learned: !r.q && !!r.learned, sp: !!r.sp, q: !!r.q,
-               pr: !r.sp && !r.q && r.due != null && r.due > Date.now() + 12 * 3600 * 1000 } : null;
+               pr: !r.sp && !r.q && r.due != null && r.due > Date.now() } : null;
 }
 /* one card answered, in the practice log (08-srs.js): its mode, 'cued',
    'game' (F8.1) or 'foil' (F8.2, with its verdict fv: good or playable);
@@ -12449,7 +12836,11 @@ function xpRows(a, ex) {
     var plies = tier === 3 ? (touch ? 4 : 6) : 2, cont = [];
     for (var k = 1; k <= plies && k < sans.length; k++) cont.push(((xpPly(n.st) + k) % 2 === 0 ? xpNum(n.st, k) : '') + sans[k]);
     row.cont = cont.join(' ');
-    row.label = first + (cont.length ? ', then ' + sans.slice(1, plies + 1).join(' ') : '') + '. ' + (myMate != null || drawn ? row.chip + '.' : 'Your winning chances ' + row.chip.replace('You ', '') + '.');
+    /* a figure that is no number is left out (progVal) */
+    if (progVal(row.chip)) row.chip = '';
+    /* its name starts with the words it shows, in their order (WCAG 2.5.3):
+       "You 50%, 35.Qe6, then b5 36.b3." */
+    row.label = (row.chip ? row.chip + ', ' : '') + row.num + first + (row.cont ? ', then ' + row.cont : '') + '.';
     return row;
   });
 }
@@ -12674,9 +13065,20 @@ var LIVE_PREFIX = { good: 'Correct.', bad: 'Wrong.', close: 'Good move, not best
    fallback. A row that fits nothing stays empty rather than overflow */
 function fitsRow(s, row) {
   var cap = typeof row === 'object' ? row : ROW_CAPS[row] || ROW_CAPS.row2;
-  /* the ledger's pieces are no words (each takes two characters, rowLen) */
-  return !!s && rowLen(s) <= cap.ch && wordsIn(s) <= cap.words && oneUnit(s).split(/\s+/).filter(function (t) { return !/^[\u2654-\u265f.,]+$/.test(t); }).length <= cap.words;
+  /* the ledger's pieces are no words (each takes two characters, rowLen);
+     a form that carries a program value never fits (progVal) */
+  return !!s && !progVal(s) && rowLen(s) <= cap.ch && wordsIn(s) <= cap.words && oneUnit(s).split(/\s+/).filter(function (t) { return !/^[\u2654-\u265f.,]+$/.test(t); }).length <= cap.words;
 }
+/* a program value on screen ("b3null", "undefined", "NaN%", "[object
+   Object]"): a string that carries one says nothing true, so no screen
+   shows it. The fit ladder skips such a form (fitsRow), the band, Details,
+   the check line, the board's description and the explorer's rows drop it
+   or say their fallback instead (no lowercase letter on either side of the
+   word: "b3null" is one, "annulled" none) */
+var PROG_VAL = /(^|[^a-z])(null|undefined|NaN)(?![a-z])|\[object /;
+function progVal(s) { return s != null && PROG_VAL.test(String(s)); }
+/* the string itself, or '' where it carries a program value */
+function noProg(s) { return s && !progVal(s) ? s : ''; }
 function firstSentence(s) { var m = /^.*?[.!?…](?=\s|$)/.exec(String(s || '')); return m ? m[0] : String(s || ''); }
 /* fallback: one string, or its words and SAN forms in that order */
 function fitRow(cands, row, fallback) {
@@ -13555,7 +13957,8 @@ function checkLine(a) {
 function checkLineOf(a) {
   var s = cardStep(a), t = a.tier || 2;
   if (t < 3 || s > 3) return lineOfStep(s, t);
-  return checkFact(a, s) || lineOfStep(s, t);
+  var f = checkFact(a, s);
+  return f && !progVal(f) ? f : lineOfStep(s, t);
 }
 /* tier 3's computed line, '' when none is true: their threat, the one the
    game move left standing (standingThreat), "Their threat: Rxf5 takes your
@@ -13576,7 +13979,10 @@ function checkFact(a, s) {
        race's Kxf5 stops the pawn, it does not win it); a band reason says
        no chance missed here */
     var wo = whyOf(a);
-    if (wo) return wo.r !== 'band' ? ans + whyPred(a) + '. ' + g + ' missed it.' : '';
+    /* a reason whose fact does not hold has no words (whyPred null: a
+       "wins" whose settled line nets nothing, 184434540700:103), so the
+       step's own line stands, never a program value */
+    if (wo) { var wp = wo.r !== 'band' ? whyPred(a) : null; return wp ? ans + wp + '. ' + g + ' missed it.' : ''; }
     return cmp.w2 && !/material/.test(cmp.w2) ? bs + ' wins ' + cmp.w2 + '. ' + g + ' missed it.' : '';
   }
   if (cmp.only && /^Only move/.test(cmp.only)) return cmp.only;
@@ -14859,20 +15265,20 @@ function labelRoom(a) {
   return WORD_BUDGET - bandWords(b, ss ? barSlots(v, ss) : []) - stripWords(v);
 }
 /* ── Rendering ──────────────────────────────────────────────────────────────
-   Two views (Today, Insights), a sheet for details, settings at the foot.
-   The card is built once per position and then updated in place, so the
-   evaluation bar animates and background progress never wipes a message. */
+   Three views (Today, Games, Insights), a sheet for details, settings at the
+   foot. The card is built once per position and then updated in place, so
+   the evaluation bar animates and background progress never wipes a
+   message. */
 
 function el(id) { return document.getElementById(id); }
 /* "1 game", "3 games" */
 function plur(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
-/* a measure (Clarity's event): dropped unless the player said yes to
-   usage recording and the tag was asked for (clarityLive, V5.5) */
+/* a measure (Clarity's event), once the tag is asked for (clarityLive) */
 function track(name) {
   try { if (clarityLive()) window.clarity('event', name); } catch (e) {}
 }
 /* a tag on this visit's recording (Clarity's set): coarse words only,
-   never a name, a rating or a position; dropped as track's are */
+   never a name, a rating or a position */
 function measureTag(key, value) {
   try { if (clarityLive()) window.clarity('set', key, String(value)); } catch (e) {}
 }
@@ -14890,11 +15296,20 @@ function flushSave() {
 }
 window.addEventListener('pagehide', flushSave);
 
-var VIEWS = [['train', 'Today'], ['insights', 'Insights']];
+/* the top bar's tabs, in order (slice D: the games have a tab of their
+   own, #games) */
+var VIEWS = [['train', 'Today'], ['games', 'Games'], ['insights', 'Insights']];
+/* the view an address names: #games, #insights (an old #coach too), else
+   Today */
+function viewOfHash(h) {
+  h = String(h || '').replace('#', '');
+  return h === 'coach' || h === 'insights' ? 'insights' : h === 'games' ? 'games' : 'train';
+}
 function setView(v, fromPop) {
-  if (v !== 'insights') v = 'train';
-  /* a measure: Insights opened */
-  if (v === 'insights' && ui.view !== 'insights') track('insights_open');
+  if (v !== 'insights' && v !== 'games') v = 'train';
+  /* a measure: Insights or Games opened */
+  if (v !== 'train' && ui.view !== v) track(v + '_open');
+  var moved = ui.view !== v;
   ui.view = v;
   /* the tab, and the day it was left on: a new day opens on Today (V4.4) */
   store.set('nl:view', v);
@@ -14903,7 +15318,10 @@ function setView(v, fromPop) {
     try { history.pushState(null, '', location.pathname + '#' + v); } catch (e) {}
   }
   renderViews();
-  if (v === 'insights') renderInsights(); else renderTrain();
+  /* a tab strip that scrolls (under 238 px) shows the tab now open */
+  var tb = moved && el('tab-' + v);
+  if (tb && tb.scrollIntoView && el('views').scrollWidth > el('views').clientWidth) { try { tb.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {} }
+  if (v === 'insights') renderInsights(); else if (v === 'games') renderGames(); else renderTrain();
   if (!fromPop) window.scrollTo(0, 0);
 }
 window.addEventListener('popstate', function () {
@@ -14914,8 +15332,7 @@ window.addEventListener('popstate', function () {
   /* then leaves an exploration, back to the lesson */
   if (am && am.explore) { exploreExit('pop'); try { history.pushState({ nlSession: 1 }, '', location.href); } catch (e) {} return; }
   if (ui.session) { endSession(true); return; }
-  var h = (location.hash || '').replace('#', '');
-  if (h === 'coach' || h === 'insights') h = 'insights'; else h = 'train';
+  var h = viewOfHash(location.hash);
   if (h !== ui.view) setView(h, true);
 });
 function renderViews() {
@@ -14923,12 +15340,17 @@ function renderViews() {
   if (!nav) return;
   /* a quiet dot while today's session is not done: never a count */
   var pending = tabDot();
+  /* the tab pattern (F6): the tab shown takes the keyboard (the others are
+     an arrow away), each names the panel it shows, and a tab that had the
+     keyboard keeps it through the repaint */
+  var had = !!(document.activeElement && nav.contains && nav.contains(document.activeElement));
   nav.innerHTML = VIEWS.map(function (v) {
-    return '<a class="view-tab' + (ui.view === v[0] ? ' view-on' : '') + '" data-act="view" data-k="' + v[0] + '" role="tab" aria-selected="' + (ui.view === v[0]) + '">'
+    var on = ui.view === v[0];
+    return '<a class="view-tab' + (on ? ' view-on' : '') + '" id="tab-' + v[0] + '" data-act="view" data-k="' + v[0] + '" role="tab" aria-selected="' + on + '" aria-controls="view-' + v[0] + '" tabindex="' + (on ? 0 : -1) + '">'
       + v[1] + (v[0] === 'train' && pending && !(ui.session && ui.session.active) ? '<span class="tab-dot" aria-label="practice waiting"></span>' : '') + '</a>';
   }).join('');
-  el('view-train').hidden = ui.view !== 'train';
-  el('view-insights').hidden = ui.view !== 'insights';
+  if (had) { var tf = el('tab-' + ui.view); if (tf && tf.focus) tf.focus({ preventScroll: true }); }
+  VIEWS.forEach(function (v) { var p = el('view-' + v[0]); if (p) p.hidden = ui.view !== v[0]; });
   /* session mode: the board and nothing else */
   document.body.classList.toggle('in-session', !!ui.session && ui.view === 'train');
   paintTitle();
@@ -14938,17 +15360,16 @@ function renderShell() {
   if (location.search) {
     try { history.replaceState(null, '', location.pathname + (location.hash || '#train')); } catch (e) {}
   }
-  /* Today's foot holds the usage-recording question until it is asked
-     (V5.5); it hides during a set */
+  /* one h1 a screen, unseen (the design has none here): the tab's name */
   el('main').innerHTML = '<div class="page">'
-    + '<nav id="views" class="views" role="tablist"></nav>'
-    + '<div id="view-train" class="view"><section id="trainbox"></section><div id="consent-slot" class="consent-slot"></div></div>'
-    + '<div id="view-insights" class="view" hidden><section id="insightsbox"></section></div>'
+    + '<nav id="views" class="views" role="tablist" aria-label="Views"></nav>'
+    + '<div id="view-train" class="view" role="tabpanel" aria-labelledby="tab-train"><h1 class="sr-only">Today</h1><section id="trainbox"></section></div>'
+    + '<div id="view-games" class="view" role="tabpanel" aria-labelledby="tab-games" hidden><h1 class="sr-only">Games</h1><section id="gamesbox"></section></div>'
+    + '<div id="view-insights" class="view" role="tabpanel" aria-labelledby="tab-insights" hidden><h1 class="sr-only">Insights</h1><section id="insightsbox"></section></div>'
     + '</div>';
-  consentPaint();
 }
 function renderAll() {
-  [renderHeader, renderViews, renderTrain, renderInsights, renderSettings, renderFoot].forEach(function (fn) {
+  [renderHeader, renderViews, renderTrain, renderGames, renderInsights, renderSettings, renderFoot].forEach(function (fn) {
     try { fn(); } catch (e) { if (window.console) console.error(fn.name, e && e.stack); }
   });
 }
@@ -14963,11 +15384,10 @@ function renderHeader() {
     + '</div><span class="read-line" id="read-line" aria-hidden="true"><i></i></span>';
   renderAnalysisStatus();
 }
-/* icons: one style, 1.5 px strokes in the text colour (gear and refresh
-   after Feather, MIT) */
+/* icons: one style, 1.5 px strokes in the text colour (the gear after
+   Feather, MIT) */
 var KNIGHT_MARK = '<svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 21h11v-2.2c0-3.2-1.2-5.6-2.4-7.4-.8-1.2-.6-2.4.4-3.2l-1.6-1c.3-1.4-.3-2.8-1.6-3.6l-.6 1.6c-2.8.2-5 2-6 4.6L4 13.2c-.4.9.1 1.9 1 2.1l1.2.3c.8.2 1.7-.2 2.1-.9l.9-1.4c.8.4 1.6.3 2.2-.2-.2 1.8-1.6 3.1-3.2 4.2C7.4 18.3 7 19.6 7 21z"/></svg>';
 var ICON_GEAR = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
-var ICON_REFRESH = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
 
 /* the engine at work: one small status that never re-renders anything else */
 function analysisNumbers() {
@@ -14999,12 +15419,11 @@ function renderAnalysisStatus() {
     if (bucket !== lastReadyShown) { lastReadyShown = bucket; renderTrain(); }
     else if (hero && want < 5 && n.ready > want && todayPlan().keys.length > want) renderTrain();
     else if (n.ready >= 3 && Date.now() - lastSigCheck > 3000 && (lastSigCheck = Date.now()) && todaySig() !== lastTodaySig) renderTrain();
-    else {
-      if (el('finds')) el('finds').innerHTML = recentFindsHtml();
-      var lg = el('latest');
-      if (lg) lg.outerHTML = latestGamesHtml();
-    }
+    else if (el('finds')) el('finds').innerHTML = recentFindsHtml();
   }
+  /* the Games tab: a game just read says what it holds (its rows only, so
+     a filter being picked is never closed under the finger) */
+  if (ui.view === 'games' && !ui.session) gamesPaint();
   /* what waits for the read shows the moment it ends, not at the next
      repaint: the focus (Today) and the tab's dot; the dot also follows the
      positions as they arrive */
@@ -15021,6 +15440,23 @@ function analysisLine(n) {
   return '<span>Stockfish is still reading your games: ' + n.covered + ' of ' + n.total + '.</span>';
 }
 function renderEngineState() { renderAnalysisStatus(); }
+/* the background check moved on (C1): the screen whose counts it can
+   change is drawn again, "Checking 12 more positions…" beside them, and
+   once it is done drawn settled, without the line: Today, Games (its rows,
+   in place), Insights, or a summary's report card (in place). Never a card
+   on screen; the keyboard stays on the control it was on */
+function checkingPaint() {
+  var ss = ui.session;
+  if (!cfg.user || (ss && !ss.finished)) return;
+  var foc = document.activeElement, fk = foc && foc.getAttribute ? (foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || '') : '';
+  if (ui.view === 'insights') renderInsights();
+  else if (ss) { var dg = el('recap-diag'); if (dg) dg.innerHTML = diagHtml(ss, playerTier()); }
+  else if (ui.view === 'games') gamesPaint(true);
+  else renderTrain();
+  if (!fk || fk === '|' || (document.body.contains && document.body.contains(foc))) return;
+  var p = fk.split('|'), back = p[0] && document.querySelector('[data-act="' + p[0] + '"]' + (p[1] ? '[data-k="' + p[1] + '"]' : ''));
+  if (back && back.focus) back.focus({ preventScroll: true });
+}
 
 /* ── Today ───────────────────────────────────────────────────────────────── */
 function renderTrain() {
@@ -15036,15 +15472,16 @@ function renderTrain() {
     var site = isCC() ? 'chess.com' : 'lichess';
     box.innerHTML = '<div class="today">' + (gamesLoading
       ? stateCard('Reading your games', 'Fetching your rated games from ' + site + '.', '')
-      : (data.sections.games === 'fail'
-        ? stateCard(site + ' did not answer.', 'Your saved games and progress are all here. Check your connection and try again.', '<a class="btn-big" data-icon="rotate" data-act="reload">Try again</a>')
+      : (data.sections.games === 'fail' ? loadFailHtml(site)
         : stateCard('No rated games yet.', 'notlichess reads rated live games on ' + site + ': bullet, blitz, rapid' + (isCC() ? '' : ' and classical') + '. '
           + (isCC() ? 'Daily games are not read yet.' : 'Correspondence games are not read yet.') + ' Play a few rated games, then come back. Your mistakes will be waiting.',
           '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a>')))
       + '</div>';
     return;
   }
-  var since = welcomeHtml() + sinceHtml() + cleanLineHtml();
+  /* Today holds the day's practice only (slice D): the games, the newest
+     clean one and the games since the last visit are the Games tab's */
+  var since = welcomeHtml();
   if (n.ready < 3) { box.innerHTML = '<div class="today">' + since + findingHtml(n) + '</div>'; paintTitle(); return; }
   /* the day's first opening: the extra-set rule, once a day (F7.1) */
   absorbOpen();
@@ -15054,57 +15491,243 @@ function renderTrain() {
   var doneToday = (day.sessions || 0) > 0 || (!saved && !plan.keys.length);
   var fh = focusHtml();
   lastTodaySig = plan.keys.join(',') + '|' + fh;
-  /* the hero, why these positions (F5.2), the focus, then the games; two
-     columns on a wide screen, the games beside the rest */
-  box.innerHTML = '<div class="today today-grid"><div class="today-main">' + since
+  /* the hero and why these positions (F5.2), then the focus. On a wide
+     screen the focus card stands beside the hero, where the games were
+     (no empty column: with no focus card Today is one column). While the
+     background check runs, "Checking 12 more positions…" between why these
+     and the focus card, beside the counts of both (C1) */
+  box.innerHTML = '<div class="today today-grid' + (fh ? ' has-side' : '') + '"><div class="today-main">' + since
     + (saved ? resumeHtml(saved) : (doneToday ? doneTodayHtml() : heroHtml(plan) + whyTheseHtml(plan)))
-    + fh
     + '<p class="status" id="astat">' + analysisLine(n) + '</p>'
-    + '</div>' + latestGamesHtml() + '</div>';
+    + '</div>' + (fh ? '<div class="today-side">' + checkingHtml('focus-check') + fh + '</div>' : '') + '</div>';
   /* the due count in the tab, once the day's opening has run (F5.4) */
   paintTitle();
 }
-/* the latest games, each one a way into its own mistakes: four, then All
-   games (F5.1); a row is its result, the opponent, "Rapid · 27 Sept ·
-   White" and what it holds, "4 mistakes" with "1 cost the game" under it
-   (the design lead's review of slice 4: the state never wraps, a long name
-   alone may) */
-var LATEST_N = 4;
-function latestGamesHtml() {
-  var all = scopedGames().sort(function (a, b) { return b.ts - a.ts; }), games = ui.allGames ? all : all.slice(0, LATEST_N);
-  if (!games.length) return '';
-  var byGame = {};
+/* a first load that failed, in Today's place and the Games tab's (F3, F9):
+   a busy site says so at once and counts down to trying again by itself,
+   Try now beside it; a site that answered with an error "Try again in a
+   minute.", no answer at all "Check your connection"; saved progress (never
+   games: there are none here) is said to be kept only where there is some */
+function loadFailHtml(site) {
+  var e = data.gamesErr || { site: site }, s = e.site || site;
+  if (e.busy) {
+    busyCountdown(e.until, function () { return !data.games.length && data.sections.games === 'fail' && data.gamesErr === e; }, function () { checkForGames(false); });
+    return stateCard(s + ' is busy and asked us to wait.', busyWhen(e.until), '<a class="btn-big" data-icon="rotate" data-act="reload" data-k="now">Try now</a>');
+  }
+  var kept = Object.keys(srsLoad()).length ? 'Your progress is still saved here. ' : '';
+  return stateCard(s + ' did not answer.', kept + (e.net ? 'Check your connection and try again.' : 'Try again in a minute.'), '<a class="btn-big" data-icon="rotate" data-act="reload">Try again</a>');
+}
+/* ── Games (slice D) ────────────────────────────────────────────────────────
+   The games have a tab of their own (the owner: "a different all games page
+   where you can filter and see more data up front"). From the top: what is
+   new since the last visit and the newest clean game, then "Your games"
+   with Check for new games (its busy words while it checks, F10's when it
+   fails), one row of filters (the result; the game type, where the games
+   hold two or more; and what matters for practice: the games one move cost,
+   the clean ones) with the count ("38 of 50 games"), "Checking 12 more
+   positions…" while the background check can still change a row (C1), and
+   the newest 30 rows, then Show 30 more (never every game at once). The
+   filters last for the visit (sessionStorage), the rows shown while the
+   page stays. Drawn while it shows, as Insights is */
+var GAMES_N = 30, GF0 = { r: 'all', t: 'all', p: 'all' }, gamesLast = '';
+/* what each game holds, by its id: its positions (n; lost: one of them
+   decided the game) and how many of them are learned or in practice (C3:
+   one back in the queue counts in practice) */
+function gamesIndex() {
+  var by = {}, srs = srsLoad();
   allMistakes().forEach(function (it) {
     if (!trainable(it)) return;
-    var e = byGame[it.g.id] || (byGame[it.g.id] = { n: 0, lost: false });
+    var e = by[it.g.id] || (by[it.g.id] = { n: 0, lost: false, learned: 0, practising: 0 });
     e.n++;
     if (it.b.d) e.lost = true;
+    var r = srs[it.key];
+    if (r) { if (isLearned(r)) e.learned++; else e.practising++; }
   });
-  var rows = games.map(function (g) {
-    var e = byGame[g.id], res = g.res === 'win' ? 'W' : (g.res === 'loss' ? 'L' : 'D'), big = covered(g) && !e ? gameMistakeCount(g) : 0;
-    var right;
-    if (!covered(g)) right = '<span class="lg-state dim">' + (scannableAny(g) ? 'Not checked yet' : (g.plies < 6 ? 'Too short to check' : 'Could not be read')) + '</span>';
-    /* a loss with no position: no single move lost it (it may still hold big
-       mistakes, as Insights counts them, e.g. a tester's clone); "Clean
-       game" only where the game holds no big mistake at all */
-    else if (!e) right = g.res === 'loss' ? '<span class="lg-state dim">No single losing move</span>'
-      : big ? '<span class="lg-state dim">' + plur(big, 'mistake') + '</span>' : '<span class="lg-state ok">✓ Clean game</span>';
-    else right = '<span class="lg-state">' + plur(e.n, 'mistake')
-      + (e.lost ? '<i>' + (g.res === 'draw' ? '1 cost the win' : '1 cost the game') + '</i>' : '') + '</span>';
-    /* a game with cards opens its drill; one without opens on its own site */
-    var attrs = e ? ' data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'game', id: g.id, label: 'Game vs ' + g.opp })) + '" role="button"' : '';
-    var tag = e ? 'div' : 'a';
-    if (!e) attrs = ' href="' + gameHref(g.id, g.color, 0) + '"';
-    return '<' + tag + ' class="lg-row is-open"' + attrs + '>'
-      + '<span class="lg-res lg-' + res + '" title="' + esc(g.res) + '">' + res + '</span>'
-      + '<span class="lg-who"><span class="lg-name">vs ' + esc(g.opp) + (g.oppR ? ' <span class="dim">' + g.oppR + '</span>' : '') + '</span>'
-      + '<small>' + esc(upFirst(perfLabel(g.perf || ''))) + ' · ' + gameDayWord(g.ts) + ' · ' + upFirst(g.color) + '</small></span>'
-      + right + '</' + tag + '>';
-  }).join('');
-  return '<aside class="latest" id="latest"><div class="latest-head"><div class="kicker">Your latest games</div>'
-    + '<a class="icon-btn" data-act="reload" aria-label="Check for new games" title="Check for new games">' + ICON_REFRESH + '</a></div>' + rows
-    + (all.length > games.length ? '<a class="btn-quiet lg-all" data-act="allGames">All games</a>' : '')
-    + '<p class="lg-foot dim">' + tapWord() + ' a game to see its mistakes in the order played.</p></aside>';
+  return by;
+}
+/* a game's state, as its row says it and the filters read it: 'unread'
+   (not checked yet), 'cards' (positions to practise), 'loss' (a loss no
+   single move decided: it may still hold big mistakes, as Insights counts
+   them), 'some' (big mistakes, none kept as a position), 'clean' (no big
+   mistake at all) */
+function gameKind(g, e) {
+  if (!covered(g)) return 'unread';
+  if (e) return 'cards';
+  if (g.res === 'loss') return 'loss';
+  return gameMistakeCount(g) ? 'some' : 'clean';
+}
+/* the formats the games hold, in the sites' order */
+function gameTypes(games) {
+  var seen = {};
+  games.forEach(function (g) { if (g.perf) seen[g.perf] = 1; });
+  return ['ultraBullet', 'bullet', 'blitz', 'rapid', 'classical'].concat(Object.keys(seen).sort())
+    .filter(function (p, i, a) { return seen[p] && a.indexOf(p) === i; });
+}
+/* the filters (r: the result, t: the type, p: practice), this player's,
+   for the visit */
+function gamesFilter() {
+  var k = 'nl:gf:' + playerId();
+  if (!ui.gf || ui.gfFor !== k) {
+    var v = null;
+    try { v = JSON.parse(sessionStorage.getItem(k) || 'null'); } catch (e) { v = null; }
+    ui.gf = Object.assign({}, GF0, v && typeof v === 'object' ? v : {});
+    ui.gfFor = k; ui.gShow = GAMES_N;
+  }
+  return ui.gf;
+}
+function gamesFilterSet(f) {
+  gamesFilter();
+  ui.gf = Object.assign({}, GF0, f); ui.gShow = GAMES_N;
+  try { sessionStorage.setItem(ui.gfFor, JSON.stringify(ui.gf)); } catch (e) {}
+}
+/* the games the filters keep, newest first: { all, kept, types, f (the
+   filters as applied: a type the games no longer hold reads as all), by } */
+function gamesList() {
+  var all = scopedGames().sort(function (a, b) { return b.ts - a.ts; }), by = gamesIndex(), types = gameTypes(all), f = Object.assign({}, gamesFilter());
+  if (types.length < 2 || types.indexOf(f.t) < 0) f.t = 'all';
+  var kept = all.filter(function (g) {
+    var e = by[g.id];
+    if (f.r !== 'all' && g.res !== f.r) return false;
+    if (f.t !== 'all' && g.perf !== f.t) return false;
+    if (f.p === 'cost') return !!(e && e.lost);
+    if (f.p === 'clean') return gameKind(g, e) === 'clean';
+    return true;
+  });
+  return { all: all, kept: kept, types: types, f: f, by: by };
+}
+/* "50 games", or "38 of 50 games" when a filter leaves some out */
+function gamesCountWords(L) { return L.kept.length === L.all.length ? plur(L.all.length, 'game') : L.kept.length + ' of ' + plur(L.all.length, 'game'); }
+/* one game's row: on two lines, its result, "vs opponent1 1388 · you
+   1351" (both ratings side by side), then "Rapid · 27 Sept · White · 36
+   moves"; at its right what it
+   holds ("4 mistakes", with "1 cost the game" beside it; "✓ Clean game";
+   "No single losing move"; "Not checked yet") and under that its positions
+   learned or in practice ("1 learned · 2 in practice", none said when none
+   is); on a phone one part a line, as Today's rows were (V4.7). Read in
+   order as one sentence, the row's letters and lines hidden from a screen
+   reader and no aria-label (release 2 slice A): "Lost to opponent1 (1388),
+   4 mistakes, 1 cost the game, 1 learned, 2 in practice. Rapid, 27 Sept,
+   White, 36 moves, your rating 1351." A game with positions opens them in
+   move order (V4.7); one without opens on its own site */
+function gameRowHtml(g, e) {
+  var res = g.res === 'win' ? 'W' : (g.res === 'loss' ? 'L' : 'D'), kind = gameKind(g, e), state, cls = '';
+  if (kind === 'unread') { state = scannableAny(g) ? 'Not checked yet' : (g.plies < 6 ? 'Too short to check' : 'Could not be read'); cls = ' dim'; }
+  else if (kind === 'loss') { state = 'No single losing move'; cls = ' dim'; }
+  else if (kind === 'some') { state = plur(gameMistakeCount(g), 'mistake'); cls = ' dim'; }
+  else if (kind === 'clean') { state = '✓ Clean game'; cls = ' ok'; }
+  else state = plur(e.n, 'mistake');
+  var cost = kind === 'cards' && e.lost ? (g.res === 'draw' ? '1 cost the win' : '1 cost the game') : '';
+  var prac = e && (e.learned || e.practising) ? progressWords({ learned: e.learned, practising: e.practising, fresh: 0 }) : '';
+  var meta = [upFirst(perfLabel(g.perf || '')), gameDayWord(g.ts), upFirst(g.color || ''), g.plies ? plur(Math.ceil(g.plies / 2), 'move') : ''].filter(Boolean);
+  var said = { W: 'Won against ', L: 'Lost to ', D: 'Drew with ' }[res] + g.opp + (g.oppR ? ' (' + g.oppR + ')' : '') + ', ' + state.replace(/^✓ /, '')
+    + (cost ? ', ' + cost : '') + (prac ? ', ' + prac.replace(/ · /g, ', ') : '') + '. ' + meta.concat(g.myR ? ['your rating ' + g.myR] : []).join(', ') + '.';
+  var tag = e ? 'div' : 'a', attrs = e ? ' data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'game', id: g.id, label: 'Game vs ' + g.opp })) + '" role="button"' : ' href="' + gameHref(g.id, g.color, 0) + '"';
+  return '<' + tag + ' class="lg-row is-open" data-g="' + esc(g.id) + '"' + attrs + '>'
+    + '<span class="sr-only">' + esc(said) + '</span>'
+    + '<span class="lg-res lg-' + res + '" title="' + esc(g.res) + '" aria-hidden="true">' + res + '</span>'
+    + '<span class="lg-who" aria-hidden="true"><span class="lg-name">vs ' + esc(g.opp) + (g.oppR ? ' <span class="dim">' + g.oppR + '</span>' : '') + (g.myR ? '<span class="lg-me"> · you ' + g.myR + '</span>' : '') + '</span>'
+    + '<small>' + esc(meta.join(' · ')) + '</small></span>'
+    + '<span class="lg-state' + cls + '" aria-hidden="true">' + state + (cost ? '<i>' + cost + '</i>' : '') + (prac ? '<b class="gl-prac">' + prac + '</b>' : '') + '</span>'
+    + '</' + tag + '>';
+}
+/* the filter row: three selects (two where the games hold one type), the
+   one in use outlined in honey */
+function gamesFiltersHtml(L) {
+  var sel = function (k, name, opts) {
+    var v = L.f[k];
+    return '<span class="gf' + (v !== 'all' ? ' gf-on' : '') + '"><select data-act="gf" data-k="' + k + '" aria-label="' + name + '">'
+      + opts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></span>';
+  };
+  return '<div class="gl-filters" role="group" aria-label="Filter games">'
+    + sel('r', 'Result', [['all', 'All results'], ['loss', 'Losses'], ['win', 'Wins'], ['draw', 'Draws']])
+    + (L.types.length > 1 ? sel('t', 'Game type', [['all', 'All types']].concat(L.types.map(function (p) { return [p, upFirst(perfLabel(p))]; }))) : '')
+    + sel('p', 'Mistakes', [['all', 'All games'], ['cost', 'Cost the game'], ['clean', 'Clean games']]) + '</div>';
+}
+/* what the background moves (gamesPaint): the checking line, the rows and
+   Show more; a filter that keeps nothing says so, with a way to clear it */
+function gamesBodyHtml(L) {
+  if (!L.kept.length) return checkingHtml('gl-check') + '<div class="gl-none"><p>No games match these filters.</p><a class="btn-quiet" data-act="gamesClear">Clear filters</a></div>';
+  var shown = L.kept.slice(0, ui.gShow || GAMES_N), left = L.kept.length - shown.length;
+  return checkingHtml('gl-check') + '<div class="gl-rows">' + shown.map(function (g) { return gameRowHtml(g, L.by[g.id]); }).join('') + '</div>'
+    + (left > 0 ? '<a class="btn-quiet gl-more" data-act="gamesMore">Show ' + Math.min(GAMES_N, left) + ' more</a>' : '');
+}
+function gamesHtml() {
+  var site = isCC() ? 'chess.com' : 'lichess', busy = data.sections.games === 'loading';
+  gamesLast = '';
+  /* no games yet: being read, a first load that failed (its words and
+     retry, as Today says them), or none at all, and what to do */
+  if (!data.games.length) {
+    return '<div class="games">' + (busy ? stateCard('Reading your games', 'Fetching your rated games from ' + site + '.', '')
+      : data.sections.games === 'fail' ? loadFailHtml(site)
+      : stateCard('No rated games yet.', 'Play a rated game on ' + site + ', then check for new games. Each one shows up here with its mistakes, newest first. '
+          + (isCC() ? 'Daily games are not read yet.' : 'Correspondence games are not read yet.'),
+        '<a class="btn-big" href="' + playHref(cfg.tcs[0]) + '">Play a game ↗</a><a class="btn-quiet" data-icon="rotate" data-act="reload">Check for new games</a>')) + '</div>';
+  }
+  var L = gamesList();
+  if (!L.all.length) return '<div class="games">' + stateCard('No games in the formats you train.', 'Settings picks which of your rated games to read.', '<a class="btn-big" data-act="settings">Open Settings</a>') + '</div>';
+  gamesLast = gamesBodyHtml(L);
+  return '<div class="games">' + sinceHtml() + cleanLineHtml()
+    + '<section class="gl" aria-labelledby="gl-h"><div class="gl-head"><h2 class="gl-h" id="gl-h">Your games</h2>'
+    + '<a class="btn-quiet gl-refresh' + (busy ? ' is-busy' : '') + '" data-icon="rotate" data-act="reload"' + (busy ? ' aria-disabled="true"' : '') + '>' + (busy ? 'Checking for new games…' : 'Check for new games') + '</a></div>'
+    + (data.refreshErr && !busy ? '<p class="lg-note" role="status">' + esc(refreshWords(data.refreshErr)) + '</p>' : '')
+    + '<div class="gl-bar">' + gamesFiltersHtml(L) + '<p class="gl-count" id="gl-count" role="status">' + gamesCountWords(L) + '</p></div>'
+    + '<div class="gl-body" id="gl-body">' + gamesLast + '</div>'
+    + '<p class="lg-foot dim">' + tapWord() + ' a game to see its mistakes in the order played.</p></section></div>';
+}
+function renderGames() {
+  var box = el('gamesbox');
+  if (!box || !cfg.user || ui.view !== 'games') return;
+  var fk = focusKey(box);
+  box.innerHTML = gamesHtml();
+  focusBack(fk);
+}
+/* the background moved on (a game read, a key, a position practised): the
+   count, the checking line and the rows drawn again in place, only when
+   they changed; the filters are left alone, so one being picked stays open,
+   and the keyboard stays on what it was on */
+function gamesPaint() {
+  var body = el('gl-body');
+  if (!cfg.user || ui.view !== 'games') return;
+  if (!body) { renderGames(); return; }
+  var L = gamesList(), h = gamesBodyHtml(L), c = gamesCountWords(L), cn = el('gl-count');
+  if (cn && cn.textContent !== c) cn.textContent = c;
+  if (h === gamesLast) return;
+  var fk = focusKey(el('gamesbox'));
+  body.innerHTML = h;
+  gamesLast = h;
+  focusBack(fk);
+}
+/* a filter picked: the rows and the count follow (the count is a status,
+   so a screen reader hears "27 of 50 games") */
+function gamesFilterPick(k, v) {
+  var f = Object.assign({}, gamesFilter());
+  f[k] = v;
+  gamesFilterSet(f);
+  var s = document.querySelector('#gamesbox select[data-k="' + k + '"]');
+  if (s && s.parentNode && s.parentNode.classList) s.parentNode.classList.toggle('gf-on', v !== 'all');
+  track('games_filter');
+  gamesPaint();
+}
+/* Show 30 more: the keyboard goes to the first game just shown */
+function gamesMore() {
+  var at = ui.gShow || GAMES_N;
+  ui.gShow = at + GAMES_N;
+  gamesPaint();
+  var rows = document.querySelectorAll('#gl-body .lg-row');
+  if (rows[at]) { makeFocusable(el('gl-body')); rows[at].focus({ preventScroll: true }); }
+}
+/* the control that has the keyboard, by what it is (its act, key or game),
+   so a repaint can give it back */
+function focusKey(root) {
+  var f = document.activeElement;
+  if (!f || !f.getAttribute || !root || !root.contains || !root.contains(f)) return null;
+  return { el: f, act: f.getAttribute('data-act') || '', k: f.getAttribute('data-k') || '', g: f.getAttribute('data-g') || '' };
+}
+function focusBack(fk) {
+  if (!fk || (document.body.contains && document.body.contains(fk.el))) return;
+  var sel = fk.g ? '[data-g="' + fk.g + '"]' : fk.act ? '[data-act="' + fk.act + '"]' + (fk.k ? '[data-k="' + fk.k + '"]' : '') : '';
+  var x = sel && document.querySelector('#gamesbox ' + sel);
+  if (x && x.focus) { makeFocusable(el('gamesbox')); x.focus({ preventScroll: true }); }
 }
 /* a game's day in its row: "today", "yesterday", else its date ("27 Sept") */
 function gameDayWord(ts) {
@@ -15113,12 +15736,17 @@ function gameDayWord(ts) {
   if (ts >= d0.getTime() - DAY) return 'yesterday';
   return gameDateLine({ ts: ts });
 }
+/* the games since the last visit (computeGreeting), atop the Games tab:
+   game news, its loss's "Go through it ›" a way in (slice D: Today holds
+   the day's practice only) */
 function sinceHtml() { return data.greeting ? '<p class="since">' + data.greeting + '</p>' : ''; }
-/* a game read with no big mistake (F5.3), said once on Today: "Clean game
-   vs opponent41: no big mistakes." (every tier). The newest one read since
-   the last said (and since the last visit) is named for the rest of this
-   page load; nl:clean:<player> keeps the time of the game said, so a
-   reload says it no more. A loss is left out, as the games' rail does */
+/* a game read with no big mistake (F5.3), said once, atop the Games tab
+   (slice D: a game's news, not the day's practice): "Clean game vs
+   opponent41: no big mistakes." (every tier). The newest one read since the
+   last said (and since the last visit) is named for the rest of this page
+   load, from the first time the tab is drawn; nl:clean:<player> keeps the
+   time of the game said, so a reload says it no more. A loss is left out,
+   as the rows do */
 function cleanLineHtml() {
   var key = 'nl:clean:' + playerId();
   if (data.cleanFor !== key) { data.cleanFor = key; data.cleanLine = ''; }
@@ -15130,21 +15758,14 @@ function cleanLineHtml() {
   }
   return data.cleanLine ? '<p class="clean-line">' + data.cleanLine + '</p>' : '';
 }
-/* back after a break (V4.4), on Today, once: "Welcome back. Your practice
-   waited where you left it." when the last practice day is 7 or more days
-   ago. nl:welcome:<player> keeps the day of the practice it greeted after,
-   so a reload says it no more; this page load keeps it until a day counts */
+/* back after a break (V4.4), on Today: "Welcome back. Your practice waited
+   where you left it." when the last practice day before today is 7 or more
+   days ago (daysAway), all through the return day until that day's first
+   set ends (C4: a reload or a redraw never uses it up) */
 var WELCOME = 'Welcome back. Your practice waited where you left it.';
 function welcomeHtml() {
-  var key = 'nl:welcome:' + playerId(), days = countedDays(), last = days[days.length - 1], now0 = new Date();
-  now0.setHours(0, 0, 0, 0);
-  var gap = last != null && last < now0.getTime() && daysFrom(last, Date.now()) >= 7 ? dayStamp(new Date(last)) : '';
-  if (data.welcomeFor !== key + '|' + gap) {
-    data.welcomeFor = key + '|' + gap;
-    data.welcome = !!gap && store.get(key, '') !== gap;
-    if (data.welcome) store.set(key, gap);
-  }
-  return data.welcome && gap ? '<p class="welcome-line">' + WELCOME + '</p>' : '';
+  var day = dayLoad();
+  return daysAway() && !(day.sessions > 0 || day.short) ? '<p class="welcome-line">' + WELCOME + '</p>' : '';
 }
 /* the week (F5.1): Monday to Sunday, a day that counted filled with a
    tick, today ringed, and the medal glyph at the goal, honey once it is met;
@@ -15280,11 +15901,12 @@ function paintTitle() {
    brackets only when the set holds both), fewer "Tomorrow: 3 positions,
    about 2 minutes."; when that opening spreads positions, "... 13 more over
    the next 3 weeks.", and where it finds no room "... 23 due in all."
-   (F7.2). Positions still due today come first: "1 more is ready in the
-   next set." ("13 more are ready for your next sets. Each set takes the
-   most important first." when tomorrow's opening would leave some due,
-   "...; any left spread over the next 3 weeks." when it would spread all
-   it cannot deal), never
+   (F7.2). Positions still due today come first: "Your next set starts
+   with the 2 still due." (C4: never "2 more are ready in the next set"
+   above [Next set of 10], read as a set of 2; "13 more are ready for your
+   next sets. Each set takes the most important first." when tomorrow's
+   opening would leave some due, "...; any left spread over the next 3
+   weeks." when it would spread all it cannot deal), never
    "due today" under "Today's set is done". With no set tomorrow (nothing
    new left), the first day that has one */
 var SPREAD_SAY = 'over the next 3 weeks';
@@ -15300,7 +15922,7 @@ function nextDueHtml() {
   };
   var p1 = planOn(1);
   if (left) {
-    lead = left <= size ? plur(left, 'more is', 'more are') + ' ready in the next set.' : left + ' more are ready for your next sets.';
+    lead = left <= size ? 'Your next set starts with the ' + (left === 1 ? 'one' : left) + ' still due.' : left + ' more are ready for your next sets.';
     if (p1.absorb.left.length) return lead + ' Each set takes the most important first.';
     if (p1.absorb.spread.length) return lead.slice(0, -1) + '; any left spread ' + SPREAD_SAY + '.';
   }
@@ -15324,8 +15946,9 @@ function doneTodayHtml() {
     + (more ? '<div class="acts"><a class="btn-big" data-icon="arrow" data-act="keepGoing">' + nextSetWords(more) + '</a></div>'
       : '<p class="why">You have practised every position from your games so far.</p>') + packOfferHtml() + weekHtml() + '</div>';
 }
+/* when a position comes back, by date (C2: as the summary says it) */
 function dueWhen(ts) {
-  var days = Math.round((ts - Date.now()) / DAY);
+  var days = daysFrom(Date.now(), ts);
   if (days <= 0) return 'later today';
   if (days === 1) return 'tomorrow';
   return 'in ' + days + ' days';
@@ -15381,7 +16004,8 @@ function findingHtml(n) {
    one job, Start) that opens the skill's sheet, with its chevron: the
    skill's glyph and name, its check line, and one meter, its own positions
    (by steps, "3 learned · 12 in practice · 29 not started", zero parts
-   dropped: V4.8) */
+   dropped: V4.8); while the background check can still change them,
+   renderTrain says so just above it (C1) */
 function focusHtml() {
   var f = currentFocus();
   if (!f) return '';
@@ -15442,6 +16066,9 @@ function sumOf(ss, k) {
   if (e) return e;
   var r = ss.results[k], n = (ss.notes || {})[k];
   if (!r) return null;
+  /* a lesson in a set's slot (F9.3) is no position: never skipped, never
+     counted (kid550 and adult850, round 6: "1 was skipped") */
+  if (r === 'lesson' || isLessonKey(k)) return { c: 'lesson', lesson: 1, s: 0 };
   var c = n === 'shown' ? 'shown' : n === 'leftMiss' ? 'left' : n === 'left' ? 'skip' : n === 'firstlook' ? 'look'
     : ({ first: 'first', hint: 'hint', retry: 'miss', fail: 'shown' })[r] || 'skip';
   return { c: c, s: { first: 3, look: 3, hint: 2, miss: 1 }[c] || 0 };
@@ -15452,19 +16079,29 @@ function sumOf(ss, k) {
    found it.", "You found both." for one or two) / "4 took
    more than one try, 1 was shown.", never "of 15". Counted: every position
    answered, a skip too at tier 1 (one of the set it did not find); a foil
-   and a practice position apart */
+   and a practice position apart. At tier 1 a find on its one more try
+   counts as found, one that took more than one try (C3: shown, then found,
+   is "You found it.") */
 var FOUND = { first: 1, alt: 1, good: 1, hint: 1, look: 1, miss: 1 };
+/* found as tier 1's headline counts it: on the first showing, or on its
+   one more try (C3) */
+function foundT1(ss, k, e) {
+  if (FOUND[e.c]) return true;
+  var e2 = ss.results && ss.results[k + '#r'] ? sumOf(ss, k + '#r') : null;
+  return !!(e2 && FOUND[e2.c]);
+}
 function recapScore(ss, keys, tier) {
   var n = 0, first = 0, found = 0, skipped = 0, by = {};
   keys.forEach(function (k) {
     var e = sumOf(ss, k);
     /* a foil is counted apart (foilWords): it had nothing to find; a
-       practice position too (pracWords, F9.4) */
-    if (!e || e.foil || e.prac) return;
+       practice position too (pracWords, F9.4); a lesson not at all (F9.3) */
+    if (!e || e.foil || e.prac || e.lesson) return;
     if (e.c === 'skip') { skipped++; return; }
     n++;
-    if (FOUND[e.c]) found++;
-    if (e.c === 'first') first++; else by[e.c] = (by[e.c] || 0) + 1;
+    var c = tier === 1 && !FOUND[e.c] && foundT1(ss, k, e) ? 'miss' : e.c;
+    if (FOUND[c]) found++;
+    if (c === 'first') first++; else by[c] = (by[c] || 0) + 1;
   });
   if (!n) return { head: 'Done.', then: '' };
   if (tier === 1) return { head: found === n + skipped ? (found === 1 ? 'You found it.' : found === 2 ? 'You found both.' : 'You found all ' + found + '.') : 'You found ' + found + ' of ' + (n + skipped) + '.', then: foundWords(by, skipped) };
@@ -15597,18 +16234,25 @@ function starRowHtml(counts, fx) {
    away, you found 7 of 9 reviews first try." (tier 1 "After 14 days away,
    you found 7 of 9.", found as its headline counts it); under half, "They
    come back sooner now." Reviews only: positions answered before the set
-   began (ss.rev), each first showing once */
-function recallHtml(ss, keys, tier) {
-  if (!ss.away || !ss.rev) return '';
-  var n = 0, f = 0;
+   began (ss.rev), each first showing once. Only Today's set or a next set
+   with reviews says it, the day's first (ss.recall, finishSession), never
+   a drill's (C4) */
+function recallOf(ss, keys, tier) {
+  var n = 0, f = 0, seen = {};
   keys.forEach(function (k) {
     var e = ss.sum && ss.sum[k];
-    if (!ss.rev[k] || !e || e.c === 'skip' || e.foil || e.prac) return;
+    if (seen[k] || !ss.rev || !ss.rev[k] || !e || e.c === 'skip' || e.foil || e.prac || e.lesson) return;
+    seen[k] = 1;
     n++;
-    if (tier === 1 ? FOUND[e.c] : e.c === 'first') f++;
+    if (tier === 1 ? foundT1(ss, k, e) : e.c === 'first') f++;
   });
+  return { n: n, f: f };
+}
+function recallHtml(ss, keys, tier) {
+  if (!ss.recall || !ss.rev) return '';
+  var rc = recallOf(ss, keys, tier), n = rc.n, f = rc.f;
   if (!n) return '';
-  return '<p class="recall">After ' + plur(ss.away, 'day') + ' away, you found ' + f + ' of ' + n + (tier === 1 ? '' : ' reviews first try') + '.'
+  return '<p class="recall">After ' + plur(ss.recall, 'day') + ' away, you found ' + f + ' of ' + n + (tier === 1 ? '' : ' reviews first try') + '.'
     + (f * 2 < n ? ' They come back sooner now.' : '') + '</p>';
 }
 /* a position just learned leads the tiles (F2.2): "Learned: Rg1, from
@@ -15696,7 +16340,7 @@ function doneHtml(ss) {
      4) */
   return '<div class="card-top recap-top">' + sessionBarHtml(ss, null) + '</div>'
     + '<div class="today recap-page">'
-    + diagHtml(ss, tier)
+    + '<div id="recap-diag">' + diagHtml(ss, tier) + '</div>'
     + recallHtml(ss, uniq, tier)
     + (sr ? '<div class="result-row star-row' + (lag ? ' fx' : '') + '" aria-hidden="true">' + sr.html + '</div>' : row ? '<div class="result-row" aria-hidden="true">' + row + '</div>' : '')
     + '<h2 class="done-big" id="recap-h" tabindex="-1">' + sc.head + '</h2>'
@@ -15715,10 +16359,11 @@ function doneHtml(ss) {
     /* at More help, a pack of the coming skill just above the bar (F9.4) */
     + packOfferHtml()
     /* the next set is the main way on: a bar that stays at the foot of the
-       screen, the next set twice as wide as the way back */
+       screen, the next set twice as wide as the way back (to the Games tab
+       for a game opened there, slice D) */
     + '<div class="acts-row recap-acts">'
       + (more ? '<a class="btn-big" data-icon="arrow" data-act="keepGoing">' + nextSetWords(more) + '</a>' : '')
-      + '<a class="' + (more ? 'btn-line' : 'btn-big') + '" data-act="endSession">Back to Today</a>'
+      + '<a class="' + (more ? 'btn-line' : 'btn-big') + '" data-act="endSession">' + (ss.back === 'games' ? 'Back to Games' : 'Back to Today') + '</a>'
     + '</div>'
     + '</div>';
 }
@@ -15787,25 +16432,28 @@ function cueSave(c) { store.set(cueKey(), c); }
    report builds as you practise: 12 of 40 games read.". Once it has shown
    in full, one line on the focus skill (else the biggest): "Piece safety: 3
    learned · 12 in practice · 29 not started.". Decided once a summary (ss.dx), so
-   drawing it again says the same */
+   drawing it again says the same kind of card; its counts are read as it
+   is drawn, with "Checking 12 more positions…" while the background check
+   can still change them, and drawn again as it moves on (C1,
+   checkingPaint) */
 function diagHtml(ss, tier) {
   if (!ss.dx) {
     var cov = coverage(), over = readOver(), fams = insightReport().families;
     if (!fams.length) ss.dx = { k: 'none' };
     else if (cueLoad().rv) ss.dx = { k: 'line' };
-    else ss.dx = { k: 'card', full: (over || cov.covered >= 30) && (cov.losses >= 5 || over), cov: cov };
+    else ss.dx = { k: 'card', full: (over || cov.covered >= 30) && (cov.losses >= 5 || over), cov: cov, live: 1 };
   }
   var d = ss.dx, fams2 = insightReport().families, t1 = tier === 1;
   if (d.k === 'none' || !fams2.length) return '';
   var f = currentFocus(), top = (f && fams2.filter(function (a) { return a.fam.key === f.fam; })[0]) || fams2[0];
   if (d.k === 'line') return '<p class="diag-line"><span class="sk-glyph" data-icon="' + ((SKILL[top.fam.key] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
-    + '<span>' + esc(top.fam.name) + ': ' + progressWords(top) + '.</span></p>';
-  var cv = d.cov, turned = ', one move ' + (t1 ? 'cost you the game.' : 'turned the game for good.');
+    + '<span>' + esc(top.fam.name) + ': ' + progressWords(top) + '.</span></p>' + checkingHtml('diag-check');
+  var cv = d.live ? coverage() : d.cov, turned = ', one move ' + (t1 ? 'cost you the game.' : 'turned the game for good.');
   var link = '<a class="btn-quiet diag-go" data-act="reportOpen">See your report ›</a>';
   if (!d.full) {
     return '<section class="diag" aria-label="Your games, read"><div class="kicker">Your games, read</div><p class="diag-so">'
       + (cv.losses >= 5 ? 'So far: in ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your report builds as you practise: ' + cv.covered + ' of ' + plur(cv.total, 'game') + ' read.')
-      + '</p>' + link + '</section>';
+      + '</p>' + checkingHtml('diag-check') + link + '</section>';
   }
   var big = fams2[0], tie = fams2[1] && fams2[1].lost === big.lost;
   var rows = fams2.filter(function (a) { return a.lost > 0; }).slice(0, 3).map(function (a) {
@@ -15816,10 +16464,11 @@ function diagHtml(ss, tier) {
      "the biggest" only where no other skill decided as many */
   var started = !tie && big.lost > 0 && big.learned + big.practising > 0;
   return '<section class="diag" aria-label="Your games, read"><div class="kicker">Your games, read</div>'
-    + '<h3 class="diag-h">' + (cv.losses >= 5 ? 'In ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your mistakes, grouped by the skill that would prevent them.') + '</h3>'
+    /* an h2, as the summary's own headline is: heading levels never skip one */
+    + '<h2 class="diag-h">' + (cv.losses >= 5 ? 'In ' + cv.decided + ' of your ' + cv.losses + ' losses' + turned : 'Your mistakes, grouped by the skill that would prevent them.') + '</h2>'
     + (rows ? '<div class="dg-rows">' + rows + '</div>' : '')
     + (started ? '<p class="diag-start">' + (t1 ? 'Your first skill: ' : 'You started on the biggest: ') + esc(big.fam.name) + '.</p>' : '')
-    + link + '</section>';
+    + checkingHtml('diag-check') + link + '</section>';
 }
 /* the reminder (F5.4), on the summary after the habit card, never in the
    sticky bar: once, on the first summary (and that day's others until it
@@ -15858,7 +16507,9 @@ function cueCardHtml(ss) {
    file is made, how to finish */
 var CUE_WEEK = [1, 2, 3, 4, 5, 6, 0], CUE_DAY_LETTER = ['S', 'M', 'T', 'W', 'T', 'F', 'S'], CUE_DAY_NAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 function cueBody(where) {
-  var c = cueLoad(), slot = ui.cueSlot || (where === 'settings' ? c.slot : null), made = where === 'summary' && !!c.cal, g = ui.cueHow === 'google';
+  /* the time picked is kept the moment it is picked (r6 growth M3), so the
+     summary and Settings both light it */
+  var c = cueLoad(), slot = ui.cueSlot || c.slot || null, made = where === 'summary' && !!c.cal, g = ui.cueHow === 'google';
   if (made) return '<p class="cue-q">' + (g ? 'Save it in the Google Calendar tab.' : 'Open the file to add it to your calendar.') + '</p><p class="cue-when">' + cueWhen(c.slot, c.days) + '</p>'
     + '<div class="cue-acts"><a class="btn-quiet" data-act="' + (g ? 'cueAdd' : 'cueGcal') + '" data-k="' + c.slot + '">' + (g ? 'Or a calendar file ›' : 'Or Google Calendar ›') + '</a></div>';
   var days = cueDayList();
@@ -15869,7 +16520,10 @@ function cueBody(where) {
     + (slot ? '<div class="chips cue-days" role="group" aria-label="Days">' + CUE_WEEK.map(function (d) {
       var on = days.indexOf(d) >= 0;
       return '<a class="chip day-chip' + (on ? ' chip-on' : '') + '" data-act="cueDay" data-k="' + d + '" aria-pressed="' + on + '" aria-label="' + CUE_DAY_NAME[d] + '">' + CUE_DAY_LETTER[d] + '</a>';
-    }).join('') + '</div><p class="cue-when">' + cueWhen(slot, days) + '</p>' : '')
+    }).join('') + '</div><p class="cue-when">' + cueWhen(slot, days) + '</p>'
+    /* Settings: kept, and not yet in a calendar until one is added with
+       this very time and these days */
+      + (where === 'settings' && !cueInCalendar(c) ? '<p class="cue-when cue-cal">Not in your calendar yet.</p>' : '') : '')
     + (slot || where === 'summary' ? '<div class="cue-acts">' + (slot ? '<a class="btn-line" data-icon="calendar" data-act="cueAdd" data-k="' + slot + '">Add to calendar</a>'
       + '<a class="btn-quiet" data-act="cueGcal" data-k="' + slot + '">Google Calendar ›</a>' : '')
     + (where === 'summary' ? '<a class="btn-quiet" data-act="cueNo">Not now</a>' : '') + '</div>' : '');
@@ -15881,12 +16535,30 @@ function cueDayList() {
   var c = cueLoad(), d = ui.cueDays || (Array.isArray(c.days) && c.days.length ? c.days : cueDays(weekGoal()));
   return d.slice().sort(function (x, y) { return (x + 6) % 7 - (y + 6) % 7; });
 }
-/* a day chip pressed: on or off, never the last one off */
+/* a day chip pressed: on or off, never the last one off; kept at once */
 function cueDayToggle(d) {
   var days = cueDayList(), at = days.indexOf(d);
   if (at >= 0 && days.length > 1) days.splice(at, 1); else if (at < 0 && d >= 0 && d <= 6) days.push(d);
   ui.cueDays = days;
-  cuePaint();
+  var c = cueLoad();
+  c.days = days.slice();
+  cueSave(c);
+  cuePaint(true);
+}
+/* a time chip pressed (r6 growth M3): kept at once, with the days it
+   shows, before any calendar is added */
+function cuePick(slot) {
+  if (!CUE_AT[slot]) return;
+  var c = cueLoad();
+  ui.cueSlot = slot;
+  c.slot = slot; c.days = cueDayList();
+  cueSave(c);
+  cuePaint(true);
+}
+/* the reminder in a calendar: one added with the time and days kept now */
+function cueInCalendar(c) {
+  var ad = c.ad || (c.cal ? { slot: c.slot, days: c.days } : null), days = function (x) { return (x || []).slice().sort().join(','); };
+  return !!(c.cal && ad && ad.slot === c.slot && days(ad.days) === days(c.days));
 }
 /* "At 7:30 pm on Mon, Tue, Thu and Sat." ("At 19:30 Monday to Friday.",
    "At 7:30 pm every day.", "At 8:00 am on Sun."), the time in the device's
@@ -15964,7 +16636,7 @@ function cueAdd(slot, google) {
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     } catch (e) {}
   }
-  c.cal = now; c.slot = slot; c.days = days; delete c.no;
+  c.cal = now; c.slot = slot; c.days = days; c.ad = { slot: slot, days: days.slice() }; delete c.no;
   cueSave(c);
   ui.cueHow = google ? 'google' : 'file';
   track('cue_calendar');
@@ -16018,7 +16690,7 @@ function backupAnswer(save) {
 }
 /* the card (or Settings) drawn again in place, the keyboard kept on the
    control it was on */
-function cuePaint() {
+function cuePaint(reveal) {
   var foc = document.activeElement, fk = foc && foc.getAttribute ? (foc.getAttribute('data-act') || '') + '|' + (foc.getAttribute('data-k') || '') : '';
   var card = el('cue'), ss = ui.session;
   if (ui.sheet === 'settings') renderSettings();
@@ -16029,6 +16701,17 @@ function cuePaint() {
   var p = fk.split('|'), back = p[0] && document.querySelector('[data-act="' + p[0] + '"]' + (p[1] ? '[data-k="' + p[1] + '"]' : ''));
   if (!back) back = document.querySelector('#cue [data-act]') || (ss && ss.finished ? el('recap-h') : null);
   if (back && back.focus) { makeFocusable(back.parentNode || document.body); back.focus({ preventScroll: true }); }
+  if (reveal) cueReveal();
+}
+/* what a pick opened on the summary (the days, Add to calendar, Google
+   Calendar, Not now) never sits under its sticky bar (F7): the page
+   scrolls until the card's last button is 16 px above the bar */
+function cueReveal() {
+  var cue = el('cue'), bar = document.querySelector('.recap-acts');
+  if (!cue || !bar || !cue.getBoundingClientRect || !bar.getBoundingClientRect) return;
+  var acts = cue.querySelector('.cue-acts') || cue, r = acts.getBoundingClientRect(), b = bar.getBoundingClientRect();
+  var over = r.bottom + 16 - b.top;
+  if (over > 0 && r.height) window.scrollBy(0, Math.ceil(over));
 }
 
 /* ── the card ────────────────────────────────────────────────────────────── */
@@ -16368,8 +17051,12 @@ function boardAria(a, st, o) {
   (o.hint != null ? [{ sq: o.hint, kind: 'hint' }] : []).concat(o.rings || []).forEach(function (r) {
     if (r.kind === 'threat' && !ringed[r.sq]) out.push('Red ring: the ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' punishes it.');
     /* V2.1: "is in danger" only where the danger is on the board described;
-       a danger the game move makes is said as such */
-    else if (r.kind === 'attacked') out.push(r.mate ? 'Red ring: they could checkmate on ' + sqName(r.sq) + '.' : b[r.sq] && isW(b[r.sq]) === myPov(a.it)
+       a danger the game move makes is said as such. Their mate likewise:
+       "they could checkmate on g7" only where that mate is on the board
+       described (a free move for them while it is your turn), else the
+       move that makes it, "after your game move" (both tries' danger,
+       F1.3: "after both your tries") */
+    else if (r.kind === 'attacked') out.push(r.mate ? 'Red ring: ' + (mateOnBoard(st, r.sq, !myPov(a.it)) ? '' : r.key === 'tries' ? 'after both your tries, ' : 'after your game move, ') + 'they could checkmate on ' + sqName(r.sq) + '.' : b[r.sq] && isW(b[r.sq]) === myPov(a.it)
       ? (dzSee(b, r.sq, !myPov(a.it)) > 0 ? 'Red ring: your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' is in danger.' : 'Red ring: after your game move, your ' + pw(r.sq) + ' on ' + sqName(r.sq) + ' can be taken.')
       : 'Red ring: ' + sqName(r.sq) + ', where your piece would be in danger.');
     else if (r.kind === 'hint') out.push('Gold ring: move the ' + pw(r.sq) + ' on ' + sqName(r.sq) + '.');
@@ -16410,7 +17097,15 @@ function boardAria(a, st, o) {
   });
   (o.badges || []).forEach(function (g) { if (ARIA_BADGE[g.kind]) out.push(ARIA_BADGE[g.kind]); });
   if (o.check != null) out.push('The ' + (isW(b[o.check]) ? 'white' : 'black') + ' king is in check.');
-  return out.join(' ');
+  /* a sentence that carries a program value is left out (progVal) */
+  return out.filter(function (x) { return !progVal(x); }).join(' ');
+}
+/* a mate in one for side w landing on square sq, on the board as it
+   stands (a free move for w where it is the other side's turn) */
+function mateOnBoard(st, sq, w) {
+  var x = cloneState(st);
+  if (!!x.w !== !!w) { x.w = !!w; x.ep = -1; }
+  return legalMoves(x).some(function (m) { if (m.to !== sq) return false; var y = cloneState(x); applyMove(y, m); return isMate(y); });
 }
 /* the corner of square to that the verdict badge takes, as [x, y] from
    the square's corner: the top-right (36, 9) of 2.1, unless an arrow from
@@ -16628,7 +17323,7 @@ function frameLabel(a, f, px, desk, seen) {
   for (var i = 0; i < cands.length; i++) {
     var c = cands[i], texts = c.alt ? [c.text, c.alt] : [c.text];
     for (var j = 0; j < texts.length; j++) {
-      if (wordsIn(texts[j]) > room) continue;
+      if (wordsIn(texts[j]) > room || progVal(texts[j])) continue;
       var sz = labelBox(texts[j], desk), at = placeLabel(labelGeom(f, px, c, due ? [due.to] : []), sz.w, sz.h);
       if (at) return { text: texts[j], role: c.role, tip: c.tip, mark: c.mark, x: at.x, y: at.y, w: sz.w, h: sz.h };
     }
@@ -16960,15 +17655,27 @@ function watchBoardSize() {
   boardObs = new ResizeObserver(function () {
     var a = ui.session && ui.session.active;
     if (a && Date.now() >= motionUntil) paintLabels(a);
+    barRoom();
   });
-  var bw = el('bwrap');
+  var bw = el('bwrap'), bar = el('cbar');
   if (bw) boardObs.observe(bw);
+  if (bar) boardObs.observe(bar);
+}
+/* the bar's height (--cbar-h), so a narrow screen's panel, which grows
+   with its words and scrolls under the bar fixed at the foot, keeps its
+   last line clear of the bar however many rows its buttons take (F1) */
+function barRoom() {
+  var bar = el('cbar'), h = bar && bar.getBoundingClientRect ? Math.ceil(bar.getBoundingClientRect().height) : 0;
+  if (h && document.documentElement.style.getPropertyValue('--cbar-h') !== h + 'px') document.documentElement.style.setProperty('--cbar-h', h + 'px');
 }
 /* what the card says and offers, as data: the band (bandFor: disc, kind,
    row1, row2, chip, cap, and inside a forcing line its pips), the action
    bar as slots, the strip's markup and the live region's words */
 function displayFor(a) {
   var b = bandFor(a), ss = ui.session, buttons = barSlots(a, ss);
+  /* a string that carries a program value is never shown (progVal): the
+     laddered rows fell back already, and any other is left out */
+  ['row1', 'row2', 'cap', 'chip', 'tag', 'src'].forEach(function (k) { b[k] = noProg(b[k]); });
   return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', tag: b.tag || '', src: b.src || '', sweep: !!b.sweep, pips: b.pips || null,
            buttons: buttons, strip: stripHtml(a, ss), live: liveWords(a, b), keys: keyLine(a, buttons) };
 }
@@ -17268,7 +17975,7 @@ function discHtml(a, kind) {
 /* what the live region says: the band, led by its verdict in words, or the
    exploration's own line */
 function liveWords(a, b) {
-  if (a.phase === 'done' && a.explore) return xpLive(a, a.explore, a.explore.at);
+  if (a.phase === 'done' && a.explore) return noProg(xpLive(a, a.explore, a.explore.at));
   /* a lesson's frame says where it is first (F9.3): "Lesson, step 2 of 3." */
   if (a.phase === 'lesson') return 'Lesson, step ' + (a.lesson.i + 1) + ' of ' + PSKILL_OF[a.lesson.k].lesson.frames.length + '. ' + b.cap;
   /* a story step says where it is first (S20): "Step 2 of 3, your game." */
@@ -17680,7 +18387,8 @@ function detailsHtml() {
   if (a && a.prac && a.phase === 'done') return pracDetailsHtml(a);
   if (!a || a.phase !== 'done' || !a.lines) return '';
   var it = a.it, b = it.b, s = a.cls.sentences, best = a.lines.best.san[0] || '', t = patternOf(b), info = patternInfo(t);
-  var row = function (cls, text) { return '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
+  /* a line that carries a program value is left out (progVal) */
+  var row = function (cls, text) { return progVal(text) ? '' : '<p class="dt-line ' + cls + '"><span class="tl-dot" aria-hidden="true"></span><span>' + text + '</span></p>'; };
   if (a.foil) return foilDetailsHtml(a, row);
   /* the pattern is named once, by its chip (S13) */
   var h = '<div class="kicker">Details</div>' + ctxHtml(a);
@@ -17696,7 +18404,7 @@ function detailsHtml() {
   if (opp) h += row('tl-opp', opp);
   /* their threat (F0.1's, as kept) and the clock (F2.5); where the check
      line is itself their threat (tier 3), it alone says it */
-  var cl = checkLine(a), th = threatsLine(a), ck = clockLine(a);
+  var cl = checkLine(a), th = noProg(threatsLine(a)), ck = noProg(clockLine(a));
   if (th === cl) th = '';
   h += '</div>' + (th ? '<p class="dt-more">' + esc(th) + '</p>' : '') + (ck ? '<p class="dt-more dt-clock">' + esc(ck) + '</p>' : '')
     + '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="pattern:' + t + '">' + esc(info.name) + ' ›</a>'
@@ -17750,16 +18458,22 @@ function xpHtml(a) {
   var h = '<div class="xp" id="xp" role="region" aria-label="Your analysis" tabindex="-1">'
     + '<span class="xp-meter' + (busy ? ' run' : '') + '" aria-hidden="true"><i></i></span>'
     + '<div class="xp-head"><div class="xp-trail">' + trail + '</div><a class="xp-back" data-act="exploreOff">Back to the lesson</a></div>'
-    + '<p class="xp-say">' + esc(sayAt(a, ex, ex.at)) + '</p>';
+    + '<p class="xp-say">' + esc(noProg(sayAt(a, ex, ex.at))) + '</p>';
   if (!quiet) {
     var mine = n.st.w === myPov(a.it), who = mine ? 'Your best moves' : sideName(n.st.w) + '\'s best moves';
     h += '<p class="xp-cap">' + who + (tier === 1 ? '' : ' · your winning chances') + '</p>'
       + '<div class="xp-rows k' + (ex.k || 3) + '">';
+    /* a row's name is its own words in their order, the commas between them
+       for a screen reader only (row.label: "You 50%, 35.Qe6, then b5
+       36.b3."; WCAG 2.5.3) */
+    var sr = function (s) { return '<span class="sr-only">' + s + '</span>'; };
     if (rows) h += rows.map(function (r) {
-      return '<button type="button" class="xp-row' + (r.li === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + r.li + '" aria-label="' + esc(r.label) + '">'
-        + (r.chip ? '<span class="xp-chip">' + esc(r.chip) + '</span>' : '')
+      return '<button type="button" class="xp-row' + (r.li === (ex.hot || 0) ? ' on' : '') + (tier === 1 ? ' t1' : '') + '" data-act="xpRow" data-k="' + r.li + '">'
+        + (r.chip ? '<span class="xp-chip">' + esc(r.chip) + '</span>' + sr(', ') : '')
         + '<span class="xp-first">' + esc(tier === 1 ? r.first : r.num + r.first) + '</span>'
-        + '<span class="xp-cont' + (tier === 1 ? ' t1' : '') + '">' + esc(tier === 1 ? '· ' + r.words : r.cont) + '</span></button>';
+        + (tier === 1 ? sr(', ') + '<span class="xp-cont t1"><span aria-hidden="true">· </span>' + esc(r.words) + '</span>'
+          : (r.cont ? sr(', then ') : '') + '<span class="xp-cont">' + esc(r.cont) + '</span>')
+        + sr('.') + '</button>';
     }).join('');
     else for (var s2 = 0; s2 < 3; s2++) h += '<div class="xp-row skel" aria-hidden="true">' + (tier === 1 ? '' : '<span class="xp-chip">You 00%</span>') + '<span class="xp-first">00.Nxd3</span><span class="xp-cont">00.Ke2 Rd5</span></div>';
     h += '</div>';
@@ -17782,7 +18496,14 @@ function fitRows() {
   var bar = document.querySelector('.done-acts'), board = document.querySelector('#bwrap .board');
   if (!bar || !board) return;
   var br = board.getBoundingClientRect(), k = 3, cap = document.querySelector('#xp .xp-cap'), rh = '';
-  if (window.innerWidth <= 860) {
+  if (window.innerWidth < 360) {
+    /* a narrow screen (F1): the panel grows with its rows and the page
+       scrolls, so every row shows, each as tall as its words */
+    if (cap) cap.style.display = '';
+    rowsEl.style.display = '';
+    el('xp').classList.remove('tight');
+    el('xp').classList.remove('nosay');
+  } else if (window.innerWidth <= 860) {
     /* on a phone the analysis fills the Coach Panel from under the band to
        the panel's foot (S14, F4.1): under the trail and the sentence, as
        many whole rows as fit (on a short phone the head tightens so one
@@ -18005,7 +18726,7 @@ function renderInsights() {
   var kinds = trackedPerfs().filter(function (p) { return win.some(function (g) { return g.perf === p; }); }).map(perfLabel).join(' and ');
   var games = (kinds ? kinds + ' ' : '') + 'game' + ((partial ? total : r.games) === 1 ? '' : 's');
   var h = '<div class="ins"><div class="kicker">Based on ' + (partial ? r.games + ' of ' + total + ' ' + games + ' so far' : r.games + ' ' + games)
-    + (cg.length ? ', ' + dateSpan(Math.min.apply(null, cg), Math.max.apply(null, cg)) : '') + '</div>';
+    + (cg.length ? ', ' + dateSpan(Math.min.apply(null, cg), Math.max.apply(null, cg)) : '') + '</div>' + goneHtml();
   if (!r.families.length) {
     h += '<h2>Your report appears as ' + (tier === 1 ? 'the computer reads' : 'Stockfish reads') + ' your games.</h2><p class="lead">' + read + ' of ' + total + ' games checked. The first patterns show up after a handful of games; the full picture at about ' + INSIGHT_MIN_GAMES + '.</p>' + tiles + '</div>';
     box.innerHTML = h;
@@ -18022,9 +18743,10 @@ function renderInsights() {
     lead = tier === 1 ? who + ' cost you the most games: ' + top.lost + (tie ? ' each.' : '.')
       : who + ' decided the most: ' + fmtGames(top.lost) + (tie ? ' each.' : '.');
   }
-  /* while the background check runs, counts may still shrink: it says so */
-  var ck = checkingLeft();
-  h += '<h2>' + head + '</h2>' + (lead ? '<p class="lead">' + lead + '</p>' : '') + (ck ? '<p class="ins-checking">Checking ' + plur(ck, 'more position') + '…</p>' : '') + tiles;
+  /* while the background check runs, counts may still shrink: it says so
+     beside each block of them (C1): the headline and lead, the skills, the
+     clock, since you started */
+  h += '<h2>' + head + '</h2>' + (lead ? '<p class="lead">' + lead + '</p>' : '') + checkingHtml('ins-checking') + tiles;
   /* how your games are decided (F10.3), at tier 3 under the headline */
   if (tier >= 3) h += decidedHtml(decidedReport());
   /* since you started (F6.2), once a set is finished */
@@ -18038,7 +18760,7 @@ function renderInsights() {
   var focus = currentFocus(), main = r.families.filter(function (a) { return a.lost >= ALSO_SEEN || (focus && focus.fam === a.fam.key); });
   var also = r.families.filter(function (a) { return main.indexOf(a) === -1; });
   if (!main.length) { main = also; also = []; }
-  h += '<h3 class="ins-h">' + (tier === 1 ? 'What cost you games' : 'What decided your games') + '</h3>' + skillRowsHtml(main, focus, tier)
+  h += '<h3 class="ins-h">' + (tier === 1 ? 'What cost you games' : 'What decided your games') + '</h3>' + checkingHtml('ins-checking') + skillRowsHtml(main, focus, tier)
     + (also.length ? '<h3 class="ins-h ins-also">Also seen</h3>' + skillRowsHtml(also, focus, tier) : '');
   /* the routine, at tiers 2 and 3 (F2.3) */
   if (tier >= 2) h += '<p class="routine">' + ROUTINE_LINE + '</p>';
@@ -18056,6 +18778,12 @@ function renderInsights() {
   }
   h += '</div>';
   box.innerHTML = h;
+}
+/* the games of the window this browser had no room for (F8, goneGames):
+   Insights never counts from fewer games without saying so */
+function goneHtml() {
+  var n = goneGames().length;
+  return n ? '<p class="ins-gone">This browser is out of room, so ' + (n === 1 ? 'one of your games is' : n + ' of your games are') + ' not counted here.</p>' : '';
 }
 /* a skill's row: its glyph, name ("Start here" on the focus, at tiers 2
    and 3: at tier 1 the skill tiles' "Next" is the one next step, V4.7),
@@ -18085,7 +18813,9 @@ function skillRowsHtml(list, focus, tier) {
    on both sides) and the opponents' level when it moved 100 points or more */
 function startPanelHtml(st) {
   var B = st.before, S = st.since, d1 = function (x) { return (Math.round(x * 10) / 10).toFixed(1); };
-  var h = '<section class="since" aria-label="Since you started"><h3 class="since-h">Since you started, ' + gameDateLine({ ts: st.t }) + '</h3>';
+  /* its before count may still change, and a game since waits for the
+     background check (C1) */
+  var h = '<section class="since" aria-label="Since you started"><h3 class="since-h">Since you started, ' + gameDateLine({ ts: st.t }) + '</h3>' + (st.unchecked ? checkingHtml('ins-checking') : '');
   if (st.verdict === 'wait') {
     h += '<p>Big mistakes per game before: ' + d1(B.mean) + ' (' + plur(B.n, 'game') + ').</p>';
     if (st.need) return h + '<p class="since-wait">Your next ' + (st.need === 1 ? 'game completes' : st.need + ' games complete') + ' the before count; the comparison comes '
@@ -18146,7 +18876,7 @@ function clockHtml(c, tier) {
     var others = c.other ? ' (' + (c.otherFast ? c.otherFast + ' of your ' + plur(c.other, 'other big mistake') + ' did too' : 'none of your ' + plur(c.other, 'other big mistake') + ' did') + ')' : '';
     rows.push(c.fast + ' of ' + c.dec + ' deciding moves took under 10 s' + others + '.');
   }
-  return '<h3 class="ins-h">Your clock</h3><div class="clock-rows">' + rows.map(function (x) { return '<p>' + x + '</p>'; }).join('') + '</div>';
+  return '<h3 class="ins-h">Your clock</h3>' + checkingHtml('ins-checking') + '<div class="clock-rows">' + rows.map(function (x) { return '<p>' + x + '</p>'; }).join('') + '</div>';
 }
 /* how your games are decided (F10.3): the rows decidedReport supports,
    each its count in one sentence ("Converting wins: won 21 of 30 games
@@ -18172,17 +18902,18 @@ function decidedHtml(d) {
    threshold frozen on the start day (sinceLine) */
 function countHtml() {
   var t = playerTier(), lines, st = sinceStats(), since = st && st.before.n ? sinceLine(st, t) : '';
-  /* (V4.8) a position learned, in words the player can check; a decided
-     game is a loss, each counted once, as the headline and the rows count
-     them */
-  if (t === 1) lines = ['A big mistake: a move that made your position much worse.', since, 'A move cost you the game if you never came back from it.', 'Find a position on 3 different days and it is learned.'];
+  /* (V4.8) a position learned, in words the player can check (C3: the
+     rule as srsRecord keeps it, the game view's time at tiers 2 and 3:
+     F8.3); a decided game is a loss, each counted once, as the headline and
+     the rows count them */
+  if (t === 1) lines = ['A big mistake: a move that made your position much worse.', since, 'A move cost you the game if you never came back from it.', 'Find it first try 3 times in a row, over 3 weeks or more, and it is learned.'];
   else {
     var g = realGames().filter(function (x) { return x.myR; }).sort(function (x, y) { return y.ts - x.ts; })[0];
     var thr = g ? mistakeMinFor(g) : (t >= 3 ? 12 : 15);
     lines = ['A big mistake cut your winning chances by ' + thr + ' points or more (' + { 20: '15 from 1200, 12 at 1800+', 15: '20 under 1200, 12 at 1800+', 12: '15 under 1800, 20 under 1200' }[thr] + ').',
       since,
       'A move decided a game if it lost a game you could still play and you never came back.',
-      'Each find on a later day climbs a step; three steps and it is learned. A miss sends it back.'];
+      'Three first-try finds in a row make it learned if the last comes 16 days or more after the one before, in game view within 30 seconds (60 at Less help). A miss starts it again.'];
     /* tier 3's rows on how games are decided (F10.3): what +2 means, and
        where the peer figures come from */
     var dr = t >= 3 ? decidedReport() : null;
@@ -18406,9 +19137,8 @@ function settingsHtml() {
       + '<div class="chips"><a class="chip" data-act="exportProgress">Save progress to a file</a><a class="chip" data-act="importProgress">Load progress from a file</a></div>'
       + '<p class="last-saved">' + lastSavedWords() + '</p>'
       + '<p>' + gamesLine() + '</p>'
-      /* usage recording, the player's own choice (V5.5) */
-      + '<p>None of it is kept on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</p>'
-      + sw('consent', 'Usage recording (Microsoft Clarity)', consentYes()) + '</div>'
+      /* usage recording, said (on for every visitor: no switch) */
+      + '<p>None of it is kept on our servers. ' + clarityLine() + '</p></div>'
     /* each armed row takes its second tap only 1 to 6 s after the first
        (V4.5: a double tap does nothing) */
     + '<div class="set-block"><span class="kicker">Reset</span>'
@@ -18444,7 +19174,7 @@ function gamesLine() {
 function renderFoot() {
   var f = el('foot');
   if (!f) return;
-  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</span>'
+  f.innerHTML = '<span class="foot-line">Free and open source. Your games and progress are saved in this browser, not on our servers. ' + clarityLine() + '</span>'
     + '<span class="foot-links"><a data-act="coffee">Support the developer</a>'
     /* for lichess players only: a first visit plays nowhere yet */
     + (cfg.user && !isCC() ? '<a href="https://lichess.org/patron">Donate to lichess</a>' : '')
@@ -18688,7 +19418,7 @@ function renderFirstVisit(prefill) {
       + '<button class="btn-big" data-icon="search" data-act="findUser" id="findBtn">Find my mistakes</button>'
     + '</div>'
     + '<div id="whichSite" aria-live="polite"></div>'
-    + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. With your yes, Microsoft Clarity records clicks and the screen, with all text hidden.</p>'
+    + '<p class="first-foot">Free, with no account. Your games and progress are saved in this browser, not on our servers. ' + clarityLine() + '</p>'
     + '<figure class="proof"><figcaption>What a 1350 rapid player saw</figcaption>'
       + '<blockquote>In 169 of their 237 losses, one move turned the game for good. Piece safety decided 107.</blockquote></figure>'
     + '</div>'
@@ -18702,10 +19432,7 @@ function renderFirstVisit(prefill) {
       + valueItem('Free, no account', 'Nothing to buy. Open source.')
     + '</div>'
     + '<p class="first-foot small">Rated live games, bullet to classical. Stockfish runs on your device.</p>'
-    /* the usage-recording question, at the landing's foot (V5.5) */
-    + (consentAsked() ? '' : consentCardHtml())
     + '</div>';
-  consentWatch();
   var input = el('firstUser');
   if (input) {
     input.focus();
@@ -18714,30 +19441,63 @@ function renderFirstVisit(prefill) {
     input.addEventListener('input', function () { engineLoad().catch(function () {}); }, { once: true });
   }
 }
+/* a site that asked us to wait (F3): "chess.com is busy and asked us to
+   wait. Trying again in 60 s.", the seconds ticking down on screen
+   (.busy-n) and, at zero, the lookup tried again by itself, once, while
+   live() still holds (the same lookup, the same screen); a newer count ends
+   an older one. Try now ends the site's wait at once (busyNow) and tries */
+var busyTick = { seq: 0, until: 0 };
+function busyCountdown(until, live, retry) {
+  /* a screen drawn again under a count that runs keeps that count */
+  if (busyTick.until === until && busyTick.live && busyTick.live()) return;
+  var seq = ++busyTick.seq;
+  busyTick.until = until; busyTick.live = live;
+  var step = function () {
+    if (seq !== busyTick.seq || !live()) return;
+    /* every count on the page (a first load's card is on Today and on the
+       Games tab) */
+    var left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+    [].forEach.call(document.querySelectorAll('.busy-n'), function (n) { n.textContent = left + ' s'; });
+    if (left <= 0) { busyTick.seq++; retry(); return; }
+    setTimeout(step, 1000);
+  };
+  setTimeout(step, 1000);
+}
+function busyNow(sites) { [].concat(sites).forEach(function (s) { if (s === 'chess.com') ccBackoffUntil = 0; else backoffUntil = 0; }); }
+function busySecs(until) { return Math.max(1, Math.ceil((until - Date.now()) / 1000)); }
+/* the count's words, its seconds ticking only for the eye (a screen reader
+   hears the line once) */
+function busyWhen(until) { var s = busySecs(until) + ' s'; return 'Trying again in <span class="busy-n" aria-hidden="true">' + s + '</span><span class="sr-only">' + s + '</span>.'; }
 /* the name on both sites at once: one found, go; both, ask which; neither,
-   say so. A site that does not answer counts as not found there */
+   say so. A site that does not answer counts as not found there; a site
+   busy (F3) says so at once and counts down to trying again, the button
+   usable meanwhile, and a name found on the other site goes ahead (r6) */
 var findSeq = 0;
-function findUser(name) {
+function findUser(name, now) {
   name = String(name || '').trim();
   /* Find my mistakes with the box empty: say what it needs (V5.8) */
   if (!name) { notice('Type your username first.'); var box0 = el('firstUser'); if (box0 && box0.focus) box0.focus(); return; }
   if (!/^[a-zA-Z0-9_-]{2,30}$/.test(name)) { notice('That is not a chess.com or lichess username: letters, numbers, underscore and hyphen only.'); return; }
   /* only the latest lookup acts: an earlier one answering late is ignored */
   var seq = ++findSeq;
+  if (now) busyNow(['chess.com', 'lichess']);
   var btn = el('findBtn'), box = el('whichSite');
   if (btn) { btn.textContent = 'Looking…'; btn.classList.add('btn-off'); }
   if (box) box.innerHTML = '';
-  /* only a real 404 means "no account there"; anything else is "no answer" */
-  var failed = function (e) { return e && e.code === 404 ? null : { err: true }; };
-  var li = getJSON('/api/user/' + encodeURIComponent(name), { quiet: true }).then(function (u) {
+  /* only a real 404 means "no account there"; a 429 is a busy site;
+     anything else is "no answer" */
+  var failed = function (e) { return e && e.code === 404 ? null : e && e.code === 429 ? { busy: true, site: e.site, wait: e.wait || BUSY_SECS } : { err: true }; };
+  /* (each its own: ccJSON marks its options absolute) */
+  var ask = function () { return { quiet: true, noWait: true }; };
+  var li = getJSON('/api/user/' + encodeURIComponent(name), ask()).then(function (u) {
     if (!u || u.disabled || u.closed) return null;
     var best = null;
     ['rapid', 'blitz', 'bullet', 'classical'].forEach(function (p) { var pf = u.perfs && u.perfs[p]; if (pf && pf.games && (!best || pf.games > best.games)) best = { p: p, games: pf.games, r: pf.rating }; });
     return { site: 'lichess', name: u.username || name, best: best };
   }, failed);
-  var cc = ccJSON('/player/' + encodeURIComponent(name), { quiet: true }).then(function (p) {
+  var cc = ccJSON('/player/' + encodeURIComponent(name), ask()).then(function (p) {
     if (!p) return null;
-    return ccJSON('/player/' + encodeURIComponent(name) + '/stats', { quiet: true }).then(function (st) {
+    return ccJSON('/player/' + encodeURIComponent(name) + '/stats', ask()).then(function (st) {
       var best = null;
       [['chess_rapid', 'rapid'], ['chess_blitz', 'blitz'], ['chess_bullet', 'bullet']].forEach(function (k) {
         var v = st && st[k[0]], n = v && v.record ? (v.record.win || 0) + (v.record.loss || 0) + (v.record.draw || 0) : 0;
@@ -18751,19 +19511,29 @@ function findUser(name) {
     box = el('whichSite'); btn = el('findBtn');
     if (btn) { btn.textContent = 'Find my mistakes'; btn.classList.remove('btn-off'); }
     if (!box) return;
-    var found = res.filter(function (f) { return f && !f.err; }), silent = res.some(function (f) { return f && f.err; });
+    var found = res.filter(function (f) { return f && !f.err && !f.busy; }), busy = res.filter(function (f) { return f && f.busy; });
+    var down = res.filter(function (f) { return f && f.err; }), silent = !!(busy.length || down.length);
     /* one site has it and the other surely does not, or only one of the
-       two accounts has rated games: go */
+       two accounts has rated games: go; so too where the other site is
+       only busy (r6: a name found on the other site goes ahead) */
     var played = found.filter(function (f) { return f.best; });
     if (found.length === 2 && played.length === 1 && !silent) found = played;
-    if (found.length === 1 && !silent) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
+    if (found.length === 1 && !down.length) { cfg.src = found[0].site; saveCfg('src'); setUser(name); return; }
     if (!found.length && !silent) {
       box.innerHTML = '<p class="which-none">Neither chess.com nor lichess has an account called ' + esc(name) + '. Check the spelling.</p>';
       return;
     }
+    /* busy (F3): said at once, counting down to trying again by itself */
+    if (!found.length && busy.length) {
+      var sites = busy.map(function (f) { return f.site; }), until = Date.now() + Math.max.apply(null, busy.map(function (f) { return f.wait; })) * 1000;
+      box.innerHTML = '<p class="which-none which-busy">' + sites.join(' and ') + (sites.length > 1 ? ' are' : ' is') + ' busy and asked us to wait. ' + busyWhen(until)
+        + ' <a class="btn-quiet" data-act="findNow">Try now</a></p>';
+      busyCountdown(until, function () { var inp = el('firstUser'); return seq === findSeq && !cfg.user && !!inp && inp.value.trim() === name; }, function () { findUser(name); });
+      return;
+    }
     if (!found.length) {
-      var down = res.filter(function (f) { return f && f.err; }).length === 2 ? 'chess.com or lichess' : (res[0] && res[0].err ? 'chess.com' : 'lichess');
-      box.innerHTML = '<p class="which-none">Could not reach ' + down + '. Check your connection and try again.</p>';
+      var unreached = down.length === 2 ? 'chess.com or lichess' : (res[0] && res[0].err ? 'chess.com' : 'lichess');
+      box.innerHTML = '<p class="which-none">Could not reach ' + unreached + '. Check your connection and try again.</p>';
       return;
     }
     /* both: ask which. One while the other did not answer: only the site
@@ -18830,95 +19600,43 @@ function returnEvents() {
   } catch (e) {}
 }
 
-/* ── usage recording, only with a yes (V5.5) ─────────────────────────────
-   Microsoft Clarity records clicks and the screen (all text hidden) only
-   for a player who said yes in this browser (nl:consent "yes"): before it
-   the page loads no tag, so no cookie and no recording, and track() and
-   measureTag() drop what they are given. The question is a slim card at
-   the foot of the landing, or of Today for a player who arrives another
-   way, never over the board and never during a set (#consent-slot is
-   hidden there). It is asked once: once the card has been on screen, no
-   answer counts as no ("no" is kept), and the choice lives on in
-   Settings, Your data */
+/* ── usage recording (the owner: on for every visitor, and said) ─────────
+   Microsoft Clarity records clicks and the screen, with all text hidden
+   (every container is data-clarity-mask), for every visitor: its tag loads
+   once a page, at boot, and track() and measureTag() send their measures to
+   it. There is no question and no setting (it replaced V5.5's yes); the
+   page never calls Clarity's consent API, as Clarity applies its own
+   consent mode to visitors from the EEA, the UK and Switzerland (no cookie
+   before a consent signal). It is said, in plain words, on the landing, in
+   the footer and in Settings, Your data (clarityLine) */
 var CLARITY_TAG = 'https://www.clarity.ms/tag/y95daq5rao';
-var clarityState = { on: false, stopped: false }, consentIO = null;
-function consentYes() { return store.get('nl:consent', '') === 'yes'; }
-function consentAsked() { return !!store.get('nl:consent', ''); }
-/* the measures go to Clarity: a yes, and its tag on this page (clarityLoad
-   alone defines window.clarity), not stopped since */
-function clarityLive() { return consentYes() && !clarityState.stopped && typeof window.clarity === 'function'; }
-/* the tag, once a page, and only with a yes (boot, and the yes itself).
-   Calls made before it arrives wait in Clarity's queue, the player's
-   consent first, through Clarity's consent API (ads never) */
+var CLARITY_PRIVACY = 'https://privacy.microsoft.com/privacystatement';
+var clarityState = { on: false };
+/* the measures go to Clarity once its tag is asked for (clarityLoad alone
+   defines window.clarity) */
+function clarityLive() { return clarityState.on && typeof window.clarity === 'function'; }
+/* the tag, once a page. Calls made before it arrives wait in Clarity's
+   queue. A device that kept the old yes or no (nl:consent) drops it */
 function clarityLoad() {
-  if (clarityState.on || !consentYes()) return;
+  if (clarityState.on) return;
   clarityState.on = true;
+  store.del('nl:consent');
   try {
     var c = window.clarity = window.clarity || function () { (c.q = c.q || []).push(arguments); };
     var t = document.createElement('script');
     t.async = true;
     t.src = CLARITY_TAG;
     (document.head || document.body).appendChild(t);
-    clarityConsent(true);
     /* the campaign of a link (the head script kept it, the address lost it) */
     var utm = linkStore.get('nl:utm');
     if (utm) c('set', 'utm_source', String(utm).slice(0, 40));
   } catch (e) {}
 }
-function clarityConsent(on) {
-  try { window.clarity('consentv2', { ad_Storage: 'denied', analytics_Storage: on ? 'granted' : 'denied' }); } catch (e) {}
-}
-/* Settings turns it off: Clarity is told, its cookies go, this page's
-   recording stops, and the next page loads no tag */
-function clarityOff() {
-  if (!clarityState.on || clarityState.stopped) return;
-  clarityState.stopped = true;
-  clarityConsent(false);
-  try { window.clarity('consent', false); } catch (e) {}
-  /* the recorder stops (queued after its start when it is still loading) */
-  try { window.clarity('stop'); } catch (e) {}
-}
-/* the question, its two answers alike: neither is the easy one */
-function consentCardHtml() {
-  return '<div class="consent" id="consent" role="group" aria-labelledby="consent-q">'
-    + '<p class="consent-q" id="consent-q"><b>Help improve notlichess?</b> Microsoft Clarity would record clicks and screens, with all text hidden.</p>'
-    + '<div class="consent-acts"><a class="btn-line" data-act="consentYes">Yes</a><a class="btn-line" data-act="consentNo">No thanks</a></div></div>';
-}
-/* Today's foot (the slot after #trainbox): the card until it is answered
-   or has been seen */
-function consentPaint() {
-  var slot = el('consent-slot');
-  if (!slot) return;
-  slot.innerHTML = consentAsked() ? '' : consentCardHtml();
-  consentWatch();
-}
-/* on screen (half of it, at least): asked, and no answer is a no */
-function consentWatch() {
-  if (consentIO) { consentIO.disconnect(); consentIO = null; }
-  var card = el('consent');
-  if (!card || consentAsked()) return;
-  var seen = function () { if (!consentAsked()) store.set('nl:consent', 'no'); };
-  if (typeof IntersectionObserver === 'undefined') { seen(); return; }
-  consentIO = new IntersectionObserver(function (es) {
-    if (!es.some(function (x) { return x.isIntersecting; })) return;
-    consentIO.disconnect(); consentIO = null;
-    seen();
-  }, { threshold: 0.5 });
-  consentIO.observe(card);
-}
-/* an answer on the card; Settings' switch (consentSet) after that */
-function consentAnswer(yes) {
-  consentSet(yes);
-  if (yes) notice('Thank you. Settings can turn it off.');
-}
-function consentSet(yes) {
-  store.set('nl:consent', yes ? 'yes' : 'no');
-  if (consentIO) { consentIO.disconnect(); consentIO = null; }
-  var card = el('consent');
-  if (card && card.remove) card.remove();
-  if (!yes) clarityOff();
-  else if (clarityState.on && !clarityState.stopped) clarityConsent(true);
-  else clarityLoad();
+/* what it does, said where the page says what it keeps: the landing, the
+   footer, Settings (a line, never a switch) */
+function clarityLine() {
+  return 'notlichess uses Microsoft Clarity to see how the site is used. It records clicks and screens, with all text hidden. '
+    + '<a class="say-link" href="' + CLARITY_PRIVACY + '">Microsoft\'s privacy statement</a>';
 }
 /* "2026-W41": the ISO week a time falls in (weeks start on Monday; week 1
    holds the year's first Thursday) */
@@ -19017,9 +19735,10 @@ function renderNarration() {
 }
 function finishNarration() {
   if (!data.narrate) return;
-  var n = allMistakes().filter(trainable).length;
+  var n = allMistakes().filter(trainable).length, ge = data.sections.games === 'fail' ? data.gamesErr : null;
+  /* a load that failed is no account without games (F9): Today says what happened */
   narrLine('done', n ? 'Found your first ' + n + ' mistake' + (n === 1 ? '' : 's') + '. Stockfish keeps reading the rest while you train.'
-    : (data.games.length ? 'Games are in. Stockfish is now reading them for mistakes.' : 'No rated live games found on this account.'));
+    : (data.games.length ? 'Games are in. Stockfish is now reading them for mistakes.' : ge ? ge.site + (ge.busy ? ' is busy.' : ' did not answer.') : 'No rated live games found on this account.'));
   setTimeout(function () {
     data.narrate = false;
     data.freshOnboard = true;
@@ -19067,7 +19786,7 @@ function computeGreeting() {
 function boot() {
   gen++;
   var myGen = gen;
-  /* usage recording, for a player who said yes (V5.5) */
+  /* usage recording, for every visitor, and said (clarityLine) */
   clarityLoad();
   /* the saved formats belong to one player: another player starts from
      their own profile */
@@ -19080,10 +19799,11 @@ function boot() {
   /* a link's player lives in this tab only (sessionStorage), and the page
      title never names anyone */
   document.title = 'notlichess.org';
-  /* a new day opens on Today (V4.4): the last tab comes back only on the
-     day it was left; a link to #insights still opens Insights */
-  if (ui.view === 'insights') {
-    var linked = /^#(insights|coach)$/.test(location.hash || '') && !reloadedPage();
+  /* a new day opens on Today (V4.4): the last tab (Games or Insights) comes
+     back only on the day it was left; a link to #games or #insights still
+     opens it (a reload is no link) */
+  if (ui.view !== 'train') {
+    var linked = /^#/.test(location.hash || '') && viewOfHash(location.hash) === ui.view && !reloadedPage();
     if (!linked && store.get('nl:viewDay', '') !== dayStamp()) ui.view = 'train';
     else store.set('nl:viewDay', dayStamp());
   }
@@ -19154,28 +19874,45 @@ function adoptFresh(old, fresh) {
 }
 
 /* ── progress between devices, as a file ────────────────────────────────── */
+/* the player's progress keys: in storage, and in this visit's memory (a
+   write the browser refused, out of room or with storage that throws,
+   lives only there: F2) */
+function progressKeys() {
+  var u = playerId(), seen = {};
+  var mine = function (k) { return !!k && (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u || k === 'nl:foil:' + u || k === 'nl:skill:' + u || k === 'nl:help:' + u); };
+  Object.keys(mem).forEach(function (k) { if (mine(k)) seen[k] = 1; });
+  try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (mine(k)) seen[k] = 1; } } catch (e) {}
+  return Object.keys(seen).sort();
+}
+/* the file holds what this visit holds: each key's value as the store
+   reads it now (its memory's where a write was refused), and every
+   position the schedule knows. Only then does the notice say where it went
+   and how much it holds ("Saved 12 positions to notlichess-tester-2026-10-
+   12.json."); a file that could not be made says so */
 function exportProgress() {
-  var u = playerId(), out = { v: 1, user: cfg.user, src: cfg.src, at: Date.now(), keys: {} };
+  var out = { v: 1, user: cfg.user, src: cfg.src, at: Date.now(), keys: {} }, name = progressFileName(), text = '', n = 0;
+  progressKeys().forEach(function (k) { var v = store.get(k, null); if (v != null) out.keys[k] = v; });
   try {
-    for (var i = 0; i < localStorage.length; i++) {
-      var k = localStorage.key(i);
-      if (!k) continue;
-      if (k === 'nl:srs:' + u || k.indexOf('nl:day:' + u + ':') === 0 || k === 'nl:log:' + u || k === 'nl:start:' + u || k === 'nl:foil:' + u || k === 'nl:skill:' + u || k === 'nl:help:' + u)
-        out.keys[k] = JSON.parse(localStorage.getItem(k));
-    }
-  } catch (e) {}
-  var blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
-  var a = document.createElement('a'), name = progressFileName();
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    text = JSON.stringify(out);
+    var back = JSON.parse(text), file = back.keys[srsKey()] || {}, live = srsLoad();
+    n = Object.keys(file).length;
+    /* every position the schedule holds this visit, and every key, in the file */
+    if (Object.keys(live).some(function (k) { return !file[k]; }) || Object.keys(out.keys).some(function (k) { return !(k in back.keys); })) throw new Error('short');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  } catch (e) {
+    notice('The progress file could not be made in this browser. Try again, or save it from another browser.');
+    return;
+  }
   track('export_done');
   /* a backup made: the next prompt waits 30 practice days (F5.4), Settings
      says when (V4.5), and the player is told where it went */
   backupSaved();
-  notice('Saved to ' + name + '.');
+  notice(n ? 'Saved ' + plur(n, 'position') + ' to ' + name + '.' : 'Saved to ' + name + '.');
   renderSettings();
 }
 /* "notlichess-tester-2026-10-11.json": the player and the day (V4.5) */
@@ -19254,7 +19991,9 @@ document.addEventListener('click', function (e) {
     return;
   }
   var act = t.getAttribute('data-act'), k = t.getAttribute('data-k');
-  if (t.tagName === 'INPUT') return;
+  /* a field or a select (the Games tab's filters) is its own: its change
+     event acts */
+  if (t.tagName === 'INPUT' || t.tagName === 'SELECT') return;
   if (act !== 'closeSheet' || e.target === t) e.preventDefault();
   /* input first: a running slide ends and whatever was staged catches up
      (while the forcing reply slides, the tap is dropped); then a bar slot
@@ -19280,6 +20019,8 @@ document.addEventListener('click', function (e) {
     }
     case 'setUser': setUser(el('firstUser') ? el('firstUser').value : ''); break;
     case 'findUser': findUser(el('firstUser') ? el('firstUser').value : ''); break;
+    /* a busy site's Try now (F3): its wait ends, and the lookup goes again */
+    case 'findNow': findUser(el('firstUser') ? el('firstUser').value : '', true); break;
     case 'pickSite': { var nm2 = t.getAttribute('data-n') || (el('firstUser') ? el('firstUser').value : ''); cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm2); break; }
     case 'useOtherSite': { var nm = cfg.user; cfg.src = k === 'chesscom' ? 'chesscom' : 'lichess'; saveCfg('src'); setUser(nm); break; }
     case 'logout': {
@@ -19374,17 +20115,21 @@ document.addEventListener('click', function (e) {
     case 'size': store.set('nl:sessionSize', parseInt(k, 10)); renderSettings(); renderTrain(); break;
     case 'scanDepth': store.set('nl:scanDepth', k === 'thorough' ? 'thorough' : 'std'); track('scan_' + (k === 'thorough' ? 'thorough_on' : 'standard')); renderSettings(); autoScan(); setTimeout(autoEnrich, 500); break;
     case 'weekGoal': setWeekGoal(parseInt(k, 10)); renderSettings(); renderTrain(); break;
-    case 'reload': checkForGames(); break;
-    /* Today's games rail: every game, not four (F5.1) */
-    case 'allGames': {
-      ui.allGames = true;
-      var lgr = el('latest');
-      if (lgr) { lgr.outerHTML = latestGamesHtml(); var lgn = document.querySelectorAll('#latest .lg-row')[LATEST_N]; if (lgn) { makeFocusable(el('latest')); lgn.focus({ preventScroll: true }); } }
+    /* Try again, or a busy site's Try now (F3: its wait ends first) */
+    case 'reload': if (k === 'now' && data.gamesErr && data.gamesErr.busy) busyNow(data.gamesErr.site); checkForGames(true); break;
+    /* the Games tab (slice D): 30 more rows; the filters cleared, the
+       keyboard on the first of them */
+    case 'gamesMore': gamesMore(); break;
+    case 'gamesClear': {
+      gamesFilterSet(GF0);
+      renderGames();
+      var gf0 = document.querySelector('#gamesbox select');
+      if (gf0 && gf0.focus) gf0.focus();
       break;
     }
     /* the way back (F5.2, F5.4): the diagnosis's report, the reminder, the backup */
     case 'reportOpen': closeSheet(); track('reveal_open'); setView('insights'); break;
-    case 'cueSlot': ui.cueSlot = CUE_AT[k] ? k : null; cuePaint(); break;
+    case 'cueSlot': cuePick(k); break;
     case 'cueAdd': cueAdd(k, false); break;
     case 'cueGcal': cueAdd(k, true); break;
     case 'cueNo': cueNotNow(); break;
@@ -19395,9 +20140,6 @@ document.addEventListener('click', function (e) {
     case 'importProgress': importProgress(); break;
     case 'installApp': installApp(); break;
     case 'installLater': installLater(); break;
-    /* the usage-recording question (V5.5) */
-    case 'consentYes': consentAnswer(true); break;
-    case 'consentNo': consentAnswer(false); break;
     case 'engineRetry': SF.state = 'idle'; SF.crashes = []; engineLoad().then(function () { autoScan(); }, function () {}); renderAll(); break;
     case 'resetProgress': {
       if (!armedTap('reset')) break;
@@ -19471,15 +20213,17 @@ document.addEventListener('change', function (e) {
   if (!t || !t.getAttribute) return;
   var act = t.getAttribute('data-act');
   if (act === 'sound') { cfg.sound = !!t.checked; saveCfg('sound'); }
-  /* Settings' usage recording, on or off (V5.5) */
-  if (act === 'consent') consentSet(!!t.checked);
+  /* a filter on the Games tab (slice D) */
+  if (act === 'gf') gamesFilterPick(t.getAttribute('data-k'), t.value);
 });
 document.addEventListener('keydown', function (e) {
   /* a held Enter sends the typed move once (its auto-repeat would send it
      again, or an empty box, as soon as the board takes moves again) */
   if (e.target && e.target.id === 'kbmove' && e.key === 'Enter') { e.preventDefault(); if (!e.repeat) typedMove(e.target.value); return; }
-  /* typing belongs to the field, but Esc from the move field leaves exploring */
-  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !(e.target.id === 'kbmove' && e.key === 'Escape')) return;
+  /* typing belongs to the field, but Esc from the move field leaves
+     exploring, and Esc from any control in a sheet (a Settings switch: F5)
+     closes it */
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !(e.key === 'Escape' && (e.target.id === 'kbmove' || ui.sheet))) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   /* a held key acts once: the keyboard's auto-repeat never reaches the
      button that took the pressed one's place (a held Enter would go through
@@ -19487,6 +20231,18 @@ document.addEventListener('keydown', function (e) {
      Arrows keep repeating, to step through a line. Space repeats freely off
      a card, where it scrolls the page */
   if (e.repeat && (/^(Enter|\?|Escape)$/.test(e.key) || (e.key === ' ' && ui.session && ui.session.active))) { e.preventDefault(); return; }
+  /* the view tabs (F6): the arrows (and Home, End) move between them, the
+     tab pattern, and the keyboard stays on the tab */
+  var vt = e.target && e.target.closest && e.target.closest('#views [role="tab"]');
+  if (vt && /^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key)) {
+    e.preventDefault();
+    var vi = VIEWS.map(function (v) { return v[0]; }).indexOf(ui.view), vn = VIEWS.length;
+    var to = e.key === 'Home' ? 0 : e.key === 'End' ? vn - 1 : (vi + (e.key === 'ArrowRight' ? 1 : vn - 1)) % vn;
+    setView(VIEWS[to][0]);
+    var tt = el('tab-' + VIEWS[to][0]);
+    if (tt && tt.focus) tt.focus({ preventScroll: true });
+    return;
+  }
   if (e.key === 'Tab' && ui.sheet) {
     /* focus stays inside the open sheet */
     var sh = document.querySelector('#overlay .sheet');
@@ -19602,9 +20358,10 @@ function typedMove(txt) {
   else if (guessing) makeGuess(a, m);
   else { if (a.phase === 'tried') clearTry(a); gradeMove(m); }
 }
-/* Enter and Space on focusable actions; the view tabs keep their own role */
+/* Enter and Space on focusable actions; the view tabs keep their own role,
+   and a select (the Games tab's filters) is focusable as it is */
 function makeFocusable(root) {
-  var list = (root || document).querySelectorAll('[data-act]:not([href]):not(button):not(input):not(.scrim):not([tabindex])');
+  var list = (root || document).querySelectorAll('[data-act]:not([href]):not(button):not(input):not(select):not(.scrim):not([tabindex])');
   for (var i = 0; i < list.length; i++) {
     if (list[i].id === 'astat-ic' && !list[i].textContent) continue;
     list[i].setAttribute('tabindex', '0');
@@ -19636,7 +20393,7 @@ document.addEventListener('keydown', function (e) {
 });
 
 /* ── board input: tap-tap and drag, on the card's own board only ─────────── */
-var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null, held: false };
+var pointerState = { dragFrom: -1, rightFrom: -1, moved: false, suppressClick: false, swipe: null, held: false, captured: false };
 function sqFromEvent(e) {
   var el2 = document.elementFromPoint(e.clientX, e.clientY);
   var sqEl = el2 && el2.closest ? el2.closest('#bwrap [data-sq]') : null;
@@ -19674,9 +20431,19 @@ function boardState(a) {
   if (a.phase === 'checking') return { st: checkingFrame(a), live: false, checking: true };
   return { st: a.st, live: false };
 }
+/* a swipe that starts on a board scrolls the page (r6 design M2): every
+   board lets the page pan (app.css), and on the card's board only a touch
+   that picks up a piece the board takes now holds the gesture for its drag
+   (its touchstart comes after the pointerdown that picked it up). Held so,
+   a touch sends no click: the tap that puts a lifted piece down again is
+   played at its pointerup instead (pointerFinish) */
+document.addEventListener('touchstart', function (e) {
+  if (pointerState.dragFrom >= 0 && e.target && e.target.closest && e.target.closest('#bwrap')) { e.preventDefault(); pointerState.captured = true; }
+}, { passive: false });
 document.addEventListener('pointerdown', function (e) {
   var a = ui.session && ui.session.active;
   pointerState.held = false;
+  pointerState.captured = false;
   if (!a || !e.target.closest || !e.target.closest('#bwrap')) return;
   var sq = sqFromEvent(e);
   if (sq < 0) return;
@@ -19778,7 +20545,13 @@ function pointerFinish(e, cancelled) {
       sessionClick(sq);
     } else if (!pointerState.moved && pointerState.justSelected) {
       pointerState.suppressClick = true;
+    } else if (!pointerState.moved && pointerState.captured && sq === from) {
+      /* a held touch sends no click: the tap on the piece already lifted
+         puts it down here, as its click would */
+      pointerState.suppressClick = true;
+      sessionClick(sq);
     }
+    pointerState.captured = false;
     pointerState.justSelected = false;
     /* a result that arrived mid-drag is drawn now */
     if (a.explore && a.explore.dirty) { a.explore.dirty = false; renderCard(); }
@@ -19844,10 +20617,17 @@ window.addEventListener('resize', function () { if (xpActive()) fitRows(); });
 document.addEventListener('pointercancel', function (e) { pointerFinish(e, true); });
 
 /* ── games: checking for new ones, formats, limits ───────────────────────── */
-function checkForGames() {
+/* user: the player asked (the refresh, Try again): a check that fails says
+   so in a notice too (F10) */
+function checkForGames(user) {
   if (data.sections.games === 'loading') return;
-  notice('Checking for new games…');
+  data.userCheck = !!user;
+  /* a first load tried again shows its reading card in Today's place; the
+     Games tab's button says it is checking (slice D) */
+  if (data.games.length) notice('Checking for new games…');
   loadGames().then(function () { setTimeout(autoScan, 500); });
+  if (!data.games.length) renderTrain();
+  renderGames();
 }
 var perfFetchTimer = null;
 function perfsChanged() {
@@ -20313,16 +21093,18 @@ var hiddenAt = 0;
 function onReturn() {
   if (document.hidden) { hiddenAt = Date.now(); return; }
   if (!cfg.user || data.narrate || data.sections.games === 'loading') return;
-  /* a recap left behind for a game (a minute or more away) closes to Today */
+  /* a recap left behind for a game (a minute or more away) closes, to Today
+     or to the Games tab it came from */
   var away = hiddenAt && Date.now() - hiddenAt > 60 * 1000;
   hiddenAt = 0;
   if (ui.session && ui.session.finished && away) endSession();
-  /* a new day opens on Today (V4.4), in a page left open on Insights too */
-  if (away && !ui.session && !ui.sheet && ui.view === 'insights' && store.get('nl:viewDay', '') !== dayStamp()) setView('train');
+  /* a new day opens on Today (V4.4), in a page left open on Games or
+     Insights too */
+  if (away && !ui.session && !ui.sheet && ui.view !== 'train' && store.get('nl:viewDay', '') !== dayStamp()) setView('train');
   paintTitle();
   if (ui.session) return;
   var c = loadCachedGames();
-  if (Date.now() - (c.fetchedAt || c.at || 0) > 2 * 60 * 1000) loadGames().then(function () { computeGreeting(); renderTrain(); setTimeout(autoScan, 800); });
+  if (Date.now() - (c.fetchedAt || c.at || 0) > 2 * 60 * 1000) loadGames().then(function () { computeGreeting(); renderTrain(); renderGames(); setTimeout(autoScan, 800); });
 }
 document.addEventListener('visibilitychange', onReturn);
 window.addEventListener('focus', onReturn);

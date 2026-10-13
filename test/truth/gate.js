@@ -90,10 +90,16 @@ if (o.fresh) {
   if (fs.existsSync(c)) fs.readdirSync(c).filter((f) => f.indexOf(run.engine) >= 0).forEach((f) => fs.renameSync(path.join(c, f), path.join(c, f + '.' + Date.now() + '.old')));
 }
 if (doStep('prep')) step('prep', node, [path.join(HERE, 'prep.js')].concat(common));
+/* release 2's C5 (h): every fixture card's key as a browser builds it (keys.js), checked against an
+   8,000,000-node 3-line search (py/keys.py); the seeds' browser keys come with it */
+if (doStep('dump') && passes.indexOf('live') >= 0) {
+  step('keys as browsers make them', node, [path.join(HERE, 'keys.js')].concat(common, ['--workers', workers], keys ? ['--keys', keysFor('live').join(',') || 'none'] : []));
+  step('keys against 8,000,000 nodes', py, [path.join(HERE, 'py', 'keys.py'), '--threads', workers].concat(common, keys ? ['--keys', keysFor('live').join(',') || 'none'] : []));
+}
 for (const p of passes) {
   if (doStep('dump')) {
     if (p === 'practice') step('practice dump', node, [path.join(HERE, 'screens.js')].concat(common, keys ? ['--ids', keysFor(p).map((k) => k.replace(/^pk:/, '')).join(',') || 'none'] : []));
-    else for (const m of [p, p + '-game']) step(m + ' dump', node, [path.join(HERE, 'dump.js'), m].concat(common, ['--workers', workers], keyArg(p)));
+    else for (const m of [p, p + '-game'].concat(p === 'live' ? ['live-seeds'] : [])) step(m + ' dump', node, [path.join(HERE, 'dump.js'), m].concat(common, ['--workers', workers], m === 'live-seeds' ? [] : keyArg(p)));
     step(p + ' board descriptions', py, [path.join(HERE, 'py', 'aria.py'), '--pass', p].concat(common, keyArg(p)));
     if (p === 'practice') step('summary and Insights recount', py, [path.join(HERE, 'py', 'screens.py')].concat(common));
   }

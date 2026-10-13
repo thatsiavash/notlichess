@@ -197,6 +197,11 @@ def h_also_holds(R, m, text):
     if not y:
         return U('')
     fen, u = H2.best_move_of(R)
+    # release 2's C5 (a): "also holds" is "works too" in Details
+    if u != R.best:
+        up, why = ranks_above(fen, u, R.best, R.color)
+        if up:
+            return F('"also holds" for a move that ranks above the main move: ' + why)
     wt, wb = two(fen, u, R.best, R.color)
     # v1: a safe win's 70% edge with the methodology's band-edge noise (TOL)
     return (T if wb - wt <= 6 or (wt >= 70 - TOL and wb >= 70 - TOL) else M)('%.0f%% vs %.0f%%' % (wt, wb))
@@ -388,9 +393,15 @@ def h_classifier(R, m, text):
         z.push(y)
         k = z.king(R.color)
         hits = z.is_check() or (k is not None and bool(z.attackers(not R.color, k))) or any(k is not None and chess.square_distance(t2, k) <= 1 for t2 in z.attacks(y.to_square))
-        if not hits:
-            return U('after %s no check; "attacks it" read loosely' % mk.group(2))
-        notes.append('king attacked')
+        if not hits and k is not None:
+            # "attacks it", read as the words allow: after the reply a piece of theirs hits a square next
+            # to your king (the reply opened a line, or the attack stood and the move took a flight square)
+            near = [q for q in chess.SquareSet(chess.BB_KING_ATTACKS[k]) if z.attackers(not R.color, q)]
+            if not near:
+                return M('after %s nothing of theirs attacks your king or a square next to it' % mk.group(2))
+            notes.append('after %s they hit %s next to your king' % (mk.group(2), [chess.square_name(q) for q in near]))
+        else:
+            notes.append('king attacked')
     if re.search(r' walks into a (pin|skewer)', t):
         e = ev(a.fen(), not R.color, DEEP)
         y = a.copy()
@@ -466,6 +477,29 @@ def h_classifier(R, m, text):
                 break
             x.push(mv_)
         return (T if prom else M)('their pawn promotes in the deep line: %s (%s)' % (prom, ' '.join(s['pv'][:10])))
+    # the classifier's bad trade (release 2's C5 (f), Explore reads every move's sentence): "Qxe5+ takes a
+    # pawn, but Bxe5 takes your queen." The move takes that piece, the reply takes that piece of yours,
+    # and the deep line loses the difference
+    mb = re.match(r'^(\S+) takes an? (\w+), but (the reply|\S+) takes your (\w+)\.', t)
+    if mb and mb.group(2) in chk.NAME and mb.group(4) in chk.NAME:
+        b0 = chess.Board(pre)
+        mv = chess.Move.from_uci(played)
+        got = chess.PAWN if b0.is_en_passant(mv) else (b0.piece_at(mv.to_square).piece_type if b0.piece_at(mv.to_square) else None)
+        if got != chk.NAME[mb.group(2)]:
+            return F('%s takes no %s' % (mb.group(1), mb.group(2)))
+        if mb.group(3) != 'the reply':
+            y = parse_move(a, mb.group(3))
+            q = a.piece_at(y.to_square) if y else None
+            if not y or not q or q.color != R.color or q.piece_type != chk.NAME[mb.group(4)]:
+                return F('%s does not take your %s after %s' % (mb.group(3), mb.group(4), mb.group(1)))
+        lost = chk.VAL[chk.NAME[mb.group(4)]] - chk.VAL[got]
+        if lost > 0:
+            v = loss_check(pre, R.color, [played], lost)
+            if v[0] != 'true':
+                return v
+            notes.append(v[1])
+        else:
+            notes.append('the trade as said')
     if not notes:
         return U('sentence not read: ' + t)
     return T('; '.join(notes))

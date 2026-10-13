@@ -2,11 +2,15 @@
 // internals through window.__nlTest.ev (enabled because location.hostname is 'localhost').
 // Usage: const A = require('./app-realm')({ now, storage: {...}, session: {...}, keysOnly });
 //        A.ev('todayPlan()'); A.setNow(ms); A.storage; A.click('tryAgain', k, slot, { detail: 1 }) (a button click, through the page's handler)
-//        A.key('Enter', repeat, on): a key through the page's keydown handlers (on a focused button when on = { act, k, slot })
+//        A.key('Enter', repeat, on): a key through the page's keydown handlers (on a focused button when on = { act, k, slot }, a view tab when on = { tab })
 //        A.tap(sq), A.drag(from, to, mouse): the board by hand, through the page's pointer and click handlers
 //        A.advance(ms): the clock moves on, and each timer runs when it falls due (A.flush runs them all, whatever their delay)
 //        A.fire(type): a document event (visibilitychange) through the page's listeners
 //        A.change(act, checked): a Settings switch (a checkbox with that data-act) through the page's change listeners
+//          (and a select: A.change(act, value, k), its data-k and value)
+//        A.appended: what the page appended to the body, in order (Clarity's tag at boot)
+//        opts.hash: the address's hash at boot ('#games'); opts.nav: how it was opened ('reload', 'navigate')
+//        A.urls: the addresses pushed and replaced ([kind, url]); A.pop(hash, state): Back or Forward to an address
 // Nothing reaches the network (fetch never resolves) and no engine runs (Worker throws), so everything
 // tested here is the app's own bookkeeping.
 const fs = require('fs'), path = require('path');
@@ -45,20 +49,29 @@ module.exports = function makeApp(opts) {
   });
   const els = { main: elStub(), overlay: elStub() };
   const timers = [], listeners = {};
+  /* what the page appends to the body (Clarity's tag at boot, the live region), in order */
+  const appended = [], body = elStub();
+  body.appendChild = (e) => { appended.push(e); };
   const document = {
     getElementById: (id) => els[id] || null, querySelector: () => null, querySelectorAll: () => [],
-    addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); }, createElement: () => elStub(), body: elStub(), documentElement: elStub(), hidden: false, title: '',
+    addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); }, createElement: () => elStub(), body, documentElement: elStub(), hidden: false, title: '',
   };
+  /* the window's listeners are kept (popstate, focus...), and run only when a test asks (A.pop) */
+  const wlisteners = {};
   const window = {
-    addEventListener() {}, console, matchMedia: () => ({ matches: false }), scrollTo() {}, innerWidth: 1200,
+    addEventListener: (type, fn) => { (wlisteners[type] = wlisteners[type] || []).push(fn); }, console, matchMedia: () => ({ matches: false }), scrollTo() {}, innerWidth: 1200,
     pageYOffset: 0, scrollY: 0,
   };
-  const loc = { search: opts.search || '', hash: '', pathname: '/', hostname: 'localhost', href: '' };
+  const loc = { search: opts.search || '', hash: opts.hash || '', pathname: '/', hostname: 'localhost', href: '' };
+  /* the addresses the page pushed and replaced, in order: [kind, url] */
+  const urls = [];
   const ctx = {
     window, document, localStorage: local.api, sessionStorage: session.api, console, Math, JSON, Date: FakeDate, Promise,
     Object, Array, String, Number, RegExp, Error, isFinite, isNaN, parseInt, parseFloat, URLSearchParams,
     Blob: function () {}, URL: { createObjectURL: () => '', revokeObjectURL() {} },
-    location: loc, history: { state: null, replaceState() {}, pushState(s) { this.state = s; }, back() {} },
+    location: loc, history: { state: null, replaceState(s, t, u) { urls.push(['replace', u]); }, pushState(s, t, u) { this.state = s; urls.push(['push', u]); }, back() { urls.push(['back']); } },
+    /* how this page was opened (opts.nav: 'reload', 'navigate'), as the browser's navigation entry says */
+    performance: { getEntriesByType: () => (opts.nav ? [{ type: opts.nav }] : []) },
     navigator: { onLine: true, hardwareConcurrency: 4, storage: { persist: () => Promise.resolve(true) } },
     setTimeout: (fn, ms) => { const w = () => fn(); w.due = now + (+ms || 0); timers.push(w); return timers.length; }, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
     requestAnimationFrame() {}, fetch: () => new Promise(() => {}), Worker: function () { throw new Error('no workers in node'); },
@@ -95,6 +108,15 @@ module.exports = function makeApp(opts) {
   };
   /* stubbed nodes inside the page (a bar button's click()) reach the click handler through this */
   window.__realmClick = click;
+  /* a checkbox with this data-act switched on or off (a Settings switch), or with a string a select's
+     value picked (k: its data-k, the Games tab's filters), through the page's change listeners */
+  const change = (act, checked, k) => {
+    const t = typeof checked === 'string'
+      ? { tagName: 'SELECT', value: checked, getAttribute: (n) => (n === 'data-act' ? act : n === 'data-k' ? (k == null ? null : String(k)) : null) }
+      : { tagName: 'INPUT', type: 'checkbox', checked: !!checked, getAttribute: (n) => (n === 'data-act' ? act : null) };
+    (listeners.change || []).forEach((fn) => fn({ type: 'change', target: t, preventDefault() {} }));
+  };
+  window.__realmChange = change;
   /* the board under a finger or a mouse: square sq is drawn at a point of
      its own (white at the bottom), and elementFromPoint finds it there, as
      the page's pointer handlers look it up. sq -1 is on the board but on no
@@ -116,7 +138,9 @@ module.exports = function makeApp(opts) {
     (listeners[type] || []).forEach((fn) => fn(e));
   };
   return {
-    ev, storage: local.data, session: session.data, timers, loc,
+    ev, storage: local.data, session: session.data, timers, loc, appended, urls,
+    /* Back or Forward to an address (its hash, and the state its entry kept): the page's popstate listeners run */
+    pop: (hash, state) => { loc.hash = hash || ''; ctx.history.state = state || null; (wlisteners.popstate || []).forEach((fn) => fn({ type: 'popstate', state: state || null })); },
     setNow: (t) => { now = t; }, getNow: () => now,
     /* a click on a button, given to the page's own document click handler */
     click,
@@ -136,8 +160,11 @@ module.exports = function makeApp(opts) {
        on = { id, value } in that text field; repeat marks the keyboard's
        auto-repeat of a held key */
     key: (key, repeat, on) => {
-      const t = !on ? { tagName: 'BODY', closest: () => null, matches: () => false }
-        : on.id ? { tagName: 'INPUT', id: on.id, value: on.value || '', closest: () => null, matches: () => false } : button(on.act, on.k, on.slot);
+      /* (on = { tab: 'train' }: on that view tab, the tab pattern's arrows) */
+      const tab = on && on.tab ? { tagName: 'A', id: 'tab-' + on.tab, getAttribute: (n) => (n === 'role' ? 'tab' : n === 'data-act' ? 'view' : n === 'data-k' ? on.tab : null), matches: () => false } : null;
+      if (tab) tab.closest = (sel) => (sel === '#views [role="tab"]' || sel === '[data-act]' ? tab : null);
+      const t = tab || (!on ? { tagName: 'BODY', closest: () => null, matches: () => false }
+        : on.id ? { tagName: 'INPUT', id: on.id, value: on.value || '', closest: () => null, matches: () => false } : button(on.act, on.k, on.slot));
       (listeners.keydown || []).forEach((fn) => fn({ key, repeat: !!repeat, target: t, preventDefault() {} }));
     },
     /* the clock moves on by ms; each timer runs when it falls due, in order,
@@ -156,11 +183,8 @@ module.exports = function makeApp(opts) {
     },
     /* an event on the document (visibilitychange), given to the page's own listeners */
     fire: (type) => { (listeners[type] || []).forEach((fn) => fn({ type, target: document, preventDefault() {} })); },
-    /* a checkbox with this data-act switched on or off (a Settings switch), through the page's change listeners */
-    change: (act, checked) => {
-      const t = { tagName: 'INPUT', type: 'checkbox', checked: !!checked, getAttribute: (n) => (n === 'data-act' ? act : null) };
-      (listeners.change || []).forEach((fn) => fn({ type: 'change', target: t, preventDefault() {} }));
-    },
+    /* a Settings switch or a select, through the page's change listeners (window.__realmChange inside) */
+    change,
     /* run queued timers once (not recursively forever) */
     flush: (rounds) => { for (let r = 0; r < (rounds || 1); r++) { const t = timers.splice(0); t.forEach((f) => { try { f(); } catch (e) {} }); } },
   };
