@@ -1150,6 +1150,9 @@ const BAR = `(function () {
     run(2500);
     tapBtn('seeWhy');
     run(1500);
+    /* (found, it opens on B1: the game segment from the strip) */
+    A.ev('(storyJump("game"), 1)');
+    run(1500);
     s = S();
     eq(s.view, 'story', 'See why clicked');
     eq(foc(), 'cbar storyFwd@1', 'in the story clicked into, the keyboard is on the honey button');
@@ -4649,7 +4652,7 @@ const BAR = `(function () {
         var bestSan = sanOf(a.pre, a.best).replace(/[+#]$/, '');
         a.alt = { uci: 'x' }; a.own = true; a.yours = { uci: [], cp: 0, at: 0 }; a.story = null;
         var S3 = buildStory(a), w = said(a, S3.g);
-        if (S3.alt || /works too/.test(S3.steps[S3.g].cap) || S3.steps[S3.g].cap.indexOf('Better: ' + bestSan) !== 0 || />Yours</.test(w.strip) || !/>Better</.test(w.strip) || !/the better move\\./.test(w.live)) out.push(it.key + ': the best move called yours: ' + S3.steps[S3.g].cap + ' | ' + w.live);
+        if (S3.alt || /works too/.test(S3.steps[S3.g].cap) || S3.steps[S3.g].cap.indexOf('Better: ' + bestSan) !== 0 || />Yours</.test(w.strip) || !/>(Better|Why it works)</.test(w.strip) || !/the better move\\./.test(w.live)) out.push(it.key + ': the best move called yours: ' + S3.steps[S3.g].cap + ' | ' + w.live);
         n.noLine++;
         /* a real alternative: "Yours" in the strip, "your move" for screen readers, "works too" on B1 */
         var alt = legalMoves(a.pre).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci; })[0];
@@ -4685,7 +4688,10 @@ const BAR = `(function () {
       if (k % 2) A.click('seeWhy', null, 0); else A.key('ArrowRight');
       /* the bar comes with the caption, and its new slots wait out the double-tap guard */
       run(1700);
-      let s = st(); eq(s.mode + ' ' + s.i, 'story 0', key + ': the first tap opens G1'); fens.push(s.fen);
+      /* release 3: found, the story opens on B1 (the last step here), and the strip's Game opens G1 */
+      let s = st(); eq(s.mode + ' ' + s.i, 'story 2', key + ': the first tap opens B1');
+      A.click('storyJump', 'game'); run(1200);
+      s = st(); eq(s.mode + ' ' + s.i, 'story 0', key + ': Game opens G1'); fens.push(s.fen);
       for (let t = 1; t < 3; t++) {
         if (k % 2) A.click('storyFwd', null, 1); else A.key('ArrowRight');
         run(1200);
@@ -4711,7 +4717,7 @@ const BAR = `(function () {
       A.ev('(ui.reducedTest = ' + rm + ', 1)');
       A.ev(`(function () { window.__show(model().byKey['${key}']); ui.session.keys.push('x'); return 1; })()`);
       run(1000);
-      A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
+      A.ev('(function (a) { reveal(); return 1; })(ui.session.active)'); run(1200); A.ev('(function (a) { if (a.revealed && a.phase === \'done\' && !a.sol) playIt(false); return 1; })(ui.session.active)');
       run(2500);
       A.click('seeWhy', null, 0);
       const t0 = A.getNow();
@@ -4774,7 +4780,7 @@ const BAR = `(function () {
     for (const key of keys) {
       A.ev(`(function () { window.__show(model().byKey['${key}']); ui.session.keys.push('x'); return 1; })()`);
       run(1000);
-      A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
+      /* (an answer shown: release 3 opens a found card's story on B1) */ A.ev('(function (a) { reveal(); return 1; })(ui.session.active)'); run(1200); A.ev('(function (a) { if (a.revealed && a.phase === \'done\' && !a.sol) playIt(false); return 1; })(ui.session.active)');
       run(2500);
       /* a left swipe in S0 opens the story; a tap while it crossfades in ends the crossfade and the slide, never the step */
       swipe(420, -120);
@@ -4849,7 +4855,7 @@ const BAR = `(function () {
         const at = (reduced ? 'reduced, ' : '') + key;
         A.ev(`(function () { window.__show(model().byKey['${key}']); ui.session.keys.push('x'); return 1; })()`);
         run(1000);
-        A.ev('(function (a) { gradeMove(uciToMove(a.st, a.bestUci)); return 1; })(ui.session.active)');
+        /* (an answer shown: release 3 opens a found card's story on B1) */ A.ev('(function (a) { reveal(); return 1; })(ui.session.active)'); run(1200); A.ev('(function (a) { if (a.revealed && a.phase === \'done\' && !a.sol) playIt(false); return 1; })(ui.session.active)');
         run(2500);
         A.ev('window.__writes.length = 0; window.__snd.length = 0; 1');
         let t0 = A.getNow();
@@ -4934,8 +4940,10 @@ const BAR = `(function () {
       eq(foc(), 'cbar next@1', key + ': solved, Continue');
       A.ev('(function () { var b = window.__els.cbar.querySelector(\'[data-act="seeWhy"]\'); b.focus(); b.click(); return 1; })()');
       run(1700);
-      const n = A.ev('buildStory(ui.session.active).steps.length');
-      for (let i = 0; i < n; i++) {
+      const n = A.ev('buildStory(ui.session.active).steps.length'), i0 = A.ev('ui.session.active.view.i');
+      /* release 3: a card found opens on B1 */
+      eq(i0, A.ev('buildStory(ui.session.active).g'), key + ': found, See why opens on B1');
+      for (let i = i0; i < n; i++) {
         eq(foc(), i < n - 1 ? 'cbar storyFwd@1' : 'cbar next@2', key + ': step ' + (i + 1) + ' of ' + n + ' focus');
         const bar = A.ev('window.__els.cbar.innerHTML');
         ok(/data-act="storyBack"[^>]*aria-label="Previous move"/.test(bar), key + ': ‹ is Previous move');
@@ -6147,7 +6155,8 @@ const BAR = `(function () {
       var out = {};
       [1, 2].forEach(function (tier) {
         var a = openAt('184455333378:68', tier);
-        solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.animMove = null; a.settle = 2;
+        /* (shown: release 3 opens a found card on B1) */
+        reveal(); a.animMove = null; playIt(false); a.animMove = null; a.settle = 2; a.view = { mode: 's0' };
         seeWhy();
         var f = boardOptsFor(a), o = f.opts, d = displayFor(a), S = buildStory(a);
         var x = { i: a.view.i, seg: S.steps[0].seg, df: !!S.steps[0].df, anim: o.anim || null, mark: (o.mark || []).map(sqName).join(''), cap: d.cap,
@@ -7630,6 +7639,8 @@ const BAR = `(function () {
   for (const t of require('./words')({ boot, eq, ok, tick, OPEN, TRY })) await test(t[0], t[1]);
   /* release 2 slice B, chess truth (B1 to B9): test/chesstruth.js */
   for (const t of require('./chesstruth')({ boot, eq, ok, tick, OPEN, TRY })) await test(t[0], t[1]);
+  /* release 3, See why shows both sides: test/bothsides.js */
+  for (const t of require('./bothsides')({ boot, eq, ok, OPEN, TRY })) await test(t[0], t[1]);
 
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'card flow: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));

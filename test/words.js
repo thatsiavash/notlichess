@@ -254,13 +254,15 @@ module.exports = function (h) {
     const A = keyed();
     const c2 = settledOf(A, CARD2, 1);
     eq(c2.r2, 'Pawn to f5 guards your knight.', 'card 2 at 700');
-    eq(c2.caps[c2.caps.length - 1], 'Better: pawn to f5. It guards your knight.', 'card 2\'s See why ends on the reason');
-    eq(settledOf(A, CARD2, 2).caps.slice(-1)[0], 'Better: f5. It guards your knight.', 'at 1600');
+    /* (release 3: B1 says the reason, and the answer's line plays on from it) */
+    eq(c2.caps[c2.segs.indexOf('better')], 'Better: pawn to f5. It guards your knight.', 'card 2\'s See why: B1 says the reason');
+    const c22 = settledOf(A, CARD2, 2);
+    eq(c22.caps[c22.segs.indexOf('better')], 'Better: f5. It guards your knight.', 'at 1600');
     for (const t of [2, 3]) eq(settledOf(A, QTRAP, t).r2, 'Be3 traps their queen.', 'the queen trap at tier ' + t);
     /* (release 2, B7: at tier 1 a mate in 7 is no "checkmate": its band, and See why's last step says it as a better move does) */
     for (const t of [1, 2]) {
-      const k = settledOf(A, KB2, t), say = t === 1 ? 'King to b2 keeps you winning.' : 'Kb2 forces mate.', cap = t === 1 ? 'Better: king to b2. It keeps you winning.' : say;
-      eq(JSON.stringify([k.r2, k.caps.slice(-1)[0], k.details.indexOf(say) >= 0]), JSON.stringify([say, cap, true]), 'the Kb2 card at tier ' + t + ': one reason, three places');
+      const k = settledOf(A, KB2, t), say = t === 1 ? 'King to b2 keeps you winning.' : 'Kb2 forces mate.', b1 = t === 1 ? 'Better: king to b2. It keeps you winning.' : 'Better: Kb2. It forces mate.';
+      eq(JSON.stringify([k.r2, k.caps[k.segs.indexOf('better')], k.caps.slice(-1)[0], k.details.indexOf(say) >= 0]), JSON.stringify([say, b1, say, true]), 'the Kb2 card at tier ' + t + ': one reason, in the row, on B1, at the line\'s end and in Details');
     }
     for (const t of [1, 2, 3]) {
       const r = settledOf(A, RACE, t), all = [r.r2, r.check].concat(r.caps, r.details).join(' | ');

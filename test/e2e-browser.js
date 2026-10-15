@@ -402,7 +402,15 @@
     await sleep(5000);
     ok('board and band unchanged 5 s after an answer', frame() === f0, JSON.stringify(c.view) + ' -> ' + JSON.stringify(T.card().view));
     /* the story (S12): G1 is the game move with its red arrow as the trail, and the reply it allows; then one ply per tap */
+    /* release 3: a card found opens See why on why the move works (B1, the green arrow, the Better segment
+       on in the strip, "Why it works" where it has room); the strip's Game is one tap away */
     press('#cbar [data-act=seeWhy]');
+    const gB = T.ev('buildStory(ui.session.active).g');
+    await storyLanded(gB);
+    ok('See why on a card found opens on B1, why the move works: its caption, the Better segment on', T.card().story.i === gB && $('#cband .card-task').classList.contains('k-sbetter') && /^Better: /.test(text('#cband .bd-cap'))
+      && !!$('#cstrip .st-better.on') && /^(Why it works|Better)/.test(text('#cstrip .st-better')), JSON.stringify(T.card().story) + ' ' + text('#cband') + ' / ' + text('#cstrip'));
+    storyFrame('B1');
+    click('#cstrip [data-act=storyJump][data-k=game]');
     await storyLanded(0);
     const sg = T.card().story, g1threat = T.ev('!!buildStory(ui.session.active).threat');
     /* a card with a danger opens on its still danger frame (F1.5): no game arrow yet, the dashed arrows into
@@ -460,11 +468,13 @@
     /* a double tap's second half, 200 ms on, finds the bar faded out: it reaches no button */
     await sleep(200);
     const wh = wr && document.elementFromPoint(wr.x + wr.width / 2, wr.y + wr.height / 2), whAct = wh && wh.closest && wh.closest('#cbar [data-act]');
-    ok('a double tap on See why reaches no button with its second tap', !!wr && !whAct && T.card().story && T.card().story.i === 0, whAct ? whAct.getAttribute('data-act') : 'none');
-    await until(() => { const f = $('#cbar [data-act=storyFwd]'); return !!f && !$('#cbar').classList.contains('stale') && !f.classList.contains('stale'); }, 4000, 16);
-    click('#cbar [data-act=storyFwd]');
-    await storyLanded(1).catch(() => {});
-    ok('the first visible tap on Next move steps', !!T.card().story && T.card().story.i === 1, JSON.stringify(T.card().story));
+    ok('a double tap on See why reaches no button with its second tap', !!wr && !whAct && T.card().story && T.card().story.i === gB, whAct ? whAct.getAttribute('data-act') : 'none');
+    if (gB < sg.n - 1) {
+      await until(() => { const f = $('#cbar [data-act=storyFwd]'); return !!f && !$('#cbar').classList.contains('stale') && !f.classList.contains('stale'); }, 4000, 16);
+      click('#cbar [data-act=storyFwd]');
+      await storyLanded(gB + 1).catch(() => {});
+      ok('the first visible tap on Next move steps', !!T.card().story && T.card().story.i === gB + 1, JSON.stringify(T.card().story));
+    }
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(500);
 
@@ -525,7 +535,8 @@
       ok('Esc returns to the lesson', !T.explore() && T.card().view.mode === 's0' && !!$('#cstrip [data-act=details]'), JSON.stringify(T.card().view));
       /* from the ••• menu, from a story step: Back to the lesson returns to that step */
       press('#cbar [data-act=seeWhy]');
-      await storyLanded(0);
+      /* (the step it opens on: B1 on a card found, release 3) */
+      await storyLanded(T.ev('ui.session.active.view.i'));
       const sv = JSON.stringify(T.card().view);
       click('#ctop [data-act=menu]');
       await until(() => $('#ctop [data-act=explore]'), 3000);
@@ -988,6 +999,9 @@
         await until(() => T.card().settle === 2, 6000);
         await sleep(300);
         click('#cbar [data-act=seeWhy]');
+        /* (found, it opens on B1, release 3: the strip's Game opens the game segment) */
+        await storyLanded(T.ev('buildStory(ui.session.active).g'));
+        click('#cstrip [data-act=storyJump][data-k=game]');
         await storyLanded(0);
         /* its danger frame first, when it has one (F1.5), then G1 */
         const tg1 = T.ev('buildStory(ui.session.active).steps[0].df ? 1 : 0');

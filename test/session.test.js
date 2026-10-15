@@ -1725,7 +1725,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
                N1 in the strip, beside the caption, only within the budget */
             a.note = null; seeWhy();
             var S = buildStory(a);
-            if (a.view.mode !== 'story' || a.view.i !== 0) out.push(what + ': See why did not open the story at G1');
+            /* (release 3: a card found opens on B1) */
+            var open0 = !a.revealed && !a.alt && S.steps.length > S.g ? S.g : 0;
+            if (a.view.mode !== 'story' || a.view.i !== open0) out.push(what + ': See why did not open the story at ' + (open0 ? 'B1' : 'G1'));
             for (var si = 0; si < S.steps.length; si++) {
               a.view = { mode: 'story', i: si }; a.note = null;
               d = band(what + ', story step', a);
@@ -1734,7 +1736,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
               var want = '‹ | Next move ›' + (last ? ' (off)' : '') + ' | ';
               if (bl.indexOf(want) !== 0 || !/^(Continue|Finish)$/.test(bl.slice(want.length))) out.push(what + ', story step ' + si + ' bar ' + bl);
               var sw = words(String(d.strip).replace(/<[^>]*>/g, ' '));
-              if (sw !== (S.steps.length > 9 ? 3 : 2)) out.push(what + ', story step ' + si + ' strip ' + d.strip);
+              if (sw !== (S.steps.length > 9 ? 3 : S.wiw ? 4 : 2)) out.push(what + ', story step ' + si + ' strip ' + d.strip);
               if (!/^Step \\d+ of \\d+, (your game|the better move|your move|what they could have played|before your game move)\\. /.test(d.live) || d.live.indexOf(ledgerSay(d.cap)) < 0) out.push(what + ', story step ' + si + ' live ' + d.live);
               /* the move they could have played is never called your game (fresh-eyes T4) */
               if (/could have played/.test(d.live) !== !!(S.could && si === S.g - 1)) out.push(what + ', story step ' + si + ' live ' + d.live + ' for a ' + (S.could ? 'could' : 'real') + ' step');

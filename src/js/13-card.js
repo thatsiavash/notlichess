@@ -1587,14 +1587,18 @@ function settleBeats(a) {
   });
 }
 /* See why (S12): from S0 (See why, →, a left swipe) the story opens at
-   G1. A revealed card offers it once settled */
+   G1, or at B1 on a card found (release 3). A revealed card offers it once
+   settled */
 function seeWhy() {
   var a = ui.session && ui.session.active;
   /* a foil had nothing wrong: no story to tell (F8.2); a practice position
      has no game to tell (F9.4) */
   if (!a || a.foil || a.prac || a.phase !== 'done' || a.explore || !a.lines || !a.view || a.view.mode !== 's0' || a.settle < (a.revealed ? 2 : 0)) return;
   a.settle = 2;
-  storyGo(a, 0, true);
+  /* release 3: a card you found yourself (first try, or after a hint or a
+     miss) opens on why the move works; your game is the strip's first tap */
+  var S = buildStory(a), found = !a.revealed && !a.alt && S.steps.length > S.g;
+  storyGo(a, found ? S.g : 0, true);
 }
 /* back to the settled result (‹ on G1, Esc): a jump, so it crossfades */
 function backToSettled() {
