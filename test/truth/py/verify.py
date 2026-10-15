@@ -14,6 +14,7 @@ import cfg, chk, sf, gamedata
 from claims import Rec, T, F, M, U, N
 import handlers as H1, handlers2 as H2, handlers3 as H3
 import handlers_v1 as HV, handlers_v2 as HV2, handlers_gate as HG, handlers_xp as HXP, handlers_b as HB
+import handlers_r3 as HR3
 # v2 slice 1's forms, read before the older ones
 H2.SETTLED[:0] = HV.SETTLED
 H1.VERDICT[:0] = HV.VERDICT
@@ -34,7 +35,10 @@ _story0 = H2.h_story
 
 
 def _story(R, m, text):
-    v = HV2.story_v2(R, m, text)
+    # release 3's forms on the answer's line (See why shows both sides), read first
+    v = HR3.story_r3(R, m, text)
+    if v is None:
+        v = HV2.story_v2(R, m, text)
     return v if v is not None else _story0(R, m, text)
 
 

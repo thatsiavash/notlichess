@@ -2995,7 +2995,8 @@ function cardAvoid(a) { return [a.bestUci, a.playedUci].concat(a.sol || []).filt
 /* the story's strip (S12): "Game ●●● Better ●", a dot per step, the one on
    screen larger with a ring; each name opens its segment's first step. Over
    9 dots it folds to "Game 2/5 · Better". An alternative's segment is
-   "Yours" (B1 says "Your X works too."). A tap on a piece puts N1 here for
+   "Yours" (B1 says "Your X works too."); the better one reads "Why it
+   works" where the strip has room (release 3). A tap on a piece puts N1 here for
    a while (S2), in place of the dots */
 function storyStripHtml(a) {
   if (a.note && a.note.key === cardStateKey(a)) return '<p class="story-note">' + esc(CARD_COPY.N1(a)) + '</p>';
@@ -3008,7 +3009,7 @@ function storyStripHtml(a) {
       + '<span class="st-name">' + label + '</span>' + (dots ? '<span class="st-dots" aria-hidden="true">' + dots + '</span>' : '') + '</button>';
   };
   return '<div class="story-strip' + (n > 9 ? ' folded' : '') + '">' + seg('game', 'Game', 0, S.g, inGame)
-    + (n > 9 ? '<span class="st-sep" aria-hidden="true">·</span>' : '') + seg('better', S.alt ? 'Yours' : 'Better', S.g, n - S.g, !inGame) + '</div>';
+    + (n > 9 ? '<span class="st-sep" aria-hidden="true">·</span>' : '') + seg('better', S.alt ? 'Yours' : S.wiw ? 'Why it works' : 'Better', S.g, n - S.g, !inGame) + '</div>';
 }
 /* the Details sheet (S13): what the answered card no longer says on its
    face. The game's context, the decisive line, both long sentences (and an

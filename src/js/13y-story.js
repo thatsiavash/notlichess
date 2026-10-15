@@ -1974,7 +1974,25 @@ function buildStory(a) {
      reason, on the better move's own step) */
   var kf = factsOf(it.b), longMate = inWords(a) && !!kf && !kf.x && kf.fm > 3;
   var wp = !alt && (!c.mateFor || longMate) && !same && bl === c.bestLine ? whyPred(a) : null, fig = false;
-  if (wp != null) {
+  /* release 3 (both sides): at every help level the answer's line from its
+     fact sheet plays to where it settles (sb), 2 to 6 plies past the better
+     move, ending on a move of yours; the whole line where it mates within
+     that (at tier 1 only a mate within 3 moves is played to the mate, the
+     3-move rule for naming checkmate). Tier 3 ends on the figure */
+  var keyed = !alt && !same && !!kf && !kf.x && kf.a === a.bestUci && from === 1 && (bl === c.bestLine || !!c.mateFor);
+  if (keyed) {
+    var mEnd = mateAt(bl);
+    if (mEnd >= 1 && mEnd - from <= 6 && (!inWords(a) || kf.fm <= 3)) { bEnd = mEnd; whole = true; }
+    else {
+      var lastN = bl.nodes.length - 1;
+      bEnd = Math.min(Math.max(kf.sb ? from + kf.sb.k - 1 : bEnd, from + 2), from + 6, lastN);
+      /* a move of theirs: on to your next move where the window has it, else back to yours */
+      if (bEnd > from && bl.nodes[bEnd].byWhite !== pov && !isMate(bl.nodes[bEnd].after)) bEnd = bEnd + 1 <= Math.min(from + 6, lastN) ? bEnd + 1 : bEnd - 1;
+      whole = !!isMate(bl.nodes[bEnd].after);
+    }
+    fig = a.tier >= 3 && wp != null && bEnd > from;
+  }
+  else if (wp != null) {
     if (a.tier >= 3) {
       bEnd = Math.min(Math.max(kf.sb ? kf.sb.k : bEnd, 4), from + 5, bl.nodes.length - 1);
       /* never on their capture: back to the move before it */
@@ -1990,7 +2008,7 @@ function buildStory(a) {
   while (!whole && bEnd > from && bl.nodes[bEnd].byWhite !== pov && !bl.nodes[bEnd].captured && !isMate(bl.nodes[bEnd].after) && !betterClaim(a, bl, bEnd, from)) bEnd--;
   for (k = from; k <= bEnd; k++) steps.push({ seg: 'better', line: bl, k: k, from: from });
   var S = a.story = { steps: steps, g: gEnd + 1 + (df ? 1 : 0), could: could, real: realSeg, threat: threat, guard: null, alt: !!alt,
-                      mateG: isMate(gl.nodes[gEnd].after), mateB: isMate(bl.nodes[bEnd].after), danger: !!df, why: wp, fig: fig };
+                      mateG: isMate(gl.nodes[gEnd].after), mateB: isMate(bl.nodes[bEnd].after), danger: !!df, why: wp, fig: fig, keyed: keyed };
   /* the guard dots and words of B1: the better move's own square guarded
      once it is played, the game move's not (the guard rule, read as R4 reads
      it), by a piece of yours that guards it directly */
@@ -2000,6 +2018,10 @@ function buildStory(a) {
     if (by != null) S.guard = { from: by, to: bn.move.to, piece: pType(bn.after.b[by]) };
   }
   steps.forEach(function (s, i) { s.cap = s.df ? s.df.cap : storyCaption(a, S, i); });
+  /* release 3: the strip names the better segment "Why it works" where it
+     has room (unfolded, and every caption leaves the strip's four words and
+     the bar's three within the frame's 15), else "Better" */
+  S.wiw = !S.alt && steps.length <= 9 && steps.every(function (s) { return wordsIn(s.cap) <= 8; });
   return S;
 }
 /* F1.5, See why's first frame: the card's own position, still, with what
@@ -2398,12 +2420,28 @@ function capForms(a, S, i, w) {
     else if (n.captured && colorW(n.captured) === pov) cands.push(who + ' still takes your ' + PIECE_WORD[pType(n.captured)] + '.');
     return { cands: cands, fall: fall };
   }
+  /* release 3: their reply in the answer's line says what they must do
+     where the board proves it: their only legal move ("Kf3 is their only
+     move."), else a quiet move out of check ("They play Kf3 out of check.") */
+  if (S.keyed && n.byWhite !== pov && !n.captured && !isMate(n.after)) {
+    var nLegal = legalMoves(n.before).length;
+    if (nLegal === 1) says = [Mv + ' is their only move.'].concat(says);
+    else if (checkersOf(n.before).length) says = ['They play ' + san.replace(/[+#]$/, '') + ' out of check.'].concat(says);
+  }
   /* V2.2: a fork the motif code finds on this ply is named */
   var fk2 = forkSay(a, n, w);
   if (fk2 && !isMate(n.after)) says = [fk2].concat(says);
   /* what it nets where it ends, only where that count stands (settledAt) */
   var stands = lastB && !isMate(n.after) && settledAt(s.line, s.k) && !forcedMate(a);
   var won = stands ? storyGain(s.line, s.k, s.from, gain) : null;
+  /* release 3: the answer's line ends on what you keep: the piece it saves
+     or guards, still yours and safe where the line ends; else, for a reason
+     that is where it keeps the game, that reason again ("King to b2 keeps
+     you winning.", as a forced mate's end says "Kb2 forces mate.") */
+  var safeP = lastB && S.keyed && !isMate(n.after) && !(won && !namesIt(n, won.w)) ? keptSafe(a, s.line, s.k, s.from) : '';
+  var wEnd = lastB && S.keyed && !S.fig && !won && !safeP && !mr ? whyOf(a) : null;
+  if (safeP) says.concat([Mv + '.']).forEach(function (h) { cands.push(h + ' Your ' + safeP + ' is safe.'); });
+  if (wEnd && wEnd.r === 'band') { var wf = whyForms(a); if (wf) cands.push(wf[wf.length - 1]); }
   if (won && !namesIt(n, won.w)) says.concat([Mv + '.']).forEach(function (h) { cands.push(h + ' You win ' + won.w + '.'); if (won.wn !== won.w) cands.push(h + ' You win ' + won.wn + '.'); });
   /* a better line that still loses material where it ends says so only when
      it loses less than the game did (a loss the card claims); one that
@@ -2449,11 +2487,33 @@ function betterClaim(a, line, k, from) {
   for (var j = k + 1; j < line.nodes.length; j++) if (settledAt(line, j) && matDiff(line.nodes[j].after.b, pov) < base) return '';
   return 'none';
 }
+/* release 3: the piece the answer saves or guards (the card's saved piece,
+   else its reason's), named where the answer's line ends (node k, from
+   node `from`) only where every piece of that kind you had is still yours
+   and none can be won there: each unattacked, or guarded at least as often
+   as it is attacked with no cheaper attacker. Its word, or '' */
+function keptSafe(a, line, k, from) {
+  var n = line.nodes[k], pov = myPov(a.it), w = whyOf(a), cmp = buildCompare(a), t = cmp.saves.length ? cmp.saves[0] : '';
+  if (!t && w && w.r === 'saves') t = pType(w.p);
+  if (!t && w && w.r === 'guards') t = ((w.ps || []).filter(function (p) { return p !== 'mate'; })[0] || '');
+  if (!t || !n || !n.after) return '';
+  t = pType(t);
+  var mine = function (b) { var q = []; for (var i = 0; i < 64; i++) if (b[i] && colorW(b[i]) === pov && pType(b[i]) === t) q.push(i); return q; };
+  var at = mine(n.after.b);
+  if (!at.length || at.length < mine(line.nodes[from].before.b).length) return '';
+  var safe = at.every(function (sq) {
+    var hit = attackersOf(n.after.b, sq, !pov);
+    if (!hit.length) return true;
+    var low = hit.some(function (f) { return MOTIF_VAL[pType(n.after.b[f])] < MOTIF_VAL[t]; });
+    return !low && t !== 'K' && attackersOf(n.after.b, sq, pov).length >= hit.length;
+  });
+  return safe ? PIECE_WORD[t] : '';
+}
 /* the story's strip (S12): "Game ●●● Better ●", the step on screen larger;
    over 9 dots, "Game 2/5 · Better". Its words count in the budget */
 function storyStripWords(a) {
   var S = buildStory(a);
-  return S.steps.length > 9 ? 3 : 2;
+  return S.steps.length > 9 ? 3 : S.wiw ? 4 : 2;
 }
 /* the words the strip shows (2.0): the Details link once settled, the
    story's two names; nothing before an answer (the typed-move field is off
