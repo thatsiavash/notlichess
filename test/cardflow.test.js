@@ -6429,7 +6429,7 @@ const BAR = `(function () {
       allMistakes().filter(trainable).filter(function (y) { return y.key !== it.key; }).slice(0, 4).forEach(function (y) { srs[y.key] = { box: 1, streak: 1, due: Date.now() + 3 * DAY, last: Date.now() - DAY, lapses: 0 }; });
       srsSave(srs);
       a = openCard(it); d = displayFor(a); lb = frameLabel(a, boardOptsFor(a), 384, false);
-      out.fifth = { tag: d.tag, words: words(d, lb), label: lb ? lb.text : '', pill: (x = /<div class="bd-tags"><span class="tag tag-ctx">([^<]*)<\\/span><\\/div>/.exec(bandHtml(a, d))) ? x[1] : '' };
+      out.fifth = { tag: d.tag, words: words(d, lb), label: lb ? lb.text : '', pill: (x = /<div class="bd-tags"><span class="tag tag-ctx">([^<]*)<\\/span>(<span class="bd-step">[\\s\\S]*<\\/span>)?<\\/div>/.exec(bandHtml(a, d))) ? x[1] : '' };
       /* a draw, a long name, a win */
       var g = it.g, res = g.res, opp = g.opp;
       g.res = 'draw'; out.draw = displayFor(openCard(it)).tag;
@@ -6566,7 +6566,7 @@ const BAR = `(function () {
       shiftDays(out.days);
       a = openCard(it); var d = displayFor(a), f = boardOptsFor(a);
       out.open = { game: a.game, row1: d.row1, row2: d.row2, tag: d.tag, chip: d.chip, bad: !!f.opts.bad, ghosts: gh(f), words: frameWords(a, NO), seenWords: frameWords(a, YES), faults: gameFaults(a, f).concat(spoilerFaults(a, f)),
-                   pill: /<div class="bd-tags"><span class="tag tag-slate">Review<\\/span><\\/div>/.test(bandHtml(a, d)), buttons: d.buttons.map(function (b) { return b.label; }).join(' / ') };
+                   pill: /<div class="bd-tags"><span class="tag tag-slate">Review<\\/span>(<span class="bd-step">[\\s\\S]*<\\/span>)?<\\/div>/.test(bandHtml(a, d)), buttons: d.buttons.map(function (b) { return b.label; }).join(' / ') };
       /* the game move itself, its first graded try */
       a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); a.animMove = null; a.reason = 2;
       d = displayFor(a); f = boardOptsFor(a);
@@ -6978,7 +6978,7 @@ const BAR = `(function () {
     eq(r.foils, '1 had nothing to fix: 1 good move.', 'the foil apart');
     eq(JSON.stringify(r.row), JSON.stringify(['rg-first', 'rg-hint', 'rg-first']), 'a glyph for each, the foil\'s too');
     eq(JSON.stringify(r.tile), JSON.stringify({ name: true, glyph: true, word: true, rungs: false, act: false, red: false, played: 2 }), 'the foil\'s tile: "Nothing to fix", "Good move", no rungs, nothing to open, its game move tinted as a move played, never red');
-    eq(r.moved, 'Back in 7 days: 1. Back in 5 days: 1.', 'when they come back: the mistakes alone (V4.3)');
+    eq(r.moved, '1 step up. Back in 7 days: 1. Back in 5 days: 1.', 'the step climbed (release 3), then when they come back: the mistakes alone (V4.3)');
     eq(r.stack, 'recap-then / recap-then recap-foils / recap-small', 'the foils\' line right after the category line, before the quiet paragraph');
   });
 
@@ -7641,6 +7641,8 @@ const BAR = `(function () {
   for (const t of require('./chesstruth')({ boot, eq, ok, tick, OPEN, TRY })) await test(t[0], t[1]);
   /* release 3, See why shows both sides: test/bothsides.js */
   for (const t of require('./bothsides')({ boot, eq, ok, OPEN, TRY })) await test(t[0], t[1]);
+  /* release 3 slice F, where you stand (material, the step track, the learned moment): test/standing.js */
+  for (const t of require('./standing')({ boot, eq, ok, OPEN, TRY, DOM })) await test(t[0], t[1]);
 
   results.forEach((l) => console.log(l));
   console.log((failed ? 'FAIL ' : 'ok   ') + 'card flow: ' + passed + ' passed' + (failed ? ', ' + failed + ' failed' : ''));

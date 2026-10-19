@@ -593,7 +593,21 @@ function heroHtml(plan) {
     + (more.length ? '<p class="why hero-more">' + more.join(' ') + '</p>' : '')
     + firstHtml(first0, 'startToday', firstCaption(first0))
     + '<div class="acts"><a class="btn-big" data-icon="play" data-act="startToday">Start</a></div>'
-    + weekHtml() + (note ? '<p class="wk-note">' + note + '</p>' : '') + '</div>';
+    + weekHtml() + lastStepHtml(plan) + (note ? '<p class="wk-note">' + note + '</p>' : '') + '</div>';
+}
+/* the set's positions one find from learned (step-tracker.md 2), under the
+   week, led by the track's seal ring: "2 positions in today's set are one
+   find from learned." (tier 1 "...are one more find from being yours.");
+   nothing when none is */
+function lastStepCount(keys) {
+  return keys.filter(function (k) { var it = itemOf(k), r = srsRec({ key: k }); return it && !it.foil && !it.prac && !it.lesson && r && !r.q && rungsOf(r) === 2; }).length;
+}
+function lastStepHtml(plan) {
+  var n = lastStepCount(plan.keys);
+  if (!n) return '';
+  var are = n === 1 ? ' is' : ' are';
+  return '<p class="wk-step"><span class="track" aria-hidden="true"><i class="tk-seal"></i></span>' + plur(n, 'position')
+    + (playerTier() === 1 ? are + ' one more find from being yours.' : ' in today\'s set' + are + ' one find from learned.') + '</p>';
 }
 /* why these positions (F5.2), under the hero: the focus skill and the
    games it decided, "Why these? Piece safety decided 15 of your games ›"
@@ -890,17 +904,23 @@ function foilTileHtml(it, e) {
    position learned first ("1 learned."), in place of "moved up", "held"
    and "back to the start"; a foil and a practice position never come back
    on the schedule */
-function movedWords(ss, keys) {
-  var srs = srsLoad(), now = Date.now(), by = {}, learned = 0, parts = [];
+function movedWords(ss, keys, tier) {
+  var srs = srsLoad(), now = Date.now(), by = {}, learned = 0, up = 0, parts = [];
   keys.forEach(function (k) {
     var e = ss.results[k] ? sumOf(ss, k) : null, r = srs[k], it = itemOf(k);
     if (!e || e.foil || e.prac || !it || it.foil || it.prac || it.lesson) return;
+    if (e.m === 'up') up++;
     if (e.m === 'learned') { learned++; return; }
     if (!r || r.due == null || r.hidden) return;
     var d = Math.max(0, daysFrom(now, r.due));
     by[d] = (by[d] || 0) + 1;
   });
-  if (learned) parts.push(learned + ' learned.');
+  /* the lead (step-tracker.md 3): the pips climbed, a seal among them,
+     "6 steps up · 1 learned." (tier 1 "You climbed 6 steps. 1 position is
+     yours now.") */
+  var steps = up + learned;
+  if (steps && tier === 1) parts.push('You climbed ' + plur(steps, 'step') + '.' + (learned ? ' ' + plur(learned, 'position') + (learned === 1 ? ' is' : ' are') + ' yours now.' : ''));
+  else if (steps) parts.push(plur(steps, 'step') + ' up' + (learned ? ' · ' + learned + ' learned' : '') + '.');
   Object.keys(by).map(Number).sort(function (x, y) { return y - x; }).forEach(function (d) {
     parts.push((d === 0 ? 'Back later today' : d === 1 ? 'Back tomorrow' : 'Back in ' + d + ' days') + ': ' + by[d] + '.');
   });
@@ -935,12 +955,94 @@ function keepLines(ss, keys, tier) {
   if (!out.length) add(recapHabit(ss));
   return out;
 }
-/* a position's rungs on its tile at tiers 2 and 3 (F2.2: three pips, the
-   third gold, lit when learned), its stars at tier 1 */
-function rungHtml(p) {
+/* the step track (release 3, step-tracker.md): one sign for "steps to
+   learned", the same at every tier, on the card, the summary's tiles and
+   Mistakes' rows. Two 12 px pips and a 14 px seal, 4 px apart (48 by 14
+   px): a ring while empty, honey once climbed, the seal honey once learned.
+   p: the rungs (rungsOf); o: neu (a position not met yet: "New position"),
+   up (the pip just climbed: it fills, after d ms), down (the rungs it fell
+   from: they fade to rings), pulse (the seal ring pulses once), learn (the
+   seal waits for the learned moment), sm (the summary's 12 px track). Its
+   name is its one meaning for a screen reader; never focusable alone */
+function trackHtml(p, o) {
+  o = o || {};
   var h = '';
-  for (var i = 0; i < 3; i++) h += '<i' + (i < p ? ' class="on' + (i === 2 ? ' gold' : '') + '"' : '') + '></i>';
-  return '<span class="rungs" role="img" aria-label="' + (p === 3 ? 'Learned' : p + ' of 3 steps to learned') + '">' + h + '</span>';
+  for (var i = 0; i < 3; i++) {
+    var c = (i === 2 ? 'tk-seal' : 'tk-pip') + (i < p ? ' on' : '') + (o.up === i ? ' fx-up' : '') + (o.down > i && i >= p ? ' fx-down' : '') + (o.pulse && i === 2 ? ' fx-pulse' : '');
+    h += '<i class="' + c + '"' + (o.up === i && o.d ? ' style="--d:' + o.d + 'ms"' : '') + '></i>';
+  }
+  var name = p >= 3 ? 'Learned' : o.neu ? 'New position' : 'Step ' + p + ' of 3 to learned';
+  return '<span class="track' + (o.sm ? ' track-sm' : '') + (o.learn ? ' tk-learn' : '') + '" role="img" aria-label="' + name + '">' + h + '</span>';
+}
+/* the rungs a tile or row shows: the step track */
+function rungHtml(p) { return trackHtml(p); }
+/* the card's track (step-tracker.md 1), as data for the band: {p, o, pill,
+   say}. Before an answer the record's rungs as they stand (a miss empties
+   them at once, srsNoteMiss), and at the last step, due, the pill "Last
+   step"; once answered the rungs after it. A change since its last paint
+   fills the pip climbed or fades the ones lost, once per card state; a
+   find that made it learned holds the seal for the learned moment. None on
+   a practice position or a lesson (tagged as such), nor on a foil once it
+   is answered (it was never on the ladder) */
+function cardTrack(a) {
+  if (a.prac || a.lesson || a.phase === 'lesson' || (a.foil && a.phase === 'done')) return null;
+  var done = a.phase === 'done', rec = a.foil ? null : done ? a.rec || srsRec(a.it) : srsRec(a.it);
+  var neu = !rec || !!rec.q, p = neu ? 0 : rungsOf(rec), again = ss_relearn(a), key = cardStateKey(a);
+  var t = { p: p, o: { neu: neu }, pill: false, say: '' };
+  if (!done && !neu && !again && p === 2 && !rec.learned && (rec.sp || rec.due == null || rec.due <= Date.now())) t.pill = true;
+  if (a.tkP != null && p !== a.tkP && !again) a.tkFx = { from: a.tkP, to: p, key: key, at: Date.now(), learn: p === 3 && learnedNow(a) };
+  a.tkP = p;
+  var fx = a.tkFx && a.tkFx.key === key ? a.tkFx : null;
+  if (fx && fx.to > fx.from && !fx.learn) t.say = 'Step ' + fx.to + ' of 3.';
+  return t;
+}
+/* the track's change, drawn on the band as written (paintBand): the pip
+   climbed fills (a learned seal after the learned moment's spring), the
+   pips lost fade, timed from the change, so a band written again within
+   it (row 2 settling) carries on where it was and never plays it twice;
+   the band's markup itself never carries it */
+function trackFx(a, band) {
+  var fx = a.tkFx, tr = fx && fx.key === cardStateKey(a) && band.querySelector ? band.querySelector('.bd-step .track') : null;
+  if (!tr || !tr.children) return;
+  var e = Date.now() - fx.at, pips = tr.children, set = function (i, cls, d) { if (pips[i]) { pips[i].classList.add(cls); pips[i].style.setProperty('--d', Math.round(d) + 'ms'); } };
+  if (fx.to > fx.from) {
+    var d0 = fx.learn && !reducedMotion() ? YOURS_SEAL : 0;
+    if (e > d0 + 240) return;
+    if (d0) tr.classList.add('tk-learn');
+    set(fx.to - 1, 'fx-up', d0 - e);
+  } else if (e < 200) for (var i = fx.to; i < fx.from; i++) set(i, 'fx-down', -e);
+}
+/* this card's showing made its position learned (ladderMove 'learned'),
+   on its settled frame */
+function learnedNow(a) {
+  var ss = ui.session, e = ss && ss.sum && ss.sum[a.key];
+  return !!e && e.m === 'learned' && a.phase === 'done' && !a.revealed && !a.explore && !!a.view && a.view.mode === 's0' && !ss_relearn(a);
+}
+/* the learned moment (release 3, F3): about 1.3 s of transforms and
+   opacity in a layer over the host that takes no tap and is gone at 1.5
+   s. The gold seal springs from the anchor (the track's seal) to 40 px and
+   settles back into it as the track's seal lights (YOURS_SEAL), a ring and
+   18 honey and leaf sparks burst from it, a shine sweeps the host; with a
+   bright rising chime and a haptic tap. Under reduced motion the final
+   state at once, the chime and the tap kept */
+var YOURS_SEAL = 1100, YOURS_MS = 1500;
+function learnedBurst(host, anchor) {
+  snd('learned');
+  try { if (cfg.sound !== false && navigator.vibrate) navigator.vibrate(24); } catch (e) {}
+  if (!host || !anchor || reducedMotion() || !host.getBoundingClientRect || !anchor.getBoundingClientRect) return null;
+  var hr = host.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+  var x = Math.round(ar.left + ar.width / 2 - hr.left), y = Math.round(ar.top + ar.height / 2 - hr.top), h = '';
+  for (var i = 0; i < 18; i++) {
+    var ang = i / 18 * 2 * Math.PI + (i % 2 ? 0.17 : 0), r = 44 + (i * 37) % 40;
+    h += '<i class="yfx-sp' + (i % 3 === 0 ? ' leaf' : '') + (i % 2 ? ' dot' : '') + '" style="--x:' + Math.round(Math.cos(ang) * r) + 'px;--y:' + Math.round(Math.sin(ang) * r - 10) + 'px;--r:' + (i * 47) % 360 + 'deg;--d:' + (90 + (i % 4) * 30) + 'ms"></i>';
+  }
+  var fx = document.createElement('div');
+  fx.className = 'yfx';
+  fx.setAttribute('aria-hidden', 'true');
+  fx.innerHTML = '<div class="yfx-shine"><i></i></div><div class="yfx-at" style="left:' + x + 'px;top:' + y + 'px"><i class="yfx-ring"></i>' + h + '<i class="yfx-seal"></i></div>';
+  host.appendChild(fx);
+  setTimeout(function () { if (fx.parentNode) fx.parentNode.removeChild(fx); }, YOURS_MS);
+  return fx;
 }
 function starsHtml(n) {
   var h = '';
@@ -1039,6 +1141,16 @@ function doneHtml(ss) {
      seal and the medal wait for them */
   var t1fx = tier === 1 && fx && !reducedMotion(), lag = t1fx && uniq.some(function (k) { var it = itemOf(k), e = sumOf(ss, k); return it && !it.lesson && e && ss.results[k] && e.s > 0; });
   var mark = function (c, s) { row += resultGlyph(c); stars.push(s || 0); };
+  /* the tiles' climbed pips fill in order on the first paint, 60 ms apart
+     and within 600 ms, after the result row and a learned moment (step-
+     tracker.md 3) */
+  var climbs = uniq.filter(function (k) { var e = ss.results[k] && sumOf(ss, k); return e && e.m === 'up'; }).length, nth = 0;
+  var hasLearned = uniq.some(function (k) { var e = ss.results[k] && sumOf(ss, k); return e && e.m === 'learned' && !!itemOf(k); });
+  var tileFill = function (e, fx) {
+    var o = { sm: true };
+    if (e.m === 'up' && fx) { o.up = e.p - 1; o.d = (hasLearned ? YOURS_MS : 300) + Math.round(nth++ * Math.min(60, 600 / Math.max(1, climbs))); }
+    return o;
+  };
   var learned = '', recap = uniq.map(function (k) {
     var it = itemOf(k), e = sumOf(ss, k);
     /* a card taken out as not a real mistake has left the model: gone from the summary too */
@@ -1061,12 +1173,12 @@ function doneHtml(ss) {
     return '<div class="recap-item" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: k, label: 'One position' })) + '">'
       + boardSvg(pre, { flip: it.g.color === 'black', bad: pm ? [pm.from, pm.to] : null, decor: true }) + '<span>' + esc(patternInfo(patternOf(it.b)).name) + '</span>'
       + resultGlyph(e.c) + '<span class="res' + (done ? '' : ' shown') + '">' + word + '</span>'
-      + (e.c === 'skip' ? '' : tier === 1 ? starsHtml(e.s || 0) : e.p != null ? rungHtml(e.p) : '')
+      + (e.c === 'skip' ? '' : tier === 1 ? starsHtml(e.s || 0) : e.p != null ? trackHtml(e.p, tileFill(e, fx)) : '')
       + (e.f && e.l ? '<span class="tile-check">' + esc(e.l) + '</span>' : '') + '</div>';
   }).join('');
   var sr = tier === 1 && stars.length ? starRowHtml(stars, lag) : null;
   if (fx) ss.starLag = sr ? sr.lag : 0;
-  var sc = recapScore(ss, uniq, tier), fw = foilWords(ss, uniq), pw = pracWords(ss, uniq), moved = movedWords(ss, uniq), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
+  var sc = recapScore(ss, uniq, tier), fw = foilWords(ss, uniq), pw = pracWords(ss, uniq), moved = movedWords(ss, uniq, tier), keep = keepLines(ss, uniq, tier), more = morePracticeKeys().length;
   var gm = ss.goalMet, week = gm ? weekHtml(fx && !learned ? (lag ? 'wait' : true) : false, goalMetWords(gm)) : weekHtml();
   /* the headline and its category line, then the foils' line (F8.2:
      counted apart, they had nothing to find); when the positions come back
@@ -1126,7 +1238,8 @@ function summaryMoments(ss) {
   var learned = Object.keys(ss.sum || {}).some(function (k) { return ss.sum[k].m === 'learned' && !!itemOf(k); });
   var moments = function () {
     var on = learned;
-    if (on) { reward('learned'); snd('learned'); }
+    /* a position learned: the learned moment on its tile (release 3, F3) */
+    if (on) { reward('learned'); var lt = document.querySelector && document.querySelector('.recap-learned'); learnedBurst(lt, lt && lt.querySelector('.rg-learned')); }
     /* a skill mastered in a pack (F9.4) dings as a position learned does */
     else if (ss.packMastered) { reward('mastered'); snd('learned'); on = true; }
     if (ss.goalMet) { reward('goal'); if (on) setTimeout(function () { snd('goal'); }, NOTES_AFTER_DING); else snd('goal'); }
@@ -1835,6 +1948,8 @@ function boardAria(a, st, o) {
   });
   (o.badges || []).forEach(function (g) { if (ARIA_BADGE[g.kind]) out.push(ARIA_BADGE[g.kind]); });
   if (o.check != null) out.push('The ' + (isW(b[o.check]) ? 'white' : 'black') + ' king is in check.');
+  var ms = a && a.it && a.it.g ? materialSay(st, myPov(a.it)) : '';
+  if (ms) out.push(ms);
   /* a sentence that carries a program value is left out (progVal) */
   return out.filter(function (x) { return !progVal(x); }).join(' ');
 }
@@ -2221,6 +2336,50 @@ function storyMarks(a, S, i) {
    land beat draws it); a jump to another position crossfades and sets
    motionUntil too. instant (an input flushed the beat) draws the frame as
    it ends: no slide, no crossfade, the verdict on its square */
+/* ── material (release 3, F1): lichess's piece differential ─────────────
+   Each side's lead in pieces, from the position on screen (the card's
+   board, See why's step, See it, the explorer's move): by type, the
+   pieces it took beyond what it lost, drawn as the pieces taken (the
+   other side's colour, most valuable first, one kind overlapping) along
+   its own edge of the board, "+3" beside the side ahead in points (1, 3,
+   3, 5, 9). Promotions count as what stands: a second queen is a queen up */
+var MAT_ORDER = ['Q', 'R', 'B', 'N', 'P'];
+function materialOf(b) {
+  var c = { w: {}, b: {} }, score = 0, up = { w: [], b: [] };
+  for (var sq = 0; sq < 64; sq++) {
+    var p = b[sq], t = pType(p);
+    if (!p || t === 'K') continue;
+    c[colorW(p) ? 'w' : 'b'][t] = (c[colorW(p) ? 'w' : 'b'][t] || 0) + 1;
+    score += (colorW(p) ? 1 : -1) * MOTIF_VAL[t];
+  }
+  MAT_ORDER.forEach(function (t) {
+    var d = (c.w[t] || 0) - (c.b[t] || 0);
+    if (d) up[d > 0 ? 'w' : 'b'].push({ t: t, n: Math.abs(d) });
+  });
+  return { up: up, score: score };
+}
+/* one side's strip: the pieces it is up, then "+N" when it leads */
+function matSideHtml(m, white) {
+  var h = m.up[white ? 'w' : 'b'].map(function (x) {
+    var g = '', id = PIECE_ID[white ? x.t.toLowerCase() : x.t];
+    for (var i = 0; i < x.n; i++) g += '<svg viewBox="0 0 45 45"><use href="#pc-' + id + '"/></svg>';
+    return '<span class="mat-g' + (white ? ' mat-b' : '') + '">' + g + '</span>';
+  }).join(''), n = white ? m.score : -m.score;
+  return h + (n > 0 ? '<span class="mat-n">+' + n + '</span>' : '');
+}
+/* the strips above and below the board: the side at the top (the
+   opponent's, the board turned for the player) along the top edge */
+function paintMaterial(st, flip) {
+  var m = materialOf(st.b), top = el('mtop'), bot = el('mbot');
+  if (top) setHtml(top, matSideHtml(m, !!flip));
+  if (bot) setHtml(bot, matSideHtml(m, !flip));
+}
+/* the board's name says the material once, short (F1): "Material: you
+   are 3 up." from the solver's side; nothing when level */
+function materialSay(st, pov) {
+  var n = materialOf(st.b).score * (pov ? 1 : -1);
+  return n ? 'Material: ' + (n > 0 ? 'you are ' + n : 'they are ' + -n) + ' up.' : '';
+}
 function paintBoard(a, instant) {
   var it = a.it, bw = el('bwrap');
   if (!bw) return;
@@ -2248,6 +2407,7 @@ function paintBoard(a, instant) {
   var lb = frameLabel(a, f, boardPx(bw), deskLabels(bw)), lh = labelHtml(lb, labelFresh(a, lb));
   bw.innerHTML = boardSvg(f.st, f.opts) + '<div class="blabels" aria-hidden="true">' + lh + '</div>' + (a.pendingPromo ? promoHtml(f.st) : '') + fade;
   bw.nlReds = redsOf(f.opts);
+  paintMaterial(f.st, f.opts.flip);
   var lbox = bw.querySelector && bw.querySelector('.blabels');
   if (lbox) lbox.nlHtml = lh;
   labelShown(a, lb);
@@ -2373,10 +2533,10 @@ function renderCard(beats) {
        the board on a wide screen, under it on a phone (its own fill there) */
     box.innerHTML = '<div class="card">'
       + '<div class="card-top" id="ctop"></div>'
-      + '<div class="board-col"><div class="board-row">'
+      + '<div class="board-col"><div class="mat mat-top" id="mtop" aria-hidden="true"></div><div class="board-row">'
         + '<div class="evalbar pending' + (flip ? ' flip' : '') + '" id="ebar"><i class="evalbar-fill" id="ebar-fill"></i><i class="evalbar-fill-h" id="ebar-fillh"></i><span class="evalbar-label" id="ebar-lab"></span></div>'
         + '<div class="board-wrap" id="bwrap"></div>'
-      + '</div></div>'
+      + '</div><div class="mat mat-bot" id="mbot" aria-hidden="true"></div></div>'
       + '<div class="panel" id="cpanel"><div class="coach k-neutral" id="ccoach"><div class="band-slot" id="cband"></div><div class="strip" id="cstrip"></div></div>'
         + '<div class="acts-row sticky-acts" id="cbar"></div><p class="keyline" id="ckeys"></p></div>'
       + '</div>';
@@ -2414,8 +2574,11 @@ function displayFor(a) {
   /* a string that carries a program value is never shown (progVal): the
      laddered rows fell back already, and any other is left out */
   ['row1', 'row2', 'cap', 'chip', 'tag', 'src'].forEach(function (k) { b[k] = noProg(b[k]); });
+  var tk = b.tk || null, live = liveWords(a, b);
+  /* the track in the live region: the last step before an answer, a step climbed after it */
+  if (tk && !(a.phase === 'done' && a.explore)) live = [live, tk.pill ? 'Last step.' : '', tk.say].filter(Boolean).join(' ');
   return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', tag: b.tag || '', src: b.src || '', sweep: !!b.sweep, pips: b.pips || null,
-           buttons: buttons, strip: stripHtml(a, ss), live: liveWords(a, b), keys: keyLine(a, buttons) };
+           tk: tk, pill: tk && tk.pill ? LAST_STEP : '', buttons: buttons, strip: stripHtml(a, ss), live: live, keys: keyLine(a, buttons) };
 }
 /* the desktop key line under the panel (2.0): only the keys that do
    something in this state, as the keydown handler (15-shell.js) reads
@@ -2605,6 +2768,7 @@ function paintTop(a, ss) {
    found pop (F4.4), once a card */
 function paintBand(a, d) {
   var band = el('cband'), fresh = setHtml(band, bandHtml(a, d)), co = el('ccoach');
+  if (fresh) trackFx(a, band);
   var cls = 'coach k-' + d.kind + (d.cap ? ' cap' : '') + (a.phase === 'done' && a.explore ? ' exploring' : '');
   if (co && co.className !== cls) co.className = cls;
   if (fresh && foundMoment(a, d)) {
@@ -2613,6 +2777,8 @@ function paintBand(a, d) {
     if (disc && disc.classList) disc.classList.add(a.tier >= 3 ? 'fx-found3' : 'fx-found');
     if (stars && stars.classList) stars.classList.add('fx');
     reward('found', a);
+    /* a find that made it learned (F3): the learned moment, from the track's seal */
+    if (learnedNow(a) && !a.yours) { a.yours = true; reward('learned', a); learnedBurst(co, band.querySelector && band.querySelector('.tk-seal')); }
   }
 }
 /* the found moment (F4.4): the verdict of a card found (first try, after
@@ -2684,12 +2850,14 @@ function foundStarsHtml(a, d) {
    a wrong try's check step in slate) or the context line on a decisive
    first sight ("Lost vs opponent1", neutral, never coral), or a game-mode
    card's "Review" (slate, F8.1) */
+var LAST_STEP = 'Last step';
 function tagRowHtml(d) {
   /* a practice position's "Practice" in slate, as a review's; a lesson's
      "Lesson" in honey (F9.3, F9.4) */
   var t = d.chip || d.tag, cls = !t ? '' : d.chip ? (d.chip === CARD_COPY.T3() ? 'tag-honey' : 'tag-slate') : d.tag === CARD_COPY.G1() || d.tag === CARD_COPY.P1() ? 'tag-slate' : d.tag === CARD_COPY.P2() ? 'tag-honey' : 'tag-ctx';
   /* a practice position's source line beside its tag (F9.4) */
-  return '<div class="bd-tags">' + (t ? '<span class="tag ' + cls + '">' + esc(t) + '</span>' : '') + (t && !d.chip && d.src ? '<span class="tag-src">' + esc(d.src) + '</span>' : '') + '</div>';
+  return '<div class="bd-tags">' + (t ? '<span class="tag ' + cls + '">' + esc(t) + '</span>' : '') + (t && !d.chip && d.src ? '<span class="tag-src">' + esc(d.src) + '</span>' : '')
+    + (d.tk ? '<span class="bd-step">' + (d.pill ? '<span class="tag tag-honey">' + d.pill + '</span>' : '') + trackHtml(d.tk.p, d.tk.o) + '</span>' : '') + '</div>';
 }
 /* the forcing pips (2.0): a 7 px dot per move of yours, filled for each
    one found, ringed for the one due now; they repeat nothing the band does
@@ -3800,6 +3968,9 @@ function escSheet() {
   if (!details) return;
   var i = honeySlot(), bar = el('cbar'), b = i >= 0 && bar && bar.querySelector('[data-slot="' + i + '"][data-act]');
   if (b && b.focus) b.focus({ preventScroll: true });
+  /* and the key line says it, whatever the opener's focus painted on the
+     way (the ••• menu's, in a panel under 120 px) */
+  paintKeys(ui.session.active);
 }
 function sheetHtml(kind) {
   var parts = String(kind).split(':'), k = parts[1];

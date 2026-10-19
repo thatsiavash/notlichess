@@ -260,7 +260,8 @@ var LINE_BUDGET = 13;
 function wordsIn(s) { return oneUnit(s).split(/\s+/).filter(function (w) { return /[A-Za-z0-9]/.test(w); }).length; }
 function barWords(slots) { return (slots || []).reduce(function (n, b) { return n + wordsIn(b.label); }, 0); }
 /* the tag row's context line counts too (F4.2) */
-function bandWords(b, slots) { return wordsIn(b.row1) + wordsIn(b.row2) + wordsIn(b.chip) + wordsIn(b.tag) + wordsIn(b.src) + wordsIn(b.cap) + barWords(slots); }
+/* and the step track's "Last step" (release 3) */
+function bandWords(b, slots) { return wordsIn(b.row1) + wordsIn(b.row2) + wordsIn(b.chip) + wordsIn(b.tag) + wordsIn(b.src) + wordsIn(b.cap) + (b.tk && b.tk.pill ? 2 : 0) + barWords(slots); }
 /* a verdict as the band says it: {kind, row1, row2, html},
    with row 2's ladder kept (cands, fall) so the band can fit it to the
    words left beside the bar */
@@ -1421,8 +1422,13 @@ function bandFor(a) {
   var b = bandOf(a), n = a.note && a.note.key === cardStateKey(a) ? a.note : null;
   if (!b.cap && n) { b.cands = NOTE_COPY[n.id](a); b.fall = ''; b.chip = ''; }
   if (!b.cap) b.pips = pipsOf(a);
+  /* the learned moment's words (release 3, F3), in row 1's place */
+  if (!b.cap && learnedNow(a)) b.row1 = a.tier === 1 ? YOURS_T1 : YOURS;
+  /* the step track at the tag row's right (release 3, step-tracker.md) */
+  if (!b.cap) b.tk = cardTrack(a);
   return bandFit(a, b);
 }
+var YOURS = 'Learned! This one is yours.', YOURS_T1 = 'You learned this one!';
 /* row 2 from its ladder: the row's own caps, then, over the word budget,
    the words that are left (and a note that still does not fit is dropped) */
 function bandFit(a, b) {
@@ -1441,6 +1447,9 @@ function bandFit(a, b) {
     /* the figures' label goes with the figures (V2.5) */
     if (b.figChip && !/\d%/.test(b.row2)) b.chip = '';
   }
+  /* the track's "Last step" counts its two words: where they do not fit
+     beside the reason, the pill goes and the seal ring pulses once instead */
+  if (b.tk && b.tk.pill && wordsIn(b.row2) + wordsIn(b.cap) + 2 > rowRoom(a, b)) { b.tk.pill = false; b.tk.o.pulse = true; }
   delete b.cands; delete b.fall; delete b.never; delete b.budget; delete b.stepChip; delete b.figChip;
   return b;
 }

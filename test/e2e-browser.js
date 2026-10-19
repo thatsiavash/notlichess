@@ -104,7 +104,7 @@
      nothing but the board's own marks and label sits on the board, and the gold button is wholly on
      screen and on top; on the desktop grid (1024 x 768, 1280 x 900) the side column never overlaps the
      board; on every screen nothing scrolls sideways. The Coach Panel (F4.1): on a phone its top 8 to 16
-     px under the board, at 360 x 640 the board 340 px or more and the panel 96 or more; on the desktop
+     px under the board (under its material strip, release 3), at 360 x 640 the board 340 px or more and the panel 96 or more; on the desktop
      the panel level with the board's top and the bar's foot with the board's; everywhere the tag row and
      the strip keep their place in every state of a card (exploring aside). Run in each real-page pass,
      not in CI */
@@ -136,7 +136,8 @@
       }
       const co = $('#ccoach');
       if (co && shown(co)) {
-        const c = rectOf(co), gap = c.top - q.bottom;
+        /* (release 3: under the material strip that hangs under the board) */
+        const mb = $('#mbot'), c = rectOf(co), gap = c.top - (mb && shown(mb) && rectOf(mb).height ? rectOf(mb).bottom : q.bottom);
         /* beside the board on a phone held sideways, else under it */
         if (c.left < q.right - 1 && (gap < 7.5 || gap > 16.5)) W.lay.push(what + ': the panel\'s top is ' + Math.round(gap) + ' px under the board');
         if (vw() <= 360 && vh() <= 640 && (q.width < 339.5 || c.height < 95.5)) W.lay.push(what + ': at 360 x 640 the board is ' + Math.round(q.width) + ' px and the panel ' + Math.round(c.height));

@@ -361,6 +361,9 @@ button{font-family:inherit}
 .wk-say{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1);margin:10px 0 0}
 .wk-life,.wk-note{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);margin:2px 0 0}
 .wk-note{color:var(--text-2);margin-top:8px}
+/* the set's positions one find from learned (release 3), led by the
+   track's 14 px seal ring */
+.wk-step{display:flex;align-items:center;gap:8px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2);margin:8px 0 0}
 /* why these positions (F5.2), a line under the hero, to the report */
 .why-these{margin:12px 0 0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700}
 /* a game read with no big mistake (F5.3), once */
@@ -522,6 +525,16 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 
 /* the board column ─────────────────────────────────────────────────────── */
 .board-col{position:relative;min-width:0}
+/* material (release 3, F1): each side's lead in pieces along its own edge
+   of the board, 16 px, one kind overlapping, "+3" beside the side ahead; a
+   phone stacks them over and under the board, a wide screen hangs them in
+   the gaps above and below it */
+.mat{display:flex;align-items:center;gap:6px;height:16px;min-width:0;overflow:hidden;pointer-events:none}
+.mat-g{display:inline-flex;flex:none}
+.mat-g svg{width:14px;height:14px;display:block}
+.mat-g svg + svg{margin-left:-7px}
+.mat-g.mat-b svg{filter:drop-shadow(0 0 1px var(--text-2))}
+.mat-n{flex:none;font-size:var(--fs-small);line-height:16px;font-weight:700;color:var(--text-2)}
 .board-row{position:relative;display:flex;align-items:stretch}
 /* the eval bar shows only while exploring (F4.1): beside the board on a
    wide screen, across under it on a phone (its own fill), never moving the
@@ -676,6 +689,54 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .tag-ctx{background:var(--surface-2);color:var(--text-2)}
 .tag-honey{background:var(--honey-14);color:var(--honey)}
 .tag-slate{background:var(--slate-14);color:var(--slate)}
+/* the step track (release 3, step-tracker.md): two 12 px pips and a 14 px
+   seal, 4 px apart; a 2 px ring while empty, a honey fill (its ::after,
+   so a fill and a fade are opacity and transform alone) once climbed, the
+   seal honey once learned. The summary's tiles draw it at 12 px */
+.track{display:inline-flex;align-items:center;gap:4px;flex:none;height:14px;vertical-align:middle}
+.track i{position:relative;display:block;flex:none;box-sizing:border-box;width:12px;height:12px;border-radius:50%;border:2px solid var(--border)}
+.track i::after{content:"";position:absolute;inset:-2px;border-radius:50%;background:var(--honey);opacity:0}
+.track i.on::after{opacity:1}
+.track .tk-seal{width:14px;height:14px}
+.track .tk-seal::after{border-radius:0;-webkit-mask:var(--ic-seal) center/contain no-repeat;mask:var(--ic-seal) center/contain no-repeat}
+.track .tk-seal.on{border-color:transparent}
+.track-sm{gap:3px;height:12px}
+.track-sm i{width:10px;height:10px}
+.track-sm .tk-seal{width:12px;height:12px}
+/* a step climbed fills, 0.6 to 1.12 to 1 in 240 ms; a miss fades the
+   climbed pips to rings in 200 ms; the seal ring pulses once where the
+   pill has no room; a learned seal waits for the learned moment */
+.track i.fx-up::after{animation:tk-up .24s var(--ease-pop) var(--d,0ms) both}
+.track i.fx-down::after{animation:tk-down .2s ease-out var(--d,0ms) both}
+.track .tk-seal.fx-pulse{animation:tk-pulse .5s ease-in-out .3s}
+.track.tk-learn .tk-seal.on{animation:tk-ring-off 1ms linear var(--d,0ms) both}
+@keyframes tk-up{0%{opacity:0;transform:scale(.6)}1%{opacity:1;transform:scale(.6)}100%{opacity:1;transform:none}}
+@keyframes tk-down{from{opacity:1}to{opacity:0}}
+@keyframes tk-pulse{50%{transform:scale(1.35)}}
+@keyframes tk-ring-off{from{border-color:var(--border)}to{border-color:transparent}}
+/* the card's track at the tag row's right, the pill "Last step" before it */
+.bd-step{display:inline-flex;align-items:center;gap:8px;flex:none;margin-left:auto;padding-right:2px}
+.bd-tags > .tag:first-child{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* a panel under 260 px (a 195 px screen): the track keeps its size, the
+   pill gives way (its words are in the live region), a chip beside it
+   shortens */
+@container (max-width:260px){.bd-step .tag{display:none}}
+/* the learned moment (release 3, F3): a layer over the panel that takes no
+   tap; the seal springs to 40 px from the track's seal and settles back
+   into it, a ring and sparks burst from it, a shine sweeps the panel */
+.yfx{position:absolute;inset:0;z-index:8;pointer-events:none;border-radius:inherit}
+.yfx-shine{position:absolute;inset:0;overflow:hidden;border-radius:inherit}
+.yfx-shine i{position:absolute;top:0;bottom:0;left:0;width:45%;background:linear-gradient(100deg,transparent,color-mix(in srgb,var(--honey) 22%,transparent),transparent);transform:translateX(-110%);animation:yfx-shine .75s ease-in-out .2s both}
+.yfx-at{position:absolute;width:0;height:0}
+.yfx-seal{position:absolute;left:-20px;top:-20px;width:40px;height:40px;background:var(--honey);-webkit-mask:var(--ic-seal) center/contain no-repeat;mask:var(--ic-seal) center/contain no-repeat;animation:yfx-seal 1.2s linear both}
+.yfx-ring{position:absolute;left:-22px;top:-22px;width:44px;height:44px;box-sizing:border-box;border:3px solid var(--honey);border-radius:50%;opacity:0;animation:yfx-ring .6s cubic-bezier(.2,.7,.3,1) .08s both}
+.yfx-sp{position:absolute;left:-3px;top:-4px;width:6px;height:9px;border-radius:1px;background:var(--honey);opacity:0;animation:yfx-sp .95s cubic-bezier(.15,.7,.3,1) var(--d) both}
+.yfx-sp.dot{width:6px;height:6px;border-radius:50%}
+.yfx-sp.leaf{background:var(--leaf)}
+@keyframes yfx-seal{0%{opacity:0;transform:scale(.35) rotate(-40deg);animation-timing-function:cubic-bezier(.2,.8,.3,1.2)}6%{opacity:1}24%{transform:scale(1.18) rotate(6deg);animation-timing-function:ease-in-out}34%{transform:scale(.95) rotate(0)}42%{transform:none}80%{opacity:1;transform:none;animation-timing-function:cubic-bezier(.5,0,.8,.4)}100%{opacity:0;transform:scale(.35)}}
+@keyframes yfx-ring{0%{opacity:.9;transform:scale(.4)}100%{opacity:0;transform:scale(2.6)}}
+@keyframes yfx-sp{0%{opacity:1;transform:translate(0,0) rotate(0) scale(.4)}70%{opacity:1}100%{opacity:0;transform:translate(var(--x),calc(var(--y) + 18px)) rotate(var(--r)) scale(1)}}
+@keyframes yfx-shine{to{transform:translateX(330%)}}
 /* the piece ledger (F1.2, F1.4): a trade in the board's own pieces, set in
    the line of text at its size; a black piece haloed so it reads on the
    dark panel */
@@ -805,10 +866,10 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
      leaving the session bar (44), the gap (12), the panel's least (96) and
      the bar (64) their room: 344 at 360 by 640 with the browser's own bars
      (about 560 px seen), 360 when the whole screen is the page's */
-  --board-phone:min(100%, 100svh - 216px - env(safe-area-inset-bottom), 600px);
+  --board-phone:min(100%, 100svh - 248px - env(safe-area-inset-bottom), 600px);
   /* a phone on its side (under 600 px tall): the board left, a column of
      300 px or more on its right */
-  --board-land:min(100svh - 16px, 100vw - 316px);
+  --board-land:min(100svh - 48px, 100vw - 316px);
 }
 body.in-session #bar,body.in-session .views,body.in-session #foot,body.in-session #settings{display:none}
 body.in-session{padding-bottom:0}
@@ -824,6 +885,10 @@ body.in-session{padding-bottom:0}
   .board-wrap{flex:none;width:var(--board)}
   /* the eval bar, while exploring: in the gutter left of the board */
   .evalbar{right:100%;top:0;bottom:0;margin-right:8px;width:12px}
+  /* material in the 20 px over the board and the padding under it */
+  .mat{position:absolute;left:0;right:0}
+  .mat-top{bottom:100%;margin-bottom:2px}
+  .mat-bot{top:100%;margin-top:4px}
   /* 200 px: the verdict, two body lines, the tag row, the strip */
   .coach{min-height:200px;padding:16px 20px 12px}
   .coach.exploring{min-height:0}
@@ -854,10 +919,14 @@ body.in-session{padding-bottom:0}
   .evalbar{left:0;right:0;top:100%;width:var(--board-phone);height:6px;margin:3px auto 0;border-radius:3px}
   .evalbar-fill,.evalbar-label{display:none}
   .evalbar-fill-h{display:block}
+  /* material over and under the board (F1), 8 px in from its edges; the
+     explorer's bar takes the 10 px under the board */
+  .mat{width:var(--board-phone);margin:0 auto;padding:0 8px;box-sizing:border-box}
+  .card.xp-card .mat-bot{height:26px;padding-top:10px}
   /* the 12 px over the bar gives way first on a short phone (an iPhone SE
      with Safari's bars), so the panel keeps its 96 px beside the board's
      formula: the gap is what the height leaves over the board, 12 px at most */
-  .card{--panel-gap:clamp(0px, 100svh - 216px - env(safe-area-inset-bottom) - min(100vw, 600px), 12px)}
+  .card{--panel-gap:clamp(0px, 100svh - 248px - env(safe-area-inset-bottom) - min(100vw, 600px), 12px)}
   .card > .panel{flex:1 1 0;min-height:0;padding:12px var(--gutter) calc(64px + var(--panel-gap) + env(safe-area-inset-bottom))}
   .coach{flex:1 1 0;min-height:96px;container-type:size}
   /* a tall phone: the panel stops at 176 px (16 + row 1 28 + row 2 48 + the
@@ -916,6 +985,8 @@ body.in-session{padding-bottom:0}
   .card > .board-col{grid-column:1;grid-row:1 / 3;margin:0}
   .board-row{justify-content:flex-start}
   .board-wrap{width:var(--board-land)}
+  .mat{width:var(--board-land);margin:0;padding:0}
+  .card.xp-card .mat-bot{height:16px;padding-top:0}
   .board,.marks,.xfade svg{border-radius:4px}
   .evalbar{left:auto;right:-7px;top:0;bottom:0;width:6px;height:auto;margin:0}
   .evalbar-fill,.evalbar-label{display:block}
@@ -1038,12 +1109,13 @@ body.in-session{padding-bottom:0}
 .recap-then + .recap-foils{margin-top:0}
 .recap-item.recap-foil{cursor:default}
 .recap-item .stars,.recap-item .rungs{display:flex;align-items:center;gap:6px;margin-top:6px}
+.recap-item .track{display:flex;width:max-content;margin-top:8px}
 .recap-item .stars{gap:3px}
 .stars .st{width:14px;height:14px}
 .rungs i{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--border)}
 .rungs i.on{background:var(--honey);border-color:var(--honey)}
 .recap-item .tile-check{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
-.recap-item.recap-learned{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding-top:8px}
+.recap-item.recap-learned{position:relative;grid-column:1/-1;display:flex;align-items:center;gap:16px;padding-top:8px}
 .recap-learned .learned-board{position:relative;flex:none;width:96px;margin:0}
 .recap-learned .learned-board .board{width:100%}
 .recap-learned .learned-board .rg{position:absolute;top:-8px;right:-8px;width:32px;height:32px;margin:0;background:var(--bg)}
@@ -1440,6 +1512,7 @@ html:has(.recap-acts){scroll-padding-bottom:calc(72px + env(safe-area-inset-bott
   .bd-rows{animation-name:fade-in !important;animation-duration:.15s !important}
   /* the stars fill at once (V4.3): a pseudo-element is no element for the rule above */
   .st::after{animation:none !important}
+  .track i::after{animation:none !important}
   .btn-big:active,.btn-line:active,.nav-btn:active{transform:none}
   .btn-big:active{background:var(--honey-lip)}
   .btn-line:active,.nav-btn:active{background:var(--border)}
