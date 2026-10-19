@@ -656,7 +656,26 @@ document.addEventListener('click', function (e) {
     case 'keepGoing': keepGoing(); break;
     case 'endSession': endSession(); break;
     case 'drill': { var sp = parseSpec(t); if (sp) startDrill(sp); break; }
-    case 'sheet': openSheet(k); break;
+    /* a skill's sheet outside a set is the Mistakes tab filtered to it
+       (release 3 slice G); mid-card, its compact sheet */
+    case 'sheet': if (/^(family|pattern):/.test(k || '') && !(ui.session && !ui.session.finished)) mistakesOpen(k); else openSheet(k); break;
+    /* the Mistakes tab (release 3 slice G): opened filtered, a skill row,
+       a kind, a status chip, Clear filters, 30 more, Practise these next
+       and its Undo */
+    case 'mistakes': mistakesOpen(k); break;
+    case 'mkSkill': { var mf0 = mistakesFilter(); mistakesPick({ f: mf0.f === k ? 'all' : k, k: 'all' }); break; }
+    case 'mkKind': mistakesPick({ k: k || 'all' }); break;
+    case 'mkStatus': mistakesPick({ s: k || 'all' }, true); break;
+    case 'mkClear': {
+      mistakesFilterSet(MF0); ui.mkDone = null;
+      renderMistakes();
+      var mc0 = document.querySelector('#mistakesbox .mk-chip');
+      if (mc0 && mc0.focus) { makeFocusable(el('mistakesbox')); mc0.focus(); }
+      break;
+    }
+    case 'mkMore': mistakesMore(); break;
+    case 'mkNext': mistakesNext(); break;
+    case 'mkUndo': mistakesUndo(); break;
     /* a kind pressed in a skill's sheet: the sheet filters to it, or shows all again */
     case 'famKind': famFilter(k); break;
     case 'closeSheet': if (e.target === t) closeSheet(); break;
@@ -819,6 +838,13 @@ document.addEventListener('change', function (e) {
   if (act === 'sound') { cfg.sound = !!t.checked; saveCfg('sound'); }
   /* a filter on the Games tab (slice D) */
   if (act === 'gf') gamesFilterPick(t.getAttribute('data-k'), t.value);
+  /* the Mistakes tab's skill and kind (release 3 slice G) */
+  if (act === 'mf') { var mfk = t.getAttribute('data-k'), mfo = {}; mfo[mfk] = t.value; if (mfk === 'f') mfo.k = 'all'; mistakesPick(mfo); }
+});
+/* the Mistakes tab's search: the rows follow each letter typed */
+document.addEventListener('input', function (e) {
+  var t = e.target;
+  if (t && t.getAttribute && t.getAttribute('data-act') === 'mq') mistakesSearch(t.value);
 });
 document.addEventListener('keydown', function (e) {
   /* a held Enter sends the typed move once (its auto-repeat would send it

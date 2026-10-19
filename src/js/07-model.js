@@ -80,7 +80,7 @@ function relabelLater() {
       });
     });
     if (n) { modelDirty(); scheduleSave(); relabelTimer = setTimeout(step, 40); }
-    else { relabelTimer = null; if (!ui.session) { renderTrain(); if (ui.view === 'insights') renderInsights(); if (ui.view === 'games') gamesPaint(); } }
+    else { relabelTimer = null; if (!ui.session) { renderTrain(); if (ui.view === 'insights') renderInsights(); if (ui.view === 'games') gamesPaint(); if (ui.view === 'mistakes') mistakesPaint(); } }
   }, 200);
 }
 function allMistakes() { return model().items; }

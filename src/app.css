@@ -461,6 +461,65 @@ a.lg-row{color:inherit}
   .games{padding-top:16px}
   .gl-rows{padding:4px 16px}
 }
+/* the Mistakes tab (release 3 slice G): the skill rows as filters (the
+   one chosen pressed, its breakdown under it), the status chips with their
+   mini tracks and counts, the selects and the search, the rows (a small
+   board, the kind, the game, the track and where it stands) */
+.mk{padding-top:24px;max-width:860px}
+.mk-skills .fam-list{margin-bottom:24px}
+.fam-row.is-picked{background:var(--surface-2)}
+.fam-row[aria-pressed] .fr-go{font-weight:800}
+.mk-break{padding:4px 20px 16px;background:var(--surface-2);border-radius:0 0 var(--r-card) var(--r-card)}
+.mk-break .fs-head{margin-top:8px}
+.mk-break .fs-pair{margin-top:8px}
+.mk-chips-in{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.mk-chip{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 12px;border:2px solid var(--border);border-radius:var(--r-pill);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1);cursor:pointer}
+.mk-chip:hover{color:var(--text-1);background:var(--surface-2)}
+.mk-chip.is-on{border-color:var(--honey);background:var(--honey-14)}
+.mk-n{font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
+.mk-filters{margin:4px 0 0}
+.mk-search{min-height:44px;flex:1 1 220px;min-width:0;max-width:100%;padding:0 14px;border:2px solid var(--border);border-radius:var(--r-chip);background:var(--surface-1);color:var(--text-1);font:inherit;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600}
+.mk-search::placeholder{color:var(--text-3)}
+.mk-search:focus{border-color:var(--honey);outline:none}
+.mk-bar{justify-content:flex-start}
+.mk-clear{min-height:44px}
+.mk-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:0 0 12px}
+.mk-done{margin:0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2)}
+.mk-done:empty{display:none}
+.mk-undo{min-height:44px;margin-left:4px}
+.mk-rows{background:var(--surface-1);border-radius:var(--r-card);padding:6px 20px}
+.mk-row{display:flex;align-items:center;gap:14px;min-height:72px;padding:10px 8px;margin:0 -8px;border-top:1px solid var(--divider);border-radius:12px;color:inherit;cursor:pointer}
+.mk-rows .mk-row:first-child{border-top:0}
+.mk-row:hover{background:var(--surface-2);color:inherit}
+.mk-thumb{flex:0 0 56px;width:56px;height:56px;border-radius:6px;overflow:hidden}
+.mk-thumb .board{display:block;width:56px;height:56px}
+.mk-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.mk-kind{font-size:var(--fs-body);line-height:var(--lh-small);font-weight:700;color:var(--text-1);overflow-wrap:anywhere}
+.mk-kind .dot-bad{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--coral);vertical-align:2px;margin-left:4px}
+.mk-meta{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);overflow-wrap:anywhere}
+.mk-prog{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+/* the chips' mini track: the step track at 8 px */
+.mk-mini{display:inline-flex}
+.mk-mini .track{gap:2px;height:8px}
+.mk-mini .track i,.mk-mini .track .tk-seal{width:8px;height:8px;border-width:1.5px}
+.mk-mini .track i::after{inset:-1.5px}
+@media (max-width:860px){
+  .mk{padding-top:16px}
+  .mk-rows{padding:4px 16px}
+  .mk-break{padding:4px 16px 14px}
+}
+@media (max-width:359px){
+  .mk-rows{padding:4px 10px}
+  .mk-row{gap:10px}
+  .mk-thumb,.mk-thumb .board{flex-basis:44px;width:44px;height:44px}
+  .mk-chip{padding:0 10px}
+  .mk-search{flex-basis:100%}
+}
+/* a skill row under 300 px (Insights' and the Mistakes tab's): its words
+   take the row's width, the glyph left out */
+@media (max-width:299px){
+  .fam-row .sk-glyph{display:none}
+}
 /* the first minute: every state takes the Today card's place, one shape */
 .finding{background:var(--surface-1);border-radius:var(--r-card);padding:20px 22px}
 .finds{display:flex;flex-direction:column;gap:6px;margin:12px 0 16px}
@@ -1483,6 +1542,22 @@ html:has(.recap-acts){scroll-padding-bottom:calc(72px + env(safe-area-inset-bott
    so all three still fit at 195 px. Should they not (larger system text),
    the strip scrolls sideways inside itself, never the page, the tab open
    scrolled into view (setView), its focus ring drawn inside it */
+/* four tabs (release 3 slice G: Mistakes) share a phone's row: narrower
+   padding under 420 px, the small size under 340, two rows of two under
+   300 (each tab half the row, nothing scrolls sideways) */
+@media (max-width:419px){
+  .views{overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  .views::-webkit-scrollbar{display:none}
+  .view-tab{flex:none;padding:12px 8px 9px}
+  .view-tab:focus-visible{outline-offset:-3px}
+}
+@media (max-width:339px){
+  .view-tab{padding:12px 6px 9px;font-size:var(--fs-small);line-height:var(--lh-small)}
+}
+@media (max-width:299px){
+  .views{flex-wrap:wrap}
+  .view-tab{flex:1 1 50%;justify-content:center}
+}
 @media (max-width:289px){
   .view-tab{padding:12px 6px 9px}
   .tab-dot{margin-left:5px}
@@ -1494,9 +1569,8 @@ html:has(.recap-acts){scroll-padding-bottom:calc(72px + env(safe-area-inset-bott
   .lg-state{padding-left:0}
 }
 @media (max-width:249px){
-  .views{margin-left:calc(4px - var(--gutter));margin-right:calc(4px - var(--gutter));overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
-  .views::-webkit-scrollbar{display:none}
-  .view-tab{flex:none;padding:12px 4px 9px;font-size:var(--fs-small)}
+  .views{margin-left:calc(4px - var(--gutter));margin-right:calc(4px - var(--gutter))}
+  .view-tab{padding:12px 4px 9px}
   .tab-dot{margin-left:4px}
   .view-tab:focus-visible{outline-offset:-3px}
 }
