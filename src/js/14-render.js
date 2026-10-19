@@ -32,15 +32,15 @@ window.addEventListener('pagehide', flushSave);
 
 /* the top bar's tabs, in order (slice D: the games have a tab of their
    own, #games) */
-var VIEWS = [['train', 'Today'], ['games', 'Games'], ['insights', 'Insights']];
-/* the view an address names: #games, #insights (an old #coach too), else
-   Today */
+var VIEWS = [['train', 'Today'], ['games', 'Games'], ['mistakes', 'Mistakes'], ['insights', 'Insights']];
+/* the view an address names: #games, #mistakes, #insights (an old #coach
+   too), else Today */
 function viewOfHash(h) {
   h = String(h || '').replace('#', '');
-  return h === 'coach' || h === 'insights' ? 'insights' : h === 'games' ? 'games' : 'train';
+  return h === 'coach' || h === 'insights' ? 'insights' : h === 'games' || h === 'mistakes' ? h : 'train';
 }
 function setView(v, fromPop) {
-  if (v !== 'insights' && v !== 'games') v = 'train';
+  if (v !== 'insights' && v !== 'games' && v !== 'mistakes') v = 'train';
   /* a measure: Insights or Games opened */
   if (v !== 'train' && ui.view !== v) track(v + '_open');
   var moved = ui.view !== v;
@@ -55,7 +55,7 @@ function setView(v, fromPop) {
   /* a tab strip that scrolls (under 238 px) shows the tab now open */
   var tb = moved && el('tab-' + v);
   if (tb && tb.scrollIntoView && el('views').scrollWidth > el('views').clientWidth) { try { tb.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {} }
-  if (v === 'insights') renderInsights(); else if (v === 'games') renderGames(); else renderTrain();
+  if (v === 'insights') renderInsights(); else if (v === 'games') renderGames(); else if (v === 'mistakes') renderMistakes(); else renderTrain();
   if (!fromPop) window.scrollTo(0, 0);
 }
 window.addEventListener('popstate', function () {
@@ -99,11 +99,12 @@ function renderShell() {
     + '<nav id="views" class="views" role="tablist" aria-label="Views"></nav>'
     + '<div id="view-train" class="view" role="tabpanel" aria-labelledby="tab-train"><h1 class="sr-only">Today</h1><section id="trainbox"></section></div>'
     + '<div id="view-games" class="view" role="tabpanel" aria-labelledby="tab-games" hidden><h1 class="sr-only">Games</h1><section id="gamesbox"></section></div>'
+    + '<div id="view-mistakes" class="view" role="tabpanel" aria-labelledby="tab-mistakes" hidden><h1 class="sr-only">Mistakes</h1><section id="mistakesbox"></section></div>'
     + '<div id="view-insights" class="view" role="tabpanel" aria-labelledby="tab-insights" hidden><h1 class="sr-only">Insights</h1><section id="insightsbox"></section></div>'
     + '</div>';
 }
 function renderAll() {
-  [renderHeader, renderViews, renderTrain, renderGames, renderInsights, renderSettings, renderFoot].forEach(function (fn) {
+  [renderHeader, renderViews, renderTrain, renderGames, renderMistakes, renderInsights, renderSettings, renderFoot].forEach(function (fn) {
     try { fn(); } catch (e) { if (window.console) console.error(fn.name, e && e.stack); }
   });
 }
@@ -158,6 +159,7 @@ function renderAnalysisStatus() {
   /* the Games tab: a game just read says what it holds (its rows only, so
      a filter being picked is never closed under the finger) */
   if (ui.view === 'games' && !ui.session) gamesPaint();
+  if (ui.view === 'mistakes' && !ui.session) mistakesPaint();
   /* what waits for the read shows the moment it ends, not at the next
      repaint: the focus (Today) and the tab's dot; the dot also follows the
      positions as they arrive */
@@ -186,6 +188,7 @@ function checkingPaint() {
   if (ui.view === 'insights') renderInsights();
   else if (ss) { var dg = el('recap-diag'); if (dg) dg.innerHTML = diagHtml(ss, playerTier()); }
   else if (ui.view === 'games') gamesPaint(true);
+  else if (ui.view === 'mistakes') mistakesPaint();
   else renderTrain();
   if (!fk || fk === '|' || (document.body.contains && document.body.contains(foc))) return;
   var p = fk.split('|'), back = p[0] && document.querySelector('[data-act="' + p[0] + '"]' + (p[1] ? '[data-k="' + p[1] + '"]' : ''));
@@ -457,11 +460,248 @@ function focusKey(root) {
   if (!f || !f.getAttribute || !root || !root.contains || !root.contains(f)) return null;
   return { el: f, act: f.getAttribute('data-act') || '', k: f.getAttribute('data-k') || '', g: f.getAttribute('data-g') || '' };
 }
-function focusBack(fk) {
+function focusBack(fk, box) {
+  box = box || 'gamesbox';
   if (!fk || (document.body.contains && document.body.contains(fk.el))) return;
   var sel = fk.g ? '[data-g="' + fk.g + '"]' : fk.act ? '[data-act="' + fk.act + '"]' + (fk.k ? '[data-k="' + fk.k + '"]' : '') : '';
-  var x = sel && document.querySelector('#gamesbox ' + sel);
-  if (x && x.focus) { makeFocusable(el('gamesbox')); x.focus({ preventScroll: true }); }
+  var x = sel && document.querySelector('#' + box + ' ' + sel);
+  if (x && x.focus) { makeFocusable(el(box)); x.focus({ preventScroll: true }); }
+}
+/* ── the Mistakes tab (release 3 slice G) ─────────────────────────────────
+   One home for the mistakes: at the top Insights' overview (each skill's
+   row, a filter; the skill chosen shows its kinds as filters, when in your
+   games and since you started, in place); then the filters (status chips
+   with their counts, skill and kind selects in step with the rows, a
+   search over the opponent, the move played and the kind) with the count
+   ("12 of 44 mistakes") and Clear filters; the rows, due first, then by
+   what they cost, 30 at a time. A row opens Study (studying: plays like a
+   card, writes nothing); "Practise these next" puts the positions not
+   started in view first in the next sets (nextAdd), with its Undo in the
+   same place. The filters last for the visit (sessionStorage), as the
+   Games tab's do */
+var MK_N = 30, MF0 = { s: 'all', f: 'all', k: 'all', q: '' }, mkLast = '', mkMemo = {};
+var MK_STATUS = [['all', 'All', -1], ['last', 'Last step', 2], ['practice', 'In practice', 1], ['learned', 'Learned', 3], ['new', 'Not started', 0]];
+/* the filters (s: status, f: skill, k: kind, q: the search), this
+   player's, for the visit */
+function mistakesFilter() {
+  var key = 'nl:mf:' + playerId();
+  if (!ui.mf || ui.mfFor !== key) {
+    var v = null;
+    try { v = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch (e) { v = null; }
+    ui.mf = Object.assign({}, MF0, v && typeof v === 'object' ? v : {});
+    ui.mfFor = key; ui.mShow = MK_N;
+  }
+  return ui.mf;
+}
+function mistakesFilterSet(f) {
+  mistakesFilter();
+  ui.mf = Object.assign({}, MF0, f); ui.mShow = MK_N;
+  if (ui.mf.f === 'all') ui.mf.k = 'all';
+  try { sessionStorage.setItem(ui.mfFor, JSON.stringify(ui.mf)); } catch (e) {}
+}
+/* what a row needs once (the game replayed): its board, the move played
+   in SAN and in words */
+function mkMeta(it) {
+  var m = mkMemo[it.key];
+  if (m) return m;
+  var pre = stateAtPly(it.g.mv, it.b.p), san = String(it.g.mv || '').split(' ')[it.b.p] || '', mv = pre ? uciToMove(pre, uciOfSan(it.g.mv, it.b.p)) : null;
+  m = mkMemo[it.key] = { pre: pre, san: san, words: pre && mv ? moveWords(pre, mv) : '', mv: mv, svg: '' };
+  return m;
+}
+/* every mistake kept as a position (trainable, not removed), with its
+   status: 'new' (no record), 'learned', else 'practice' ('last' too: one
+   find from learned); due: its day has come; next: its place among those
+   chosen to practise next */
+function mkItems() {
+  var srs = srsLoad(), now = Date.now(), qAt = nextAt(srs);
+  return allMistakes().filter(function (it) { return trainable(it) && !(srs[it.key] && srs[it.key].hidden); }).map(function (it) {
+    var r = srs[it.key] || null, st = !r ? 'new' : isLearned(r) ? 'learned' : 'practice';
+    return { it: it, r: r, st: st, last: st === 'practice' && rungsOf(r) === 2, due: !!(r && !r.q && r.due != null && r.due <= now),
+             next: qAt[it.key] || 0, fam: familyOf(patternOf(it.b)).key, kind: patternOf(it.b) };
+  });
+}
+function mkStatusOk(x, s) { return s === 'all' || (s === 'last' ? x.last : x.st === s); }
+/* the search: a substring of the opponent, the move played (SAN or
+   words), the kind's name or its practice phrase ("forks you allowed"),
+   the skill's name, at any help level's words */
+function mkFound(x, q) {
+  if (!q) return true;
+  var m = mkMeta(x.it), fam = familyOf(x.kind);
+  return [x.it.g.opp, m.san, m.words, kindName(x.kind, 1), kindName(x.kind, 2), kindPractise(x.kind, 1), kindPractise(x.kind, 2), fam.name].join(' | ').toLowerCase().indexOf(q) >= 0;
+}
+/* the rows the filters keep, due first (the soonest first), then by what
+   they cost (a decided game, then the drop), then the newest: { all, kept,
+   counts (each status within the other filters), f } */
+function mistakesList() {
+  var all = mkItems(), f = Object.assign({}, mistakesFilter()), q = String(f.q || '').trim().toLowerCase();
+  if (f.f !== 'all' && !all.some(function (x) { return x.fam === f.f; })) { f.f = 'all'; f.k = 'all'; }
+  var rest = all.filter(function (x) { return (f.f === 'all' || x.fam === f.f) && (f.k === 'all' || x.kind === f.k) && mkFound(x, q); });
+  var counts = {};
+  MK_STATUS.forEach(function (s) { counts[s[0]] = rest.filter(function (x) { return mkStatusOk(x, s[0]); }).length; });
+  var kept = rest.filter(function (x) { return mkStatusOk(x, f.s); });
+  kept.sort(function (x, y) {
+    return (y.due ? 1 : 0) - (x.due ? 1 : 0) || (x.due && y.due ? x.r.due - y.r.due : 0)
+      || (y.it.b.d ? 1 : 0) - (x.it.b.d ? 1 : 0) || (y.it.b.wb - y.it.b.wa) - (x.it.b.wb - x.it.b.wa) || y.it.g.ts - x.it.g.ts;
+  });
+  return { all: all, kept: kept, counts: counts, f: f };
+}
+function mistakesCountWords(L) { return L.kept.length === L.all.length ? plur(L.all.length, 'mistake') : L.kept.length + ' of ' + plur(L.all.length, 'mistake'); }
+function mkFiltered(f) { return f.s !== 'all' || f.f !== 'all' || f.k !== 'all' || !!String(f.q || '').trim(); }
+/* one row: its board (the move played marked), the kind, "vs opponent1 ·
+   27 Sept · You played Nxe5" (in words at More help), its track and where
+   it stands ("Step 2 of 3 · back in 7 days", "New", "Up next"). Read as
+   one sentence; a tap opens Study */
+function mkRowHtml(x, tier) {
+  var it = x.it, m = mkMeta(it), kind = kindName(x.kind, tier), played = tier === 1 && m.words ? m.words : m.san;
+  if (!m.svg && m.pre) m.svg = boardSvg(m.pre, { flip: it.g.color === 'black', decor: true, bad: m.mv ? [m.mv.from, m.mv.to] : [] });
+  var where = x.r ? scheduleWords(x.r, null) : x.next ? 'New · up next in your sets' : 'New';
+  var meta = 'vs ' + it.g.opp + ' · ' + gameDateLine(it.g) + (played ? ' · You played ' + played : '');
+  var said = kind + '. ' + meta.replace(/ · /g, ', ') + '. ' + where.replace(/ · /g, ', ') + '.';
+  return '<div class="mk-row" data-mk="' + esc(it.key) + '" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'Study' })) + '" role="button">'
+    + '<span class="sr-only">' + esc(said) + '</span>'
+    + '<span class="mk-thumb" aria-hidden="true">' + (m.svg || '') + '</span>'
+    + '<span class="mk-main" aria-hidden="true"><span class="mk-kind">' + esc(kind) + (it.b.d ? ' <span class="dot-bad"></span>' : '') + '</span>'
+    + '<small class="mk-meta">' + esc(meta) + '</small>'
+    + '<span class="mk-prog">' + trackHtml(x.r ? rungsOf(x.r) : 0, { neu: !x.r }) + '<span>' + esc(where) + '</span></span></span></div>';
+}
+/* the status chips: each its mini track (the step track at 8 px, a
+   picture of the chip's word) and its count */
+function mkChipsHtml(L) {
+  return '<div class="mk-chips-in" role="group" aria-label="Status">' + MK_STATUS.map(function (s) {
+    var on = L.f.s === s[0];
+    return '<a class="mk-chip' + (on ? ' is-on' : '') + '" data-act="mkStatus" data-k="' + s[0] + '" role="button" aria-pressed="' + on + '">'
+      + (s[2] === -1 ? '' : '<span class="mk-mini" aria-hidden="true">' + trackHtml(s[2], { neu: !s[2] }) + '</span>') + s[1] + ' <span class="mk-n">' + L.counts[s[0]] + '</span></a>';
+  }).join('') + '</div>';
+}
+/* the skill and kind selects (in step with the rows above), the search */
+function mkFiltersHtml(L, fams, tier) {
+  var sel = function (k, name, opts, v) {
+    return '<span class="gf' + (v !== 'all' ? ' gf-on' : '') + '"><select data-act="mf" data-k="' + k + '" aria-label="' + name + '">'
+      + opts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select></span>';
+  };
+  var agg = fams.filter(function (a) { return a.fam.key === L.f.f; })[0], kinds = agg ? kindsOf(agg) : [];
+  return '<div class="gl-filters mk-filters" role="group" aria-label="Filter mistakes">'
+    + sel('f', 'Skill', [['all', 'All skills']].concat(fams.map(function (a) { return [a.fam.key, a.fam.name]; })), L.f.f)
+    + (kinds.length >= 2 ? sel('k', 'Kind', [['all', 'All kinds']].concat(kinds.map(function (s) { return [s.key, kindName(s.key, tier)]; })), L.f.k) : '')
+    + '<input class="mk-search" type="search" data-act="mq" id="mk-q" aria-label="Search mistakes" placeholder="Search: opponent, move, kind" value="' + esc(L.f.q || '') + '" autocomplete="off" spellcheck="false">'
+    + '</div>';
+}
+/* "Practise these next": the positions not started in view, not chosen
+   yet (NEXT_MAX at most); the word after it, with its Undo */
+function mkNextKeys(L) { return L.kept.filter(function (x) { return !x.r && !x.next && dealable(x.it); }).map(function (x) { return x.it.key; }); }
+function mkActsHtml(L) {
+  var n = mkNextKeys(L).length, d = ui.mkDone, h = '';
+  if (n) h += '<a class="btn-line mk-next" data-act="mkNext">' + (n === 1 ? 'Practise this next' : n > NEXT_MAX ? 'Practise the first ' + NEXT_MAX + ' next' : 'Practise these next') + '</a>';
+  h += '<p class="mk-done" id="mk-done" role="status">' + (d ? (d.undone ? 'Taken out of your next sets.' : plur(d.n, 'position') + ' added to your next sets. <a class="btn-quiet mk-undo" data-act="mkUndo">Undo</a>') : '') + '</p>';
+  return '<div class="mk-acts">' + h + '</div>';
+}
+/* what the background and the filters move (mistakesPaint) */
+function mkBodyHtml(L) {
+  var tier = playerTier();
+  if (!L.kept.length) return checkingHtml('gl-check') + '<div class="gl-none"><p>No mistakes match these filters.</p><a class="btn-quiet" data-act="mkClear">Clear filters</a></div>';
+  var shown = L.kept.slice(0, ui.mShow || MK_N), left = L.kept.length - shown.length;
+  return checkingHtml('gl-check') + '<div class="mk-rows">' + shown.map(function (x) { return mkRowHtml(x, tier); }).join('') + '</div>'
+    + (left > 0 ? '<a class="btn-quiet gl-more" data-act="mkMore">Show ' + Math.min(MK_N, left) + ' more</a>' : '');
+}
+/* the count, Clear filters and the two actions: a status line apart from
+   the rows, so a screen reader hears "12 of 44 mistakes" */
+function mkBarHtml(L) {
+  return '<p class="gl-count" id="mk-count" role="status">' + mistakesCountWords(L) + '</p>'
+    + (mkFiltered(L.f) ? '<a class="btn-quiet mk-clear" data-act="mkClear">Clear filters</a>' : '');
+}
+/* the overview: the skill rows (Insights' own), each a filter; the one
+   chosen opens its breakdown under it */
+function mkSkillsHtml(fams, L, tier) {
+  var focus = currentFocus();
+  return '<section class="mk-skills" aria-labelledby="mk-sk-h"><h2 class="ins-h" id="mk-sk-h">' + (tier === 1 ? 'What cost you games' : 'What decided your games') + '</h2>'
+    + skillRowsHtml(fams, focus, tier, L.f.f) + '</section>';
+}
+function mistakesHtml() {
+  mkLast = '';
+  if (!data.games.length) return '<div class="mk">' + (data.sections.games === 'loading' ? stateCard('Reading your games', 'Your mistakes show up here as Stockfish reads your games.', '')
+    : stateCard('No mistakes yet.', 'Your mistakes appear here once there are rated games to read. Each one keeps its progress, and a tap studies it.', '')) + '</div>';
+  var L = mistakesList(), tier = playerTier(), fams = insightReport().families;
+  if (!L.all.length) return '<div class="mk">' + checkingHtml('gl-check') + stateCard('No mistakes yet.', (tier === 1 ? 'The computer' : 'Stockfish') + ' is still reading your games. Each big mistake shows up here with its progress.', '') + '</div>';
+  mkLast = mkBodyHtml(L);
+  return '<div class="mk">' + mkSkillsHtml(fams, L, tier)
+    + '<section class="gl mk-list" aria-labelledby="mk-h"><div class="gl-head"><h2 class="gl-h" id="mk-h">Your mistakes</h2></div>'
+    + '<div class="mk-chips" id="mk-chips">' + mkChipsHtml(L) + '</div>' + mkFiltersHtml(L, fams, tier)
+    + '<div class="gl-bar mk-bar" id="mk-bar">' + mkBarHtml(L) + '</div>' + '<div id="mk-acts">' + mkActsHtml(L) + '</div>'
+    + '<div class="gl-body" id="mk-body">' + mkLast + '</div>'
+    + '<p class="lg-foot dim">' + tapWord() + ' a mistake to study it. Study changes no steps.</p></section></div>';
+}
+function renderMistakes() {
+  var box = el('mistakesbox');
+  if (!box || !cfg.user || ui.view !== 'mistakes') return;
+  var fk = focusKey(box);
+  box.innerHTML = mistakesHtml();
+  focusBack(fk, 'mistakesbox');
+}
+/* the background or the search moved on: the chips' counts, the count,
+   the actions and the rows drawn again in place, only when they changed;
+   the selects and the search field are left alone (a field being typed in
+   keeps its caret) */
+function mistakesPaint() {
+  var body = el('mk-body');
+  if (!cfg.user || ui.view !== 'mistakes') return;
+  if (!body) { renderMistakes(); return; }
+  var L = mistakesList(), h = mkBodyHtml(L), fk = focusKey(el('mistakesbox'));
+  [[el('mk-chips'), mkChipsHtml(L)], [el('mk-bar'), mkBarHtml(L)], [el('mk-acts'), mkActsHtml(L)]].forEach(function (p) {
+    if (p[0] && p[0].innerHTML !== p[1]) p[0].innerHTML = p[1];
+  });
+  if (h !== mkLast) { body.innerHTML = h; mkLast = h; }
+  focusBack(fk, 'mistakesbox');
+}
+/* a filter changed (a chip, a select, a skill row, a kind): the whole tab
+   follows, the keyboard kept on the control it was on */
+function mistakesPick(f, paintOnly) {
+  mistakesFilterSet(Object.assign({}, mistakesFilter(), f));
+  ui.mkDone = null;
+  track('mistakes_filter');
+  if (paintOnly) mistakesPaint(); else renderMistakes();
+}
+/* Mistakes opened filtered (Insights' skill rows, a skill's sheet, the
+   focus card, the Details chip after a set): family:<skill>[:<kind>] */
+function mistakesOpen(k) {
+  var p = String(k || '').split(':'), fam = p[0] === 'pattern' ? familyOf(p[1]).key : p[1], kind = p[0] === 'pattern' ? p[1] : p[2];
+  mistakesFilterSet({ s: 'all', f: fam || 'all', k: kind || 'all', q: '' });
+  ui.mkDone = null;
+  closeSheet();
+  if (ui.session && ui.session.finished) endSession();
+  setView('mistakes');
+}
+/* a letter typed in the search: the rows, chips and count in place, the
+   field keeping its caret */
+function mistakesSearch(q) {
+  mistakesFilterSet(Object.assign({}, mistakesFilter(), { q: String(q || '') }));
+  ui.mkDone = null;
+  mistakesPaint();
+}
+function mistakesNext() {
+  var keys = mkNextKeys(mistakesList());
+  if (!keys.length) return;
+  var r = nextAdd(keys);
+  ui.mkDone = { n: r.n, was: r.was };
+  track('practise_next');
+  mistakesPaint();
+  var u = document.querySelector('#mistakesbox .mk-undo');
+  if (u && u.focus) { makeFocusable(el('mistakesbox')); u.focus({ preventScroll: true }); }
+}
+function mistakesUndo() {
+  var d = ui.mkDone;
+  if (!d || d.undone) return;
+  nextUndo(d.was);
+  ui.mkDone = { undone: true };
+  mistakesPaint();
+  var b = document.querySelector('#mistakesbox .mk-next') || el('mk-count');
+  if (b && b.focus) { makeFocusable(el('mistakesbox')); b.focus({ preventScroll: true }); }
+}
+function mistakesMore() {
+  var at = ui.mShow || MK_N;
+  ui.mShow = at + MK_N;
+  mistakesPaint();
+  var rows = document.querySelectorAll('#mk-body .mk-row');
+  if (rows[at]) { makeFocusable(el('mk-body')); rows[at].focus({ preventScroll: true }); }
 }
 /* a game's day in its row: "today", "yesterday", else its date ("27 Sept") */
 function gameDayWord(ts) {
@@ -2854,7 +3094,7 @@ var LAST_STEP = 'Last step';
 function tagRowHtml(d) {
   /* a practice position's "Practice" in slate, as a review's; a lesson's
      "Lesson" in honey (F9.3, F9.4) */
-  var t = d.chip || d.tag, cls = !t ? '' : d.chip ? (d.chip === CARD_COPY.T3() ? 'tag-honey' : 'tag-slate') : d.tag === CARD_COPY.G1() || d.tag === CARD_COPY.P1() ? 'tag-slate' : d.tag === CARD_COPY.P2() ? 'tag-honey' : 'tag-ctx';
+  var t = d.chip || d.tag, cls = !t ? '' : d.chip ? (d.chip === CARD_COPY.T3() ? 'tag-honey' : 'tag-slate') : d.tag === CARD_COPY.G1() || d.tag === CARD_COPY.P1() || d.tag === CARD_COPY.S1() ? 'tag-slate' : d.tag === CARD_COPY.P2() ? 'tag-honey' : 'tag-ctx';
   /* a practice position's source line beside its tag (F9.4) */
   return '<div class="bd-tags">' + (t ? '<span class="tag ' + cls + '">' + esc(t) + '</span>' : '') + (t && !d.chip && d.src ? '<span class="tag-src">' + esc(d.src) + '</span>' : '')
     + (d.tk ? '<span class="bd-step">' + (d.pill ? '<span class="tag tag-honey">' + d.pill + '</span>' : '') + trackHtml(d.tk.p, d.tk.o) + '</span>' : '') + '</div>';
@@ -3346,7 +3586,7 @@ function detailsHtml() {
   if (th === cl) th = '';
   h += '</div>' + (th ? '<p class="dt-more">' + esc(th) + '</p>' : '') + (ck ? '<p class="dt-more dt-clock">' + esc(ck) + '</p>' : '')
     + '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="family:' + familyOf(t).key + ':' + t + '">' + esc(info.name) + ' ›</a>'
-    + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>'
+    + '<span class="when">' + (studying() ? (scheduleWords(srsRec(it), null) || 'Not started') + '. Study changed nothing.' : scheduleWords(a.rec || srsRec(it), a)) + '</span></div>'
     + (a.held === 'slow' ? '<p class="dt-more dt-held">' + esc(heldLine(a)) + '</p>' : a.held === 'guess' ? '<p class="dt-more dt-held">' + GUESS_HELD + '</p>' : '')
     + '<p class="habit">' + esc(cl) + '</p>';
   /* no engine, no exploring */
@@ -3708,7 +3948,7 @@ function renderInsights() {
     h += '<h3 class="ins-h">Where it happens</h3>';
     if (r.slices.length) {
       r.slices.forEach(function (s) {
-        h += '<div class="slice"><p>' + esc(s.text) + '</p><a data-act="drill" data-spec="' + esc(JSON.stringify(s.spec)) + '">Drill these ›</a></div>';
+        h += '<div class="slice"><p>' + esc(s.text) + '</p><a data-act="drill" data-spec="' + esc(JSON.stringify(s.spec)) + '">Study these ›</a></div>';
       });
     } else h += '<p class="sec">No clear pattern yet by colour or opening. This sharpens as more games are checked; for now your skills above are where to start.</p>';
   } else {
@@ -3728,17 +3968,21 @@ function goneHtml() {
    plain line, losses decided and positions, then the bar of those
    positions by steps (V4.8: learned leaf, in practice honey) and the
    positions in words. The row opens the skill's sheet */
-function skillRowsHtml(list, focus, tier) {
+function skillRowsHtml(list, focus, tier, pick) {
+  /* on the Mistakes tab (pick: the skill chosen, or 'all') each row is a
+     filter, the one chosen pressed with its breakdown under it; on
+     Insights each opens the Mistakes tab filtered to it */
   return '<div class="fam-list">' + list.map(function (a) {
-    var k = a.fam.key, on = tier >= 2 && !!(focus && focus.fam === k);
-    return '<a class="fam-row' + (on ? ' is-focus' : '') + '" data-act="sheet" data-k="family:' + k + '">'
+    var k = a.fam.key, on = tier >= 2 && !!(focus && focus.fam === k), mk = pick != null, picked = mk && pick === k;
+    return '<a class="fam-row' + (on ? ' is-focus' : '') + (picked ? ' is-picked' : '') + '"' + (mk ? ' data-act="mkSkill" data-k="' + k + '" role="button" aria-pressed="' + picked + '"' : ' data-act="mistakes" data-k="family:' + k + '"') + '>'
       + '<span class="sk-glyph" data-icon="' + ((SKILL[k] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
       + '<span class="fr-main"><span class="fr-name">' + esc(a.fam.name) + (on ? '<span class="pill">Start here</span>' : '') + '</span>'
         + (kindGlance(a, tier) || '<span class="fr-line">' + esc(skillLine(k, tier)) + '</span>')
         + '<span class="fr-n">' + decidedWords(a.lost, tier) + ' · ' + plur(a.count, 'position') + '</span>'
-        + stepBarHtml(a.steps)
-        + '<span class="fr-prog">' + progressWords(a) + '</span></span>'
-      + '<span class="fr-go" aria-hidden="true">›</span></a>';
+        /* (on the Mistakes tab each row's steps are in the rows below) */
+        + (mk ? '' : stepBarHtml(a.steps) + '<span class="fr-prog">' + progressWords(a) + '</span>') + '</span>'
+      + '<span class="fr-go" aria-hidden="true">' + (mk ? (picked ? '−' : '+') : '›') + '</span></a>'
+      + (picked ? '<div class="mk-break">' + famBreakHtml(k, ui.mf && ui.mf.k !== 'all' ? ui.mf.k : null, true) + '</div>' : '');
   }).join('') + '</div>';
 }
 /* the glance (Insights depth), at Normal and Less help, for a skill with 5
@@ -3824,7 +4068,7 @@ function clockHtml(c, tier) {
   if (c.lost) rows.push('The moves that lost took ' + secs(c.took) + pace + ', with ' + (c.one ? left(c.left) : share(c.leftShare) + ' of your time') + ' left.');
   if (c.lost >= 3 && c.trouble && c.trouble * 4 >= c.lost) {
     rows.push(c.trouble + ' of ' + c.lost + ' losing moves came ' + (c.one ? 'with under ' + secs(Math.max(20, c.base / 10)) + ' left.' : t1 ? 'when your clock was nearly out.' : 'in time trouble.')
-      + ' <a data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'clock', label: 'Time trouble' })) + '">Practise these ›</a>');
+      + ' <a data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'clock', label: 'Time trouble' })) + '">Study these ›</a>');
   }
   if (tier >= 3 && c.dec >= 3) {
     var others = c.other ? ' (' + (c.otherFast ? c.otherFast + ' of your ' + plur(c.other, 'other big mistake') + ' did too' : 'none of your ' + plur(c.other, 'other big mistake') + ' did') + ')' : '';
@@ -3842,7 +4086,7 @@ function clockHtml(c, tier) {
 function decidedHtml(d) {
   if (!d || !(d.conv || d.save || d.slow)) return '';
   var rows = [];
-  var practise = function (type, label) { return drillItems({ type: type }, 1).length ? ' <a data-act="drill" data-spec="' + esc(JSON.stringify({ type: type, label: label })) + '">Practise these ›</a>' : ''; };
+  var practise = function (type, label) { return drillItems({ type: type }, 1).length ? ' <a data-act="drill" data-spec="' + esc(JSON.stringify({ type: type, label: label })) + '">Study these ›</a>' : ''; };
   var peer = function (x) { return x != null ? '<span class="dec-peer">Lichess players at your level: ' + Math.round(x) + '%.</span>' : ''; };
   if (d.conv) rows.push('<b>Converting wins:</b> won ' + d.conv.won + ' of ' + plur(d.conv.n, 'game') + ' after reaching +2.' + practise('convert', 'Converting wins') + peer(d.conv.peer));
   if (d.save) rows.push('<b>Saving bad positions:</b> saved ' + d.save.saved + ' of ' + d.save.n + ' after falling to −2.' + practise('save', 'Saving bad positions') + peer(d.save.peer));
@@ -4000,38 +4244,32 @@ function sheetHtml(kind) {
    (none for a skill of one kind). On first paint each bar grows from 0,
    30 ms after the one before, all within 400 ms (fs-grow, app.css) */
 var FS_STAGGER = 30, FS_LAST = 160;
-function familySheetHtml(k, pat) {
-  var fam = FAMILIES.filter(function (f) { return f.key === k; })[0];
+/* a skill's breakdown, its sheet's middle and the Mistakes tab's skill
+   chosen: What kind (filters: mk, the tab's mkKind; else the sheet's
+   famKind), then When in your games and Since you started. parts: the
+   pieces apart ({ kinds, pair, sel, items }) */
+function famBreakHtml(k, pat, mk, parts) {
   var agg = insightReport().families.filter(function (a) { return a.fam.key === k; })[0];
-  if (!fam || !agg) return '';
-  var tier = playerTier(), kinds = kindsOf(agg), focus = currentFocus(), bi = 0;
+  if (!agg) return parts ? { kinds: '', pair: '', sel: null } : '';
+  var tier = playerTier(), kinds = kindsOf(agg), bi = 0, h = '';
   var sel = kinds.length >= 2 ? kinds.filter(function (s) { return s.key === pat; })[0] || null : null;
   var pct = function (n, max) { return max > 0 ? Math.round(n * 1000 / max) / 10 : 0; };
   var bar = function (cls, w, id) {
     return '<span class="fs-bar" aria-hidden="true"><i class="' + cls + '" data-b="' + id + '" style="width:' + w + '%;animation-delay:' + Math.min(bi++ * FS_STAGGER, FS_LAST) + 'ms"></i></span>';
   };
   var row = function (name, n, b) { return '<div class="fs-row"><span class="fs-name">' + name + '</span>' + (n === '' ? '' : '<span class="fs-n">' + n + '</span>') + b + '</div>'; };
-  /* while the background check runs, one line tops the sheet (C1) */
-  var h = checkingHtml('sheet-check') + '<div class="kicker">Skill</div><h3>' + esc(fam.name) + '</h3>'
-    + '<p class="sheet-sum">' + (agg.lost ? 'Decided ' + fmtGames(agg.lost) + ' of yours. ' : '') + plur(agg.count, 'position') + ' from your games.'
-      + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
-    + '<p class="fs-def">' + esc(skillLine(k, tier)) + '</p>';
+  var act = mk ? 'mkKind' : 'famKind', kk = function (x) { return mk ? x || 'all' : 'family:' + k + (x ? ':' + x : ''); };
+  /* (on the Mistakes tab its headings sit under the tab's h2s) */
+  var hx = mk ? 'h3' : 'h4';
   if (kinds.length >= 2) {
-    h += '<div class="fs-head"><h4 class="kicker fs-h">What kind</h4>' + (sel ? '<a class="btn-quiet fs-all" data-act="famKind" data-k="family:' + k + '">Show all</a>' : '') + '</div>'
+    h += '<div class="fs-head"><' + hx + ' class="kicker fs-h">What kind</' + hx + '>' + (sel ? '<a class="btn-quiet fs-all" data-act="' + act + '" data-k="' + kk('') + '">Show all</a>' : '') + '</div>'
       + '<div class="fs-kinds">' + kinds.map(function (s) {
         var on = sel === s, lost = lostOf(s.items);
-        return '<a class="fs-kind' + (on ? ' is-on' : '') + '" role="button" tabindex="0" aria-pressed="' + on + '" data-act="famKind" data-k="family:' + k + (on ? '' : ':' + s.key) + '" data-kind="' + s.key + '">'
+        return '<a class="fs-kind' + (on ? ' is-on' : '') + '" role="button" tabindex="0" aria-pressed="' + on + '" data-act="' + act + '" data-k="' + kk(on ? '' : s.key) + '" data-kind="' + s.key + '">'
           + '<span class="fs-name">' + esc(kindName(s.key, tier)) + '</span><span class="fs-n">' + s.count + (lost ? ' · ' + decidedWords(lost, tier) : '') + '</span>'
           + bar(on ? 'kb0' : sel ? 'kb2' : 'kb1', pct(s.count, kinds[0].count), 'k:' + s.key) + '</a>';
       }).join('') + '</div>';
   }
-  /* Practise: the drill of what is in view */
-  var spec = sel ? { type: 'pattern', key: sel.key, label: kindName(sel.key, tier) } : { type: 'family', fam: k, label: fam.name };
-  var nDrill = drillItems(spec, 8).length;
-  h += '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(sel ? patternStep(sel.key) : familyStep(k), tier)) + '</div></div>'
-    + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big fs-go" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify(spec)) + '">Practise '
-      + esc(sel ? kindPractise(sel.key, tier) : fam.name.toLowerCase()) + ': ' + nDrill + '\u00a0position' + (nDrill === 1 ? '' : 's') + '</a>' : '')
-    + (focus && focus.fam === k ? '<span class="pill">Focus</span>' : '') + '</div>';
   /* When in your games, over the positions in view */
   var items = sel ? sel.items : kinds.reduce(function (a, s) { return a.concat(s.items); }, []), when = '', since = '';
   if (tier >= 2 && k !== 'quiet' && items.length >= 10) {
@@ -4041,19 +4279,40 @@ function familySheetHtml(k, pat) {
     var cap = most.length === 1 ? 'Most in ' + most[0][2] + ': ' + top + ' of ' + items.length + '.'
       : most.length === 2 ? 'Most in ' + most[0][2] + ' and ' + most[1][2] + ': ' + top + ' each of ' + items.length + '.'
       : 'As many in each part of the game: ' + top + ' each of ' + items.length + '.';
-    when = '<section class="fs-sec" aria-label="When in your games"><h4 class="kicker fs-h">When in your games</h4><p class="fs-cap">' + cap + '</p>'
+    when = '<section class="fs-sec" aria-label="When in your games"><' + hx + ' class="kicker fs-h">When in your games</' + hx + '><p class="fs-cap">' + cap + '</p>'
       + PHASES.map(function (p) { return row(p[1], ph[p[0]], bar('kb1', pct(ph[p[0]], top), 'p:' + p[0])); }).join('') + '</section>';
   }
   /* Since you started: every kind, filtered or not */
   var ss = tier >= 2 ? sinceSkill(k) : null, d1 = function (x) { return (Math.round(x * 10) / 10).toFixed(1); };
   if (ss) {
     var big = ss.say ? Math.max(ss.b, ss.s) : 0;
-    since = '<section class="fs-sec" aria-label="Since you started"><h4 class="kicker fs-h">Since you started</h4>'
+    since = '<section class="fs-sec" aria-label="Since you started"><' + hx + ' class="kicker fs-h">Since you started</' + hx + '>'
       + (ss.say ? '<p class="fs-say">' + ss.say + '</p>' + row('Before: ' + d1(ss.b) + ' a game', '', bar('kb2', pct(ss.b, big), 's:b')) + row('Since: ' + d1(ss.s) + ' a game', '', bar('kb0', pct(ss.s, big), 's:s'))
         : '<p class="fs-cap">Your trend shows from ' + ss.need + ' games since you started: ' + ss.so + ' so far.</p>') + '</section>';
   }
-  if (when || since) h += '<div class="fs-pair">' + when + since + '</div>';
-  return h + examplesHtml(sel ? { type: 'pattern', key: sel.key } : { type: 'family', fam: k }, sel ? sel.count : 4, 'Your positions');
+  var pair = when || since ? '<div class="fs-pair">' + when + since + '</div>' : '';
+  return parts ? { kinds: h, pair: pair, sel: sel } : h + pair;
+}
+/* a skill's sheet: the header, its breakdown (famBreakHtml), the check,
+   Open in Mistakes (its rows there are where it is practised: release 3
+   slice G), then its positions, each opening Study. Mid-card (the Details
+   chip while a set runs) a compact one: no positions, nothing that would
+   leave the card */
+function familySheetHtml(k, pat) {
+  var fam = FAMILIES.filter(function (f) { return f.key === k; })[0];
+  var agg = insightReport().families.filter(function (a) { return a.fam.key === k; })[0];
+  if (!fam || !agg) return '';
+  var tier = playerTier(), focus = currentFocus(), b = famBreakHtml(k, pat, false, true), sel = b.sel, mid = !!(ui.session && !ui.session.finished);
+  /* while the background check runs, one line tops the sheet (C1) */
+  var h = checkingHtml('sheet-check') + '<div class="kicker">Skill</div><h3>' + esc(fam.name) + '</h3>'
+    + '<p class="sheet-sum">' + (agg.lost ? 'Decided ' + fmtGames(agg.lost) + ' of yours. ' : '') + plur(agg.count, 'position') + ' from your games.'
+      + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
+    + '<p class="fs-def">' + esc(skillLine(k, tier)) + '</p>' + b.kinds;
+  h += '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(sel ? patternStep(sel.key) : familyStep(k), tier)) + '</div></div>';
+  if (mid) return h;
+  h += '<div class="acts-row sheet-acts"><a class="btn-big fs-go" data-act="mistakes" data-k="family:' + k + (sel ? ':' + sel.key : '') + '">Open in Mistakes</a>'
+    + (focus && focus.fam === k ? '<span class="pill">Focus</span>' : '') + '</div>';
+  return h + b.pair + examplesHtml(sel ? { type: 'pattern', key: sel.key } : { type: 'family', fam: k }, sel ? sel.count : 4, 'Your positions');
 }
 /* a kind row pressed (kind: family:k:pattern, or family:k for every kind
    again): the sheet is drawn filtered in place, its scroll and the

@@ -507,6 +507,65 @@ a.lg-row{color:inherit}
   .games{padding-top:16px}
   .gl-rows{padding:4px 16px}
 }
+/* the Mistakes tab (release 3 slice G): the skill rows as filters (the
+   one chosen pressed, its breakdown under it), the status chips with their
+   mini tracks and counts, the selects and the search, the rows (a small
+   board, the kind, the game, the track and where it stands) */
+.mk{padding-top:24px;max-width:860px}
+.mk-skills .fam-list{margin-bottom:24px}
+.fam-row.is-picked{background:var(--surface-2)}
+.fam-row[aria-pressed] .fr-go{font-weight:800}
+.mk-break{padding:4px 20px 16px;background:var(--surface-2);border-radius:0 0 var(--r-card) var(--r-card)}
+.mk-break .fs-head{margin-top:8px}
+.mk-break .fs-pair{margin-top:8px}
+.mk-chips-in{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.mk-chip{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 12px;border:2px solid var(--border);border-radius:var(--r-pill);font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-1);cursor:pointer}
+.mk-chip:hover{color:var(--text-1);background:var(--surface-2)}
+.mk-chip.is-on{border-color:var(--honey);background:var(--honey-14)}
+.mk-n{font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
+.mk-filters{margin:4px 0 0}
+.mk-search{min-height:44px;flex:1 1 220px;min-width:0;max-width:100%;padding:0 14px;border:2px solid var(--border);border-radius:var(--r-chip);background:var(--surface-1);color:var(--text-1);font:inherit;font-size:var(--fs-body);line-height:var(--lh-body);font-weight:600}
+.mk-search::placeholder{color:var(--text-3)}
+.mk-search:focus{border-color:var(--honey);outline:none}
+.mk-bar{justify-content:flex-start}
+.mk-clear{min-height:44px}
+.mk-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:0 0 12px}
+.mk-done{margin:0;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:700;color:var(--text-2)}
+.mk-done:empty{display:none}
+.mk-undo{min-height:44px;margin-left:4px}
+.mk-rows{background:var(--surface-1);border-radius:var(--r-card);padding:6px 20px}
+.mk-row{display:flex;align-items:center;gap:14px;min-height:72px;padding:10px 8px;margin:0 -8px;border-top:1px solid var(--divider);border-radius:12px;color:inherit;cursor:pointer}
+.mk-rows .mk-row:first-child{border-top:0}
+.mk-row:hover{background:var(--surface-2);color:inherit}
+.mk-thumb{flex:0 0 56px;width:56px;height:56px;border-radius:6px;overflow:hidden}
+.mk-thumb .board{display:block;width:56px;height:56px}
+.mk-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.mk-kind{font-size:var(--fs-body);line-height:var(--lh-small);font-weight:700;color:var(--text-1);overflow-wrap:anywhere}
+.mk-kind .dot-bad{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--coral);vertical-align:2px;margin-left:4px}
+.mk-meta{font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-3);overflow-wrap:anywhere}
+.mk-prog{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:var(--fs-small);line-height:var(--lh-small);font-weight:600;color:var(--text-2)}
+/* the chips' mini track: the step track at 8 px */
+.mk-mini{display:inline-flex}
+.mk-mini .track{gap:2px;height:8px}
+.mk-mini .track i,.mk-mini .track .tk-seal{width:8px;height:8px;border-width:1.5px}
+.mk-mini .track i::after{inset:-1.5px}
+@media (max-width:860px){
+  .mk{padding-top:16px}
+  .mk-rows{padding:4px 16px}
+  .mk-break{padding:4px 16px 14px}
+}
+@media (max-width:359px){
+  .mk-rows{padding:4px 10px}
+  .mk-row{gap:10px}
+  .mk-thumb,.mk-thumb .board{flex-basis:44px;width:44px;height:44px}
+  .mk-chip{padding:0 10px}
+  .mk-search{flex-basis:100%}
+}
+/* a skill row under 300 px (Insights' and the Mistakes tab's): its words
+   take the row's width, the glyph left out */
+@media (max-width:299px){
+  .fam-row .sk-glyph{display:none}
+}
 /* the first minute: every state takes the Today card's place, one shape */
 .finding{background:var(--surface-1);border-radius:var(--r-card);padding:20px 22px}
 .finds{display:flex;flex-direction:column;gap:6px;margin:12px 0 16px}
@@ -1529,6 +1588,22 @@ html:has(.recap-acts){scroll-padding-bottom:calc(72px + env(safe-area-inset-bott
    so all three still fit at 195 px. Should they not (larger system text),
    the strip scrolls sideways inside itself, never the page, the tab open
    scrolled into view (setView), its focus ring drawn inside it */
+/* four tabs (release 3 slice G: Mistakes) share a phone's row: narrower
+   padding under 420 px, the small size under 340, two rows of two under
+   300 (each tab half the row, nothing scrolls sideways) */
+@media (max-width:419px){
+  .views{overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  .views::-webkit-scrollbar{display:none}
+  .view-tab{flex:none;padding:12px 8px 9px}
+  .view-tab:focus-visible{outline-offset:-3px}
+}
+@media (max-width:339px){
+  .view-tab{padding:12px 6px 9px;font-size:var(--fs-small);line-height:var(--lh-small)}
+}
+@media (max-width:299px){
+  .views{flex-wrap:wrap}
+  .view-tab{flex:1 1 50%;justify-content:center}
+}
 @media (max-width:289px){
   .view-tab{padding:12px 6px 9px}
   .tab-dot{margin-left:5px}
@@ -1540,9 +1615,8 @@ html:has(.recap-acts){scroll-padding-bottom:calc(72px + env(safe-area-inset-bott
   .lg-state{padding-left:0}
 }
 @media (max-width:249px){
-  .views{margin-left:calc(4px - var(--gutter));margin-right:calc(4px - var(--gutter));overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
-  .views::-webkit-scrollbar{display:none}
-  .view-tab{flex:none;padding:12px 4px 9px;font-size:var(--fs-small)}
+  .views{margin-left:calc(4px - var(--gutter));margin-right:calc(4px - var(--gutter))}
+  .view-tab{padding:12px 4px 9px}
   .tab-dot{margin-left:4px}
   .view-tab:focus-visible{outline-offset:-3px}
 }
@@ -1685,9 +1759,9 @@ var ui = {
   view: (function () {
     var h = (location.hash || '').replace('#', '');
     if (h === 'coach') h = 'insights';
-    if (h === 'insights' || h === 'train' || h === 'games') return h;
+    if (h === 'insights' || h === 'train' || h === 'games' || h === 'mistakes') return h;
     var v = store.get('nl:view', 'train');
-    return v === 'insights' || v === 'games' ? v : 'train';
+    return v === 'insights' || v === 'games' || v === 'mistakes' ? v : 'train';
   })(),
   open: {},            /* which cards have their "+ n more" list open */
   openSkill: null,     /* which profile row is showing its evidence */
@@ -5396,7 +5470,7 @@ function relabelLater() {
       });
     });
     if (n) { modelDirty(); scheduleSave(); relabelTimer = setTimeout(step, 40); }
-    else { relabelTimer = null; if (!ui.session) { renderTrain(); if (ui.view === 'insights') renderInsights(); if (ui.view === 'games') gamesPaint(); } }
+    else { relabelTimer = null; if (!ui.session) { renderTrain(); if (ui.view === 'insights') renderInsights(); if (ui.view === 'games') gamesPaint(); if (ui.view === 'mistakes') mistakesPaint(); } }
   }, 200);
 }
 function allMistakes() { return model().items; }
@@ -6225,7 +6299,8 @@ function decidedWords(lost, tier) {
 /* ── a skill's kinds (Insights depth: glance, then drill) ────────────────
    Each pattern of a skill is one kind: its name at Normal and Less help,
    its plainer name at More help, and what its drill practises after
-   "Practise" ("Practise forks you allowed: 5 positions"), the same two
+   "Practise" (slice E's button; since release 3 slice G what the Mistakes
+   tab's search also finds: "forks you allowed"), the same two
    ways. Content's words: plain, 7 words at most, no notation; the kind
    that shared its skill's name ("King safety") is "Exposed your king", as
    its Details chip names it */
@@ -8267,8 +8342,10 @@ function ensureGap(it) {
 /* ── Sessions: Today, drills, and the focus ─────────────────────────────────
    One container for every kind of practice. Today = reviews that are due
    plus a few new mistakes, sized to what the day can hold. A drill = up to
-   8 positions of one pattern or one slice, blocked together. Either counts
-   toward the day. A session survives a reload. */
+   8 positions of one pattern or one slice, blocked together. Today's set
+   and the next sets count toward the day and move the schedule; a drill is
+   study (release 3 slice G): it plays like a card and writes nothing. A
+   session survives a reload; a study is never saved. */
 
 function sessionSize() { return store.get('nl:sessionSize', 10); }
 /* how deeply games are read: 'std' (the default) or 'thorough' */
@@ -8282,8 +8359,17 @@ function scanNodes() {
   return ready >= 3 ? 50000 : TRIAGE_NODES;
 }
 function sessKey() { return 'nl:sess:' + playerId(); }
+/* study (release 3 slice G): a drill of the player's own positions (a row
+   of the Mistakes tab, a game's walk-through, one position from a summary,
+   Insights' clock and how-decided rows) plays like a card and writes
+   nothing: no record on the schedule, no practice log entry, no day
+   counted, no skill score, no summary, and the paused set stays as it was.
+   Only Today's set and the next sets move the schedule; a practice pack
+   keeps its own skill scores */
+function studying(ss) { ss = ss === undefined ? ui.session : ss; return !!(ss && ss.study); }
 function saveSession() {
   var ss = ui.session;
+  if (studying(ss)) return;
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
@@ -8422,10 +8508,10 @@ function newCardScore(it, since) {
    day (todayPlan) */
 function buildCandidates(n, spec, fill, o) {
   var srs = (o && o.srs) || srsLoad(), focus = currentFocus(), since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
-  var filter = spec ? specFilter(spec) : null;
+  var filter = spec ? specFilter(spec) : null, queued = spec ? {} : nextAt(srs);
   /* Today deals positions with one idea: a quiet card where a second move is
-     as good as the best stays for drills */
-  var twoAnswers = function (it) { return !spec && it.b.g2 != null && it.b.g2 <= SOLVE_TOL && familyOf(patternOf(it.b)).key === 'quiet'; };
+     as good as the best stays for drills (unless the player chose it) */
+  var twoAnswers = function (it) { return !spec && !queued[it.key] && it.b.g2 != null && it.b.g2 <= SOLVE_TOL && familyOf(patternOf(it.b)).key === 'quiet'; };
   /* never seen, or back in the queue (F7.1): those count as new */
   var list = allMistakes().filter(function (it) {
     var r = srs[it.key];
@@ -8435,7 +8521,11 @@ function buildCandidates(n, spec, fill, o) {
   var score = {};
   list.forEach(function (it) { score[it.key] = newCardScore(it, since); });
   list.sort(function (x, y) { return score[y.key] - score[x.key]; });
-  if (spec || !focus) return list.slice(0, n);
+  /* the positions chosen with "Practise these next" (nextAdd) lead, in
+     their order; the rest follow as before */
+  var head = list.filter(function (it) { return queued[it.key]; }).sort(function (x, y) { return queued[x.key] - queued[y.key]; }).slice(0, n);
+  if (head.length) { list = list.filter(function (it) { return !queued[it.key]; }); n = Math.max(0, n - head.length); }
+  if (spec || !focus) return head.concat(list.slice(0, n));
   /* the focus family takes turns with the rest, never more than half: a
      mix trains the question "which danger is live now?" */
   var inF = function (it) { return familyOf(patternOf(it.b)).key === focus.fam; };
@@ -8448,7 +8538,37 @@ function buildCandidates(n, spec, fill, o) {
     takeF = !takeF;
   }
   while (fill && out.length < n && fi < mine.length) out.push(mine[fi++]);
-  return out;
+  return head.concat(out);
+}
+/* "Practise these next" (release 3 slice G, the Mistakes tab): positions
+   not started, chosen to be dealt first in the new-position slots of the
+   next sets (Today's and the next sets: buildCandidates), set sizes
+   unchanged. nl:next:<player>, keys in order; one leaves it once started.
+   NEXT_MAX at a time */
+var NEXT_MAX = 10;
+function nextKey() { return 'nl:next:' + playerId(); }
+function nextStored() { var q = store.get(nextKey(), []); return Array.isArray(q) ? q : []; }
+/* the chosen positions still waiting (no record yet), in order */
+function nextQueue(srs) {
+  srs = srs || srsLoad();
+  return nextStored().filter(function (k) { return !srs[k] && !!itemOf(k); });
+}
+/* by key, its place in the queue (1 first), for the planner */
+function nextAt(srs) {
+  var at = {};
+  nextQueue(srs).forEach(function (k, i) { at[k] = i + 1; });
+  return at;
+}
+/* keys chosen: they go first, ahead of any chosen before; the queue as it
+   was is returned, for the Undo */
+function nextAdd(keys) {
+  var was = nextStored().slice(), srs = srsLoad();
+  keys = keys.filter(function (k) { return !srs[k]; }).slice(0, NEXT_MAX);
+  store.set(nextKey(), keys.concat(was.filter(function (k) { return keys.indexOf(k) < 0; })));
+  return { was: was, n: keys.length };
+}
+function nextUndo(was) {
+  if (was && was.length) store.set(nextKey(), was); else store.del(nextKey());
 }
 /* the positions due, the most valuable first: those whose date has come
    (C2: due from that day's midnight, never within 8 hours of the last
@@ -8604,6 +8724,9 @@ function todayPlan(o) {
     var newest = fresh.concat(buildCandidates(40, null, false, o)).filter(function (it) { return it.g.ts > since; })[0];
     if (newest) fresh = [newest].concat(fresh.filter(function (x) { return x !== newest; }));
   }
+  /* the positions the player chose to practise next lead the new ones */
+  var qAt = nextAt(srs), chosen = fresh.concat(buildCandidates(NEXT_MAX + 6, null, false, o)).filter(function (it, i, a) { return qAt[it.key] && a.indexOf(it) === i; });
+  if (chosen.length) fresh = chosen.sort(function (x, y) { return qAt[x.key] - qAt[y.key]; }).concat(fresh.filter(function (x) { return !qAt[x.key]; }));
   fresh = fresh.slice(0, freshAllowed);
   var dueTake = due.slice(0, Math.max(0, size - fresh.length));
   /* the warm-up: the most familiar due card, or the gentlest new one */
@@ -8639,6 +8762,7 @@ function planOn(d) {
    card loaded already keeps */
 function startSession(mode, keys, label, spec, opts) {
   if (!keys.length) return false;
+  if (mode === 'drill') return startStudy(keys, label, spec);
   var prev = savedSession();
   if (prev) {
     settleSaved(prev);
@@ -8668,6 +8792,52 @@ function startSession(mode, keys, label, spec, opts) {
   loadCard();
   track('session_start_' + mode);
   return true;
+}
+/* a study (studying): the paused set is left alone, nothing carried,
+   logged or saved. One position opened from a summary goes back to that
+   summary, untouched; one opened on another tab (Mistakes, Games,
+   Insights) goes back to that tab */
+function startStudy(keys, label, spec) {
+  var from = ui.session && ui.session.finished ? ui.session : null;
+  var back = !from && ui.view !== 'train' ? ui.view : null;
+  if (ui.session && !ui.session.finished && !studying()) endSession(true);
+  ui.session = { mode: 'drill', study: true, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, carried: 0, rev: {} };
+  if (from) ui.session.from = from;
+  if (back) ui.session.back = back;
+  closeSheet();
+  setView('train', !!back);
+  if (back) window.scrollTo(0, 0);
+  pushSessionState();
+  loadCard();
+  track('study_start');
+  return true;
+}
+/* the way out of a study, finished or left: back to the summary it came
+   from, else the tab it was opened on (the keyboard on its row), else
+   Today. Nothing is written on the way */
+function leaveStudy(ss, fromPop) {
+  ui.session = null;
+  if (ss.from) {
+    ui.session = ss.from;
+    pushSessionState();
+    renderViews();
+    renderTrain();
+    window.scrollTo(0, 0);
+    var rh = el('recap-h');
+    if (rh) rh.focus({ preventScroll: true });
+    return;
+  }
+  var back = ss.back;
+  if (!fromPop && history.state && history.state.nlSession) { try { if (back) history.back(); else history.replaceState(null, '', location.pathname + '#train'); } catch (e) {} }
+  if (!back) { renderViews(); renderTrain(); window.scrollTo(0, 0); return; }
+  renderTrain();
+  setView(back, true);
+  var sp = ss.spec || {}, box = el(back + 'box'), row = null;
+  if (box && sp.type === 'game' && sp.id != null) row = box.querySelector('[data-g="' + String(sp.id).replace(/"/g, '') + '"]');
+  if (box && sp.type === 'one' && sp.key) row = box.querySelector('[data-mk="' + String(sp.key).replace(/"/g, '') + '"]');
+  if (box) makeFocusable(box);
+  var t = row || document.querySelector('#views .view-tab.view-on');
+  if (t && t.focus) t.focus({ preventScroll: true });
 }
 /* the positions of a set that are reviews as it begins (V4.4: the recall
    after a break counts them): answered before and not back in the queue */
@@ -8953,6 +9123,8 @@ function daysAway() {
 function finishSession() {
   var ss = ui.session;
   if (!ss) return;
+  /* a study has no summary: back where it came from */
+  if (studying(ss)) { clearLive(); track('study_done'); leaveStudy(ss, false); return; }
   ss.finished = true;
   ss.active = null;
   clearLive();
@@ -9003,6 +9175,8 @@ function endSession(fromPop) {
   engineStop('check');
   stageReset();
   clearLive();
+  /* a study left: nothing graded, nothing kept */
+  if (studying(ss)) { leaveStudy(ss, fromPop); return; }
   /* one position opened from a summary: × goes back to that summary, the
      position graded as a card left is (a miss counts), never paused */
   if (ss.from && !ss.finished) {
@@ -11157,7 +11331,7 @@ function sameAsGame(m) {
   var a = ui.session.active, it = a.it;
   a.misses++;
   a.triedGameMove = true;
-  if (a.misses === 1) a.runBroke = srsNoteMiss(it) > 0;
+  if (a.misses === 1 && !studying()) a.runBroke = srsNoteMiss(it) > 0;
   /* the sound comes with the badge, once the move lands */
   a.cue = 'bad';
   /* why, from the card's own refutation (M2, never naming the answer); the
@@ -11773,7 +11947,7 @@ function miss(m, u, info, inLine) {
   if (a.sol && a.solIdx > 0) {
     a.slips = (a.slips || 0) + 1;
     if (!a.slipSan) { var due0 = uciToMove(a.st, a.sol[a.solIdx]); a.slipSan = due0 ? sanOf(a.st, due0) : ''; }
-  } else if (preMisses(a) === 1) a.runBroke = srsNoteMiss(it) > 0;
+  } else if (preMisses(a) === 1 && !studying()) a.runBroke = srsNoteMiss(it) > 0;
   /* the sound comes with the badge */
   a.cue = 'bad';
   var reply = info && info.pv ? (info.pv[0] === u ? info.pv.slice(1) : info.pv) : [];
@@ -12358,7 +12532,7 @@ function familySeen(fam) {
   return +store.get('nl:seen:' + fam, 0) || 0;
 }
 function workedExample(a) {
-  if (!a || a.prac || a.lesson || a.tier !== 1 || a.hints || a.misses || a.attempts || ss_relearn(a)) return false;
+  if (!a || a.prac || a.lesson || a.tier !== 1 || a.hints || a.misses || a.attempts || ss_relearn(a) || studying()) return false;
   if (familySeen(familyOf(patternOf(a.it.b)).key) > 0) return false;
   if (LABELS_ON && !store.get('nl:tip:game', 0)) return false;
   a.hints = 1;
@@ -12379,7 +12553,12 @@ function finishCard(result, beats) {
   a.ms = Date.now() - a.t0 - (a.askMs || 0);
   var relearn = ss.relearnOf && ss.relearnOf[a.key], prev = a.foil || a.prac ? null : logPrev(a), first = !relearn && !a.foil && !a.prac && !Object.keys(srsLoad()).length;
   if (ss.progress) delete ss.progress[a.key];
-  if (a.prac) {
+  if (studying(ss)) {
+    /* a study (release 3 slice G): its record read, never written; nothing
+       logged, counted or queued for one more try */
+    a.rec = a.foil || a.prac ? null : srsRec(a.it);
+    ss.results[a.key] = result;
+  } else if (a.prac) {
     /* a practice position (F9.4) is scored in nl:skill alone, never on the
        schedule, and never comes back for one more try; its try counts
        toward the day, as practice does. A pack's step may change, and the
@@ -12420,12 +12599,12 @@ function finishCard(result, beats) {
     a.rec = srsRec(a.it);
     ss.results[a.key + '#r'] = result;
   }
-  logCard(a, result, prev, relearn);
+  if (!studying(ss)) logCard(a, result, prev, relearn);
   /* a measure: the result of a player's first card ever, as a word */
-  if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
+  if (first && !studying(ss)) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
   /* the worked example done (S9): the family counts as seen, and the
      summary says it was a first look (a shown answer stays "Shown") */
-  if (a.predraw) {
+  if (a.predraw && !studying(ss)) {
     var fam = familyOf(patternOf(a.it.b)).key;
     store.set('nl:seen:' + fam, familySeen(fam) + 1);
     if (!a.revealed && !relearn && !a.misses) (ss.notes = ss.notes || {})[a.key] = 'firstlook';
@@ -12513,14 +12692,17 @@ function settleLeft(a) {
   /* a foil is never scheduled (F8.2); a practice position left after a miss
      counts so in nl:skill alone (F9.4); a right guess of their reply is
      kept on the record (F10.1) */
-  if (a.foil) a.rec = null;
+  if (studying(ss)) a.rec = a.foil || a.prac ? null : srsRec(a.it);
+  else if (a.foil) a.rec = null;
   else if (a.prac) { a.rec = null; if (a.misses) pracRecord(a, 'fail'); }
   else if (!again) a.rec = srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove, fc: a.fc, guess: !!a.guess, guessRight: guessRight(a) });
   else { srsNoteTries(a.it, a.fc); if (guessRight(a)) srsNoteGuess(a.it); }
   noteGuess(a);
-  logCard(a, result, prev, again);
-  if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
-  if (a.attempts > 0) { ss.attempted = (ss.attempted || 0) + 1; countDay(ss, 0); }
+  if (!studying(ss)) {
+    logCard(a, result, prev, again);
+    if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
+    if (a.attempts > 0) { ss.attempted = (ss.attempted || 0) + 1; countDay(ss, 0); }
+  }
   if (ss.progress) delete ss.progress[a.key];
   ss.results[a.key + (again ? '#r' : '')] = result;
   (ss.notes = ss.notes || {})[a.key + (again ? '#r' : '')] = preMisses(a) ? 'leftMiss' : 'left';
@@ -12619,7 +12801,8 @@ function noteResult(ss, a, result, again, prev, left) {
   }
   if (!again) {
     var rec = a.rec || srsRec(a.it);
-    e.m = ladderMove(cat, prev, rec, a.held); e.p = rungsOf(rec);
+    /* a study moves nothing (studying): its rungs as they stand */
+    e.m = studying(ss) ? '' : ladderMove(cat, prev, rec, a.held); e.p = rungsOf(rec);
     if (e.m === 'learned') { e.n = rec.streak || 3; if (rec.rs) e.d = daysFrom(rec.rs, Date.now()); }
   }
   (ss.sum = ss.sum || {})[k] = e;
@@ -13564,6 +13747,8 @@ var CARD_COPY = {
      tag, the two source lines, a lesson's own position's end; where Hint 3
      can follow (F9.2), the hint rows count to three */
   P1: function () { return 'Practice'; },
+  /* a study (release 3 slice G): what it is, before its answer */
+  S1: function () { return 'Study: steps do not change.'; },
   P2: function () { return 'Lesson'; },
   P3: function () { return 'Lesson position'; },
   P4: function () { return 'Another player\'s game'; },
@@ -14874,6 +15059,13 @@ function bandFit(a, b) {
     if (b.stepChip && wordsIn(b.row2) > room) { b.chip = ''; room = rowRoom(a, b); }
     /* a practice position's source line goes before its tag (F9.4) */
     if (b.src && wordsIn(b.row2) > room) { b.src = ''; room = rowRoom(a, b); }
+    /* a study's tag (release 3 slice G) stays on its opening frame: the
+       task takes its shorter form ("Find a better move.", a game-mode
+       card's "Move 23") instead */
+    if (b.tag && b.tag === CARD_COPY.S1() && (b.row1 === CARD_COPY.T1() || b.row1 === CARD_COPY.F3()) && a.phase === 'guess' && !a.attempts && !a.hints && wordsIn(b.row2) > room) {
+      var r2 = fitRow(b.cands.concat([a.game ? 'Move ' + (Math.floor(a.it.b.p / 2) + 1) : 'Find a better move.']), { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
+      if (r2 && wordsIn(r2) <= room) b.row2 = r2;
+    }
     if (b.tag && wordsIn(b.row2) > room) { b.tag = ''; b.src = ''; room = rowRoom(a, b); }
     if (wordsIn(b.row2) > room) b.row2 = fitRow(b.cands, { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
     /* a ladder step that would say something untrue (R4's found form) */
@@ -15992,7 +16184,7 @@ function bandOf(a) {
   /* every game-mode card wears the neutral "Review" tag until its answer
      (F8.1), a practice position "Practice" (F9.4), where its frame has
      room: a step chip goes before it */
-  var tag = a.game ? CARD_COPY.G1() : a.prac ? CARD_COPY.P1() : '';
+  var tag = studying() ? CARD_COPY.S1() : a.game ? CARD_COPY.G1() : a.prac ? CARD_COPY.P1() : '';
   /* exploring (S14): what it is, in two fixed rows; Stockfish's sentence
      is in the panel */
   if (a.phase === 'done' && a.explore) return { disc: 'king', kind: 'explore', row1: CARD_COPY.X1(), row2: CARD_COPY.X2(a) };
@@ -16116,7 +16308,7 @@ function answerRow(a, settled) {
   if (a.prac) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: [PSKILL_OF[a.it.skill].task], fall: '', tag: tag, src: pracSrcOn(a) ? pracSrc(a) : '' };
   /* tier 1 names the game move in words, else says no move (F1.6); a
      decisive first sight names the game it decided in the tag row (F4.2) */
-  return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: inWords(a) ? [CARD_COPY.T2(a, true), 'Find a better move.'] : [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '', tag: ctxLine(a) };
+  return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: inWords(a) ? [CARD_COPY.T2(a, true), 'Find a better move.'] : [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '', tag: studying() ? CARD_COPY.S1() : ctxLine(a) };
 }
 /* the context line (F4.2): on a decisive first sight, the game it decided,
    "Lost vs opponent1" ("Drew vs opponent1" for a draw) within its own cap
@@ -16311,15 +16503,15 @@ window.addEventListener('pagehide', flushSave);
 
 /* the top bar's tabs, in order (slice D: the games have a tab of their
    own, #games) */
-var VIEWS = [['train', 'Today'], ['games', 'Games'], ['insights', 'Insights']];
-/* the view an address names: #games, #insights (an old #coach too), else
-   Today */
+var VIEWS = [['train', 'Today'], ['games', 'Games'], ['mistakes', 'Mistakes'], ['insights', 'Insights']];
+/* the view an address names: #games, #mistakes, #insights (an old #coach
+   too), else Today */
 function viewOfHash(h) {
   h = String(h || '').replace('#', '');
-  return h === 'coach' || h === 'insights' ? 'insights' : h === 'games' ? 'games' : 'train';
+  return h === 'coach' || h === 'insights' ? 'insights' : h === 'games' || h === 'mistakes' ? h : 'train';
 }
 function setView(v, fromPop) {
-  if (v !== 'insights' && v !== 'games') v = 'train';
+  if (v !== 'insights' && v !== 'games' && v !== 'mistakes') v = 'train';
   /* a measure: Insights or Games opened */
   if (v !== 'train' && ui.view !== v) track(v + '_open');
   var moved = ui.view !== v;
@@ -16334,7 +16526,7 @@ function setView(v, fromPop) {
   /* a tab strip that scrolls (under 238 px) shows the tab now open */
   var tb = moved && el('tab-' + v);
   if (tb && tb.scrollIntoView && el('views').scrollWidth > el('views').clientWidth) { try { tb.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {} }
-  if (v === 'insights') renderInsights(); else if (v === 'games') renderGames(); else renderTrain();
+  if (v === 'insights') renderInsights(); else if (v === 'games') renderGames(); else if (v === 'mistakes') renderMistakes(); else renderTrain();
   if (!fromPop) window.scrollTo(0, 0);
 }
 window.addEventListener('popstate', function () {
@@ -16378,11 +16570,12 @@ function renderShell() {
     + '<nav id="views" class="views" role="tablist" aria-label="Views"></nav>'
     + '<div id="view-train" class="view" role="tabpanel" aria-labelledby="tab-train"><h1 class="sr-only">Today</h1><section id="trainbox"></section></div>'
     + '<div id="view-games" class="view" role="tabpanel" aria-labelledby="tab-games" hidden><h1 class="sr-only">Games</h1><section id="gamesbox"></section></div>'
+    + '<div id="view-mistakes" class="view" role="tabpanel" aria-labelledby="tab-mistakes" hidden><h1 class="sr-only">Mistakes</h1><section id="mistakesbox"></section></div>'
     + '<div id="view-insights" class="view" role="tabpanel" aria-labelledby="tab-insights" hidden><h1 class="sr-only">Insights</h1><section id="insightsbox"></section></div>'
     + '</div>';
 }
 function renderAll() {
-  [renderHeader, renderViews, renderTrain, renderGames, renderInsights, renderSettings, renderFoot].forEach(function (fn) {
+  [renderHeader, renderViews, renderTrain, renderGames, renderMistakes, renderInsights, renderSettings, renderFoot].forEach(function (fn) {
     try { fn(); } catch (e) { if (window.console) console.error(fn.name, e && e.stack); }
   });
 }
@@ -16437,6 +16630,7 @@ function renderAnalysisStatus() {
   /* the Games tab: a game just read says what it holds (its rows only, so
      a filter being picked is never closed under the finger) */
   if (ui.view === 'games' && !ui.session) gamesPaint();
+  if (ui.view === 'mistakes' && !ui.session) mistakesPaint();
   /* what waits for the read shows the moment it ends, not at the next
      repaint: the focus (Today) and the tab's dot; the dot also follows the
      positions as they arrive */
@@ -16465,6 +16659,7 @@ function checkingPaint() {
   if (ui.view === 'insights') renderInsights();
   else if (ss) { var dg = el('recap-diag'); if (dg) dg.innerHTML = diagHtml(ss, playerTier()); }
   else if (ui.view === 'games') gamesPaint(true);
+  else if (ui.view === 'mistakes') mistakesPaint();
   else renderTrain();
   if (!fk || fk === '|' || (document.body.contains && document.body.contains(foc))) return;
   var p = fk.split('|'), back = p[0] && document.querySelector('[data-act="' + p[0] + '"]' + (p[1] ? '[data-k="' + p[1] + '"]' : ''));
@@ -16736,11 +16931,248 @@ function focusKey(root) {
   if (!f || !f.getAttribute || !root || !root.contains || !root.contains(f)) return null;
   return { el: f, act: f.getAttribute('data-act') || '', k: f.getAttribute('data-k') || '', g: f.getAttribute('data-g') || '' };
 }
-function focusBack(fk) {
+function focusBack(fk, box) {
+  box = box || 'gamesbox';
   if (!fk || (document.body.contains && document.body.contains(fk.el))) return;
   var sel = fk.g ? '[data-g="' + fk.g + '"]' : fk.act ? '[data-act="' + fk.act + '"]' + (fk.k ? '[data-k="' + fk.k + '"]' : '') : '';
-  var x = sel && document.querySelector('#gamesbox ' + sel);
-  if (x && x.focus) { makeFocusable(el('gamesbox')); x.focus({ preventScroll: true }); }
+  var x = sel && document.querySelector('#' + box + ' ' + sel);
+  if (x && x.focus) { makeFocusable(el(box)); x.focus({ preventScroll: true }); }
+}
+/* ── the Mistakes tab (release 3 slice G) ─────────────────────────────────
+   One home for the mistakes: at the top Insights' overview (each skill's
+   row, a filter; the skill chosen shows its kinds as filters, when in your
+   games and since you started, in place); then the filters (status chips
+   with their counts, skill and kind selects in step with the rows, a
+   search over the opponent, the move played and the kind) with the count
+   ("12 of 44 mistakes") and Clear filters; the rows, due first, then by
+   what they cost, 30 at a time. A row opens Study (studying: plays like a
+   card, writes nothing); "Practise these next" puts the positions not
+   started in view first in the next sets (nextAdd), with its Undo in the
+   same place. The filters last for the visit (sessionStorage), as the
+   Games tab's do */
+var MK_N = 30, MF0 = { s: 'all', f: 'all', k: 'all', q: '' }, mkLast = '', mkMemo = {};
+var MK_STATUS = [['all', 'All', -1], ['last', 'Last step', 2], ['practice', 'In practice', 1], ['learned', 'Learned', 3], ['new', 'Not started', 0]];
+/* the filters (s: status, f: skill, k: kind, q: the search), this
+   player's, for the visit */
+function mistakesFilter() {
+  var key = 'nl:mf:' + playerId();
+  if (!ui.mf || ui.mfFor !== key) {
+    var v = null;
+    try { v = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch (e) { v = null; }
+    ui.mf = Object.assign({}, MF0, v && typeof v === 'object' ? v : {});
+    ui.mfFor = key; ui.mShow = MK_N;
+  }
+  return ui.mf;
+}
+function mistakesFilterSet(f) {
+  mistakesFilter();
+  ui.mf = Object.assign({}, MF0, f); ui.mShow = MK_N;
+  if (ui.mf.f === 'all') ui.mf.k = 'all';
+  try { sessionStorage.setItem(ui.mfFor, JSON.stringify(ui.mf)); } catch (e) {}
+}
+/* what a row needs once (the game replayed): its board, the move played
+   in SAN and in words */
+function mkMeta(it) {
+  var m = mkMemo[it.key];
+  if (m) return m;
+  var pre = stateAtPly(it.g.mv, it.b.p), san = String(it.g.mv || '').split(' ')[it.b.p] || '', mv = pre ? uciToMove(pre, uciOfSan(it.g.mv, it.b.p)) : null;
+  m = mkMemo[it.key] = { pre: pre, san: san, words: pre && mv ? moveWords(pre, mv) : '', mv: mv, svg: '' };
+  return m;
+}
+/* every mistake kept as a position (trainable, not removed), with its
+   status: 'new' (no record), 'learned', else 'practice' ('last' too: one
+   find from learned); due: its day has come; next: its place among those
+   chosen to practise next */
+function mkItems() {
+  var srs = srsLoad(), now = Date.now(), qAt = nextAt(srs);
+  return allMistakes().filter(function (it) { return trainable(it) && !(srs[it.key] && srs[it.key].hidden); }).map(function (it) {
+    var r = srs[it.key] || null, st = !r ? 'new' : isLearned(r) ? 'learned' : 'practice';
+    return { it: it, r: r, st: st, last: st === 'practice' && rungsOf(r) === 2, due: !!(r && !r.q && r.due != null && r.due <= now),
+             next: qAt[it.key] || 0, fam: familyOf(patternOf(it.b)).key, kind: patternOf(it.b) };
+  });
+}
+function mkStatusOk(x, s) { return s === 'all' || (s === 'last' ? x.last : x.st === s); }
+/* the search: a substring of the opponent, the move played (SAN or
+   words), the kind's name or its practice phrase ("forks you allowed"),
+   the skill's name, at any help level's words */
+function mkFound(x, q) {
+  if (!q) return true;
+  var m = mkMeta(x.it), fam = familyOf(x.kind);
+  return [x.it.g.opp, m.san, m.words, kindName(x.kind, 1), kindName(x.kind, 2), kindPractise(x.kind, 1), kindPractise(x.kind, 2), fam.name].join(' | ').toLowerCase().indexOf(q) >= 0;
+}
+/* the rows the filters keep, due first (the soonest first), then by what
+   they cost (a decided game, then the drop), then the newest: { all, kept,
+   counts (each status within the other filters), f } */
+function mistakesList() {
+  var all = mkItems(), f = Object.assign({}, mistakesFilter()), q = String(f.q || '').trim().toLowerCase();
+  if (f.f !== 'all' && !all.some(function (x) { return x.fam === f.f; })) { f.f = 'all'; f.k = 'all'; }
+  var rest = all.filter(function (x) { return (f.f === 'all' || x.fam === f.f) && (f.k === 'all' || x.kind === f.k) && mkFound(x, q); });
+  var counts = {};
+  MK_STATUS.forEach(function (s) { counts[s[0]] = rest.filter(function (x) { return mkStatusOk(x, s[0]); }).length; });
+  var kept = rest.filter(function (x) { return mkStatusOk(x, f.s); });
+  kept.sort(function (x, y) {
+    return (y.due ? 1 : 0) - (x.due ? 1 : 0) || (x.due && y.due ? x.r.due - y.r.due : 0)
+      || (y.it.b.d ? 1 : 0) - (x.it.b.d ? 1 : 0) || (y.it.b.wb - y.it.b.wa) - (x.it.b.wb - x.it.b.wa) || y.it.g.ts - x.it.g.ts;
+  });
+  return { all: all, kept: kept, counts: counts, f: f };
+}
+function mistakesCountWords(L) { return L.kept.length === L.all.length ? plur(L.all.length, 'mistake') : L.kept.length + ' of ' + plur(L.all.length, 'mistake'); }
+function mkFiltered(f) { return f.s !== 'all' || f.f !== 'all' || f.k !== 'all' || !!String(f.q || '').trim(); }
+/* one row: its board (the move played marked), the kind, "vs opponent1 ·
+   27 Sept · You played Nxe5" (in words at More help), its track and where
+   it stands ("Step 2 of 3 · back in 7 days", "New", "Up next"). Read as
+   one sentence; a tap opens Study */
+function mkRowHtml(x, tier) {
+  var it = x.it, m = mkMeta(it), kind = kindName(x.kind, tier), played = tier === 1 && m.words ? m.words : m.san;
+  if (!m.svg && m.pre) m.svg = boardSvg(m.pre, { flip: it.g.color === 'black', decor: true, bad: m.mv ? [m.mv.from, m.mv.to] : [] });
+  var where = x.r ? scheduleWords(x.r, null) : x.next ? 'New · up next in your sets' : 'New';
+  var meta = 'vs ' + it.g.opp + ' · ' + gameDateLine(it.g) + (played ? ' · You played ' + played : '');
+  var said = kind + '. ' + meta.replace(/ · /g, ', ') + '. ' + where.replace(/ · /g, ', ') + '.';
+  return '<div class="mk-row" data-mk="' + esc(it.key) + '" data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'one', key: it.key, label: 'Study' })) + '" role="button">'
+    + '<span class="sr-only">' + esc(said) + '</span>'
+    + '<span class="mk-thumb" aria-hidden="true">' + (m.svg || '') + '</span>'
+    + '<span class="mk-main" aria-hidden="true"><span class="mk-kind">' + esc(kind) + (it.b.d ? ' <span class="dot-bad"></span>' : '') + '</span>'
+    + '<small class="mk-meta">' + esc(meta) + '</small>'
+    + '<span class="mk-prog">' + trackHtml(x.r ? rungsOf(x.r) : 0, { neu: !x.r }) + '<span>' + esc(where) + '</span></span></span></div>';
+}
+/* the status chips: each its mini track (the step track at 8 px, a
+   picture of the chip's word) and its count */
+function mkChipsHtml(L) {
+  return '<div class="mk-chips-in" role="group" aria-label="Status">' + MK_STATUS.map(function (s) {
+    var on = L.f.s === s[0];
+    return '<a class="mk-chip' + (on ? ' is-on' : '') + '" data-act="mkStatus" data-k="' + s[0] + '" role="button" aria-pressed="' + on + '">'
+      + (s[2] === -1 ? '' : '<span class="mk-mini" aria-hidden="true">' + trackHtml(s[2], { neu: !s[2] }) + '</span>') + s[1] + ' <span class="mk-n">' + L.counts[s[0]] + '</span></a>';
+  }).join('') + '</div>';
+}
+/* the skill and kind selects (in step with the rows above), the search */
+function mkFiltersHtml(L, fams, tier) {
+  var sel = function (k, name, opts, v) {
+    return '<span class="gf' + (v !== 'all' ? ' gf-on' : '') + '"><select data-act="mf" data-k="' + k + '" aria-label="' + name + '">'
+      + opts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === v ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select></span>';
+  };
+  var agg = fams.filter(function (a) { return a.fam.key === L.f.f; })[0], kinds = agg ? kindsOf(agg) : [];
+  return '<div class="gl-filters mk-filters" role="group" aria-label="Filter mistakes">'
+    + sel('f', 'Skill', [['all', 'All skills']].concat(fams.map(function (a) { return [a.fam.key, a.fam.name]; })), L.f.f)
+    + (kinds.length >= 2 ? sel('k', 'Kind', [['all', 'All kinds']].concat(kinds.map(function (s) { return [s.key, kindName(s.key, tier)]; })), L.f.k) : '')
+    + '<input class="mk-search" type="search" data-act="mq" id="mk-q" aria-label="Search mistakes" placeholder="Search: opponent, move, kind" value="' + esc(L.f.q || '') + '" autocomplete="off" spellcheck="false">'
+    + '</div>';
+}
+/* "Practise these next": the positions not started in view, not chosen
+   yet (NEXT_MAX at most); the word after it, with its Undo */
+function mkNextKeys(L) { return L.kept.filter(function (x) { return !x.r && !x.next && dealable(x.it); }).map(function (x) { return x.it.key; }); }
+function mkActsHtml(L) {
+  var n = mkNextKeys(L).length, d = ui.mkDone, h = '';
+  if (n) h += '<a class="btn-line mk-next" data-act="mkNext">' + (n === 1 ? 'Practise this next' : n > NEXT_MAX ? 'Practise the first ' + NEXT_MAX + ' next' : 'Practise these next') + '</a>';
+  h += '<p class="mk-done" id="mk-done" role="status">' + (d ? (d.undone ? 'Taken out of your next sets.' : plur(d.n, 'position') + ' added to your next sets. <a class="btn-quiet mk-undo" data-act="mkUndo">Undo</a>') : '') + '</p>';
+  return '<div class="mk-acts">' + h + '</div>';
+}
+/* what the background and the filters move (mistakesPaint) */
+function mkBodyHtml(L) {
+  var tier = playerTier();
+  if (!L.kept.length) return checkingHtml('gl-check') + '<div class="gl-none"><p>No mistakes match these filters.</p><a class="btn-quiet" data-act="mkClear">Clear filters</a></div>';
+  var shown = L.kept.slice(0, ui.mShow || MK_N), left = L.kept.length - shown.length;
+  return checkingHtml('gl-check') + '<div class="mk-rows">' + shown.map(function (x) { return mkRowHtml(x, tier); }).join('') + '</div>'
+    + (left > 0 ? '<a class="btn-quiet gl-more" data-act="mkMore">Show ' + Math.min(MK_N, left) + ' more</a>' : '');
+}
+/* the count, Clear filters and the two actions: a status line apart from
+   the rows, so a screen reader hears "12 of 44 mistakes" */
+function mkBarHtml(L) {
+  return '<p class="gl-count" id="mk-count" role="status">' + mistakesCountWords(L) + '</p>'
+    + (mkFiltered(L.f) ? '<a class="btn-quiet mk-clear" data-act="mkClear">Clear filters</a>' : '');
+}
+/* the overview: the skill rows (Insights' own), each a filter; the one
+   chosen opens its breakdown under it */
+function mkSkillsHtml(fams, L, tier) {
+  var focus = currentFocus();
+  return '<section class="mk-skills" aria-labelledby="mk-sk-h"><h2 class="ins-h" id="mk-sk-h">' + (tier === 1 ? 'What cost you games' : 'What decided your games') + '</h2>'
+    + skillRowsHtml(fams, focus, tier, L.f.f) + '</section>';
+}
+function mistakesHtml() {
+  mkLast = '';
+  if (!data.games.length) return '<div class="mk">' + (data.sections.games === 'loading' ? stateCard('Reading your games', 'Your mistakes show up here as Stockfish reads your games.', '')
+    : stateCard('No mistakes yet.', 'Your mistakes appear here once there are rated games to read. Each one keeps its progress, and a tap studies it.', '')) + '</div>';
+  var L = mistakesList(), tier = playerTier(), fams = insightReport().families;
+  if (!L.all.length) return '<div class="mk">' + checkingHtml('gl-check') + stateCard('No mistakes yet.', (tier === 1 ? 'The computer' : 'Stockfish') + ' is still reading your games. Each big mistake shows up here with its progress.', '') + '</div>';
+  mkLast = mkBodyHtml(L);
+  return '<div class="mk">' + mkSkillsHtml(fams, L, tier)
+    + '<section class="gl mk-list" aria-labelledby="mk-h"><div class="gl-head"><h2 class="gl-h" id="mk-h">Your mistakes</h2></div>'
+    + '<div class="mk-chips" id="mk-chips">' + mkChipsHtml(L) + '</div>' + mkFiltersHtml(L, fams, tier)
+    + '<div class="gl-bar mk-bar" id="mk-bar">' + mkBarHtml(L) + '</div>' + '<div id="mk-acts">' + mkActsHtml(L) + '</div>'
+    + '<div class="gl-body" id="mk-body">' + mkLast + '</div>'
+    + '<p class="lg-foot dim">' + tapWord() + ' a mistake to study it. Study changes no steps.</p></section></div>';
+}
+function renderMistakes() {
+  var box = el('mistakesbox');
+  if (!box || !cfg.user || ui.view !== 'mistakes') return;
+  var fk = focusKey(box);
+  box.innerHTML = mistakesHtml();
+  focusBack(fk, 'mistakesbox');
+}
+/* the background or the search moved on: the chips' counts, the count,
+   the actions and the rows drawn again in place, only when they changed;
+   the selects and the search field are left alone (a field being typed in
+   keeps its caret) */
+function mistakesPaint() {
+  var body = el('mk-body');
+  if (!cfg.user || ui.view !== 'mistakes') return;
+  if (!body) { renderMistakes(); return; }
+  var L = mistakesList(), h = mkBodyHtml(L), fk = focusKey(el('mistakesbox'));
+  [[el('mk-chips'), mkChipsHtml(L)], [el('mk-bar'), mkBarHtml(L)], [el('mk-acts'), mkActsHtml(L)]].forEach(function (p) {
+    if (p[0] && p[0].innerHTML !== p[1]) p[0].innerHTML = p[1];
+  });
+  if (h !== mkLast) { body.innerHTML = h; mkLast = h; }
+  focusBack(fk, 'mistakesbox');
+}
+/* a filter changed (a chip, a select, a skill row, a kind): the whole tab
+   follows, the keyboard kept on the control it was on */
+function mistakesPick(f, paintOnly) {
+  mistakesFilterSet(Object.assign({}, mistakesFilter(), f));
+  ui.mkDone = null;
+  track('mistakes_filter');
+  if (paintOnly) mistakesPaint(); else renderMistakes();
+}
+/* Mistakes opened filtered (Insights' skill rows, a skill's sheet, the
+   focus card, the Details chip after a set): family:<skill>[:<kind>] */
+function mistakesOpen(k) {
+  var p = String(k || '').split(':'), fam = p[0] === 'pattern' ? familyOf(p[1]).key : p[1], kind = p[0] === 'pattern' ? p[1] : p[2];
+  mistakesFilterSet({ s: 'all', f: fam || 'all', k: kind || 'all', q: '' });
+  ui.mkDone = null;
+  closeSheet();
+  if (ui.session && ui.session.finished) endSession();
+  setView('mistakes');
+}
+/* a letter typed in the search: the rows, chips and count in place, the
+   field keeping its caret */
+function mistakesSearch(q) {
+  mistakesFilterSet(Object.assign({}, mistakesFilter(), { q: String(q || '') }));
+  ui.mkDone = null;
+  mistakesPaint();
+}
+function mistakesNext() {
+  var keys = mkNextKeys(mistakesList());
+  if (!keys.length) return;
+  var r = nextAdd(keys);
+  ui.mkDone = { n: r.n, was: r.was };
+  track('practise_next');
+  mistakesPaint();
+  var u = document.querySelector('#mistakesbox .mk-undo');
+  if (u && u.focus) { makeFocusable(el('mistakesbox')); u.focus({ preventScroll: true }); }
+}
+function mistakesUndo() {
+  var d = ui.mkDone;
+  if (!d || d.undone) return;
+  nextUndo(d.was);
+  ui.mkDone = { undone: true };
+  mistakesPaint();
+  var b = document.querySelector('#mistakesbox .mk-next') || el('mk-count');
+  if (b && b.focus) { makeFocusable(el('mistakesbox')); b.focus({ preventScroll: true }); }
+}
+function mistakesMore() {
+  var at = ui.mShow || MK_N;
+  ui.mShow = at + MK_N;
+  mistakesPaint();
+  var rows = document.querySelectorAll('#mk-body .mk-row');
+  if (rows[at]) { makeFocusable(el('mk-body')); rows[at].focus({ preventScroll: true }); }
 }
 /* a game's day in its row: "today", "yesterday", else its date ("27 Sept") */
 function gameDayWord(ts) {
@@ -19133,7 +19565,7 @@ var LAST_STEP = 'Last step';
 function tagRowHtml(d) {
   /* a practice position's "Practice" in slate, as a review's; a lesson's
      "Lesson" in honey (F9.3, F9.4) */
-  var t = d.chip || d.tag, cls = !t ? '' : d.chip ? (d.chip === CARD_COPY.T3() ? 'tag-honey' : 'tag-slate') : d.tag === CARD_COPY.G1() || d.tag === CARD_COPY.P1() ? 'tag-slate' : d.tag === CARD_COPY.P2() ? 'tag-honey' : 'tag-ctx';
+  var t = d.chip || d.tag, cls = !t ? '' : d.chip ? (d.chip === CARD_COPY.T3() ? 'tag-honey' : 'tag-slate') : d.tag === CARD_COPY.G1() || d.tag === CARD_COPY.P1() || d.tag === CARD_COPY.S1() ? 'tag-slate' : d.tag === CARD_COPY.P2() ? 'tag-honey' : 'tag-ctx';
   /* a practice position's source line beside its tag (F9.4) */
   return '<div class="bd-tags">' + (t ? '<span class="tag ' + cls + '">' + esc(t) + '</span>' : '') + (t && !d.chip && d.src ? '<span class="tag-src">' + esc(d.src) + '</span>' : '')
     + (d.tk ? '<span class="bd-step">' + (d.pill ? '<span class="tag tag-honey">' + d.pill + '</span>' : '') + trackHtml(d.tk.p, d.tk.o) + '</span>' : '') + '</div>';
@@ -19625,7 +20057,7 @@ function detailsHtml() {
   if (th === cl) th = '';
   h += '</div>' + (th ? '<p class="dt-more">' + esc(th) + '</p>' : '') + (ck ? '<p class="dt-more dt-clock">' + esc(ck) + '</p>' : '')
     + '<div class="tag-row"><a class="pchip" data-act="sheet" data-k="family:' + familyOf(t).key + ':' + t + '">' + esc(info.name) + ' ›</a>'
-    + '<span class="when">' + scheduleWords(a.rec || srsRec(it), a) + '</span></div>'
+    + '<span class="when">' + (studying() ? (scheduleWords(srsRec(it), null) || 'Not started') + '. Study changed nothing.' : scheduleWords(a.rec || srsRec(it), a)) + '</span></div>'
     + (a.held === 'slow' ? '<p class="dt-more dt-held">' + esc(heldLine(a)) + '</p>' : a.held === 'guess' ? '<p class="dt-more dt-held">' + GUESS_HELD + '</p>' : '')
     + '<p class="habit">' + esc(cl) + '</p>';
   /* no engine, no exploring */
@@ -19987,7 +20419,7 @@ function renderInsights() {
     h += '<h3 class="ins-h">Where it happens</h3>';
     if (r.slices.length) {
       r.slices.forEach(function (s) {
-        h += '<div class="slice"><p>' + esc(s.text) + '</p><a data-act="drill" data-spec="' + esc(JSON.stringify(s.spec)) + '">Drill these ›</a></div>';
+        h += '<div class="slice"><p>' + esc(s.text) + '</p><a data-act="drill" data-spec="' + esc(JSON.stringify(s.spec)) + '">Study these ›</a></div>';
       });
     } else h += '<p class="sec">No clear pattern yet by colour or opening. This sharpens as more games are checked; for now your skills above are where to start.</p>';
   } else {
@@ -20007,17 +20439,21 @@ function goneHtml() {
    plain line, losses decided and positions, then the bar of those
    positions by steps (V4.8: learned leaf, in practice honey) and the
    positions in words. The row opens the skill's sheet */
-function skillRowsHtml(list, focus, tier) {
+function skillRowsHtml(list, focus, tier, pick) {
+  /* on the Mistakes tab (pick: the skill chosen, or 'all') each row is a
+     filter, the one chosen pressed with its breakdown under it; on
+     Insights each opens the Mistakes tab filtered to it */
   return '<div class="fam-list">' + list.map(function (a) {
-    var k = a.fam.key, on = tier >= 2 && !!(focus && focus.fam === k);
-    return '<a class="fam-row' + (on ? ' is-focus' : '') + '" data-act="sheet" data-k="family:' + k + '">'
+    var k = a.fam.key, on = tier >= 2 && !!(focus && focus.fam === k), mk = pick != null, picked = mk && pick === k;
+    return '<a class="fam-row' + (on ? ' is-focus' : '') + (picked ? ' is-picked' : '') + '"' + (mk ? ' data-act="mkSkill" data-k="' + k + '" role="button" aria-pressed="' + picked + '"' : ' data-act="mistakes" data-k="family:' + k + '"') + '>'
       + '<span class="sk-glyph" data-icon="' + ((SKILL[k] || {}).glyph || 'compass') + '" aria-hidden="true"></span>'
       + '<span class="fr-main"><span class="fr-name">' + esc(a.fam.name) + (on ? '<span class="pill">Start here</span>' : '') + '</span>'
         + (kindGlance(a, tier) || '<span class="fr-line">' + esc(skillLine(k, tier)) + '</span>')
         + '<span class="fr-n">' + decidedWords(a.lost, tier) + ' · ' + plur(a.count, 'position') + '</span>'
-        + stepBarHtml(a.steps)
-        + '<span class="fr-prog">' + progressWords(a) + '</span></span>'
-      + '<span class="fr-go" aria-hidden="true">›</span></a>';
+        /* (on the Mistakes tab each row's steps are in the rows below) */
+        + (mk ? '' : stepBarHtml(a.steps) + '<span class="fr-prog">' + progressWords(a) + '</span>') + '</span>'
+      + '<span class="fr-go" aria-hidden="true">' + (mk ? (picked ? '−' : '+') : '›') + '</span></a>'
+      + (picked ? '<div class="mk-break">' + famBreakHtml(k, ui.mf && ui.mf.k !== 'all' ? ui.mf.k : null, true) + '</div>' : '');
   }).join('') + '</div>';
 }
 /* the glance (Insights depth), at Normal and Less help, for a skill with 5
@@ -20103,7 +20539,7 @@ function clockHtml(c, tier) {
   if (c.lost) rows.push('The moves that lost took ' + secs(c.took) + pace + ', with ' + (c.one ? left(c.left) : share(c.leftShare) + ' of your time') + ' left.');
   if (c.lost >= 3 && c.trouble && c.trouble * 4 >= c.lost) {
     rows.push(c.trouble + ' of ' + c.lost + ' losing moves came ' + (c.one ? 'with under ' + secs(Math.max(20, c.base / 10)) + ' left.' : t1 ? 'when your clock was nearly out.' : 'in time trouble.')
-      + ' <a data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'clock', label: 'Time trouble' })) + '">Practise these ›</a>');
+      + ' <a data-act="drill" data-spec="' + esc(JSON.stringify({ type: 'clock', label: 'Time trouble' })) + '">Study these ›</a>');
   }
   if (tier >= 3 && c.dec >= 3) {
     var others = c.other ? ' (' + (c.otherFast ? c.otherFast + ' of your ' + plur(c.other, 'other big mistake') + ' did too' : 'none of your ' + plur(c.other, 'other big mistake') + ' did') + ')' : '';
@@ -20121,7 +20557,7 @@ function clockHtml(c, tier) {
 function decidedHtml(d) {
   if (!d || !(d.conv || d.save || d.slow)) return '';
   var rows = [];
-  var practise = function (type, label) { return drillItems({ type: type }, 1).length ? ' <a data-act="drill" data-spec="' + esc(JSON.stringify({ type: type, label: label })) + '">Practise these ›</a>' : ''; };
+  var practise = function (type, label) { return drillItems({ type: type }, 1).length ? ' <a data-act="drill" data-spec="' + esc(JSON.stringify({ type: type, label: label })) + '">Study these ›</a>' : ''; };
   var peer = function (x) { return x != null ? '<span class="dec-peer">Lichess players at your level: ' + Math.round(x) + '%.</span>' : ''; };
   if (d.conv) rows.push('<b>Converting wins:</b> won ' + d.conv.won + ' of ' + plur(d.conv.n, 'game') + ' after reaching +2.' + practise('convert', 'Converting wins') + peer(d.conv.peer));
   if (d.save) rows.push('<b>Saving bad positions:</b> saved ' + d.save.saved + ' of ' + d.save.n + ' after falling to −2.' + practise('save', 'Saving bad positions') + peer(d.save.peer));
@@ -20279,38 +20715,32 @@ function sheetHtml(kind) {
    (none for a skill of one kind). On first paint each bar grows from 0,
    30 ms after the one before, all within 400 ms (fs-grow, app.css) */
 var FS_STAGGER = 30, FS_LAST = 160;
-function familySheetHtml(k, pat) {
-  var fam = FAMILIES.filter(function (f) { return f.key === k; })[0];
+/* a skill's breakdown, its sheet's middle and the Mistakes tab's skill
+   chosen: What kind (filters: mk, the tab's mkKind; else the sheet's
+   famKind), then When in your games and Since you started. parts: the
+   pieces apart ({ kinds, pair, sel, items }) */
+function famBreakHtml(k, pat, mk, parts) {
   var agg = insightReport().families.filter(function (a) { return a.fam.key === k; })[0];
-  if (!fam || !agg) return '';
-  var tier = playerTier(), kinds = kindsOf(agg), focus = currentFocus(), bi = 0;
+  if (!agg) return parts ? { kinds: '', pair: '', sel: null } : '';
+  var tier = playerTier(), kinds = kindsOf(agg), bi = 0, h = '';
   var sel = kinds.length >= 2 ? kinds.filter(function (s) { return s.key === pat; })[0] || null : null;
   var pct = function (n, max) { return max > 0 ? Math.round(n * 1000 / max) / 10 : 0; };
   var bar = function (cls, w, id) {
     return '<span class="fs-bar" aria-hidden="true"><i class="' + cls + '" data-b="' + id + '" style="width:' + w + '%;animation-delay:' + Math.min(bi++ * FS_STAGGER, FS_LAST) + 'ms"></i></span>';
   };
   var row = function (name, n, b) { return '<div class="fs-row"><span class="fs-name">' + name + '</span>' + (n === '' ? '' : '<span class="fs-n">' + n + '</span>') + b + '</div>'; };
-  /* while the background check runs, one line tops the sheet (C1) */
-  var h = checkingHtml('sheet-check') + '<div class="kicker">Skill</div><h3>' + esc(fam.name) + '</h3>'
-    + '<p class="sheet-sum">' + (agg.lost ? 'Decided ' + fmtGames(agg.lost) + ' of yours. ' : '') + plur(agg.count, 'position') + ' from your games.'
-      + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
-    + '<p class="fs-def">' + esc(skillLine(k, tier)) + '</p>';
+  var act = mk ? 'mkKind' : 'famKind', kk = function (x) { return mk ? x || 'all' : 'family:' + k + (x ? ':' + x : ''); };
+  /* (on the Mistakes tab its headings sit under the tab's h2s) */
+  var hx = mk ? 'h3' : 'h4';
   if (kinds.length >= 2) {
-    h += '<div class="fs-head"><h4 class="kicker fs-h">What kind</h4>' + (sel ? '<a class="btn-quiet fs-all" data-act="famKind" data-k="family:' + k + '">Show all</a>' : '') + '</div>'
+    h += '<div class="fs-head"><' + hx + ' class="kicker fs-h">What kind</' + hx + '>' + (sel ? '<a class="btn-quiet fs-all" data-act="' + act + '" data-k="' + kk('') + '">Show all</a>' : '') + '</div>'
       + '<div class="fs-kinds">' + kinds.map(function (s) {
         var on = sel === s, lost = lostOf(s.items);
-        return '<a class="fs-kind' + (on ? ' is-on' : '') + '" role="button" tabindex="0" aria-pressed="' + on + '" data-act="famKind" data-k="family:' + k + (on ? '' : ':' + s.key) + '" data-kind="' + s.key + '">'
+        return '<a class="fs-kind' + (on ? ' is-on' : '') + '" role="button" tabindex="0" aria-pressed="' + on + '" data-act="' + act + '" data-k="' + kk(on ? '' : s.key) + '" data-kind="' + s.key + '">'
           + '<span class="fs-name">' + esc(kindName(s.key, tier)) + '</span><span class="fs-n">' + s.count + (lost ? ' · ' + decidedWords(lost, tier) : '') + '</span>'
           + bar(on ? 'kb0' : sel ? 'kb2' : 'kb1', pct(s.count, kinds[0].count), 'k:' + s.key) + '</a>';
       }).join('') + '</div>';
   }
-  /* Practise: the drill of what is in view */
-  var spec = sel ? { type: 'pattern', key: sel.key, label: kindName(sel.key, tier) } : { type: 'family', fam: k, label: fam.name };
-  var nDrill = drillItems(spec, 8).length;
-  h += '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(sel ? patternStep(sel.key) : familyStep(k), tier)) + '</div></div>'
-    + '<div class="acts-row sheet-acts">' + (nDrill ? '<a class="btn-big fs-go" data-icon="play" data-act="drill" data-spec="' + esc(JSON.stringify(spec)) + '">Practise '
-      + esc(sel ? kindPractise(sel.key, tier) : fam.name.toLowerCase()) + ': ' + nDrill + '\u00a0position' + (nDrill === 1 ? '' : 's') + '</a>' : '')
-    + (focus && focus.fam === k ? '<span class="pill">Focus</span>' : '') + '</div>';
   /* When in your games, over the positions in view */
   var items = sel ? sel.items : kinds.reduce(function (a, s) { return a.concat(s.items); }, []), when = '', since = '';
   if (tier >= 2 && k !== 'quiet' && items.length >= 10) {
@@ -20320,19 +20750,40 @@ function familySheetHtml(k, pat) {
     var cap = most.length === 1 ? 'Most in ' + most[0][2] + ': ' + top + ' of ' + items.length + '.'
       : most.length === 2 ? 'Most in ' + most[0][2] + ' and ' + most[1][2] + ': ' + top + ' each of ' + items.length + '.'
       : 'As many in each part of the game: ' + top + ' each of ' + items.length + '.';
-    when = '<section class="fs-sec" aria-label="When in your games"><h4 class="kicker fs-h">When in your games</h4><p class="fs-cap">' + cap + '</p>'
+    when = '<section class="fs-sec" aria-label="When in your games"><' + hx + ' class="kicker fs-h">When in your games</' + hx + '><p class="fs-cap">' + cap + '</p>'
       + PHASES.map(function (p) { return row(p[1], ph[p[0]], bar('kb1', pct(ph[p[0]], top), 'p:' + p[0])); }).join('') + '</section>';
   }
   /* Since you started: every kind, filtered or not */
   var ss = tier >= 2 ? sinceSkill(k) : null, d1 = function (x) { return (Math.round(x * 10) / 10).toFixed(1); };
   if (ss) {
     var big = ss.say ? Math.max(ss.b, ss.s) : 0;
-    since = '<section class="fs-sec" aria-label="Since you started"><h4 class="kicker fs-h">Since you started</h4>'
+    since = '<section class="fs-sec" aria-label="Since you started"><' + hx + ' class="kicker fs-h">Since you started</' + hx + '>'
       + (ss.say ? '<p class="fs-say">' + ss.say + '</p>' + row('Before: ' + d1(ss.b) + ' a game', '', bar('kb2', pct(ss.b, big), 's:b')) + row('Since: ' + d1(ss.s) + ' a game', '', bar('kb0', pct(ss.s, big), 's:s'))
         : '<p class="fs-cap">Your trend shows from ' + ss.need + ' games since you started: ' + ss.so + ' so far.</p>') + '</section>';
   }
-  if (when || since) h += '<div class="fs-pair">' + when + since + '</div>';
-  return h + examplesHtml(sel ? { type: 'pattern', key: sel.key } : { type: 'family', fam: k }, sel ? sel.count : 4, 'Your positions');
+  var pair = when || since ? '<div class="fs-pair">' + when + since + '</div>' : '';
+  return parts ? { kinds: h, pair: pair, sel: sel } : h + pair;
+}
+/* a skill's sheet: the header, its breakdown (famBreakHtml), the check,
+   Open in Mistakes (its rows there are where it is practised: release 3
+   slice G), then its positions, each opening Study. Mid-card (the Details
+   chip while a set runs) a compact one: no positions, nothing that would
+   leave the card */
+function familySheetHtml(k, pat) {
+  var fam = FAMILIES.filter(function (f) { return f.key === k; })[0];
+  var agg = insightReport().families.filter(function (a) { return a.fam.key === k; })[0];
+  if (!fam || !agg) return '';
+  var tier = playerTier(), focus = currentFocus(), b = famBreakHtml(k, pat, false, true), sel = b.sel, mid = !!(ui.session && !ui.session.finished);
+  /* while the background check runs, one line tops the sheet (C1) */
+  var h = checkingHtml('sheet-check') + '<div class="kicker">Skill</div><h3>' + esc(fam.name) + '</h3>'
+    + '<p class="sheet-sum">' + (agg.lost ? 'Decided ' + fmtGames(agg.lost) + ' of yours. ' : '') + plur(agg.count, 'position') + ' from your games.'
+      + (agg.learned ? ' ' + agg.learned + ' learned.' : '') + '</p>'
+    + '<p class="fs-def">' + esc(skillLine(k, tier)) + '</p>' + b.kinds;
+  h += '<div class="habit-block"><div class="kicker">The check</div><div class="plan">' + esc(lineOfStep(sel ? patternStep(sel.key) : familyStep(k), tier)) + '</div></div>';
+  if (mid) return h;
+  h += '<div class="acts-row sheet-acts"><a class="btn-big fs-go" data-act="mistakes" data-k="family:' + k + (sel ? ':' + sel.key : '') + '">Open in Mistakes</a>'
+    + (focus && focus.fam === k ? '<span class="pill">Focus</span>' : '') + '</div>';
+  return h + b.pair + examplesHtml(sel ? { type: 'pattern', key: sel.key } : { type: 'family', fam: k }, sel ? sel.count : 4, 'Your positions');
 }
 /* a kind row pressed (kind: family:k:pattern, or family:k for every kind
    again): the sheet is drawn filtered in place, its scroll and the
@@ -21366,7 +21817,26 @@ document.addEventListener('click', function (e) {
     case 'keepGoing': keepGoing(); break;
     case 'endSession': endSession(); break;
     case 'drill': { var sp = parseSpec(t); if (sp) startDrill(sp); break; }
-    case 'sheet': openSheet(k); break;
+    /* a skill's sheet outside a set is the Mistakes tab filtered to it
+       (release 3 slice G); mid-card, its compact sheet */
+    case 'sheet': if (/^(family|pattern):/.test(k || '') && !(ui.session && !ui.session.finished)) mistakesOpen(k); else openSheet(k); break;
+    /* the Mistakes tab (release 3 slice G): opened filtered, a skill row,
+       a kind, a status chip, Clear filters, 30 more, Practise these next
+       and its Undo */
+    case 'mistakes': mistakesOpen(k); break;
+    case 'mkSkill': { var mf0 = mistakesFilter(); mistakesPick({ f: mf0.f === k ? 'all' : k, k: 'all' }); break; }
+    case 'mkKind': mistakesPick({ k: k || 'all' }); break;
+    case 'mkStatus': mistakesPick({ s: k || 'all' }, true); break;
+    case 'mkClear': {
+      mistakesFilterSet(MF0); ui.mkDone = null;
+      renderMistakes();
+      var mc0 = document.querySelector('#mistakesbox .mk-chip');
+      if (mc0 && mc0.focus) { makeFocusable(el('mistakesbox')); mc0.focus(); }
+      break;
+    }
+    case 'mkMore': mistakesMore(); break;
+    case 'mkNext': mistakesNext(); break;
+    case 'mkUndo': mistakesUndo(); break;
     /* a kind pressed in a skill's sheet: the sheet filters to it, or shows all again */
     case 'famKind': famFilter(k); break;
     case 'closeSheet': if (e.target === t) closeSheet(); break;
@@ -21529,6 +21999,13 @@ document.addEventListener('change', function (e) {
   if (act === 'sound') { cfg.sound = !!t.checked; saveCfg('sound'); }
   /* a filter on the Games tab (slice D) */
   if (act === 'gf') gamesFilterPick(t.getAttribute('data-k'), t.value);
+  /* the Mistakes tab's skill and kind (release 3 slice G) */
+  if (act === 'mf') { var mfk = t.getAttribute('data-k'), mfo = {}; mfo[mfk] = t.value; if (mfk === 'f') mfo.k = 'all'; mistakesPick(mfo); }
+});
+/* the Mistakes tab's search: the rows follow each letter typed */
+document.addEventListener('input', function (e) {
+  var t = e.target;
+  if (t && t.getAttribute && t.getAttribute('data-act') === 'mq') mistakesSearch(t.value);
 });
 document.addEventListener('keydown', function (e) {
   /* a held Enter sends the typed move once (its auto-repeat would send it

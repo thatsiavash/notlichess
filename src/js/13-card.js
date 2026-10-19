@@ -763,7 +763,7 @@ function sameAsGame(m) {
   var a = ui.session.active, it = a.it;
   a.misses++;
   a.triedGameMove = true;
-  if (a.misses === 1) a.runBroke = srsNoteMiss(it) > 0;
+  if (a.misses === 1 && !studying()) a.runBroke = srsNoteMiss(it) > 0;
   /* the sound comes with the badge, once the move lands */
   a.cue = 'bad';
   /* why, from the card's own refutation (M2, never naming the answer); the
@@ -1379,7 +1379,7 @@ function miss(m, u, info, inLine) {
   if (a.sol && a.solIdx > 0) {
     a.slips = (a.slips || 0) + 1;
     if (!a.slipSan) { var due0 = uciToMove(a.st, a.sol[a.solIdx]); a.slipSan = due0 ? sanOf(a.st, due0) : ''; }
-  } else if (preMisses(a) === 1) a.runBroke = srsNoteMiss(it) > 0;
+  } else if (preMisses(a) === 1 && !studying()) a.runBroke = srsNoteMiss(it) > 0;
   /* the sound comes with the badge */
   a.cue = 'bad';
   var reply = info && info.pv ? (info.pv[0] === u ? info.pv.slice(1) : info.pv) : [];
@@ -1964,7 +1964,7 @@ function familySeen(fam) {
   return +store.get('nl:seen:' + fam, 0) || 0;
 }
 function workedExample(a) {
-  if (!a || a.prac || a.lesson || a.tier !== 1 || a.hints || a.misses || a.attempts || ss_relearn(a)) return false;
+  if (!a || a.prac || a.lesson || a.tier !== 1 || a.hints || a.misses || a.attempts || ss_relearn(a) || studying()) return false;
   if (familySeen(familyOf(patternOf(a.it.b)).key) > 0) return false;
   if (LABELS_ON && !store.get('nl:tip:game', 0)) return false;
   a.hints = 1;
@@ -1985,7 +1985,12 @@ function finishCard(result, beats) {
   a.ms = Date.now() - a.t0 - (a.askMs || 0);
   var relearn = ss.relearnOf && ss.relearnOf[a.key], prev = a.foil || a.prac ? null : logPrev(a), first = !relearn && !a.foil && !a.prac && !Object.keys(srsLoad()).length;
   if (ss.progress) delete ss.progress[a.key];
-  if (a.prac) {
+  if (studying(ss)) {
+    /* a study (release 3 slice G): its record read, never written; nothing
+       logged, counted or queued for one more try */
+    a.rec = a.foil || a.prac ? null : srsRec(a.it);
+    ss.results[a.key] = result;
+  } else if (a.prac) {
     /* a practice position (F9.4) is scored in nl:skill alone, never on the
        schedule, and never comes back for one more try; its try counts
        toward the day, as practice does. A pack's step may change, and the
@@ -2026,12 +2031,12 @@ function finishCard(result, beats) {
     a.rec = srsRec(a.it);
     ss.results[a.key + '#r'] = result;
   }
-  logCard(a, result, prev, relearn);
+  if (!studying(ss)) logCard(a, result, prev, relearn);
   /* a measure: the result of a player's first card ever, as a word */
-  if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
+  if (first && !studying(ss)) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
   /* the worked example done (S9): the family counts as seen, and the
      summary says it was a first look (a shown answer stays "Shown") */
-  if (a.predraw) {
+  if (a.predraw && !studying(ss)) {
     var fam = familyOf(patternOf(a.it.b)).key;
     store.set('nl:seen:' + fam, familySeen(fam) + 1);
     if (!a.revealed && !relearn && !a.misses) (ss.notes = ss.notes || {})[a.key] = 'firstlook';
@@ -2119,14 +2124,17 @@ function settleLeft(a) {
   /* a foil is never scheduled (F8.2); a practice position left after a miss
      counts so in nl:skill alone (F9.4); a right guess of their reply is
      kept on the record (F10.1) */
-  if (a.foil) a.rec = null;
+  if (studying(ss)) a.rec = a.foil || a.prac ? null : srsRec(a.it);
+  else if (a.foil) a.rec = null;
   else if (a.prac) { a.rec = null; if (a.misses) pracRecord(a, 'fail'); }
   else if (!again) a.rec = srsRecord(a.it, result, { attempted: a.attempts > 0, gameMove: a.triedGameMove, fc: a.fc, guess: !!a.guess, guessRight: guessRight(a) });
   else { srsNoteTries(a.it, a.fc); if (guessRight(a)) srsNoteGuess(a.it); }
   noteGuess(a);
-  logCard(a, result, prev, again);
-  if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
-  if (a.attempts > 0) { ss.attempted = (ss.attempted || 0) + 1; countDay(ss, 0); }
+  if (!studying(ss)) {
+    logCard(a, result, prev, again);
+    if (first) { measureTag('first_card', cardCategory(a, result)); track('first_card_result'); }
+    if (a.attempts > 0) { ss.attempted = (ss.attempted || 0) + 1; countDay(ss, 0); }
+  }
   if (ss.progress) delete ss.progress[a.key];
   ss.results[a.key + (again ? '#r' : '')] = result;
   (ss.notes = ss.notes || {})[a.key + (again ? '#r' : '')] = preMisses(a) ? 'leftMiss' : 'left';
@@ -2225,7 +2233,8 @@ function noteResult(ss, a, result, again, prev, left) {
   }
   if (!again) {
     var rec = a.rec || srsRec(a.it);
-    e.m = ladderMove(cat, prev, rec, a.held); e.p = rungsOf(rec);
+    /* a study moves nothing (studying): its rungs as they stand */
+    e.m = studying(ss) ? '' : ladderMove(cat, prev, rec, a.held); e.p = rungsOf(rec);
     if (e.m === 'learned') { e.n = rec.streak || 3; if (rec.rs) e.d = daysFrom(rec.rs, Date.now()); }
   }
   (ss.sum = ss.sum || {})[k] = e;

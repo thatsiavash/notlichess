@@ -345,7 +345,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       return JSON.parse(A.ev(`(function () {
         var its = allMistakes().filter(trainable);
         store.set(sessKey(), { date: dayStamp(), mode: 'today', label: 'x', keys: [its[0].key, its[1].key], idx: 1, results: {}, relearn: [], relearnOf: {}, progress: {}, attempted: ${tries} });
-        startSession('drill', [its[2].key], 'd'); ui.session.active = null; finishSession();
+        startSession('more', [its[2].key], 'd'); ui.session.active = null; finishSession();
         return JSON.stringify({ counted: (dayLoad().sessions || 0) > 0 }); })()`));
     };
     eq(run(3).counted, true, '3 carried'); eq(run(1).counted, false, '1 carried, none here');
@@ -3034,7 +3034,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       lost[q - 1].b.c = 170;
       var h = insAt(2);
       res.trouble = clockText(h).slice(2).join(' ');
-      res.drill = /data-act="drill" data-spec="\\{&quot;type&quot;:&quot;clock&quot;,&quot;label&quot;:&quot;Time trouble&quot;\\}">Practise these ›</.test(h);
+      res.drill = /data-act="drill" data-spec="\\{&quot;type&quot;:&quot;clock&quot;,&quot;label&quot;:&quot;Time trouble&quot;\\}">Study these ›</.test(h);
       res.items = drillItems({ type: 'clock' }, 20).filter(function (it) { return it.b.d === 1; }).length;
       /* mixed time controls: shares */
       var k = 0;
@@ -3060,7 +3060,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify(r[1]), JSON.stringify(['In your losses you used 10 of 30 minutes.', 'The moves that lost took 18 seconds (you usually take 15), with 23 minutes left.']), 'tier 1');
     eq(JSON.stringify(r.q), '[7,25]', 'a quarter of the 25 losing moves is 7');
     eq(r.four, 2, '6 of 25 losing moves under 3 minutes: under a quarter, no row');
-    eq(r.trouble, '7 of 25 losing moves came with under 3 min left. Practise these ›', '7 of 25: the row, at 3 minutes for 30+0');
+    eq(r.trouble, '7 of 25 losing moves came with under 3 min left. Study these ›', '7 of 25: the row, at 3 minutes for 30+0');
     ok(r.drill && r.items >= 7, 'Practise these drills them (' + r.items + ')');
     eq(JSON.stringify(r.mixed2), JSON.stringify(['In your losses you used 33% of your time.', 'The moves that lost took 18 s (your pace: 13 s a move), with 78% of your time left.']), 'mixed time controls: shares (the pace is seconds a move in any)');
     eq(JSON.stringify(r.mixed1), JSON.stringify(['In your losses you used about a third of your time.', 'The moves that lost took 18 seconds (you usually take 13), with about three quarters of your time left.']), 'tier 1: shares in words');
@@ -4227,14 +4227,14 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(A.ev('ui.sheet || ""'), '', 'and Escape in a field with no sheet open stays the field\'s');
     A.ev("setView('train')");
     const go = (key, on) => { A.key(key, false, { tab: on }); return A.ev('ui.view'); };
-    eq([go('ArrowRight', 'train'), go('ArrowRight', 'games'), go('ArrowRight', 'insights'), go('ArrowLeft', 'train'), go('Home', 'insights'), go('End', 'train')].join(' '), 'games insights train insights train insights', '→ ← through the three tabs and wrap; Home, End (slice D: Today, Games, Insights)');
+    eq([go('ArrowRight', 'train'), go('ArrowRight', 'games'), go('ArrowRight', 'mistakes'), go('ArrowRight', 'insights'), go('ArrowLeft', 'train'), go('Home', 'insights'), go('End', 'train')].join(' '), 'games mistakes insights train insights train insights', '→ ← through the four tabs and wrap; Home, End (slice D: Today, Games, Insights; release 3 slice G: Mistakes)');
     const tabs = A.ev(`(function () { var n = { innerHTML: '', contains: function () { return false; } }, pane = { hidden: false }, get0 = document.getElementById;
       document.getElementById = function (id) { return id === 'views' ? n : /^view-/.test(id) ? pane : get0(id); };
       try { setView('train'); } finally { document.getElementById = get0; } return n.innerHTML; })()`);
     ok(/<a class="view-tab view-on" id="tab-train" data-act="view" data-k="train" role="tab" aria-selected="true" aria-controls="view-train" tabindex="0">/.test(tabs)
       && /id="tab-games" data-act="view" data-k="games" role="tab" aria-selected="false" aria-controls="view-games" tabindex="-1">Games</.test(tabs)
       && /id="tab-insights" data-act="view" data-k="insights" role="tab" aria-selected="false" aria-controls="view-insights" tabindex="-1">/.test(tabs), 'the tab shown takes the keyboard, the others an arrow away: ' + tabs.slice(0, 300));
-    eq((tabs.match(/data-k="(\w+)" role="tab"/g) || []).map((x) => x.slice(8, -12)).join(' '), 'train games insights', 'in order: Today, Games, Insights');
+    eq((tabs.match(/data-k="(\w+)" role="tab"/g) || []).map((x) => x.slice(8, -12)).join(' '), 'train games mistakes insights', 'in order: Today, Games, Mistakes, Insights');
   });
 
   await test('V4.7: a game\'s walk-through opens its positions in move order, whatever their state (a game with positions at moves 25 and 35 opens move 25 first); tier 1 Insights has no "Start here"', () => {
@@ -4458,14 +4458,16 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       for (var d = 14; d < 17; d++) store.set(dayKeyFor(new Date(now - d * DAY)), { counted: 1, sessions: 1 });
       out.away = daysAway();
       var g = its[0].g;
+      var srs0 = JSON.stringify(srsLoad());
       startDrill({ type: 'game', id: g.id, label: 'Game vs ' + g.opp }); playSet();
-      out.drill = [ui.session.mode, /class="recall"/.test(doneHtml(ui.session))];
+      /* (release 3 slice G: a game's walk-through is study: no summary, nothing written) */
+      out.drill = [!ui.session, JSON.stringify(srsLoad()) === srs0];
       ui.session = null; absorbOpen(); startToday(); playSet();
       out.today = (/<p class="recall">([^<]*)</.exec(doneHtml(ui.session)) || [])[1] || '';
       ui.session = null;
       return JSON.stringify(out); })()`));
     eq(r.away, 14, '14 days away');
-    eq(JSON.stringify(r.drill), '["drill",false]', 'a game drill\'s summary: no recall line');
+    eq(JSON.stringify(r.drill), '[true,true]', 'a game drill is study: no summary (so no recall line), the schedule untouched');
     ok(/^After 14 days away, you found \d+ of \d+ reviews first try\./.test(r.today), 'Today\'s set after it: ' + r.today);
     const B = boot();
     const left = B.ev(`(function () { ${PLAYSET}
@@ -4524,8 +4526,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       res.few = decidedReport();
       data.games = keep; modelDirty();
       return JSON.stringify(res); })()`));
-    eq(JSON.stringify(r.t3), JSON.stringify(['Converting wins: won 21 of 30 games after reaching +2. Practise these › Lichess players at your level: 72%.',
-      'Saving bad positions: saved 11 of 38 after falling to \u22122. Practise these › Lichess players at your level: 31%.',
+    eq(JSON.stringify(r.t3), JSON.stringify(['Converting wins: won 21 of 30 games after reaching +2. Study these › Lichess players at your level: 72%.',
+      'Saving bad positions: saved 11 of 38 after falling to \u22122. Study these › Lichess players at your level: 31%.',
       'Slow slides: 2 of 27 losses had no single losing move.']), 'the three rows at tier 3');
     eq(JSON.stringify([r.d.conv.n, r.d.conv.won, r.d.save.n, r.d.save.saved, r.d.slow.n, r.d.slow.none]), '[30,21,38,11,27,2]', 'the counts');
     eq(JSON.stringify([Math.round(r.d.conv.peer * 10) / 10, Math.round(r.d.save.peer * 10) / 10]), '[71.9,30.6]', 'lichess rapid 2100: 71.9% and 30.6%');
@@ -4537,7 +4539,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     eq(JSON.stringify([r.p2049, r.p600, r.p3000]), '[71.9,59,77.9]', 'chess.com 2049 is lichess 2199 (2100); 600 the 800 band; 3000 the 2400 band');
     eq(r.daily && r.daily.peer, null, 'a daily game among them: no peer figure');
     ok(r.daily && r.daily.n === 30, 'its count stands');
-    eq(JSON.stringify(r.norating), JSON.stringify(['Converting wins: won 21 of 30 games after reaching +2. Practise these ›', 'Saving bad positions: saved 11 of 38 after falling to \u22122. Practise these ›', 'Slow slides: 2 of 27 losses had no single losing move.']), 'no rating known: no peer figure');
+    eq(JSON.stringify(r.norating), JSON.stringify(['Converting wins: won 21 of 30 games after reaching +2. Study these ›', 'Saving bad positions: saved 11 of 38 after falling to \u22122. Study these ›', 'Slow slides: 2 of 27 losses had no single losing move.']), 'no rating known: no peer figure');
     eq(r.few.conv, null, 'under 10 games that reached +2: no row');
     ok(!/better|worse|good|bad|well|weak|strong/i.test(r.t3.join(' ').replace(/Saving bad positions/, '')), 'no verdict word');
   });
@@ -4548,8 +4550,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
   await test('slice D, the tab and its route: three tabs, Today, Games and Insights, each panel with its one h1; Games opens on #games (kept as the tab for the day, its measure once); Back moves between the tabs; a game opened on the Games tab goes back there on ×, on Back and by its summary\'s "Back to Games", its place in the history the tab\'s own (one Back leaves it); a set from Today still says "Back to Today"', () => {
     const A = boot();
     const shell = A.ev('(renderShell(), el("main").innerHTML)');
-    ok(/<div id="view-train" class="view" role="tabpanel" aria-labelledby="tab-train"><h1 class="sr-only">Today<\/h1><section id="trainbox"><\/section><\/div><div id="view-games" class="view" role="tabpanel" aria-labelledby="tab-games" hidden><h1 class="sr-only">Games<\/h1><section id="gamesbox"><\/section><\/div><div id="view-insights" class="view" role="tabpanel" aria-labelledby="tab-insights" hidden><h1 class="sr-only">Insights<\/h1>/.test(shell), 'three panels in the tabs\' order, one h1 each: ' + shell.slice(0, 400));
-    eq((shell.match(/<h1/g) || []).length, 3, 'one h1 a panel, so one a screen');
+    ok(/<div id="view-train" class="view" role="tabpanel" aria-labelledby="tab-train"><h1 class="sr-only">Today<\/h1><section id="trainbox"><\/section><\/div><div id="view-games" class="view" role="tabpanel" aria-labelledby="tab-games" hidden><h1 class="sr-only">Games<\/h1><section id="gamesbox"><\/section><\/div><div id="view-mistakes" class="view" role="tabpanel" aria-labelledby="tab-mistakes" hidden><h1 class="sr-only">Mistakes<\/h1><section id="mistakesbox"><\/section><\/div><div id="view-insights" class="view" role="tabpanel" aria-labelledby="tab-insights" hidden><h1 class="sr-only">Insights<\/h1>/.test(shell), 'three panels in the tabs\' order, one h1 each: ' + shell.slice(0, 400));
+    eq((shell.match(/<h1/g) || []).length, 4, 'one h1 a panel, so one a screen');
     A.ev(`(function () { window.__calls = []; window.clarity = function () { window.__calls.push([].slice.call(arguments).map(String)); }; SF.state = 'failed'; return 1; })()`);
     A.ev("setView('games')");
     const r0 = JSON.parse(A.ev(`JSON.stringify({ view: ui.view, kept: store.get('nl:view', ''), day: store.get('nl:viewDay', '') === dayStamp() })`));
@@ -4576,15 +4578,13 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     open();
     A.pop('#games', null);
     eq(JSON.stringify([A.ev('ui.view'), A.ev('!!ui.session')]), JSON.stringify(['games', false]), 'Back from the set: the Games tab');
-    /* its summary\'s way back */
-    const sum = JSON.parse(A.ev(`(function () { var k = allMistakes().filter(trainable).filter(function (it) { return it.g.id === '${gid}'; })[0].key;
-      var ss = { mode: 'drill', label: 'Game vs x', keys: [k], idx: 1, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true, back: 'games', spec: { type: 'game', id: '${gid}' } };
-      ss.results[k] = 'first'; ui.session = ss; ui.view = 'train'; var h = doneHtml(ss);
-      var t = { mode: 'today', label: 'Today', keys: [k], idx: 1, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true }; t.results[k] = 'first';
-      return JSON.stringify({ games: (/data-act="endSession">([^<]*)</.exec(h) || [])[1], today: (/data-act="endSession">([^<]*)</.exec(doneHtml(t)) || [])[1] }); })()`));
-    eq(JSON.stringify(sum), JSON.stringify({ games: 'Back to Games', today: 'Back to Today' }), 'the summary of a game opened on Games says where it goes back to');
-    A.click('endSession');
-    eq(JSON.stringify([A.ev('ui.view'), A.ev('!!ui.session')]), JSON.stringify(['games', false]), 'Back to Games: the Games tab');
+    /* its end (release 3 slice G: study, no summary): straight back to the Games tab */
+    open();
+    A.ev('(ui.session.active = null, ui.session.idx = ui.session.keys.length, finishSession(), 1)');
+    eq(JSON.stringify([A.ev('ui.view'), A.ev('!!ui.session')]), JSON.stringify(['games', false]), 'its last position done: the Games tab, no summary');
+    const today = A.ev(`(function () { var k = allMistakes().filter(trainable)[0].key, t = { mode: 'today', label: 'Today', keys: [k], idx: 1, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true }; t.results[k] = 'first';
+      return (/data-act="endSession">([^<]*)</.exec(doneHtml(t)) || [])[1]; })()`);
+    eq(today, 'Back to Today', 'a set from Today still says "Back to Today"');
   });
 
   await test('slice D, which tab opens (V4.4): a cold open on a new day opens on Today, whichever tab was left; a same-day reopen restores the last tab, Games included; a link to #games opens Games on any day, a reload is no link; a page left open on Games comes back on a later day on Today', () => {
@@ -4783,10 +4783,10 @@ const SIM = `function simRun(seed, days, plan, noRule) {
   const KINDS = `function sheetOf(k) {
   var h = sheetHtml(k), g = function (re) { var m = re.exec(h); return m ? m[1] : null; }, rows = [], m, re = /<a class="fs-kind[^"]*" role="button" tabindex="0" aria-pressed="(\\w+)" data-act="famKind" data-k="([^"]*)" data-kind="(\\w+)"><span class="fs-name">([^<]*)<\\/span><span class="fs-n">([^<]*)<\\/span><span class="fs-bar" aria-hidden="true"><i class="(kb\\d)" data-b="[^"]*" style="width:([\\d.]+)%/g;
   while ((m = re.exec(h))) rows.push({ on: m[1] === 'true', k: m[2], kind: m[3], name: m[4], n: +m[5].split(' ')[0], right: m[5], cls: m[6], w: +m[7] });
-  var go = /<a class="btn-big fs-go" data-icon="play" data-act="drill" data-spec="([^"]*)">([^<]*)<\\/a>/.exec(h);
+  var go = /<a class="btn-big fs-go" data-act="mistakes" data-k="([^"]*)">([^<]*)<\\/a>/.exec(h);
   var when = /<section class="fs-sec" aria-label="When in your games">([\\s\\S]*?)<\\/section>/.exec(h), since = /<section class="fs-sec" aria-label="Since you started">([\\s\\S]*?)<\\/section>/.exec(h);
   var txt = function (x) { return x.replace(/<[^>]+>/g, '\\n').split('\\n').map(function (y) { return y.trim(); }).filter(Boolean); };
-  return { rows: rows, go: go ? go[2].replace(/\\u00a0/g, ' ') : null, spec: go ? JSON.parse(go[1].replace(/&quot;/g, '"')) : null, when: when ? txt(when[1]) : null, since: since ? txt(since[1]) : null,
+  return { rows: rows, go: go ? go[2] : null, gok: go ? go[1] : null, when: when ? txt(when[1]) : null, since: since ? txt(since[1]) : null,
     ex: (h.match(/<div class="ex" /g) || []).length, all: /class="btn-quiet fs-all"/.test(h), def: g(/<p class="fs-def">([^<]*)</), hidden: (h.match(/<span class="fs-bar" aria-hidden="true">/g) || []).length, bars: (h.match(/data-b=/g) || []).length };
 }
 function glanceOf(h) {
@@ -4848,19 +4848,22 @@ function glanceOf(h) {
       var out = { kinds: [], drills: [] };
       insightReport().families.forEach(function (agg) {
         kindsOf(agg).forEach(function (s) {
-          var h = sheetOf('family:' + agg.fam.key + ':' + s.key), deal = drillItems(h.spec || { type: 'none' }, 8);
-          out.kinds.push({ fam: agg.fam.key, kind: s.key, count: s.count, go: h.go, spec: h.spec, deal: deal.length, same: deal.every(function (it) { return patternOf(it.b) === s.key; }),
+          var h = sheetOf('family:' + agg.fam.key + ':' + s.key), p = String(h.gok || '').split(':');
+          /* (release 3 slice G) Open in Mistakes: the tab filtered to that skill and kind */
+          mistakesFilterSet({ f: p[1], k: p[2] || 'all' });
+          var deal = mistakesList().kept;
+          out.kinds.push({ fam: agg.fam.key, kind: s.key, count: s.count, go: h.go, gok: h.gok, deal: deal.length, same: deal.every(function (x) { return x.kind === s.key; }),
             ex: h.ex, when: h.when, pressed: h.rows.filter(function (y) { return y.on; }).map(function (y) { return y.kind + ':' + y.cls + ':' + y.k; }), others: h.rows.filter(function (y) { return !y.on; }).map(function (y) { return y.cls; }).join(''), all: h.all, rows: h.rows.length });
         });
       });
-      /* a filtered drill, started as its button starts it */
+      /* a filtered sheet's button, pressed as the page presses it: the Mistakes tab, filtered */
       ['family:safety:forkAllowed', 'family:safety:material', 'family:quiet:openingSlip'].forEach(function (k) {
-        var h = sheetOf(k), n = +/: (\\d+) positions?$/.exec(h.go)[1];
-        startDrill(h.spec);
-        var keys = ui.session.keys.filter(function (x) { return model().byKey[x]; });
-        out.drills.push([k, n, keys.length, keys.every(function (x) { return patternOf(model().byKey[x].b) === k.split(':')[2]; }), ui.session.label]);
-        ui.session = null;
+        var h = sheetOf(k);
+        window.__realmClick('mistakes', h.gok);
+        var L = mistakesList();
+        out.drills.push([k, L.kept.length, ui.view, L.kept.every(function (x) { return x.kind === k.split(':')[2]; }), L.f.f + ':' + L.f.k]);
       });
+      mistakesFilterSet(MF0);
       out.open = ['safety', 'king', 'quiet', 'chances', 'conversion'].map(function (k) { var h = sheetOf('family:' + k); return [k, h.go, h.when, h.since, h.ex, h.all]; });
       playerTier = function () { return 1; };
       out.t1 = ['safety', 'quiet'].map(function (k) { var h = sheetOf('family:' + k); return [h.go, h.when, h.since, h.rows.length, h.ex]; });
@@ -4891,9 +4894,9 @@ function glanceOf(h) {
       if (!multi) { eq(x.pressed.length, 0, x.kind + ': a skill of one kind is never filtered'); return; }
       eq(JSON.stringify(x.pressed), JSON.stringify([x.kind + ':kb0:family:' + x.fam]), x.kind + ': it alone pressed, slate, pressing it again shows all');
       ok(/^(kb2)*$/.test(x.others) && x.all, x.kind + ': the others grey, Show all');
-      eq(x.deal, Math.min(8, x.count), x.kind + ': its drill deals 8 at most of its own');
-      ok(x.same && x.spec.type === 'pattern' && x.spec.key === x.kind, x.kind + ': every one of that kind');
-      ok(new RegExp(': ' + x.deal + ' positions?$').test(x.go), x.kind + ': the button says what the drill deals: ' + x.go);
+      eq(x.deal, x.count, x.kind + ': Open in Mistakes lists every one of its own');
+      ok(x.same && x.gok === 'family:' + x.fam + ':' + x.kind, x.kind + ': every one of that kind');
+      eq(x.go, 'Open in Mistakes', x.kind + ': the button opens the Mistakes tab (release 3 slice G: no drill that counts)');
       eq(x.ex, x.count, x.kind + ': every position of the kind shown');
       if (x.when) {
         const n = x.when.slice(2).filter((y) => /^\d+$/.test(y)).map(Number);
@@ -4901,12 +4904,12 @@ function glanceOf(h) {
         ok(new RegExp(' of ' + x.count + '\\.$').test(x.when[1]), x.kind + ': its caption over the kind: ' + x.when[1]);
       } else ok(x.count < 10 || x.fam === 'quiet', x.kind + ': When hidden only under 10 positions in view or on Quiet moves');
     });
-    eq(r.kinds.filter((x) => x.kind === 'forkAllowed')[0].go, 'Practise forks you allowed: 5 positions', '"Practise forks you allowed: 5 positions"');
+    eq(r.kinds.filter((x) => x.kind === 'forkAllowed')[0].deal, 5, 'forks you allowed: 5 in Mistakes');
     eq(r.kinds.filter((x) => x.kind === 'material')[0].when[1], 'Most in the middlegame: 12 of 16.', 'a kind of 10 or more has its own When');
-    r.drills.forEach((d) => { eq(d[2], d[1], d[0] + ': the drill deals exactly the count shown'); ok(d[3], d[0] + ': all of that kind'); });
-    eq(JSON.stringify(r.drills.map((d) => d[4])), JSON.stringify(['Forks', 'Lost to a tactic', 'Opening slips']), 'the drill named by its kind');
+    r.drills.forEach((d) => { eq(d[2], 'mistakes', d[0] + ': the button opens the Mistakes tab'); ok(d[1] > 0 && d[3], d[0] + ': filtered to that kind, all of it'); });
+    eq(JSON.stringify(r.drills.map((d) => d[4])), JSON.stringify(['safety:forkAllowed', 'safety:material', 'quiet:openingSlip']), 'its skill and kind as the filters');
     const open = Object.fromEntries(r.open.map((x) => [x[0], x.slice(1)]));
-    eq(open.safety[0], 'Practise piece safety: 8 positions', '"Practise piece safety: 8 positions"');
+    eq(open.safety[0], 'Open in Mistakes', 'unfiltered: Open in Mistakes');
     eq(JSON.stringify(open.safety[1]), JSON.stringify(['When in your games', 'Most in the middlegame: 22 of 38.', 'Opening', '7', 'Middlegame', '22', 'Endgame', '9']), 'Piece safety\'s When, in game order');
     eq(open.king[1], null, 'King safety (7) shows no When');
     eq(open.conversion[1], null, 'Finishing wins (9) shows no When');
@@ -4914,15 +4917,216 @@ function glanceOf(h) {
     ok(r.open.every((x) => x[3] === null), 'no Since before a set is finished');
     eq(JSON.stringify(r.open.map((x) => [x[4], x[5]])), JSON.stringify([[4, false], [4, false], [4, false], [4, false], [4, false]]), 'unfiltered: the four examples, no Show all');
     eq(JSON.stringify(r.t1.map((x) => [x[1], x[2]])), JSON.stringify([[null, null], [null, null]]), 'More help: no When, no Since');
-    eq(r.t1[0][0], 'Practise piece safety: 8 positions', 'More help: What kind, Practise and the positions');
+    eq(r.t1[0][0], 'Open in Mistakes', 'More help: What kind, Open in Mistakes and the positions');
     ok(r.t1[0][3] === 8 && r.t1[0][4] === 4, 'More help: its kinds and the positions');
-    eq(r.t1f, 'Practise pins you allowed: 1 position', 'More help\'s practice words');
+    eq(r.t1f, 'Open in Mistakes', 'More help: the same button');
     eq(JSON.stringify(r.s19), JSON.stringify([['Since you started', 'Your trend shows from 20 games since you started: 19 so far.'], ['Since you started', 'Your trend shows from 20 games since you started: 19 so far.'], null]), 'with 19 games since, the trend line replaces the chart (King safety: too few before for a trend)');
     eq(JSON.stringify(r.s24), JSON.stringify([['Since you started', 'Probably fewer. More games will tell.', 'Before: 0.8 a game', 'Since: 0.3 a game'], ['Since you started', 'Probably fewer. More games will tell.', 'Before: 0.8 a game', 'Since: 0.3 a game']]), 'from 20 games since: before and since under the calibrated word, every kind even when filtered');
     eq(JSON.stringify(r.s24b), JSON.stringify(['class="kb2" data-b="s:b" style="width:100%', 'class="kb0" data-b="s:s" style="width:32.9%']), 'before grey, since slate, to scale');
     eq(r.s24t1, null, 'More help: no Since');
     eq(JSON.stringify(r.chip), JSON.stringify(['family:safety:forkAllowed', 'Walked into a fork ›']), 'the Details chip opens the sheet filtered');
     eq(JSON.stringify(r.pattern), JSON.stringify(['forkAllowed']), 'the retired pattern sheet opens as the filtered sheet');
+  });
+
+  /* ── release 3 slice G: one home for mistakes ── */
+  const KEEP = (st) => JSON.stringify(Object.keys(st).filter((k) => /^nl:(srs|log|skill|day|sess|seen|start|setSize|next|absorb|goalSent):/.test(k) || /^nl:(setSize|seen:)/.test(k)).sort().map((k) => [k, st[k]]));
+  await test('release 3 slice G: study writes nothing: a find, a miss, a card left after a miss, a game\'s walk-through with misses and one position opened from a summary leave the schedule, the practice log, the day, the skill scores, the paused set and the summary as they were; the study card says "Study: steps do not change." before its answer, and its Details the steps unchanged', () => {
+    const A = boot();
+    const setup = JSON.parse(A.ev(`(function () { ${PLAYSET}
+      playerTier = function () { return 2; }; SF.state = 'failed';
+      var its = allMistakes().filter(trainable).filter(function (x) { return !cardFor(x).sol; }), now = Date.now();
+      /* one position on step 1, due in 3 days; a paused Today set; a day, a log and skill scores already written */
+      srsRecord(its[0], 'first', { ms: 30000 });
+      var srs = srsLoad(); srs[its[0].key].due = now + 3 * DAY; srsSave(srs);
+      store.set(sessKey(), { date: dayStamp(), mode: 'today', label: 'Today', keys: [its[3].key, its[4].key], idx: 1, results: {}, relearn: [], relearnOf: {}, progress: {}, attempted: 1 });
+      store.set(skillKey(), { k: { hang: { st: 1, h: [[now, 1, 0]], r: 1 } }, rc: [] });
+      return JSON.stringify({ k0: its[0].key, k1: its[1].key, g: its[2].g.id }); })()`));
+    const before = KEEP(A.storage);
+    const r = JSON.parse(A.ev(`(function () { ${PLAYSET}
+      var out = {}, k0 = ${JSON.stringify(setup.k0)}, k1 = ${JSON.stringify(setup.k1)};
+      /* a find of the position on step 1, before its due date */
+      ui.view = 'mistakes';
+      startDrill({ type: 'one', key: k0, label: 'Study' });
+      out.study = [ui.session.study, ui.session.back, bandFor(ui.session.active).tag];
+      var a = ui.session.active; a.attempts = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); if (a.phase !== 'done') finishCard('first');
+      out.sum = ui.session.sum[k0].m; out.when = (/<span class="when">([^<]*)</.exec(detailsHtml()) || [])[1];
+      nextCard();
+      out.after1 = [!!ui.session, ui.view];
+      /* a miss, then the answer shown, on a position not started */
+      startDrill({ type: 'one', key: k1, label: 'Study' });
+      a = ui.session.active; a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain(); reveal();
+      if (a.phase !== 'done') finishCard('fail');
+      out.when1 = (/<span class="when">([^<]*)</.exec(detailsHtml()) || [])[1];
+      nextCard();
+      /* a card left after a miss (×) */
+      startDrill({ type: 'one', key: k0, label: 'Study' });
+      a = ui.session.active; a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain();
+      endSession();
+      out.left = !!ui.session;
+      /* a game's walk-through, every other card missed first */
+      ui.view = 'games';
+      startDrill({ type: 'game', id: ${JSON.stringify(setup.g)}, label: 'Game vs x' }); playSet(function (a, i) { return i % 2 === 0; });
+      out.game = [!!ui.session, ui.view];
+      /* one position opened from a summary: back to it, untouched */
+      var sumSs = { mode: 'today', label: 'Today', keys: [k0], idx: 1, results: {}, notes: {}, relearn: [], relearnOf: {}, finished: true, sum: {} };
+      sumSs.results[k0] = 'first'; sumSs.sum[k0] = { c: 'first', s: 3, m: 'up', p: 1 };
+      ui.session = sumSs; var sum0 = JSON.stringify(sumSs);
+      startDrill({ type: 'one', key: k0, label: 'One position' });
+      a = ui.session.active; a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain(); reveal(); if (a.phase !== 'done') finishCard('fail'); nextCard();
+      out.summary = [ui.session === sumSs, JSON.stringify(ui.session) === sum0];
+      ui.session = null;
+      out.resume = !!savedSession();
+      /* at More help too the opening frame keeps the tag, the task in its short form, within the 15 words */
+      playerTier = function () { return 1; };
+      ui.view = 'mistakes'; startDrill({ type: 'one', key: k1, label: 'Study' });
+      var b1 = bandFor(ui.session.active);
+      out.t1 = [b1.tag, wordsIn(b1.row1) + wordsIn(b1.row2) + wordsIn(b1.tag) + barWords(barSlots(ui.session.active, ui.session)) <= WORD_BUDGET];
+      endSession();
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.t1), JSON.stringify(['Study: steps do not change.', true]), 'More help: the tag on the opening frame, within the word budget');
+    eq(KEEP(A.storage), before, 'the schedule, the log, the day, the skill scores, the paused set and the queue unchanged');
+    eq(JSON.stringify(r.study), JSON.stringify([true, 'mistakes', 'Study: steps do not change.']), 'a row opens Study, back to Mistakes, its tag before the answer');
+    eq(r.sum, '', 'nothing moved on its ladder');
+    ok(/^Step 1 of 3 · back in 3 days\. Study changed nothing\.$/.test(r.when), 'Details: the steps as they stand: ' + r.when);
+    eq(r.when1, 'Not started. Study changed nothing.', 'a position not started stays not started');
+    eq(JSON.stringify(r.after1), JSON.stringify([false, 'mistakes']), 'its end: no summary, back on the Mistakes tab');
+    eq(r.left, false, 'left after a miss: closed, nothing kept');
+    eq(JSON.stringify(r.game), JSON.stringify([false, 'games']), 'a game\'s walk-through: no summary, back on the Games tab');
+    eq(JSON.stringify(r.summary), JSON.stringify([true, true]), 'from a summary: back to that summary, untouched');
+    eq(r.resume, true, 'the paused set still waits to be resumed');
+  });
+
+  await test('release 3 slice G: "Practise these next" puts the positions chosen first in the next sets\' new-position slots, set sizes unchanged, says "N positions added to your next sets." with its Undo, and Undo puts it all back; a position leaves the queue once started', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () {
+      playerTier = function () { return 2; }; SF.state = 'failed'; store.set('nl:sessionSize', 10);
+      var out = {}, its = allMistakes().filter(trainable), srs = {}, now = Date.now();
+      /* six positions in practice, due now: Today keeps its new slots */
+      its.slice(0, 6).forEach(function (x) { srs[x.key] = { box: 1, streak: 1, due: now - 3600e3, last: now - 3 * DAY, ls: now - 3 * DAY, lapses: 0, n: 1 }; });
+      srsSave(srs);
+      var p0 = todayPlan(), m0 = morePracticeKeys();
+      out.p0 = p0; out.m0 = m0;
+      /* the kind with the most positions not started, its rows as the tab filters them */
+      ui.view = 'mistakes';
+      mistakesFilterSet({ f: 'king' });
+      var L = mistakesList(); out.inView = L.kept.length;
+      var want = mkNextKeys(L);
+      out.want = want;
+      out.label = (/data-act="mkNext">([^<]*)</.exec(mkActsHtml(L)) || [])[1];
+      mistakesNext();
+      out.done = (/id="mk-done" role="status">([^<]*)/.exec(mkActsHtml(mistakesList())) || [])[1];
+      out.undo = /data-act="mkUndo">Undo</.test(mkActsHtml(mistakesList()));
+      out.queue = nextQueue();
+      var p1 = todayPlan(), m1 = morePracticeKeys();
+      out.p1 = p1; out.m1 = m1;
+      out.rows = mistakesList().kept.filter(function (x) { return x.next; }).map(function (x) { return (/<span class="mk-prog">[\\s\\S]*?<span>([^<]*)</.exec(mkRowHtml(x, 2)) || [])[1]; });
+      out.again = (/data-act="mkNext">([^<]*)</.exec(mkActsHtml(mistakesList())) || [null, null])[1];
+      mistakesUndo();
+      out.undone = [nextStored().length, (/id="mk-done" role="status">([^<]*)/.exec(mkActsHtml(mistakesList())) || [])[1], JSON.stringify(todayPlan().keys) === JSON.stringify(p0.keys), JSON.stringify(morePracticeKeys()) === JSON.stringify(m0)];
+      /* chosen again, then the first started: it leaves the queue */
+      nextAdd(want);
+      srsRecord(itemOf(want[0]), 'first', { ms: 30000 });
+      out.left = nextQueue();
+      return JSON.stringify(out); })()`));
+    ok(r.want.length >= 2 && r.want.length <= 10, 'the positions not started in view: ' + r.want.length);
+    eq(r.label, 'Practise these next', 'its label');
+    eq(r.done, r.want.length + ' positions added to your next sets. ', 'its confirmation, a status: ' + r.done);
+    ok(r.undo, 'with Undo in the same place');
+    eq(JSON.stringify(r.queue), JSON.stringify(r.want), 'the queue, in the order shown');
+    eq(r.p1.keys.length, r.p0.keys.length, 'Today\'s set keeps its size');
+    const fresh1 = r.p1.keys.filter((k) => r.p0.keys.indexOf(k) < 0 || r.want.indexOf(k) >= 0);
+    ok(r.p1.fresh > 0 && r.want.slice(0, r.p1.fresh).every((k) => r.p1.keys.indexOf(k) >= 0), 'Today\'s new slots deal the chosen first: ' + r.want.slice(0, r.p1.fresh).join(',') + ' in ' + r.p1.keys.join(','));
+    ok(fresh1.length >= r.p1.fresh, 'and its due positions stay');
+    eq(r.m1.length, r.m0.length, 'the next set keeps its size');
+    const firstNew = r.m1.findIndex((k) => r.want.indexOf(k) >= 0);
+    ok(firstNew >= 0 && r.m1.slice(firstNew, firstNew + Math.min(r.want.length, r.m1.length - firstNew)).every((k, i) => k === r.want[i]), 'the next set\'s new slots: the chosen first, in order: ' + r.m1.join(','));
+    ok(r.rows.length === r.want.length && r.rows.every((x) => x === 'New · up next in your sets'), 'their rows say so: ' + r.rows[0]);
+    eq(r.again, null, 'nothing left to add: no button');
+    eq(JSON.stringify(r.undone), JSON.stringify([0, 'Taken out of your next sets.', true, true]), 'Undo: the queue empty, said, Today\'s set and the next set as before');
+    eq(JSON.stringify(r.left), JSON.stringify(r.want.slice(1)), 'once started, a position leaves the queue');
+  });
+
+  await test('release 3 slice G: the Mistakes tab: four tabs; the overview\'s skill rows filter (pressed, the breakdown under the one chosen with its kinds as filters, in step with the selects); status chips count within the other filters ("Last step" one find from learned, inside In practice); the search finds an opponent, a move in SAN and a kind\'s name; "12 of 44 mistakes", Clear filters; due first, then decided games; 30 rows then Show more; Insights\' rows, the focus card and a skill\'s sheet open it filtered; mid-card the sheet is compact', () => {
+    const A = boot();
+    const r = JSON.parse(A.ev(`(function () { ${OPEN}
+      playerTier = function () { return 2; }; SF.state = 'failed';
+      var out = {}, its = allMistakes().filter(trainable), srs = {}, now = Date.now();
+      srs[its[0].key] = { box: 2, streak: 2, due: now - 3600e3, last: now - 7 * DAY, ls: now - 7 * DAY, lapses: 0, n: 2 };
+      srs[its[1].key] = { box: 1, streak: 1, due: now + 3 * DAY, last: now - DAY, ls: now - DAY, lapses: 0, n: 1 };
+      srs[its[2].key] = { box: 5, streak: 3, learned: true, due: now + 80 * DAY, last: now - DAY, ls: now - DAY, lapses: 0, n: 3 };
+      srsSave(srs);
+      out.views = VIEWS.map(function (v) { return v[0]; });
+      out.hash = viewOfHash('#mistakes');
+      mistakesFilterSet(MF0);
+      var L = mistakesList();
+      out.all = L.all.length; out.count = mistakesCountWords(L); out.counts = L.counts;
+      out.first = L.kept.slice(0, 2).map(function (x) { return x.it.key; });
+      out.k = [its[0].key, its[1].key];
+      var nd = L.kept.filter(function (x) { return !x.due; });
+      out.decidedFirst = nd.findIndex(function (x) { return !x.it.b.d; }) === -1 || nd.slice(nd.findIndex(function (x) { return !x.it.b.d; })).every(function (x) { return !x.it.b.d; });
+      var body = mkBodyHtml(L);
+      out.rows = (body.match(/class="mk-row"/g) || []).length; out.more = (/data-act="mkMore">([^<]*)</.exec(body) || [])[1];
+      out.row0 = (/<span class="sr-only">([^<]*)</.exec(mkRowHtml(L.kept[0], 2)) || [])[1];
+      out.track = (/<span class="track" role="img" aria-label="([^"]*)"/.exec(mkRowHtml(L.kept[0], 2)) || [])[1];
+      mistakesPick({ s: 'last' }); L = mistakesList(); out.last = [L.kept.length, L.kept[0] && L.kept[0].it.key, mistakesCountWords(L)];
+      mistakesPick({ s: 'all' });
+      /* the search */
+      var opp = its[5].g.opp, san = mkMeta(its[5]).san;
+      mistakesSearch(opp); L = mistakesList(); out.opp = L.kept.length > 0 && L.kept.every(function (x) { return x.it.g.opp.toLowerCase().indexOf(opp.toLowerCase()) >= 0; });
+      mistakesSearch(san); L = mistakesList(); out.san = L.kept.some(function (x) { return x.it.key === its[5].key; });
+      mistakesSearch('FORKS YOU'); L = mistakesList(); out.kindQ = [L.kept.length, L.kept.every(function (x) { return /fork/i.test(kindName(x.kind, 2) + kindName(x.kind, 1)); })];
+      out.clearShown = /data-act="mkClear"/.test(mkBarHtml(L));
+      mistakesSearch('zzzz-none'); out.none = (/<div class="gl-none"><p>([^<]*)</.exec(mkBodyHtml(mistakesList())) || [])[1];
+      window.__realmClick('mkClear'); out.cleared = JSON.stringify(mistakesFilter()) === JSON.stringify(MF0);
+      /* the skill rows */
+      var fams = insightReport().families;
+      window.__realmClick('mkSkill', 'safety');
+      L = mistakesList();
+      var sk = mkSkillsHtml(fams, L, 2);
+      out.pressed = (sk.match(/data-act="mkSkill" data-k="(\\w+)" role="button" aria-pressed="true"/g) || []).length;
+      out.breakdown = /<div class="mk-break">[\\s\\S]*data-act="mkKind" data-k="forkAllowed"/.test(sk);
+      out.selects = /<select data-act="mf" data-k="f"[^>]*>[\\s\\S]*?value="safety" selected/.test(mkFiltersHtml(L, fams, 2)) && /data-k="k"/.test(mkFiltersHtml(L, fams, 2));
+      out.safetyN = [L.kept.length, fams.filter(function (a) { return a.fam.key === 'safety'; })[0].count];
+      window.__realmClick('mkKind', 'forkAllowed'); L = mistakesList(); out.fork = [L.f.k, L.kept.length, (/value="forkAllowed" selected/.test(mkFiltersHtml(L, fams, 2)))];
+      window.__realmChange('mf', 'king', 'f'); L = mistakesList(); out.change = [L.f.f, L.f.k];
+      window.__realmClick('mkSkill', 'king'); out.unpick = mistakesFilter().f;
+      /* the way in: Insights' rows, the focus card's sheet, a skill's sheet's button */
+      ui.view = 'insights';
+      out.insRows = (skillRowsHtml(fams, null, 2).match(/data-act="mistakes" data-k="family:\\w+"/g) || []).length === fams.length;
+      window.__realmClick('sheet', 'family:king:mateAllowed');
+      out.routed = [ui.view, mistakesFilter().f, mistakesFilter().k, ui.sheet || ''];
+      /* mid-card: the compact sheet */
+      var it = allMistakes().filter(function (x) { return trainable(x) && patternOf(x.b) === 'forkAllowed'; })[0];
+      openCard(it);
+      window.__realmClick('sheet', 'family:safety:forkAllowed');
+      var h = sheetHtml(ui.sheet || '');
+      out.compact = [ui.sheet, /fs-go/.test(h), /class="ex"/.test(h), /fs-kind/.test(h)];
+      ui.session = null; closeSheet();
+      return JSON.stringify(out); })()`));
+    eq(JSON.stringify(r.views), JSON.stringify(['train', 'games', 'mistakes', 'insights']), 'Today, Games, Mistakes, Insights');
+    eq(r.hash, 'mistakes', '#mistakes');
+    eq(r.count, r.all + ' mistakes', 'unfiltered: "' + r.all + ' mistakes"');
+    eq(r.counts.all, r.counts.learned + r.counts.practice + r.counts.new, 'the chips add up');
+    eq(JSON.stringify([r.counts.last, r.counts.practice, r.counts.learned]), JSON.stringify([1, 2, 1]), 'Last step inside In practice; Learned');
+    eq(r.first[0], r.k[0], 'due first');
+    ok(r.decidedFirst, 'then decided games first');
+    eq(r.rows, 30, '30 rows'); ok(/^Show \d+ more$/.test(r.more), 'then ' + r.more);
+    ok(/^.+\. vs .+, You played .+\. Step 2 of 3, back [^.]+\.$/.test(r.row0), 'a row read as one sentence: ' + r.row0);
+    eq(r.track, 'Step 2 of 3 to learned', 'its track named');
+    eq(JSON.stringify(r.last), JSON.stringify([1, r.k[0], '1 of ' + r.all + ' mistakes']), 'Last step: the one a find from learned, "1 of N mistakes"');
+    ok(r.opp && r.san, 'the search finds the opponent and the move in SAN');
+    ok(r.kindQ[0] > 0 && r.kindQ[1], 'and a kind\'s name, any case');
+    ok(r.clearShown, 'Clear filters while one is on');
+    eq(r.none, 'No mistakes match these filters.', 'nothing kept says so');
+    ok(r.cleared, 'Clear filters');
+    eq(r.pressed, 1, 'the skill row pressed'); ok(r.breakdown, 'its breakdown under it, its kinds as filters'); ok(r.selects, 'the skill select in step, the kind select shown');
+    eq(r.safetyN[0], r.safetyN[1], 'the rows of the skill: as many as its row counts');
+    eq(JSON.stringify(r.fork), JSON.stringify(['forkAllowed', 5, true]), 'a kind pressed: its rows, the kind select in step');
+    eq(JSON.stringify(r.change), JSON.stringify(['king', 'all']), 'the skill select: the skill, its kind cleared');
+    eq(r.unpick, 'all', 'the row pressed again: all skills');
+    ok(r.insRows, 'Insights\' skill rows open Mistakes filtered');
+    eq(JSON.stringify(r.routed), JSON.stringify(['mistakes', 'king', 'mateAllowed', '']), 'a skill\'s sheet outside a set: the Mistakes tab filtered');
+    eq(JSON.stringify(r.compact), JSON.stringify(['family:safety:forkAllowed', false, false, true]), 'mid-card: the compact sheet (kinds, no button, no positions)');
   });
 
   results.forEach((l) => console.log(l));

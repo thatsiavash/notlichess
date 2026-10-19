@@ -130,6 +130,8 @@ var CARD_COPY = {
      tag, the two source lines, a lesson's own position's end; where Hint 3
      can follow (F9.2), the hint rows count to three */
   P1: function () { return 'Practice'; },
+  /* a study (release 3 slice G): what it is, before its answer */
+  S1: function () { return 'Study: steps do not change.'; },
   P2: function () { return 'Lesson'; },
   P3: function () { return 'Lesson position'; },
   P4: function () { return 'Another player\'s game'; },
@@ -1440,6 +1442,13 @@ function bandFit(a, b) {
     if (b.stepChip && wordsIn(b.row2) > room) { b.chip = ''; room = rowRoom(a, b); }
     /* a practice position's source line goes before its tag (F9.4) */
     if (b.src && wordsIn(b.row2) > room) { b.src = ''; room = rowRoom(a, b); }
+    /* a study's tag (release 3 slice G) stays on its opening frame: the
+       task takes its shorter form ("Find a better move.", a game-mode
+       card's "Move 23") instead */
+    if (b.tag && b.tag === CARD_COPY.S1() && (b.row1 === CARD_COPY.T1() || b.row1 === CARD_COPY.F3()) && a.phase === 'guess' && !a.attempts && !a.hints && wordsIn(b.row2) > room) {
+      var r2 = fitRow(b.cands.concat([a.game ? 'Move ' + (Math.floor(a.it.b.p / 2) + 1) : 'Find a better move.']), { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
+      if (r2 && wordsIn(r2) <= room) b.row2 = r2;
+    }
     if (b.tag && wordsIn(b.row2) > room) { b.tag = ''; b.src = ''; room = rowRoom(a, b); }
     if (wordsIn(b.row2) > room) b.row2 = fitRow(b.cands, { ch: ROW_CAPS.row2.ch, words: Math.max(0, room) }, b.fall);
     /* a ladder step that would say something untrue (R4's found form) */
@@ -2558,7 +2567,7 @@ function bandOf(a) {
   /* every game-mode card wears the neutral "Review" tag until its answer
      (F8.1), a practice position "Practice" (F9.4), where its frame has
      room: a step chip goes before it */
-  var tag = a.game ? CARD_COPY.G1() : a.prac ? CARD_COPY.P1() : '';
+  var tag = studying() ? CARD_COPY.S1() : a.game ? CARD_COPY.G1() : a.prac ? CARD_COPY.P1() : '';
   /* exploring (S14): what it is, in two fixed rows; Stockfish's sentence
      is in the panel */
   if (a.phase === 'done' && a.explore) return { disc: 'king', kind: 'explore', row1: CARD_COPY.X1(), row2: CARD_COPY.X2(a) };
@@ -2682,7 +2691,7 @@ function answerRow(a, settled) {
   if (a.prac) return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: [PSKILL_OF[a.it.skill].task], fall: '', tag: tag, src: pracSrcOn(a) ? pracSrc(a) : '' };
   /* tier 1 names the game move in words, else says no move (F1.6); a
      decisive first sight names the game it decided in the tag row (F4.2) */
-  return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: inWords(a) ? [CARD_COPY.T2(a, true), 'Find a better move.'] : [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '', tag: ctxLine(a) };
+  return { disc: 'king', kind: 'neutral', row1: CARD_COPY.T1(), cands: inWords(a) ? [CARD_COPY.T2(a, true), 'Find a better move.'] : [CARD_COPY.T2(a)], fall: '', chip: ss_relearn(a) ? CARD_COPY.T3() : '', tag: studying() ? CARD_COPY.S1() : ctxLine(a) };
 }
 /* the context line (F4.2): on a decisive first sight, the game it decided,
    "Lost vs opponent1" ("Drew vs opponent1" for a draw) within its own cap

@@ -796,7 +796,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
       SF.state = 'failed';
       var it = allMistakes().filter(trainable).filter(function (x) { var a = openCard(x); return a && workedExample(a); })[0];
       ui.session = null;
-      startSession('drill', [it.key], 'x');
+      startSession('more', [it.key], 'x');
       var a = ui.session.active;
       var res = { first: a && [a.key === it.key, a.hints, !!a.predraw].join(' / '), kept: JSON.stringify(ui.session.progress && ui.session.progress[it.key]) };
       var b = cardFor(it);
@@ -820,7 +820,7 @@ const tips = (A) => Object.keys(A.storage).filter((k) => /^nl:tip:/.test(k) && k
       store.del('nl:tip:game');
       var fam = familyOf(patternOf(it.b)).key, res = {};
       ui.session = null;
-      startSession('drill', [it.key, it2.key], 'x');
+      startSession('more', [it.key, it2.key], 'x');
       var a = ui.session.active;
       res.first = [a.key === it.key, a.hints, !!a.predraw].join(' / ');
       res.label = window.__label();

@@ -1,8 +1,10 @@
 /* ── Sessions: Today, drills, and the focus ─────────────────────────────────
    One container for every kind of practice. Today = reviews that are due
    plus a few new mistakes, sized to what the day can hold. A drill = up to
-   8 positions of one pattern or one slice, blocked together. Either counts
-   toward the day. A session survives a reload. */
+   8 positions of one pattern or one slice, blocked together. Today's set
+   and the next sets count toward the day and move the schedule; a drill is
+   study (release 3 slice G): it plays like a card and writes nothing. A
+   session survives a reload; a study is never saved. */
 
 function sessionSize() { return store.get('nl:sessionSize', 10); }
 /* how deeply games are read: 'std' (the default) or 'thorough' */
@@ -16,8 +18,17 @@ function scanNodes() {
   return ready >= 3 ? 50000 : TRIAGE_NODES;
 }
 function sessKey() { return 'nl:sess:' + playerId(); }
+/* study (release 3 slice G): a drill of the player's own positions (a row
+   of the Mistakes tab, a game's walk-through, one position from a summary,
+   Insights' clock and how-decided rows) plays like a card and writes
+   nothing: no record on the schedule, no practice log entry, no day
+   counted, no skill score, no summary, and the paused set stays as it was.
+   Only Today's set and the next sets move the schedule; a practice pack
+   keeps its own skill scores */
+function studying(ss) { ss = ss === undefined ? ui.session : ss; return !!(ss && ss.study); }
 function saveSession() {
   var ss = ui.session;
+  if (studying(ss)) return;
   if (!ss) { store.del(sessKey()); return; }
   store.set(sessKey(), { date: dayStamp(), mode: ss.mode, label: ss.label, keys: ss.keys, idx: ss.idx,
                          results: ss.results, relearn: ss.relearn || [], relearnOf: ss.relearnOf || {}, spec: ss.spec || null,
@@ -156,10 +167,10 @@ function newCardScore(it, since) {
    day (todayPlan) */
 function buildCandidates(n, spec, fill, o) {
   var srs = (o && o.srs) || srsLoad(), focus = currentFocus(), since = data.prevSeenFor === cfg.user ? data.prevSeen : 0;
-  var filter = spec ? specFilter(spec) : null;
+  var filter = spec ? specFilter(spec) : null, queued = spec ? {} : nextAt(srs);
   /* Today deals positions with one idea: a quiet card where a second move is
-     as good as the best stays for drills */
-  var twoAnswers = function (it) { return !spec && it.b.g2 != null && it.b.g2 <= SOLVE_TOL && familyOf(patternOf(it.b)).key === 'quiet'; };
+     as good as the best stays for drills (unless the player chose it) */
+  var twoAnswers = function (it) { return !spec && !queued[it.key] && it.b.g2 != null && it.b.g2 <= SOLVE_TOL && familyOf(patternOf(it.b)).key === 'quiet'; };
   /* never seen, or back in the queue (F7.1): those count as new */
   var list = allMistakes().filter(function (it) {
     var r = srs[it.key];
@@ -169,7 +180,11 @@ function buildCandidates(n, spec, fill, o) {
   var score = {};
   list.forEach(function (it) { score[it.key] = newCardScore(it, since); });
   list.sort(function (x, y) { return score[y.key] - score[x.key]; });
-  if (spec || !focus) return list.slice(0, n);
+  /* the positions chosen with "Practise these next" (nextAdd) lead, in
+     their order; the rest follow as before */
+  var head = list.filter(function (it) { return queued[it.key]; }).sort(function (x, y) { return queued[x.key] - queued[y.key]; }).slice(0, n);
+  if (head.length) { list = list.filter(function (it) { return !queued[it.key]; }); n = Math.max(0, n - head.length); }
+  if (spec || !focus) return head.concat(list.slice(0, n));
   /* the focus family takes turns with the rest, never more than half: a
      mix trains the question "which danger is live now?" */
   var inF = function (it) { return familyOf(patternOf(it.b)).key === focus.fam; };
@@ -182,7 +197,37 @@ function buildCandidates(n, spec, fill, o) {
     takeF = !takeF;
   }
   while (fill && out.length < n && fi < mine.length) out.push(mine[fi++]);
-  return out;
+  return head.concat(out);
+}
+/* "Practise these next" (release 3 slice G, the Mistakes tab): positions
+   not started, chosen to be dealt first in the new-position slots of the
+   next sets (Today's and the next sets: buildCandidates), set sizes
+   unchanged. nl:next:<player>, keys in order; one leaves it once started.
+   NEXT_MAX at a time */
+var NEXT_MAX = 10;
+function nextKey() { return 'nl:next:' + playerId(); }
+function nextStored() { var q = store.get(nextKey(), []); return Array.isArray(q) ? q : []; }
+/* the chosen positions still waiting (no record yet), in order */
+function nextQueue(srs) {
+  srs = srs || srsLoad();
+  return nextStored().filter(function (k) { return !srs[k] && !!itemOf(k); });
+}
+/* by key, its place in the queue (1 first), for the planner */
+function nextAt(srs) {
+  var at = {};
+  nextQueue(srs).forEach(function (k, i) { at[k] = i + 1; });
+  return at;
+}
+/* keys chosen: they go first, ahead of any chosen before; the queue as it
+   was is returned, for the Undo */
+function nextAdd(keys) {
+  var was = nextStored().slice(), srs = srsLoad();
+  keys = keys.filter(function (k) { return !srs[k]; }).slice(0, NEXT_MAX);
+  store.set(nextKey(), keys.concat(was.filter(function (k) { return keys.indexOf(k) < 0; })));
+  return { was: was, n: keys.length };
+}
+function nextUndo(was) {
+  if (was && was.length) store.set(nextKey(), was); else store.del(nextKey());
 }
 /* the positions due, the most valuable first: those whose date has come
    (C2: due from that day's midnight, never within 8 hours of the last
@@ -338,6 +383,9 @@ function todayPlan(o) {
     var newest = fresh.concat(buildCandidates(40, null, false, o)).filter(function (it) { return it.g.ts > since; })[0];
     if (newest) fresh = [newest].concat(fresh.filter(function (x) { return x !== newest; }));
   }
+  /* the positions the player chose to practise next lead the new ones */
+  var qAt = nextAt(srs), chosen = fresh.concat(buildCandidates(NEXT_MAX + 6, null, false, o)).filter(function (it, i, a) { return qAt[it.key] && a.indexOf(it) === i; });
+  if (chosen.length) fresh = chosen.sort(function (x, y) { return qAt[x.key] - qAt[y.key]; }).concat(fresh.filter(function (x) { return !qAt[x.key]; }));
   fresh = fresh.slice(0, freshAllowed);
   var dueTake = due.slice(0, Math.max(0, size - fresh.length));
   /* the warm-up: the most familiar due card, or the gentlest new one */
@@ -373,6 +421,7 @@ function planOn(d) {
    card loaded already keeps */
 function startSession(mode, keys, label, spec, opts) {
   if (!keys.length) return false;
+  if (mode === 'drill') return startStudy(keys, label, spec);
   var prev = savedSession();
   if (prev) {
     settleSaved(prev);
@@ -402,6 +451,52 @@ function startSession(mode, keys, label, spec, opts) {
   loadCard();
   track('session_start_' + mode);
   return true;
+}
+/* a study (studying): the paused set is left alone, nothing carried,
+   logged or saved. One position opened from a summary goes back to that
+   summary, untouched; one opened on another tab (Mistakes, Games,
+   Insights) goes back to that tab */
+function startStudy(keys, label, spec) {
+  var from = ui.session && ui.session.finished ? ui.session : null;
+  var back = !from && ui.view !== 'train' ? ui.view : null;
+  if (ui.session && !ui.session.finished && !studying()) endSession(true);
+  ui.session = { mode: 'drill', study: true, label: label, keys: keys.slice(), idx: 0, results: {}, relearn: [], relearnOf: {}, spec: spec || null, carried: 0, rev: {} };
+  if (from) ui.session.from = from;
+  if (back) ui.session.back = back;
+  closeSheet();
+  setView('train', !!back);
+  if (back) window.scrollTo(0, 0);
+  pushSessionState();
+  loadCard();
+  track('study_start');
+  return true;
+}
+/* the way out of a study, finished or left: back to the summary it came
+   from, else the tab it was opened on (the keyboard on its row), else
+   Today. Nothing is written on the way */
+function leaveStudy(ss, fromPop) {
+  ui.session = null;
+  if (ss.from) {
+    ui.session = ss.from;
+    pushSessionState();
+    renderViews();
+    renderTrain();
+    window.scrollTo(0, 0);
+    var rh = el('recap-h');
+    if (rh) rh.focus({ preventScroll: true });
+    return;
+  }
+  var back = ss.back;
+  if (!fromPop && history.state && history.state.nlSession) { try { if (back) history.back(); else history.replaceState(null, '', location.pathname + '#train'); } catch (e) {} }
+  if (!back) { renderViews(); renderTrain(); window.scrollTo(0, 0); return; }
+  renderTrain();
+  setView(back, true);
+  var sp = ss.spec || {}, box = el(back + 'box'), row = null;
+  if (box && sp.type === 'game' && sp.id != null) row = box.querySelector('[data-g="' + String(sp.id).replace(/"/g, '') + '"]');
+  if (box && sp.type === 'one' && sp.key) row = box.querySelector('[data-mk="' + String(sp.key).replace(/"/g, '') + '"]');
+  if (box) makeFocusable(box);
+  var t = row || document.querySelector('#views .view-tab.view-on');
+  if (t && t.focus) t.focus({ preventScroll: true });
 }
 /* the positions of a set that are reviews as it begins (V4.4: the recall
    after a break counts them): answered before and not back in the queue */
@@ -687,6 +782,8 @@ function daysAway() {
 function finishSession() {
   var ss = ui.session;
   if (!ss) return;
+  /* a study has no summary: back where it came from */
+  if (studying(ss)) { clearLive(); track('study_done'); leaveStudy(ss, false); return; }
   ss.finished = true;
   ss.active = null;
   clearLive();
@@ -737,6 +834,8 @@ function endSession(fromPop) {
   engineStop('check');
   stageReset();
   clearLive();
+  /* a study left: nothing graded, nothing kept */
+  if (studying(ss)) { leaveStudy(ss, fromPop); return; }
   /* one position opened from a summary: × goes back to that summary, the
      position graded as a card left is (a miss counts), never paused */
   if (ss.from && !ss.finished) {

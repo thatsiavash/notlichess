@@ -241,7 +241,8 @@ function decidedWords(lost, tier) {
 /* ── a skill's kinds (Insights depth: glance, then drill) ────────────────
    Each pattern of a skill is one kind: its name at Normal and Less help,
    its plainer name at More help, and what its drill practises after
-   "Practise" ("Practise forks you allowed: 5 positions"), the same two
+   "Practise" (slice E's button; since release 3 slice G what the Mistakes
+   tab's search also finds: "forks you allowed"), the same two
    ways. Content's words: plain, 7 words at most, no notation; the kind
    that shared its skill's name ("King safety") is "Exposed your king", as
    its Details chip names it */

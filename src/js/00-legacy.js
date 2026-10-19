@@ -98,9 +98,9 @@ var ui = {
   view: (function () {
     var h = (location.hash || '').replace('#', '');
     if (h === 'coach') h = 'insights';
-    if (h === 'insights' || h === 'train' || h === 'games') return h;
+    if (h === 'insights' || h === 'train' || h === 'games' || h === 'mistakes') return h;
     var v = store.get('nl:view', 'train');
-    return v === 'insights' || v === 'games' ? v : 'train';
+    return v === 'insights' || v === 'games' || v === 'mistakes' ? v : 'train';
   })(),
   open: {},            /* which cards have their "+ n more" list open */
   openSkill: null,     /* which profile row is showing its evidence */

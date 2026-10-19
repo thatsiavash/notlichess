@@ -225,7 +225,7 @@
     ok('Today offers a start or a finished day', !!($('[data-act=startToday]') || $('[data-act=keepGoing]') || /Today's set is done|Nothing due/.test(text('#trainbox'))), text('#trainbox').slice(0, 120));
     ok('the header is the mark and the gear only', !!$('#bar .brand-name') && !!$('#bar [data-act=settings]') && !/▼|▲/.test(text('#bar')), text('#bar'));
     ok('Today holds the day\'s practice only: no game rows, no games list (slice D)', !$('#trainbox .lg-row') && !$('#latest') && !/Your latest games|Clean game vs/.test(text('#trainbox')), text('#trainbox').slice(0, 120));
-    ok('three tabs in order, Today shown: Today, Games, Insights (slice D)', [].map.call($$('#views [role=tab]'), (t) => t.textContent.trim()).join('|') === 'Today|Games|Insights' && $('#tab-train').getAttribute('aria-selected') === 'true'
+    ok('four tabs in order, Today shown: Today, Games, Mistakes, Insights (slice D; release 3 slice G)', [].map.call($$('#views [role=tab]'), (t) => t.textContent.trim()).join('|') === 'Today|Games|Mistakes|Insights' && $('#tab-train').getAttribute('aria-selected') === 'true'
       && [].every.call($$('#views [role=tab]'), (t) => rectOf(t).right <= vw() + 0.5 && rectOf(t).top === rectOf($('#tab-train')).top), [].map.call($$('#views [role=tab]'), (t) => t.textContent.trim() + '@' + Math.round(rectOf(t).left) + '-' + Math.round(rectOf(t).right)).join(' '));
     layoutCheck('Today');
     ok('no em dash anywhere on Today', text('#main').indexOf('—') === -1);
@@ -973,12 +973,14 @@
     layoutCheck('How we count');
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await sleep(200);
-    click('#insightsbox [data-act=sheet]');
-    await until(() => $('#overlay .sheet'), 3000);
-    ok('a family sheet opens with its drill under the habit', !!$('#overlay .sheet .sheet-acts'));
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await sleep(200);
-    ok('Escape closes the sheet', !$('#overlay .sheet'));
+    /* (release 3 slice G) a skill row opens the Mistakes tab filtered to it, its row pressed, its breakdown under it */
+    const skRow = $('#insightsbox [data-act=mistakes]'), skK = skRow && skRow.getAttribute('data-k');
+    click('#insightsbox [data-act=mistakes]');
+    await until(() => $('#mistakesbox .mk-row'), 3000);
+    ok('a skill row opens Mistakes filtered to it', location.hash === '#mistakes' && !!skK && !!$('#mistakesbox .fam-row[aria-pressed=true][data-k="' + skK.split(':')[1] + '"]') && !!$('#mistakesbox .mk-break') && /^\d+ of \d+ mistakes$/.test(text('#mk-count')) && !$('#overlay .sheet'), location.hash + ' ' + skK + ' ' + text('#mk-count'));
+    layoutCheck('Mistakes');
+    ok('no em dash anywhere on Mistakes', text('#main').indexOf('\u2014') === -1);
+    click('#mistakesbox [data-act=mkClear]');
     T.ev("setView('train'); 'ok'");
     click('#bar [data-act=settings]');
     await until(() => $('#overlay .sheet .switch-row'), 3000);
