@@ -468,15 +468,16 @@ function snd(name) {
     }
     /* the voices (F3.1): found a rising 660 then 990 Hz, wrong a muted 110 Hz
        knock (never a buzzer), the week's goal C, E, G, C 90 ms apart, a
-       position learned a bright 1319 Hz ding (the last two for the
-       summary's moments) */
+       position learned a bright chime rising C, E, G, C an octave up, 70 ms
+       apart, with a faint sparkle over its last note (release 3, F3: the
+       learned moment on the card and the summary) */
     if (name === 'tap') tone(340, 0, 0.04, 'triangle', 0.025);
     else if (name === 'move') tone(220, 0, 0.06, 'triangle', 0.05);
     else if (name === 'good') { tone(660, 0, 0.09); tone(990, 0.09, 0.14); }
     else if (name === 'bad') tone(110, 0, 0.09, 'triangle', 0.08);
     else if (name === 'set') { tone(523, 0, 0.1); tone(659, 0.1, 0.1); tone(784, 0.2, 0.22); }
     else if (name === 'goal') { tone(523, 0, 0.12); tone(659, 0.09, 0.12); tone(784, 0.18, 0.12); tone(1047, 0.27, 0.3); }
-    else if (name === 'learned') tone(1319, 0, 0.35, 'sine', 0.05);
+    else if (name === 'learned') { tone(1047, 0, 0.12, 'sine', 0.045); tone(1319, 0.07, 0.12, 'sine', 0.045); tone(1568, 0.14, 0.14, 'sine', 0.045); tone(2093, 0.21, 0.42, 'sine', 0.045); tone(3136, 0.25, 0.3, 'triangle', 0.012); }
   } catch (e) {}
 }
 

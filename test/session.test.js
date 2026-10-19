@@ -551,7 +551,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       act(1, function (a) { a.hints = 1; best(a); });
       act(2, function (a) { a.tapped = true; gradeMove(uciToMove(a.st, a.playedUci)); tryAgain(); best(a); });
       ss.active = null; ss.finished = true;
-      var h = doneHtml(ss), res = { moved: (/class="recap-moved">([^<]*)</.exec(h) || [])[1], rungs: (h.match(/class="rungs" role="img" aria-label="[^"]*"/g) || []).map(function (x) { return /label="([^"]*)"/.exec(x)[1]; }) };
+      var h = doneHtml(ss), res = { moved: (/class="recap-moved">([^<]*)</.exec(h) || [])[1], rungs: (h.match(/class="track track-sm[^"]*" role="img" aria-label="[^"]*"/g) || []).map(function (x) { return /label="([^"]*)"/.exec(x)[1]; }) };
       /* the days each comes back in, from its record: the clean find climbs (a week), the hint holds (sooner), the miss starts again (tomorrow) */
       res.days = its.map(function (x) { return daysFrom(Date.now(), srsRec(x).due); });
       /* card 1 found clean three times: fast at first sight (a week), again when due, then 16 days on */
@@ -566,13 +566,13 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       ui.session.active = null; ui.session.finished = true;
       var h2 = doneHtml(ui.session), first = (/<div class="recap">([\\s\\S]*?)<\\/div>/.exec(h2) || [])[1] || '';
       res.learned = { rec: srsRec(it).learned, moved: (/class="recap-moved">([^<]*)</.exec(h2) || [])[1], lead: /^<div class="recap-item recap-learned"/.test(first), say: ((/class="learned-say">([\\s\\S]*?)<\\/span>/.exec(h2) || [])[1] || '').replace(/<[^>]+>/g, ''), days: d1 + d2,
-        seal: /^<div class="recap-item recap-learned"[^>]*><span class="learned-board"><svg class="board"[\\s\\S]*<\\/svg><span class="rg rg-learned" aria-hidden="true"><\\/span><\\/span><span class="learned-say">/.test(first), pips: /class="rungs"/.test(first) };
+        seal: /^<div class="recap-item recap-learned"[^>]*><span class="learned-board"><svg class="board"[\\s\\S]*<\\/svg><span class="rg rg-learned" aria-hidden="true"><\\/span><\\/span><span class="learned-say">/.test(first), pips: /class="track/.test(first) };
       return JSON.stringify(res); })()`));
     ok(r.days[0] > r.days[1] && r.days[1] > r.days[2] && r.days[2] === 1, 'the clean find waits longest, the hint less, the miss is back tomorrow: ' + r.days.join(' '));
-    eq(r.moved, 'Back in ' + r.days[0] + ' days: 1. Back in ' + r.days[1] + ' days: 1. Back tomorrow: 1.', 'what moved, as when each comes back (V4.3: never "moved up", "held" or "back to the start")');
-    eq(JSON.stringify(r.rungs), JSON.stringify(['2 of 3 steps to learned', '1 of 3 steps to learned', '0 of 3 steps to learned']), 'the rungs: a clean find on a due day climbs, a hint holds, a miss empties them');
+    eq(r.moved, '1 step up. Back in ' + r.days[0] + ' days: 1. Back in ' + r.days[1] + ' days: 1. Back tomorrow: 1.', 'what moved: the steps climbed (release 3), then when each comes back (V4.3: never "moved up", "held" or "back to the start")');
+    eq(JSON.stringify(r.rungs), JSON.stringify(['Step 2 of 3 to learned', 'Step 1 of 3 to learned', 'Step 0 of 3 to learned']), 'the step tracks: a clean find on a due day climbs, a hint holds, a miss empties them');
     ok(r.learned.rec, 'card 1 is learned');
-    eq(r.learned.moved, '1 learned.', 'what moved says it');
+    eq(r.learned.moved, '1 step up · 1 learned.', 'what moved says it: the seal is a step too (release 3)');
     ok(r.learned.lead, 'the learned position leads the tiles');
     ok(r.learned.seal && !r.learned.pips, 'its tile shows the learned glyph, the honey seal (F3.1), on its board\'s corner before its words, and no pips (the design lead\'s review of slice 4)');
     eq(r.learned.say, 'Learned: Rg1, from your loss to opponent1. Found 3 times over ' + r.learned.days + ' days.', 'its words');
@@ -3704,7 +3704,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
       var h = doneHtml(ss), habit = (/<div class="focus recap-habit">([\\s\\S]*?)<\\/div><section|<div class="focus recap-habit">([\\s\\S]*?)<\\/div><div class="acts-row/.exec(h) || []);
       habit = habit[1] || habit[2] || '';
       return JSON.stringify({ stack: (/<h2 class="done-big"[^>]*>[^<]*<\\/h2>(<p class="recap-then">[^<]*<\\/p>)?(<p class="recap-small">[\\s\\S]*?<\\/p>)<div class="recap-week/.exec(h) || [])[2] || '', habit: habit }); })()`));
-    ok(/^<p class="recap-small"><span class="recap-moved">Back in 7 days: 1\.<\/span><\/p>$/.test(r.stack), 'one quiet paragraph, then the week: ' + r.stack);
+    ok(/^<p class="recap-small"><span class="recap-moved">1 step up\. Back in 7 days: 1\.<\/span><\/p>$/.test(r.stack), 'one quiet paragraph, then the week: ' + r.stack);
     ok(/^<div class="kicker">Keep in mind<\/div><div class="plan"><ul class="plans"><li class="keep-line">[^<]+<\/li><li class="keep-line">[^<]+<\/li><\/ul><\/div><p class="routine-line">Every move: their move, your chances, safety check\.<\/p>$/.test(r.habit),
       'the kicker, two lines under one bulb (one .plan), the routine after them: ' + r.habit);
   });
