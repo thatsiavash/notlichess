@@ -86,6 +86,10 @@ var CARD_COPY = {
   R1: function () { return 'Found it'; },
   R2: function () { return 'You got there'; },
   R3: function () { return 'That works too'; },
+  /* release 4: a find after a hint; under a move of the near band ("Found
+     it"), the best named where it is really better at depth */
+  R8: function () { return 'Found with a hint'; },
+  R10: function (m) { return m + ' was a little better.'; },
   /* V1.2: a move in the found band (row 2 under "Found it"), and the main
      move named after one that works too; V1.6: a forcing line found, a
      later move missed (t1, then t2 and t3 with the two moves) */
@@ -120,6 +124,8 @@ var CARD_COPY = {
   O4: function (m) { return m + ' in your game kept more.'; },
   O5: function (m) { return 'Your game move ' + m + ' was fine here.'; },
   O6: function (m) { return 'You played ' + m + ' in your game too.'; },
+  /* release 4: the game move played again, a find */
+  O11: function (m) { return m + ' was good in your game too.'; },
   /* V2.6: a foil's Hint 2 with no threat and no only move, its only move,
      and its settled row after that only move; Show the answer's row 2 */
   O7: function () { return 'Any good move passes here.'; },
@@ -263,7 +269,7 @@ function wordsIn(s) { return oneUnit(s).split(/\s+/).filter(function (w) { retur
 function barWords(slots) { return (slots || []).reduce(function (n, b) { return n + wordsIn(b.label); }, 0); }
 /* the tag row's context line counts too (F4.2) */
 /* and the step track's "Last step" (release 3) */
-function bandWords(b, slots) { return wordsIn(b.row1) + wordsIn(b.row2) + wordsIn(b.chip) + wordsIn(b.tag) + wordsIn(b.src) + wordsIn(b.cap) + (b.tk && b.tk.pill ? 2 : 0) + barWords(slots); }
+function bandWords(b, slots) { return wordsIn(b.row1) + wordsIn(b.row2) + wordsIn(b.chip) + wordsIn(b.tag) + wordsIn(b.src) + wordsIn(b.cap) + (b.tk && b.tk.pill ? 2 : 0) + (b.tk ? wordsIn(b.tk.note) : 0) + barWords(slots); }
 /* a verdict as the band says it: {kind, row1, row2, html},
    with row 2's ladder kept (cands, fall) so the band can fit it to the
    words left beside the bar */
@@ -870,7 +876,7 @@ function missWhy(a, c, win, reply, inLine, replyW, o) {
     if (n1 && n1.cap && worthOf(swAll.lost) - worthOf(swAll.won) >= needOf(n1.cap)) ev = { t: 'take', n: n1, p: pType(n1.cap), at: 1 };
   }
   var mate1 = !!ev && ev.t === 'mate1', mateAny = !!ev && (ev.t === 'mate1' || ev.t === 'backMate' || ev.t === 'forced');
-  var save = !!o.save && a.tier >= 2;
+  var save = !!o.save;
   if (ev && ev.t === 'loss') {
     /* said as See it shows it: "You'd lose X." where their reply takes it,
        else after that reply */
@@ -888,6 +894,9 @@ function missWhy(a, c, win, reply, inLine, replyW, o) {
     if (ev && /^(attacks|mateThreat)$/.test(ev.t)) cands = [];
     var ef = cands.filter(function (x) { return /^Then /.test(x) || /^Their pawn/.test(x) || /^After the trade/.test(x); }).map(function (x) { return 'Safe, but ' + lowFirst(x); });
     var sb = a.tier >= 3 && deep && win != null ? 'Safe, but only ' + Math.round(win) + '% for you.' : bw && win < 60 ? 'Safe, but ' + bw + ' now.' : 'Safe, but there\'s a stronger move.';
+    /* (release 4: at More help too, "Safe, but ...": V1.9's "That saves
+       your queen. Look for more." understated a try that was lost, the
+       truth gate's 184330688628:85) */
     cands = ef.concat(cands, [sb]);
   } else if (!ev) {
     /* V2.1: "Most of your advantage is gone." only when the try loses half
@@ -1428,9 +1437,18 @@ function bandFor(a) {
   if (!b.cap && learnedNow(a)) b.row1 = a.tier === 1 ? YOURS_T1 : YOURS;
   /* the step track at the tag row's right (release 3, step-tracker.md) */
   if (!b.cap) b.tk = cardTrack(a);
+  /* a study keeps its tag on its answered frames too (release 4: its find
+     has the found sound and pop, and still moves no step) */
+  if (!b.cap && studying() && a.phase === 'done' && !a.explore && !b.tag && !b.chip) b.tag = CARD_COPY.S1();
   return bandFit(a, b);
 }
 var YOURS = 'Learned! This one is yours.', YOURS_T1 = 'You learned this one!';
+/* row 1 of a find with help (release 4): "Found with a hint" where a hint
+   was pressed (no miss, no slip in a forcing line), else "You got there" */
+function heldRow1(a) {
+  var pressed = (a.hints || 0) - (a.predraw ? 1 : 0) - (a.autoH || 0);
+  return a.result === 'hint' && pressed > 0 && !preMisses(a) && !a.slips && !a.lineHeld ? CARD_COPY.R8() : CARD_COPY.R2();
+}
 /* row 2 from its ladder: the row's own caps, then, over the word budget,
    the words that are left (and a note that still does not fit is dropped) */
 function bandFit(a, b) {
@@ -1459,6 +1477,11 @@ function bandFit(a, b) {
   /* the track's "Last step" counts its two words: where they do not fit
      beside the reason, the pill goes and the seal ring pulses once instead */
   if (b.tk && b.tk.pill && wordsIn(b.row2) + wordsIn(b.cap) + 2 > rowRoom(a, b)) { b.tk.pill = false; b.tk.o.pulse = true; }
+  /* release 4: the track's short note on a find that did not climb ("Climbs
+     on Thu", "Alone climbs") counts its words too; where they do not fit
+     beside the reason the note goes, and the track's own name and the live
+     region still say why */
+  if (b.tk && b.tk.note && wordsIn(b.row2) + wordsIn(b.cap) + wordsIn(b.tk.note) > rowRoom(a, b)) b.tk.note = '';
   delete b.cands; delete b.fall; delete b.never; delete b.budget; delete b.stepChip; delete b.figChip;
   return b;
 }
@@ -1596,6 +1619,9 @@ function ownRow(a) {
     return { cands: t1 ? [upFirst(mt.w) + (mt.n <= 3 ? ' forces checkmate.' : ' keeps you winning.')] : [mt.san + ' forces mate.'], fall: '' };
   }
   if (a.near) {
+    /* release 4: a move of the near band, the best named as a little
+       better only where the depth was the key's or the re-check's */
+    if (a.near.band === 'good') return { cands: a.near.deep ? interleave(t1 ? [CARD_COPY.R10(upFirst(moveWords(mm.st, mm.m)))] : [], [CARD_COPY.R10(sanOf(mm.st, mm.m))]) : main, fall: '' };
     if (!a.near.deep) return { cands: main, fall: '' };
     /* B7: at tier 1 a move as good as the answer says what it does itself,
        from its own line ("Queen to f3 guards f2 and your knight."), never
@@ -2405,7 +2431,7 @@ function capForms(a, S, i, w) {
     /* (B7: at tier 1 the move's own reason, never "Just as good as the
        main answer.") */
     var awp = S.alt && a.near && a.near.deep && w ? altWhyOf(a, a.yours && a.yours.uci[0]) : null, awq = awp ? whyPredOf(a, awp.w.r === 'mate' && awp.w.n > 3 ? { r: 'band', w: 100, mate: 1 } : awp.w, a.pre, awp.pv, awp.cp) : null;
-    if (S.alt && a.near) cands.push(a.near.deep ? (w ? 'Your move: ' + bs + '.' + (awq ? ' It' + awq + '.' : '') : CARD_COPY.R7(bs, sanOf(a.pre, a.best))) : 'Your move: ' + bs + '.');
+    if (S.alt && a.near) cands.push(a.near.deep ? (w ? 'Your move: ' + bs + '.' + (awq ? ' It' + awq + '.' : '') : a.near.band === 'good' ? CARD_COPY.R10(sanOf(a.pre, a.best)) : CARD_COPY.R7(bs, sanOf(a.pre, a.best))) : 'Your move: ' + bs + '.');
     else if (S.alt && a.alt) cands.push('Your ' + bs + ' works too.');
     /* later in a forcing line, a step in the found band (V1.6) */
     else if (S.alt) cands.push('Your move: ' + bs + '.');
@@ -2586,10 +2612,12 @@ function bandOf(a) {
        that follows it); before that the answer shown says how to play it
        (V2), and a solve says nothing more yet */
     var mode = a.view && a.view.mode, said = !mode || (mode === 's0' && a.settle >= 2);
-    /* a foil (F8.2): its verdict by what the move lost ("Good, nothing to
-       fix", "Playable"), then what its game move was: fine too, or it kept
-       more; after a miss or the answer shown "Your game move Nf3 was fine
-       here." (the move as row 1 and the label write it, its check too) */
+    /* a foil (F8.2): a find (release 4: "Found it", "You got there" after
+       a miss, "Found with a hint"), then what its game move was: good
+       too ("Qxa2 was good in your game too." where it was played again),
+       fine too, or it kept more; after a miss or the answer shown "Your
+       game move Nf3 was fine here." (the move as row 1 and the label write
+       it, its check too) */
     if (a.foil) {
       var fm = gameSan(a), fok = a.foilKind !== 'playable';
       /* V2.6: the only move, played as in the game: "Found it" and "The
@@ -2597,9 +2625,9 @@ function bandOf(a) {
          was good too." (the game move itself shown: "You played Ra1 in your
          game too.") */
       var fonly = fok && !!a.it.b.om && a.foilGame && !a.misses && !a.revealed;
-      var fend = a.revealed ? (a.bestUci === a.playedUci ? CARD_COPY.O6(fm) : CARD_COPY.O10(fm)) : a.misses ? CARD_COPY.O5(fm) : fonly ? CARD_COPY.O9() : !fok ? CARD_COPY.O4(fm) : a.foilGame ? CARD_COPY.O6(fm) : CARD_COPY.O3(fm);
+      var fend = a.revealed ? (a.bestUci === a.playedUci ? CARD_COPY.O6(fm) : CARD_COPY.O10(fm)) : a.misses ? CARD_COPY.O5(fm) : fonly ? CARD_COPY.O9() : !fok ? CARD_COPY.O4(fm) : a.foilGame ? CARD_COPY.O11(fm) : CARD_COPY.O3(fm);
       if (a.revealed) return { disc: 'info', kind: 'info', row1: answerRow(a, said), cands: said ? [fend] : arrowSaid(a), fall: '' };
-      return { disc: fok ? 'good' : 'close', kind: fok ? 'good' : 'close', row1: fonly ? CARD_COPY.R1() : fok ? CARD_COPY.O1() : CARD_COPY.O2(), cands: said ? [fend] : [], fall: '' };
+      return { disc: 'good', kind: 'good', row1: a.misses ? CARD_COPY.R2() : a.hints ? CARD_COPY.R8() : CARD_COPY.R1(), cands: said ? [fend] : [], fall: '' };
     }
     /* a practice position (F9.4): "Found it" for every accepted move (each
        holds the skill's claim), else the answer shown; once settled, what
@@ -2631,7 +2659,7 @@ function bandOf(a) {
       }
       return { disc: 'info', kind: 'info', row1: answerRow(a, r4), cands: r4 ? r4.cands : arrowSaid(a), fall: r4 ? r4.fall : '', never: r4 ? r4.never : null, chip: fig ? FIG_CHIP : '', figChip: fig };
     }
-    return { disc: 'good', kind: 'good', row1: a.alt ? CARD_COPY.R3() : a.result === 'first' ? CARD_COPY.R1() : CARD_COPY.R2(),
+    return { disc: 'good', kind: 'good', row1: a.result === 'first' ? CARD_COPY.R1() : heldRow1(a),
              cands: r4 ? r4.cands : [], fall: r4 ? r4.fall : '', never: r4 ? r4.never : null, chip: fig ? FIG_CHIP : '', figChip: fig };
   }
   /* V2.7: "Play the green arrow." only while the green arrow is drawn: once

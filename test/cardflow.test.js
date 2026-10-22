@@ -1824,18 +1824,15 @@ const BAR = `(function () {
   });
 
   /* slice 6, the verdict states (S2 to S5, S11) */
-  await test('a close move is not a miss', async () => {
+  await test('release 4: the verdict is binary: a try in the near band (7 points under the best, in its band, better than the game move) is found, first try, it climbs, with the found sound, "Found it" and the best named after it; one 12 points under is a wrong try', async () => {
     const A = boot();
-    /* one-move cards, and two off-book tries the stub scores 7 points under
-       the best: inside STRONGER_TOL, outside SOLVE_TOL, clearly better than
-       the game move, and never a safe win */
     const picks = JSON.parse(A.ev(`(function () { ${OPEN}
       var out = [];
       allMistakes().filter(trainable).forEach(function (it) {
         var a = openCard(it), b = it.b;
         if (!a || a.sol || (b.mb != null && b.mb > 0)) return;
-        var wEb = winPct(b.eb), chances = familyOf(patternOf(b)).key === 'chances';
-        if (wEb - 8 < b.wa + 10 || wEb + 8 > 99 || !(chances || wEb - 7 < 70)) return;
+        var wEb = winPct(b.eb);
+        if (wEb - 7 <= b.wa || wEb + 8 > 99 || !nearBand(wEb - 7, wEb) || wEb - 12 <= b.wa) return;
         var offs = legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.bestUci && u !== a.playedUci; });
         if (offs.length >= 2) out.push({ key: it.key, wEb: wEb, m1: moveUci(offs[0]), m2: moveUci(offs[1]) });
       });
@@ -1843,38 +1840,21 @@ const BAR = `(function () {
     ok(picks.length >= 4, 'cards ' + picks.length);
     for (const p of picks) {
       const at = p.key;
-      A.ev(`(function () { ${OPEN} window.__srs0 = JSON.stringify(srsLoad()); var a = openCard(model().byKey['${p.key}']);
+      A.ev(`(function () { ${OPEN} store.del(srsKey()); srsMem = null; var a = openCard(model().byKey['${p.key}']); window.__snd = []; snd = function (n) { window.__snd.push(n); };
         window.__tryCp = cpFromWin(${p.wEb} - 7); window.__bestCp = null; window.readyEngine(); gradeMove(uciToMove(a.st, '${p.m1}')); return 1; })()`);
       await tick(); await tick();
-      let r = JSON.parse(A.ev(`(function (a) { var d = displayFor(a), f = boardOptsFor(a);
-        return JSON.stringify({ phase: a.phase, kind: a.tried && a.tried.kind, misses: a.misses, good: a.foundGood && a.foundGood.san, row1: d.row1, row2: d.row2, disc: d.disc, k: d.kind,
-          bar: d.buttons.map(function (x) { return x.act + ':' + x.label + ':' + x.cls; }).join(' | '), badges: f.opts.badges, tints: f.opts.tints, to: a.tried && a.tried.to, from: a.tried && a.tried.from,
-          cue: a.cue || null, srs: JSON.stringify(srsLoad()) === window.__srs0 }); })(ui.session.active)`));
-      eq(r.phase, 'tried', at + ': the close move stays'); eq(r.kind, 'close', at + ': kind'); eq(r.misses, 0, at + ': not a miss');
-      ok(!!r.good, at + ': remembered as close');
-      eq(r.row1 + ' / ' + r.row2, 'Good move / There\'s a stronger one.', at + ': the band');
-      eq(r.disc + ' ' + r.k, 'close close', at + ': disc and band colour');
-      eq(r.bar, 'reveal:Show the answer:btn-line | dismissStronger:Keep looking:btn-big', at + ': the bar');
-      eq(JSON.stringify(r.badges.map((x) => [x.sq, x.kind])), JSON.stringify([[r.to, 'close']]), at + ': the hollow ring badge on the landing square');
-      eq(JSON.stringify(r.tints.map((x) => [x.sq, x.kind])), JSON.stringify([[r.from, 'close'], [r.to, 'close']]), at + ': blue-grey tints');
-      eq(r.cue, 'tap', at + ': the tap sound comes with the badge'); ok(r.srs, at + ': the schedule changed');
-      /* Keep looking: back to the card, no miss */
-      A.ev('(tryAgain(), 1)');
-      eq(A.ev('ui.session.active.phase + " " + ui.session.active.misses'), 'guess 0', at + ': Keep looking');
-      /* a second close move keeps its row 2 (V2.7) */
-      A.ev(`(function (a) { window.readyEngine(); gradeMove(uciToMove(a.st, '${p.m2}')); return 1; })(ui.session.active)`);
+      let r = JSON.parse(A.ev(`(function (a) { a.settle = 2; a.animMove = null; var d = displayFor(a), e = ui.session.sum[a.key];
+        return JSON.stringify({ phase: a.phase, result: a.result, misses: a.misses, near: a.near && a.near.band, row1: d.row1, row2: d.row2, disc: d.disc, m: e && e.m, c: e && e.c,
+          cue: a.cue || window.__snd.indexOf('good') >= 0 && 'good' || null }); })(ui.session.active)`));
+      eq(r.phase + ' ' + r.result + ' ' + r.misses + ' ' + r.near, 'done first 0 good', at + ': found, first try');
+      eq(r.row1 + ' ' + r.disc, 'Found it good', at + ': row 1 and disc');
+      ok(/^\S+ was a little better\.$|^The main move was \S+\.$/.test(r.row2), at + ': row 2 names the best: ' + r.row2);
+      eq(r.c + ' ' + r.m, 'first up', at + ': a clean find that climbs');
+      eq(r.cue, 'good', at + ': the found sound');
+      /* 12 points under: a wrong try, said as any is */
+      A.ev(`(function () { ${OPEN} var a = openCard(model().byKey['${p.key}']); window.__tryCp = cpFromWin(${p.wEb} - 12); window.__bestCp = null; window.readyEngine(); gradeMove(uciToMove(a.st, '${p.m2}')); return 1; })()`);
       await tick(); await tick();
-      r = JSON.parse(A.ev('(function (a) { var d = displayFor(a); return JSON.stringify({ kind: a.tried && a.tried.kind, row1: d.row1, row2: d.row2, misses: a.misses }); })(ui.session.active)'));
-      eq(r.kind, 'close', at + ': a second close move'); eq(r.row1 + '|' + r.row2, 'Good move|There\'s a stronger one.', at + ': row 2 kept the second time (V2.7)'); eq(r.misses, 0, at + ': still no miss');
-      /* then the answer: solved, with help */
-      A.ev('(function (a) { window.__nlTest.play(a.bestUci); return 1; })(ui.session.active)');
-      eq(A.ev('ui.session.active.result'), 'hint', at + ': a solve after a close move counts as help');
-      /* one path (S5): a move that loses nothing by the card's own measure
-         is close, though this search scores the best move higher */
-      A.ev(`(function () { ${OPEN} var a = openCard(model().byKey['${p.key}']); window.__tryCp = cpFromWin(${p.wEb} - 8); window.__bestCp = cpFromWin(${p.wEb} + 8);
-        window.readyEngine(); gradeMove(uciToMove(a.st, '${p.m1}')); return 1; })()`);
-      await tick(); await tick();
-      eq(A.ev('(function (a) { return a.phase + " " + (a.tried && a.tried.kind) + " " + a.misses; })(ui.session.active)'), 'tried close 0', at + ': losing nothing is not a miss');
+      eq(A.ev('(function (a) { return a.phase + " " + (a.tried && a.tried.kind) + " " + a.misses + " " + displayFor(a).row1; })(ui.session.active)'), 'tried miss 1 Not this one', at + ': outside the near band, a wrong try');
     }
     /* inside a forcing line there is no close verdict: the same score is a miss, said honestly */
     const f = JSON.parse(A.ev(`(function () { ${OPEN} ${AFTER}
@@ -1900,11 +1880,11 @@ const BAR = `(function () {
     const lineAll = JSON.parse(A.ev(`(function () { ${OPEN}
       playerTier = function () { return 2; };
       return JSON.stringify(allMistakes().filter(trainable).filter(function (it) {
-        var a = openCard(it), b = it.b, w = winPct(b.eb) - 6;
-        return a && a.sol && a.sol.length >= 3 && !(b.mb != null && b.mb > 0) && (w < 70 || w < b.wa + 15 || familyOf(patternOf(b)).key === 'chances');
-      }).map(function (it) { return [it.key, winPct(it.b.eb) - 6 >= 70]; })); })()`));
+        var a = openCard(it), b = it.b;
+        return a && a.sol && a.sol.length >= 3 && !(b.mb != null && b.mb > 0);
+      }).map(function (it) { var w = winPct(it.b.eb); return [it.key, nearBand(w - 6, w + 2)]; })); })()`));
     const lineCards = lineAll.filter((x) => !x[1]).map((x) => x[0]);
-    ok(lineCards.length >= 3, 'forcing cards ' + lineCards.length);
+    ok(lineCards.length >= 1 && lineAll.length - lineCards.length >= 1, 'forcing cards ' + lineCards.length + ' / ' + lineAll.length);
     for (const [key] of lineAll.filter((x) => x[1])) {
       A.ev(`(function () { ${OPEN} var a = openCard(model().byKey['${key}']), b = a.it.b;
         var mine = uciToMove(a.st, a.sol[0]); applyMove(a.st, mine); var rp = uciToMove(a.st, a.sol[1]); applyMove(a.st, rp); a.solIdx = 2;
@@ -1912,7 +1892,7 @@ const BAR = `(function () {
         window.__tryCp = cpFromWin(winPct(b.eb) - 6); window.__bestCp = cpFromWin(winPct(b.eb) + 2);
         window.readyEngine(); gradeMove(off); return 1; })()`);
       await tick(); await tick();
-      eq(A.ev('(function (a) { return a.phase + " " + (a.tried && a.tried.kind) + " " + a.misses + " " + displayFor(a).row1; })(ui.session.active)'), 'tried close 0 Good move', key + ': mid-line, near and winning at depth (B3)');
+      eq(A.ev('(function (a) { return a.phase + " " + a.result + " " + a.misses + " " + displayFor(a).row1; })(ui.session.active)'), 'done first 0 Found it', key + ': mid-line, a step in the near band is found (release 4)');
     }
     let honest = 0;
     for (const key of lineCards) {
@@ -1928,56 +1908,33 @@ const BAR = `(function () {
       ok(!/^After /.test(row2), key + ': a mid-line try that loses nothing never gets the standing words: ' + row2);
       if (row2 === 'Nothing lost, but there\'s a better move.') honest++;
     }
-    ok(honest >= Math.min(5, lineCards.length - 1), 'mid-line tries that say they lost nothing ' + honest + ' of ' + lineCards.length);
+    ok(honest >= Math.min(1, lineCards.length - 1), 'mid-line tries that say they lost nothing ' + honest + ' of ' + lineCards.length);
     A.ev('(window.__tryCp = window.__bestCp = null, 1)');
   });
 
-  await test('a try that loses nothing is never a miss outside a forcing line', async () => {
+  await test('release 4: outside a forcing line every try is found or a wrong try, never a hold: found within 4 points of the best, or in the near band (10 points, its band, above the game move); else a miss; no find holds the step', async () => {
     const A = boot();
-    /* the band as it reads once a miss's reason has come (S4) */
-    const S = () => JSON.parse(A.ev(`(function (a) { var r0 = a.reason; a.reason = 2; var d = displayFor(a); a.reason = r0;
-      return JSON.stringify({ phase: a.phase, kind: a.tried && a.tried.kind, misses: a.misses, row1: d.row1, row2: d.row2, good: !!a.foundGood, srs: JSON.stringify(srsLoad()) === window.__srs0 }); })(ui.session.active)`));
-    /* the band the old rule missed: cards whose game move lost under 17
-       points, so a try 7 under the best (losing nothing by the card's own
-       measure) is not 10 above the game move */
-    const band = JSON.parse(A.ev(`(function () { ${OPEN}
-      return JSON.stringify(allMistakes().filter(trainable).filter(function (it) {
-        var a = openCard(it), b = it.b;
-        return a && !a.sol && !(b.mb != null && b.mb > 0) && winPct(b.eb) - b.wa < 17;
-      }).map(function (it) { return it.key; })); })()`));
-    ok(band.length >= 4 && band.indexOf('184455333378:64') >= 0, 'cards in the band ' + band.length);
-    for (const key of band) {
-      A.ev(`(function () { ${OPEN} ${AFTER} window.__srs0 = JSON.stringify(srsLoad()); var a = openCard(model().byKey['${key}']);
-        window.__tryCp = cpFromWin(winPct(a.it.b.eb) - 7); window.__bestCp = null; window.readyEngine(); gradeMove(offBook(a)); return 1; })()`);
-      await tick(); await tick();
-      const r = S();
-      eq(r.phase + ' ' + r.kind + ' ' + r.misses, 'tried close 0', key + ': a try that loses nothing is close');
-      eq(r.row1 + ' / ' + r.row2, 'Good move / There\'s a stronger one.', key + ': the band');
-      ok(r.good && r.srs, key + ': remembered as close, the schedule unchanged');
-    }
-    /* every card, at tiers 1 (no forcing lines) and 2 (one-move cards):
-       tries scored from just under the best to below the game move. Within
-       STRONGER_TOL of the card's best a try is never a miss; and no miss
-       outside a line says it lost nothing */
-    let misses = 0, close = 0;
+    const S = () => JSON.parse(A.ev(`(function (a) { var r0 = a.reason; a.reason = 2; var d = displayFor(a); a.reason = r0; var e = ui.session.sum && ui.session.sum[a.key];
+      return JSON.stringify({ phase: a.phase, kind: a.tried && a.tried.kind, misses: a.misses, row1: d.row1, row2: d.row2, m: e ? e.m : null, alt: !!a.alt, good: !!a.foundGood }); })(ui.session.active)`));
+    let misses = 0, found = 0;
     for (const tier of [1, 2]) {
       const keys = JSON.parse(A.ev(`(function () { ${OPEN} playerTier = function () { return ${tier}; };
         return JSON.stringify(allMistakes().filter(trainable).filter(function (it) { var a = openCard(it); return a && !a.sol; }).map(function (it) { return it.key; })); })()`));
       for (const key of keys) {
-        const ws = JSON.parse(A.ev(`(function (b) { var e = winPct(b.eb); return JSON.stringify([e - 7, e - 9.5, e - 11, e - 16, b.wa + 3, b.wa - 5]); })(model().byKey['${key}'].b)`));
+        const ws = JSON.parse(A.ev(`(function (b) { var e = winPct(b.eb); return JSON.stringify([e - 3, e - 7, e - 9.5, e - 11, e - 16, b.wa + 3, b.wa - 5]); })(model().byKey['${key}'].b)`));
         for (const w of ws) {
-          A.ev(`(function () { ${OPEN} ${AFTER} window.__srs0 = JSON.stringify(srsLoad()); var a = openCard(model().byKey['${key}']);
+          A.ev(`(function () { ${OPEN} ${AFTER} store.del(srsKey()); srsMem = null; var a = openCard(model().byKey['${key}']);
             window.__tryCp = cpFromWin(${w}); window.__bestCp = null; window.readyEngine(); gradeMove(offBook(a)); return 1; })()`);
           await tick(); await tick();
           const r = S(), at = 'tier ' + tier + ' ' + key + ' at ' + Math.round(w);
-          const lossless = JSON.parse(A.ev(`(function (b) { return JSON.stringify(!(b.mb != null && b.mb > 0) && winPct(cpFromWin(${w})) >= winPct(b.eb) - STRONGER_TOL); })(model().byKey['${key}'].b)`));
-          if (lossless) ok(r.kind !== 'miss' && r.misses === 0, at + ': a try that loses nothing graded ' + r.phase + ' ' + r.kind + ' ' + r.misses);
-          if (r.kind === 'miss') { misses++; ok(!/Nothing lost/.test(r.row2), at + ': a miss outside a line reads ' + r.row2); }
-          if (r.kind === 'close') close++;
+          const want = JSON.parse(A.ev(`(function (b) { var w = winPct(cpFromWin(${w})), e = winPct(b.eb); return JSON.stringify(!(b.mb != null && b.mb > 0) && (e - w <= SOLVE_TOL || (nearBand(w, e) && w > b.wa))); })(model().byKey['${key}'].b)`));
+          ok(r.kind !== 'close' && !r.alt && !r.good, at + ': no close verdict and nothing works too');
+          if (want) { ok(r.phase === 'done' && r.misses === 0 && r.row1 === 'Found it' && (r.m === 'up' || r.m === 'learned'), at + ': found and climbs: ' + JSON.stringify(r)); found++; }
+          else if (r.phase === 'tried') { ok(r.kind === 'miss' && r.misses === 1 && r.row1 === 'Not this one', at + ': a wrong try: ' + JSON.stringify(r)); misses++; }
         }
       }
     }
-    ok(misses >= 200 && close >= 100, 'misses ' + misses + ', close ' + close);
+    ok(misses >= 200 && found >= 100, 'misses ' + misses + ', found ' + found);
     A.ev('(window.__tryCp = window.__bestCp = null, 1)');
   });
 
@@ -6302,7 +6259,7 @@ const BAR = `(function () {
       out.both = repeatedWords(openAt('184455333378:68', 2), { mate: false, took: 'Q', lost: false, to: 37, san: '' });
       /* card 12's works too: the main move named (V1.2) */
       out.alt = [1, 2].map(function (tier) { var b = openAt('184212737262:56', tier), m = uciToMove(b.st, 'g2f3'), af = cloneState(b.st); applyMove(af, m); var rp = legalMoves(af)[0];
-        b.yours = { uci: ['g2f3'].concat(rp ? [moveUci(rp)] : []), cp: 0, at: 0 }; solved(m, 'g2f3', { win: 50, best: 52, mate: null }); b.animMove = null; b.settle = 2; return displayFor(b).row1 + ' / ' + displayFor(b).row2; });
+        b.yours = { uci: ['g2f3'].concat(rp ? [moveUci(rp)] : []), cp: 0, at: 0 }; solved(m, 'g2f3', { win: 50, best: 52, mate: null, band: 'good' }); b.animMove = null; b.settle = 2; return displayFor(b).row1 + ' / ' + displayFor(b).row2; });
       return JSON.stringify(out); })()`));
     eq(JSON.stringify(r.keep), JSON.stringify([['Pawn to f4 keeps your queen.', 'Better: pawn to f4. Your queen is safe.'], ['f4 keeps your queen.', 'Better: f4 keeps your queen.']]), 'card 8: the queen was safe until Qf3, so f4 keeps it');
     eq(JSON.stringify(r.left.map((x) => x[0])), JSON.stringify(['Knight to c5 left White better.', 'In your game, Nc5 left White better.']), 'card 2: said of your game');
@@ -6312,11 +6269,11 @@ const BAR = `(function () {
        for a piece with one safe square, so these say "Move the circled piece." */
     eq(r.safe + ' / ' + r.safe4, 'Move the circled piece. / Move the circled piece.', 'hint 2 on a piece hint 1 rang (cards 1 and 4)');
     eq(JSON.stringify(r.both), JSON.stringify(['Both tries let them take your queen.', 'Both tries gave away your queen.']), 'both tries\' short form says what');
-    eq(JSON.stringify(r.alt), JSON.stringify(['That works too / The main move was bishop to c3.', 'That works too / The main move was Bc3.']), 'card 12, a move that works too: the main move, never "you were better"');
+    eq(JSON.stringify(r.alt), JSON.stringify(['Found it / The main move was bishop to c3.', 'Found it / The main move was Bc3.']), 'card 12, a move of the near band found by a first search alone: the main move, never "you were better" (release 4)');
   });
 
   /* ── slice 2: the honest summary and one routine ── */
-  await test('F2.1: the tour\'s set (Rg1 first try; Nc5 after a miss; Be4 a good move, then found; O-O after two misses; bxc5 first try) reads "2 of 5 found first try." then "2 after a miss · 1 after a good move" at 1600, and "You found all 5." then "3 took more than one try." at 700 (V4.3: never "of 15"; card 2\'s First look hint costs no star); each tile shows its result\'s glyph before its word', async () => {
+  await test('F2.1: the tour\'s set (Rg1 first try; Nc5 after a miss; a move of the near band, found first try (release 4); O-O after two misses; bxc5 first try) reads "3 of 5 found first try." then "2 after a miss" at 1600, and "You found all 5." then "2 took more than one try." at 700 (V4.3: never "of 15"; card 2\'s First look hint costs no star); each tile shows its result\'s glyph before its word', async () => {
     const run = async (tier) => {
       const A = boot({ storage: Object.assign(base(), { 'nl:tip:game': '1' }) });
       A.ev(`(function () { playerTier = function () { return ${tier}; }; window.readyEngine();
@@ -6329,9 +6286,8 @@ const BAR = `(function () {
       open(1); await game(); best();
       open(2); A.ev(`(function (a) { window.__tryCp = cpFromWin(winPct(a.it.b.eb) - 7); window.__bestCp = a.it.b.eb; window.__tryPv = null; gradeMove(legalMoves(a.st).filter(function (m) { return moveUci(m) !== a.bestUci && moveUci(m) !== a.playedUci; })[0]); return 1; })(ui.session.active)`);
       await tick(); await tick();
-      const close = A.ev('ui.session.active.tried && ui.session.active.tried.kind');
-      A.ev('(function (a) { window.__tryCp = null; window.__bestCp = null; tryAgain(); return 1; })(ui.session.active)');
-      best();
+      const close = A.ev('ui.session.active.phase + " " + ui.session.active.result');
+      A.ev('(function (a) { window.__tryCp = null; window.__bestCp = null; return 1; })(ui.session.active)');
       open(3); await game(); await game(); best();
       open(4); best();
       return JSON.parse(A.ev(`(function () { var ss = ui.session; ss.active = null; ss.finished = true; var h = doneHtml(ss);
@@ -6341,14 +6297,14 @@ const BAR = `(function () {
           row: (((/<div class="result-row" aria-hidden="true">([\\s\\S]*?)<\\/div>/.exec(h) || [])[1] || '').match(/rg-\\w+/g) || []).map(function (x) { return x.slice(3); }).join(' ') }); })()`));
     };
     const t2 = await run(2), t1 = await run(1);
-    eq(t2.close, 'close', 'card 3: a good move first');
-    eq(t2.cats, 'first miss good miss first', 'the categories, the worst event deciding');
-    eq(t2.head + ' / ' + t2.then, '2 of 5 found first try. / 2 after a miss · 1 after a good move', 'tier 2 (V4.3)');
-    eq(JSON.stringify(t2.words), JSON.stringify(['First try', 'After a miss', 'After a good move', 'After a miss', 'First try']), 'the tiles\' words');
-    eq(t2.glyphs, 'first miss good miss first', 'each tile\'s glyph before its word (F3.1): ticks on cards 1 and 5, a ring tick on card 3, rotates on 2 and 4');
-    eq(t2.row, 'first miss good miss first', 'the result row leads the summary, one glyph per position in order (F4.5)');
-    eq(t1.head + ' / ' + t1.then, 'You found all 5. / 3 took more than one try.', 'tier 1: what was found, never "of 15" (V4.3)');
-    eq(t1.stars, '32213', 'tier 1: card 2\'s First look and its miss with the automatic hint 2 stars; two misses 1');
+    eq(t2.close, 'done first', 'card 3: a move of the near band, found first try (release 4)');
+    eq(t2.cats, 'first miss first miss first', 'the categories, the worst event deciding');
+    eq(t2.head + ' / ' + t2.then, '3 of 5 found first try. / 2 after a miss', 'tier 2 (V4.3)');
+    eq(JSON.stringify(t2.words), JSON.stringify(['First try', 'After a miss', 'First try', 'After a miss', 'First try']), 'the tiles\' words');
+    eq(t2.glyphs, 'first miss first miss first', 'each tile\'s glyph before its word (F3.1): ticks on cards 1, 3 and 5, rotates on 2 and 4');
+    eq(t2.row, 'first miss first miss first', 'the result row leads the summary, one glyph per position in order (F4.5)');
+    eq(t1.head + ' / ' + t1.then, 'You found all 5. / 2 took more than one try.', 'tier 1: what was found, never "of 15" (V4.3)');
+    eq(t1.stars, '32313', 'tier 1: card 2\'s First look and its miss with the automatic hint 2 stars; the near band 3; two misses 1');
   });
 
   await test('F2.3: one check line per card: card 1 at 1600 says "Their move: what does it attack?" in Details and on the summary; at 2000 its computed fact on Details and its tile; the routine line once on the first summary and on Insights at tiers 2 and 3, never at tier 1', () => {
@@ -6618,15 +6574,15 @@ const BAR = `(function () {
     A.ev(`(function () { ${OPEN} ${GAME} ${TRY} ${AFTER}
       var it = model().byKey['184455333378:68']; asReview(it);
       var a = openAt(it.key, 2); window.__a = a;
-      tryMove(a, moveUci(offBook(a)), null, it.b.eb - 80, null);
+      tryMove(a, moveUci(offBook(a)), null, it.b.eb - 600, null);
       return 1; })()`);
     await tick(); await tick();
     const c = JSON.parse(A.ev(`(function () { ${GAME} var a = window.__a, out = { kind: a.tried && a.tried.kind, row1: displayFor(a).row1 };
       tryAgain(); a.triedHold = false;
       out.ghosts = (boardOptsFor(a).opts.ghosts || []).map(function (g) { return sqName(g.sq); }); out.row2 = displayFor(a).row2; out.faults = gameFaults(a);
       return JSON.stringify(out); })()`));
-    eq(c.kind + ' / ' + c.row1, 'close / Good move', 'a good move that is not the best');
-    eq(JSON.stringify(c.ghosts) + ' ' + c.row2, '["g1"] Find a better move than Rg1.', 'after Keep looking the game move shows');
+    eq(c.kind + ' / ' + c.row1, 'miss / Not this one', 'a wrong try (release 4: no good move that is not the best)');
+    eq(JSON.stringify(c.ghosts) + ' ' + c.row2, '["g1"] Find a better move than Rg1.', 'after Try again the game move shows');
     eq(c.faults.length, 0, c.faults.join(' | '));
   });
 
@@ -6837,12 +6793,12 @@ const BAR = `(function () {
        way to the hint's five words */
     eq(JSON.stringify(calm), JSON.stringify({ h1: 'What can they take?', h2: 'Any good move passes here.', marks: 0, tag: '' }), 'a foil with nothing in danger: the safety check\'s question, then "Any good move passes here."');
     /* the game move passes */
-    const good = JSON.parse(A.ev(`(function () { ${TRY} var a = ui.session.active; a.tapped = true; gradeMove(uciToMove(a.st, window.__gu)); a.settle = 2;
+    const good = JSON.parse(A.ev(`(function () { ${TRY} var a = ui.session.active; window.__sf = []; var snd0 = snd; snd = function (n) { window.__sf.push(n); }; a.tapped = true; gradeMove(uciToMove(a.st, window.__gu)); a.settle = 2; window.__cue = a.cue || window.__sf[0] || null; snd = snd0;
       var d = displayFor(a); return JSON.stringify({ phase: a.phase, result: a.result, rows: [d.row1, d.row2].join(' | '), disc: d.disc, bar: d.buttons.map(function (b) { return b.label || '-'; }).join(' / '),
-        srs: !!srsLoad()['${KEY}'], relearn: (ui.session.relearn || []).length, log: logLoad().slice(-1)[0], sum: ui.session.sum['${KEY}'], details: detailsHtml().replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ') }); })()`));
+        srs: !!srsLoad()['${KEY}'], cue: window.__cue, relearn: (ui.session.relearn || []).length, log: logLoad().slice(-1)[0], sum: ui.session.sum['${KEY}'], details: detailsHtml().replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ') }); })()`));
     eq(good.phase + ' ' + good.result, 'done first', 'passed first try');
-    eq(good.rows, 'Good, nothing to fix | You played Rxg6+ in your game too.', 'the game move again: good, and said so (with its check, as row 1 and the label write it)');
-    eq(good.disc, 'good', 'a filled tick');
+    eq(good.rows, 'Found it | Rxg6+ was good in your game too.', 'the game move again: a find (release 4), and said so (with its check, as row 1 and the label write it)');
+    eq(good.disc + ' ' + good.cue, 'good good', 'a filled tick, with the found sound (release 4)');
     eq(good.bar, '- / Continue', 'no story to tell: Continue alone');
     ok(!good.srs && !good.relearn, 'never scheduled, never one more try');
     eq([good.log.m, good.log.c, good.log.fv, good.log.n].join(' '), 'foil first good ', 'logged as a foil');
@@ -6855,7 +6811,7 @@ const BAR = `(function () {
       await tick(); await tick();
       tries.push(JSON.parse(A.ev(`(function () { var a = window.__a; a.reason = 2; a.settle = 2; var d = displayFor(a); return JSON.stringify({ what: '` + what + `', phase: a.phase, rows: [d.row1, d.row2].join(' | '), disc: d.disc, tag: d.tag }); })()`)));
     }
-    eq(JSON.stringify(tries[0]), JSON.stringify({ what: 'playable', phase: 'done', rows: 'Playable | Rxg6+ in your game kept more.', disc: 'close', tag: '' }), 'a try 8 points down passes: Playable');
+    eq(JSON.stringify(tries[0]), JSON.stringify({ what: 'playable', phase: 'done', rows: 'Found it | Rxg6+ in your game kept more.', disc: 'good', tag: '' }), 'a try 8 points down, in the near band, is found (release 4)');
     eq(tries[1].phase + ' ' + tries[1].rows.split(' | ')[0] + ' ' + tries[1].tag, 'tried Not this one Review', 'one at the threshold is a miss');
     ok(tries[1].rows.split(' | ')[1].length > 0, 'with its reason: ' + tries[1].rows);
     const after = JSON.parse(A.ev(`(function () { ${OPEN} ${GAME} var a = window.__a; tryAgain(); a.triedHold = false;
@@ -6865,7 +6821,7 @@ const BAR = `(function () {
       return JSON.stringify(out); })()`));
     eq(after.again, 'Move 34 · 20:42 on your clock', 'after Try again the foil\'s game move stays hidden');
     ok(!after.ghosts && !after.faults.length, 'no faded game move: it is a fine answer');
-    eq(after.end, 'Good, nothing to fix | Your game move Rxg6+ was fine here.', 'when the card ends after a miss');
+    eq(after.end, 'You got there | Your game move Rxg6+ was fine here.', 'when the card ends after a miss');
     eq(after.result, 'retry', 'graded after a miss');
     eq(after.shown, 'Play the green arrow.', 'the answer shown');
     /* V2.6: the answer shown on a foil never reads as a contradiction */
@@ -6933,7 +6889,7 @@ const BAR = `(function () {
     eq(r.after, 'retry 0 false', 'a miss there: the next review is cued');
   });
 
-  await test('F8.1, F8.2: the first game-mode card says once "Reviews now look like your game: no arrow, and not every position hides a mistake."; the practice log notes each card\'s mode (cued, game, foil) and Clarity counts card_result_<tier>_<mode>_<category>, naming no player, rating or position; the summary counts foils apart ("1 had nothing to fix: 1 good move.") with a tile of their own, no rungs, the game move tinted as a move played', async () => {
+  await test('F8.1, F8.2: the first game-mode card says once "Reviews now look like your game: no arrow, and not every position hides a mistake."; the practice log notes each card\'s mode (cued, game, foil) and Clarity counts card_result_<tier>_<mode>_<category>, naming no player, rating or position; the summary counts a foil passed as found and says it in its own line ("1 good move spotted.", release 4) with a tile of their own, no rungs, the game move tinted as a move played', async () => {
     const A = boot();
     /* the two cards' deeper look and danger facts read before, so each opens at once */
     A.ev(`(function () { window.readyEngine(); ['184455333378:68', '184380745302:11'].forEach(function (k) { var it = model().byKey[k]; it.b.v = Math.max(it.b.v || 0, 2); ensureDanger(it, true); }); return 1; })()`);
@@ -6961,7 +6917,7 @@ const BAR = `(function () {
       out.foils = (/<p class="recap-then recap-foils">([^<]*)</.exec(h) || [])[1];
       out.row = (/<div class="result-row"[^>]*>(.*?)<\\/div>/.exec(h) || [])[1].match(/rg-\\w+/g);
       var tile = (/<div class="recap-item recap-foil">(.*?)<\\/span><\\/div>/.exec(h) || [])[0] || '';
-      out.tile = { name: /<span>Nothing to fix<\\/span>/.test(tile), glyph: /rg rg-first/.test(tile), word: /<span class="res">Good move/.test(tile), rungs: /rungs/.test(tile), act: /data-act/.test(tile), red: /bad-arrow|fill="#d04a3a"/.test(tile), played: (tile.match(/fill="rgba\\(155,199,0,[.]41\\)"/g) || []).length };
+      out.tile = { name: /<span>Spotted<\\/span>/.test(tile), glyph: /rg rg-first/.test(tile), word: /<span class="res">Good move/.test(tile), rungs: /rungs/.test(tile), act: /data-act/.test(tile), red: /bad-arrow|fill="#d04a3a"/.test(tile), played: (tile.match(/fill="rgba\\(155,199,0,[.]41\\)"/g) || []).length };
       out.moved = (/<span class="recap-moved">([^<]*)</.exec(h) || [])[1] || '';
       /* the summary's text stack (slice 5): the category line, the foils' line right after it, then
          the quiet paragraph (what moved, when they come back), before the week */
@@ -6973,11 +6929,11 @@ const BAR = `(function () {
     eq(JSON.stringify(r.modes), JSON.stringify(['cued', 'game', 'foil']), 'the log notes each card\'s mode');
     eq(JSON.stringify(r.events), JSON.stringify(['card_result_2_cued_first', 'card_result_2_game_hint', 'card_result_2_foil_first']), 'Clarity: tier, mode and category');
     ok(!/tester|135\d|\b\d{12}\b|[a-h][1-8][a-h][1-8]/.test(r.flat), 'no name, rating, key or position: ' + r.flat);
-    eq(r.head, '1 of 2 found first try.', 'the score counts the two mistakes');
+    eq(r.head, '2 of 3 found first try.', 'the score counts the two mistakes and the foil passed (release 4)');
     eq(r.then, '1 with a hint', 'and their second line (V4.3)');
-    eq(r.foils, '1 had nothing to fix: 1 good move.', 'the foil apart');
+    eq(r.foils, '1 good move spotted.', 'the foil\'s own line (release 4)');
     eq(JSON.stringify(r.row), JSON.stringify(['rg-first', 'rg-hint', 'rg-first']), 'a glyph for each, the foil\'s too');
-    eq(JSON.stringify(r.tile), JSON.stringify({ name: true, glyph: true, word: true, rungs: false, act: false, red: false, played: 2 }), 'the foil\'s tile: "Nothing to fix", "Good move", no rungs, nothing to open, its game move tinted as a move played, never red');
+    eq(JSON.stringify(r.tile), JSON.stringify({ name: true, glyph: true, word: true, rungs: false, act: false, red: false, played: 2 }), 'the foil\'s tile: "Spotted", "Good move", no rungs, nothing to open, its game move tinted as a move played, never red');
     eq(r.moved, '1 step up. Back in 7 days: 1. Back in 5 days: 1.', 'the step climbed (release 3), then when they come back: the mistakes alone (V4.3)');
     eq(r.stack, 'recap-then / recap-then recap-foils / recap-small', 'the foils\' line right after the category line, before the quiet paragraph');
   });

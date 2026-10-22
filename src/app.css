@@ -768,10 +768,14 @@ a.armed{color:var(--coral);background:var(--coral-10);border-radius:6px;padding:
 .track i.fx-up::after{animation:tk-up .24s var(--ease-pop) var(--d,0ms) both}
 .track i.fx-down::after{animation:tk-down .2s ease-out var(--d,0ms) both}
 .track .tk-seal.fx-pulse{animation:tk-pulse .5s ease-in-out .3s}
+.track i.fx-glow{animation:tk-glow .6s ease-out var(--d,0ms) both}
+.track i.fx-glow::after{animation:tk-glow-fill .6s ease-out var(--d,0ms) both}
 .track.tk-learn .tk-seal.on{animation:tk-ring-off 1ms linear var(--d,0ms) both}
 @keyframes tk-up{0%{opacity:0;transform:scale(.6)}1%{opacity:1;transform:scale(.6)}100%{opacity:1;transform:none}}
 @keyframes tk-down{from{opacity:1}to{opacity:0}}
 @keyframes tk-pulse{50%{transform:scale(1.35)}}
+@keyframes tk-glow{0%{box-shadow:0 0 0 0 transparent}35%{box-shadow:0 0 0 3px color-mix(in srgb,var(--honey) 45%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+@keyframes tk-glow-fill{0%{opacity:0}35%{opacity:.4}100%{opacity:0}}
 @keyframes tk-ring-off{from{border-color:var(--border)}to{border-color:transparent}}
 /* the card's track at the tag row's right, the pill "Last step" before it */
 .bd-step{display:inline-flex;align-items:center;gap:8px;flex:none;margin-left:auto;padding-right:2px}

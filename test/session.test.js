@@ -1777,8 +1777,8 @@ const SIM = `function simRun(seed, days, plan, noRule) {
             a = openCard(it); var alt = off || mine;
             if (moveUci(alt) !== a.bestUci) {
               a.yours = { uci: [moveUci(alt)], cp: 0, at: 0 };
-              solved(alt, moveUci(alt), { win: 50, best: 52, mate: null }); band(at + ' works too', a);
-              settled(at + ' works too', a, 'That works too');
+              solved(alt, moveUci(alt), { win: 50, best: 52, mate: null, band: 'good' }); band(at + ' near band', a);
+              settled(at + ' near band', a, 'Found it');
             }
           } else {
             /* the whole line found */
@@ -1795,7 +1795,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
     ok(r.labelled.tip > 1000 && r.labelled.short > 1000, 'frames with a label, counted in the words: ' + JSON.stringify(r.labelled));
     eq(r.out.length, 0, r.out.length + ' too long or not plain, first: ' + r.out.slice(0, 3).join(' | '));
     ['K1', 'checking, 3 s', 'close again', 'not checked, T4', 'a miss outside a line', 'a miss with a reply', 'game move again, its reason', 'a miss that loses nothing, in a line', 'shown, N1',
-     'shown, played', 'mid-line shown, settled', 'found, settled', 'works too, settled', 'line found, settled', 'story step', 'story step, N1',
+     'shown, played', 'mid-line shown, settled', 'found, settled', 'near band, settled', 'line found, settled', 'story step', 'story step, N1',
      'the automatic hint after Try again', 'Hint pressed over a try', 'Hint pressed over a try, T4', ', hint 2, T4', 'move 2, hint 1',
      'forcing move 1, right', 'forcing move 2, right, reduced motion', 'forcing move 1, the telegraph', 'forcing move 2, your move', 'forcing move 1, hints 2, your move', 'forcing, F4 short'].forEach((k) => ok(Object.keys(r.seen).some((w) => w.indexOf(k.replace('K1', 'checking, 300 ms')) >= 0), 'no ' + k + ' frame'));
   });
@@ -2032,9 +2032,9 @@ const SIM = `function simRun(seed, days, plan, noRule) {
         }
         if (game && s.k === 0) { if (head !== bare(gameSan(a)) + '.' && head !== gameSan(a) + '.' && cap !== bare(gameSan(a)) + ', your game move.' && cap !== gameSan(a) + ', your game move.') fail('does not start with the game move ' + gameSan(a)); }
         else if (firstB) {
-          if (head !== 'Better: ' + bare(san) + '.' && cap !== 'Your ' + bare(san) + ' works too.') fail('does not name the better move ' + san);
-          /* "yours" only for your own move's line, never the engine's best */
-          if (/works too/.test(cap) !== !!S.alt || (S.alt && (!a.alt || line === c.bestLine || moveUci(nd.move) !== a.yours.uci[a.yours.at]))) fail('works too on a card that is ' + (a.alt ? '' : 'not ') + 'an alternative');
+          if (head !== 'Better: ' + bare(san) + '.' && !(S.alt && head === 'Your move: ' + bare(san) + '.')) fail('does not name the better move ' + san);
+          /* "yours" only for your own move's line, never the engine's best; release 4: nothing works too */
+          if (/works too/.test(cap) || (S.alt && (line === c.bestLine || moveUci(nd.move) !== a.yours.uci[a.yours.at]))) fail('works too, or your move on the engine line');
         }
         else if (cap.indexOf(bare(san)) !== 0 && cap.indexOf('You play ' + bare(san)) !== 0 && cap.indexOf('They play ' + bare(san)) !== 0 && cap.indexOf('They could play ' + bare(san)) !== 0) fail('does not start with its ply ' + san);
         /* a better line never ends on a bare quiet move or check of theirs */
@@ -2147,7 +2147,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
               if (!alt2) return;
               var aft = cloneState(a.st); applyMove(aft, alt2);
               a.yours = { uci: a.sol.slice(0, 2).concat([moveUci(alt2)]).concat(playUci(aft, unpackUci(it.b.lu).slice(3)).uci), cp: 0, at: 2 };
-              solved(alt2, moveUci(alt2), { win: 50, best: 52, mate: null }, true);
+              solved(alt2, moveUci(alt2), { win: 50, best: 52, mate: null, band: 'good' }, true);
             }
             else if (how === 'works too') {
               /* another move that holds, its own line after it (the alternative's story) */
@@ -2156,7 +2156,7 @@ const SIM = `function simRun(seed, days, plan, noRule) {
               var after = cloneState(a.st); applyMove(after, alt);
               var rep = legalMoves(after)[0];
               a.yours = { uci: [moveUci(alt)].concat(rep ? [moveUci(rep)] : []), cp: 0, at: 0 };
-              solved(alt, moveUci(alt), { win: 50, best: 52, mate: null });
+              solved(alt, moveUci(alt), { win: 50, best: 52, mate: null, band: 'good' });
             }
             else if (a.sol) { while (a.solIdx < a.sol.length) { var m = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.solIdx++; } finishCard('first'); }
             else solved(uciToMove(a.st, a.bestUci), a.bestUci, null);

@@ -15,6 +15,7 @@ from claims import Rec, T, F, M, U, N
 import handlers as H1, handlers2 as H2, handlers3 as H3
 import handlers_v1 as HV, handlers_v2 as HV2, handlers_gate as HG, handlers_xp as HXP, handlers_b as HB
 import handlers_r3 as HR3
+import handlers_r4 as HR4
 # v2 slice 1's forms, read before the older ones
 H2.SETTLED[:0] = HV.SETTLED
 H1.VERDICT[:0] = HV.VERDICT
@@ -31,12 +32,20 @@ H1.REASON[:0] = HB.REASON
 H2.SETTLED[:0] = HB.SETTLED
 H3.DETAILS[:0] = HB.DETAILS
 H1.HINT[:0] = HB.HINT
+# release 4's forms (the verdict is binary; credit for every right answer), read first
+H2.SETTLED[:0] = HR4.SETTLED
+H3.FOIL[:0] = HR4.FOIL
+H1.REASON[:0] = HR4.REASON
+HG.VERDICT_WORDS[:0] = HR4.VERDICT_WORDS
 _story0 = H2.h_story
 
 
 def _story(R, m, text):
     # release 3's forms on the answer's line (See why shows both sides), read first
-    v = HR3.story_r3(R, m, text)
+    mm = re.match(HR4.STORY[0][0], text)
+    v = HR4.STORY[0][1](R, mm, text) if mm else None
+    if v is None:
+        v = HR3.story_r3(R, m, text)
     if v is None:
         v = HV2.story_v2(R, m, text)
     return v if v is not None else _story0(R, m, text)
@@ -87,7 +96,7 @@ def classify(R, field, text):
     if field == 'row1':
         if text in ('Not this one', 'Good move', 'That works too'):
             return ('verdict', H1.VERDICT)
-        if text in ('Found it', 'Your game move again', 'As in your game', 'Right'):
+        if text in ('Found it', 'Your game move again', 'As in your game', 'Right', 'You got there', 'Found with a hint'):
             return ('verdict', HG.VERDICT_WORDS)
         if text in ('Good, nothing to fix', 'Playable'):
             return ('foil verdict', H3.FOIL)
@@ -131,6 +140,9 @@ def classify(R, field, text):
                 return ('reason', H1.REASON)
             return (None, None)
         if re.search(r'(miss, reason said|miss, See it landed|game move again, reason said|game move again, See it landed|game game move, reason said|game game move, See it landed|See it step \d+)$', fr) or re.search(r' miss(, reason said|, See it landed|, See it step \d+)?$', fr):
+            return ('reason', H1.REASON)
+        # release 4: a seed's miss with Details open keeps its reason on row 2
+        if re.search(r'tried:miss, Details$', fr):
             return ('reason', H1.REASON)
         if re.search(r' close$', fr):
             return ('verdict', H1.VERDICT)

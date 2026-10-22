@@ -93,7 +93,7 @@ module.exports = function (h) {
   });
 
   /* ── B2 ── */
-  test('R2 B2 mate first: on the mate card (184364964898:69) Rg1+, mate in 11, is the key\'s answer: at 1600 and 2000 "Found it" / "Rg1+ forces mate.", counted first try, one rung; at 700 a mate longer than 3 moves says the band ("Rook to g1 keeps you winning."); its See why never says "lose"; where the key misses the mate, a try that forces mate is the answer all the same (never "That works too"); a safe win 10 points below the best still works too', async () => {
+  test('R2 B2 mate first: on the mate card (184364964898:69) Rg1+, mate in 11, is the key\'s answer: at 1600 and 2000 "Found it" / "Rg1+ forces mate.", counted first try, one rung; at 700 a mate longer than 3 moves says the band ("Rook to g1 keeps you winning."); its See why never says "lose"; where the key misses the mate, a try that forces mate is the answer all the same (never "That works too"); release 4: a safe win 6 points below the best is found (the near band), 12 below a wrong try', async () => {
     const A = keyed();
     for (const t of [2, 3]) {
       const s = solve(A, MATE, t);
@@ -115,22 +115,21 @@ module.exports = function (h) {
     ok(mt.details.indexOf('Rg1+ forces mate.') >= 0 && !mt.details.some((x) => /also holds/.test(x)), 'Details name the move on the board: ' + mt.details.join(' | '));
     const mtc = JSON.parse(B.ev(`(function () { var a = ui.session.active; a.settle = 2; a.view = { mode: 'story', i: 0 }; var S = buildStory(a); return JSON.stringify([!!a.alt, !!a.near, S.steps.map(function (x) { return x.cap; })]); })()`));
     ok(!mtc[0] && !mtc[1] && !mtc[2].some((x) => /\blose\b/i.test(x)), 'never works too, never "lose": ' + JSON.stringify(mtc));
-    /* a safe win 10 points below the best: That works too, and it holds (the back rank, not a missed chance) */
+    /* release 4: the verdict is binary, nothing works too and holds */
     const W = keyed();
-    const sw = JSON.parse(W.ev(`(function () { ${OPEN} ${TRY} var a = openAt('${BACK}', 2); var v = tryKind(a, 360, null, 89.8, false, true); return JSON.stringify([v.kind, v.band]); })()`));
-    eq(JSON.stringify(sw), JSON.stringify(['solved', 'safe']), 'a safe win 10 points below the best, at depth: works too');
+    const sw = JSON.parse(W.ev(`(function () { ${OPEN} ${TRY} var a = openAt('${BACK}', 2), v = tryKind(a, cpFromWin(84), null, 89.8, false, true), w = tryKind(a, cpFromWin(78), null, 89.8, false, true); return JSON.stringify([v.kind, v.band, w.kind, w.band, a.it.b.wa < 78]); })()`));
+    eq(JSON.stringify(sw), JSON.stringify(['solved', 'good', 'miss', '', true]), 'a safe win 6 points below the best is found, 12 below a wrong try');
   });
 
   /* ── B3 ── */
-  test('R2 B3 "Good move" for near, winning moves: Ra1 on 184434540700:103 (87% against b3\'s 96% at 1,000,000 nodes, above the game move\'s 85%) reads "Good move / There\'s a stronger one." at all three tiers, two stars at 700; the knight line\'s gxf3 after Nxc7+ Ke7 (73% against exf6+\'s 80%) reads "Good move" and the line goes on, ending "Nxc7+ found. exf6+ was stronger later."; mid-line Be6+ on 184205946040:38 (82% against 89%) reads "Good move"; a try below 70% stays a miss; only at depth (a first search alone keeps the old rule)', async () => {
+  test('R2 B3, release 4: near, winning moves are found: Ra1 on 184434540700:103 (87% against b3\'s 96% at 1,000,000 nodes, above the game move\'s 85%) reads "Found it" / "b3 was a little better." (tier 1 in words), first try, at all three tiers; the knight line\'s gxf3 after Nxc7+ Ke7 (73% against exf6+\'s 80%) is found, first try; mid-line Be6+ on 184205946040:38 (82% against 89%) is found; a try below 70% stays a miss; a first search alone accepts it too, with no comparative words', async () => {
     for (const t of [1, 2, 3]) {
       const A = keyed();
       const r = await tryOn(A, RA1, t, 'a4a1', ['f5d4', 'g3e3', 'd4b3', 'a1a8'], 515, 883);
-      eq(r.phase + ' ' + r.kind + ' / ' + r.r1 + ' / ' + r.r2, 'tried close / Good move / There\'s a stronger one.', 'Ra1 at tier ' + t);
-      if (t === 1) {
-        const st = JSON.parse(A.ev(`(function () { var a = ui.session.active; tryAgain(); solved(uciToMove(a.st, a.bestUci), a.bestUci, null); return JSON.stringify([resultCategory(a, a.result), cardStars(a, resultCategory(a, a.result))]); })()`));
-        eq(JSON.stringify(st), JSON.stringify(['good', 2]), 'two stars at 700 once the answer follows');
-      }
+      eq(r.phase + ' / ' + r.r1, 'done / Found it', 'Ra1 at tier ' + t);
+      const st = JSON.parse(A.ev(`(function () { ${SETTLED} return JSON.stringify(settledNow(ui.session.active)); })()`));
+      eq(st.r2, t === 1 ? 'Pawn to b3 was a little better.' : 'b3 was a little better.', 'Ra1 at tier ' + t + ': row 2');
+      eq(st.result + ' ' + st.cat, 'first first', 'first try at tier ' + t);
     }
     /* below 70%: a miss */
     const L = keyed();
@@ -139,19 +138,16 @@ module.exports = function (h) {
     /* the knight line: Nxc7+ Ke7, then gxf3 */
     const K = keyed();
     const kg = await tryOn(K, KNIGHT, 2, 'g2f3', ['f6e5', 'c7a8', 'h8c8'], 275, 373, ['b5c7', 'e8e7']);
-    eq(kg.phase + ' ' + kg.kind + ' / ' + kg.r1 + ' / ' + kg.misses, 'tried close / Good move / 0', 'gxf3 inside the line');
-    const go = JSON.parse(K.ev(`(function () { var a = ui.session.active; tryAgain(); var at = [a.phase, a.solIdx]; while (a.solIdx < a.sol.length) { var m = uciToMove(a.st, a.sol[a.solIdx]); applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.solIdx++; } solved(null, null, null, true); a.settle = 2; a.view = { mode: 's0' }; var d = displayFor(a); return JSON.stringify([at, d.row1, d.row2, a.result, resultCategory(a, a.result)]); })()`));
-    eq(JSON.stringify(go[0]), JSON.stringify(['guess', 2]), 'the line goes on from the same step');
-    eq(go[1] + ' / ' + go[2], 'You got there / Nxc7+ found. exf6+ was stronger later.', 'the line\'s end');
-    eq(go[4], 'good', 'it holds (a good move first)');
+    eq(kg.phase + ' / ' + kg.r1 + ' / ' + kg.misses, 'done / Found it / 0', 'gxf3 inside the line');
+    eq(K.ev('ui.session.active.result'), 'first', 'found first try');
     /* mid-line Be6+ on 184205946040:38 */
     const M = keyed();
     const be = await tryOn(M, P38, 2, 'c4e6', ['d7e6', 'e2h5', 'a8g8'], 411, 558, ['f3e5', 'd6e5']);
-    eq(be.kind + ' / ' + be.r1, 'close / Good move', 'mid-line Be6+');
-    /* a first search alone (no re-check: the bands far) keeps the old rule */
+    eq(be.phase + ' / ' + be.r1, 'done / Found it', 'mid-line Be6+');
+    /* a first search alone: accepted too (the words then name no comparison) */
     const N = keyed();
-    const shallow = JSON.parse(N.ev(`(function () { ${OPEN} ${TRY} var a = openAt('${RA1}', 2); return JSON.stringify([tryKind(a, 515, null, 96.3, false, false).kind, tryKind(a, 515, null, 96.3, false, true).kind]); })()`));
-    eq(JSON.stringify(shallow), JSON.stringify(['miss', 'close']), 'Good move needs the key\'s or the re-check\'s depth');
+    const shallow = JSON.parse(N.ev(`(function () { ${OPEN} ${TRY} var a = openAt('${RA1}', 2); return JSON.stringify([tryKind(a, 515, null, 96.3, false, false).band, tryKind(a, 515, null, 96.3, false, true).band]); })()`));
+    eq(JSON.stringify(shallow), JSON.stringify(['good', 'good']), 'the near band at either depth');
   });
 
   /* ── B4 ── */
