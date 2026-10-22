@@ -174,23 +174,27 @@ module.exports = function (h) {
     eq(A.ev(`(function (a) { a.settle = 2; return displayFor(a).row2; })(ui.session.active)`), 'King to b7 attacks their pawn.', 'tier 1');
   });
 
-  test('V1.2 "works too" only for a safe win more than 4 points below the best: "That works too", "The main move was X." (tier 1 in words), it holds, and the summary gives it no first-try tick; after Show the answer a move in the shown move\'s found band plays as the shown move does (graded shown)', async () => {
+  test('V1.2, release 4: nothing works too and holds: a safe win 10 points below the best is in the near band, "Found it" with the best named after it (tier 1 in words), first try, it climbs and the summary ticks it; 15 below a wrong try; after Show the answer a move in the shown move\'s found band plays as the shown move does (graded shown)', async () => {
     const A = boot();
     const key = A.ev(`(function () { playerTier = function () { return 2; }; return allMistakes().filter(trainable).filter(function (x) { var c = cardFor(x); return c && !c.sol && !(x.b.mb > 0) && winPct(x.b.eb) >= 85 && x.b.wa < 60 && familyOf(patternOf(x.b)).key !== 'chances'; })[0].key; })()`);
     ok(!!key, 'a winning card');
-    const go = async (tier) => {
+    const go = async (tier, gap) => {
       A.ev(`(function () { ${OPEN} ${TRY} ${h.AFTER} var a = openAt('${key}', ${tier}); a.t0 = Date.now() - 30000; var off = offBook(a);
-        window.__bestCp = a.it.b.eb; tryMove(a, moveUci(off), null, cpFromWin(winPct(a.it.b.eb) - 10), null); return 1; })()`);
+        window.__bestCp = a.it.b.eb; tryMove(a, moveUci(off), null, cpFromWin(winPct(a.it.b.eb) - ${gap}), null); return 1; })()`);
       await settle();
-      return JSON.parse(A.ev(`(function (a) { a.settle = 2; var d = displayFor(a), e = ui.session.sum[a.key];
-        return JSON.stringify({ result: a.result, alt: !!a.alt, row1: d.row1, row2: d.row2, cat: e.c, moved: e.m, glyph: resultGlyph(e.c), want: [sanOf(a.pre, a.best), moveWords(a.pre, a.best)] }); })(ui.session.active)`));
+      return JSON.parse(A.ev(`(function (a) { a.settle = 2; var d = displayFor(a), e = ui.session.sum && ui.session.sum[a.key];
+        return JSON.stringify({ phase: a.phase, result: a.result, alt: !!a.alt, row1: d.row1, row2: d.row2, cat: e && e.c, moved: e && e.m, glyph: e ? resultGlyph(e.c) : '', want: [sanOf(a.pre, a.best), moveWords(a.pre, a.best)] }); })(ui.session.active)`));
     };
-    let r = await go(2);
-    eq(JSON.stringify([r.result, r.alt, r.row1, r.row2]), JSON.stringify(['first', true, 'That works too', 'The main move was ' + r.want[0] + '.']), 'works too, the main move named');
-    eq(JSON.stringify([r.cat, r.moved]), JSON.stringify(['alt', 'held']), 'it holds');
-    ok(r.glyph.indexOf('rg-first') < 0, 'no first-try tick: ' + r.glyph);
-    r = await go(1);
-    ok(r.row2 === 'The main move was ' + r.want[1] + '.' || r.row2 === 'The main move was ' + r.want[0] + '.', 'tier 1: ' + r.row2);
+    let r = await go(2, 10);
+    eq(JSON.stringify([r.result, r.alt, r.row1]), JSON.stringify(['first', false, 'Found it']), 'found, never works too');
+    ok(r.row2 === r.want[0] + ' was a little better.' || r.row2 === 'The main move was ' + r.want[0] + '.', 'the best named: ' + r.row2);
+    eq(JSON.stringify([r.cat, r.moved]), JSON.stringify(['first', 'up']), 'it climbs');
+    ok(r.glyph.indexOf('rg-first') >= 0, 'a first-try tick: ' + r.glyph);
+    r = await go(1, 10);
+    const w1 = r.want[1].charAt(0).toUpperCase() + r.want[1].slice(1);
+    ok(r.row2 === w1 + ' was a little better.' || r.row2 === 'The main move was ' + r.want[1] + '.' || r.row2 === 'The main move was ' + r.want[0] + '.', 'tier 1: ' + r.row2);
+    r = await go(2, 15);
+    eq(r.phase + ' ' + r.row1, 'tried Not this one', '15 below the best: a wrong try');
     /* the answer shown, then a move of its found band (card 2: f5 shown, d5 played) */
     const B = boot({ storage: keyedStorage() });
     const s = JSON.parse(B.ev(`(function () { ${OPEN} ${TRY} var a = openAt('${CARD2}', 2); a.shownAt = 0; reveal();
@@ -200,20 +204,20 @@ module.exports = function (h) {
     eq(JSON.stringify(s), JSON.stringify({ near: ['d7d5'], result: 'fail', played: 'd7d5', view: 's0', due: false }), 'd5 plays as the shown f5 would, the card graded shown');
   });
 
-  test('V1.2 a move that works too inside a forcing line names the main move of its own step ("The main move was X.", X the line\'s move there, never the line\'s first move)', async () => {
+  test('V1.2, release 4: a move in the near band inside a forcing line is found, first try, never works too', async () => {
     const A = boot({ storage: keyedStorage() });
     const r = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY} window.readyEngine();
       var a = openAt('184434540700:79', 2); a.t0 = Date.now() - 30000;
       gradeMove(uciToMove(a.st, a.sol[0])); var rp = a.reply; theirReply(a, true); replyDone(a, rp);
       var step = sanOf(a.st, uciToMove(a.st, a.sol[2])), first = sanOf(a.pre, a.best);
       var alt = legalMoves(a.st).filter(function (m) { var u = moveUci(m); return u !== a.sol[2] && !a.st.b[m.to]; })[0];
-      window.__bestCp = 900; window.__tryPv = null; tryMove(a, moveUci(alt), null, 500, null);
+      window.__bestCp = 900; window.__tryPv = null; tryMove(a, moveUci(alt), null, 600, null);
       return JSON.stringify({ step: step, first: first }); })()`));
     await settle();
-    const s = JSON.parse(A.ev(`(function (a) { a.settle = 2; a.animMove = null; var d = displayFor(a); return JSON.stringify({ phase: a.phase, alt: !!a.alt, at: a.yours && a.yours.at, row1: d.row1, row2: d.row2 }); })(ui.session.active)`));
-    eq(JSON.stringify([s.phase, s.alt, s.at, s.row1]), JSON.stringify(['done', true, 2, 'That works too']), 'works too at the line\'s second move of yours: ' + JSON.stringify(s));
+    const s = JSON.parse(A.ev(`(function (a) { a.settle = 2; a.animMove = null; var d = displayFor(a); return JSON.stringify({ phase: a.phase, alt: !!a.alt, at: a.yours && a.yours.at, row1: d.row1, row2: d.row2, result: a.result }); })(ui.session.active)`));
+    eq(JSON.stringify([s.phase, s.alt, s.at, s.row1, s.result]), JSON.stringify(['done', false, 2, 'Found it', 'first']), 'found at the line\'s second move of yours: ' + JSON.stringify(s));
     ok(r.step !== r.first, 'the step\'s move is not the first: ' + JSON.stringify(r));
-    eq(s.row2, 'The main move was ' + r.step + '.', 'the main move of that step');
+    ok(!/works too/.test(s.row2), 'row 2: ' + s.row2);
   });
 
   test('V1.3 the re-check at every tier: at 700 and at 1600 a try 3 points inside the found band is searched again at 1,000,000 nodes, and that search decides; one unanswered 8 s after the try keeps the first verdict, with no comparative words', async () => {
@@ -367,24 +371,25 @@ module.exports = function (h) {
     eq(sl.n + ' ' + sl.none, '27 2', 'Slow slides: 2 of 27');
   });
 
-  test('V1.9 a saving move counts at More help: card 1 at 700, Qd7+, Qh3 and Qg4 each "Good move" with "That saves your queen. Look for more." (a second one on the same showing says it again; two stars, it holds; Qh3 by the key\'s own line, where the d3 bishop still falls to the pawn that attacked it), Qe6 "Found it"; Qxf4 losing the queen and Qg4 at 1600 stay "Not this one"', async () => {
+  test('V1.9, release 4: a saving move at More help is a wrong try that keeps its lesson: card 1 at 700, Qd7+, Qh3 and Qg4 each "Not this one" with a "Safe, but ..." reason (a second one on the same showing says it again; Qh3 by the key\'s own line), then Qe6 "You got there"; Qe6 first "Found it"; Qxf4 losing the queen and Qg4 at 1600 "Not this one"', async () => {
     const A = boot({ storage: keyedStorage() });
     const go = async (tier, u, pv) => {
       A.ev(`(function () { ${OPEN} ${TRY} var a = openAt('${CARD1}', ${tier}); a.t0 = Date.now() - 30000; window.__bestCp = null; tryMove(a, '${u}', ${JSON.stringify(pv || ['b7b5'])}, -282, null); return 1; })()`);
       await settle();
-      return JSON.parse(A.ev(`(function (a) { var d = displayFor(a); return JSON.stringify({ phase: a.phase, kind: a.tried ? a.tried.kind : null, row1: d.row1, row2: d.row2, good: !!a.foundGood }); })(ui.session.active)`));
+      return JSON.parse(A.ev(`(function (a) { a.reason = 2; var d = displayFor(a); return JSON.stringify({ phase: a.phase, kind: a.tried ? a.tried.kind : null, row1: d.row1, row2: d.row2, good: !!a.foundGood }); })(ui.session.active)`));
     };
     for (const u of ['f5d7', 'f5h3', 'f5g4']) {
       const r = await go(1, u);
-      eq(JSON.stringify([r.kind, r.row1, r.row2, r.good]), JSON.stringify(['close', 'Good move', 'That saves your queen. Look for more.', true]), u + ' at 700');
+      eq(JSON.stringify([r.kind, r.row1, r.good]), JSON.stringify(['miss', 'Not this one', false]), u + ' at 700');
+      ok(/^Safe, but /.test(r.row2), u + ' at 700: its reason says it is safe: ' + r.row2);
     }
     /* on one showing, Keep looking and a second saving move: it says what it saved again */
     A.ev(`(function () { ${OPEN} ${TRY} var a = ui.session.active; tryAgain(); a.shownAt = 0; window.__bestCp = null; tryMove(a, 'f5h3', ['b7b5'], -282, null); return 1; })()`);
     await settle();
-    const again = JSON.parse(A.ev(`(function (a) { var d = displayFor(a); return JSON.stringify([a.tried && a.tried.kind, d.row1, d.row2]); })(ui.session.active)`));
-    eq(JSON.stringify(again), JSON.stringify(['close', 'Good move', 'That saves your queen. Look for more.']), 'a second saving move on the same showing says it too');
-    const stars = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY} var a = ui.session.active; tryAgain(); a.shownAt = 0; gradeMove(uciToMove(a.st, 'f5e6')); var e = ui.session.sum[a.key]; return JSON.stringify([a.result, displayFor(a).row1, e.s, e.c]); })()`));
-    eq(JSON.stringify(stars), JSON.stringify(['hint', 'You got there', 2, 'good']), 'then Qe6: found after a good move, two stars, it holds');
+    const again = JSON.parse(A.ev(`(function (a) { a.reason = 2; var d = displayFor(a); return JSON.stringify([a.tried && a.tried.kind, d.row1, d.row2]); })(ui.session.active)`));
+    ok(again[0] === 'miss' && again[1] === 'Not this one' && /^Safe, but /.test(again[2]), 'a second saving move on the same showing says it too: ' + JSON.stringify(again));
+    const stars = JSON.parse(A.ev(`(function () { ${OPEN} ${TRY} var a = ui.session.active; tryAgain(); a.shownAt = 0; gradeMove(uciToMove(a.st, 'f5e6')); var e = ui.session.sum[a.key]; return JSON.stringify([a.result, displayFor(a).row1, e.c]); })()`));
+    eq(JSON.stringify(stars), JSON.stringify(['retry', 'You got there', 'miss']), 'then Qe6: found after a miss');
     const f = await go(1, 'f5e6');
     eq(f.row1, 'Found it', 'Qe6 at 700');
     const t2 = await go(2, 'f5g4');

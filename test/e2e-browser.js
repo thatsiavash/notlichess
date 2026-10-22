@@ -354,14 +354,14 @@
     bandFits('the card solved');
     ok('the solved card shows the best line', !!c && !!c.lines && c.lines.best.length >= 1);
     /* S0: the verdict, then the game move's ghost, then R4 and Details; See why and Continue */
-    ok('the solve lands as a tick on the square, with the band saying so', !!$('#bwrap .marks .badge-good') && /^(Found it|You got there|That works too)$/.test(text('#cband .bd-r1')), text('#cband'));
+    ok('the solve lands as a tick on the square, with the band saying so', !!$('#bwrap .marks .badge-good') && /^(Found it|You got there|Found with a hint)$/.test(text('#cband .bd-r1')), text('#cband'));
     await until(() => T.card().settle === 2, 3000);
     await sleep(300);
     popObs.disconnect();
     ok('the found pop runs once, with the board still (F4.4)', pops.length === 1 && pops[0].still, JSON.stringify(pops));
     ok('the settled result: the game move\'s ghost where it went', !!$('#bwrap .board .ghost-piece') === (T.ev('s0Marks(ui.session.active, ui.session.active.st).ghosts.length') > 0)
       && !!$('#bwrap .marks .badge-good'), T.ev('JSON.stringify(s0Marks(ui.session.active, ui.session.active.st))'));
-    ok('the settled band reads the result over R4', /^(Found it|You got there|That works too)$/.test(text('#cband .bd-r1')) && /\S/.test(text('#cband .bd-r2')) && !!$('#cstrip [data-act=details]')
+    ok('the settled band reads the result over R4', /^(Found it|You got there|Found with a hint)$/.test(text('#cband .bd-r1')) && /\S/.test(text('#cband .bd-r2')) && !!$('#cstrip [data-act=details]')
       && /^See why\s*(Continue|Finish)$/.test(text('#cbar').replace(/\n/g, ' ').trim()), text('#cband') + ' | ' + text('#cstrip') + ' | ' + text('#cbar'));
     bandFits('the card settled');
     ok('no pawn number on the board', !/[+-]\d+\.\d/.test(text('#ebar-lab')));

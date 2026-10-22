@@ -1147,8 +1147,9 @@ function checkMove(m, u, inLine) {
        (V1.2): its comparative words wait for the re-check */
     var v = tryVerdict(a2, u, expect, r, inLine, false), left = t0 + RECHECK_MS - Date.now();
     v.deep = false;
-    /* a foil passes any move short of the player's mistake threshold for
-       that game (D10); at or over it the try is a miss, said as any is. B9:
+    /* a foil passes the moves an own card accepts (release 4: within the
+       near band, nearBand) short of the player's mistake threshold for that
+       game (D10); any other try is a miss, said as any is. B9:
        a miss is graded, and said, by the 1,000,000-node re-check where it
        answers in time (foil:184364964898:45's Ne5: its reply f3, "Then f3
        attacks your bishop.", never the shallow search's Nxe2) */
@@ -1157,10 +1158,10 @@ function checkMove(m, u, inLine) {
         var a3 = ui.session && ui.session.active;
         if (!live(a3)) return;
         a3.ghostMove = null;
-        if (v1.wBest - v1.wMove < mistakeMinFor(a3.it.g)) foilPass(m, v1.wBest - v1.wMove);
+        if (foilOk(a3, v1)) foilPass(m, v1.wBest - v1.wMove);
         else miss(m, u, { cp: v1.myCp, mate: v1.myMate, pv: v1.line.pv || [], win: v1.wMove, deep: !!v1.deep }, false);
       };
-      if (v.wBest - v.wMove < mistakeMinFor(a2.it.g) || left <= 0) { foilEnd(v); return; }
+      if (foilOk(a2, v) || left <= 0) { foilEnd(v); return; }
       var fcap = setTimeout(function () { var a4 = ui.session && ui.session.active; if (live(a4)) { engineStop('check'); foilEnd(v); } }, left), fdone = false;
       search(CONFIRM_NODES).then(function (r2) {
         clearTimeout(fcap);
@@ -1205,7 +1206,7 @@ function checkMove(m, u, inLine) {
   });
 }
 /* a try's verdict from a search r that scored it (and the expected move,
-   expect): 'solved', 'close' or 'miss', with the figures it was read from */
+   expect): 'solved' or 'miss', with the figures it was read from */
 function tryVerdict(a, u, expect, r, inLine, deep) {
   var b = a.it.b, sign = myPov(a.it) ? 1 : -1, mine = null, theirs = null;
   (r.lines || []).forEach(function (ln) {
@@ -1220,22 +1221,30 @@ function tryVerdict(a, u, expect, r, inLine, deep) {
 /* the verdict from a try's score (myCp, myMate) against the best's win
    chance, from the player's side. band 'found' (V1.2): within 4 points of
    the best, or a mate kept on a mate card: the answer's equal, graded as
-   the best move; 'safe': a safe win more than 4 points below (the lesson is
-   not a missed chance), works too and holds; else a good move that is not
-   the best (closeTry) or a miss */
+   the best move; 'good' (release 4, the near band): within 10 points of
+   the best and in its band of the game (nearBand), graded as the best move
+   too ("Found it", it climbs). The verdict is binary: anything else is a
+   wrong try, said with its reason (a safe win far below the best, V1.9's
+   saving move: "Safe, but ...", at More help "That saves your queen. Look
+   for more.") */
 function tryKind(a, myCp, myMate, wBest0, inLine, deep) {
   var b = a.it.b, wMove = winPct(myCp), wBest = Math.max(wBest0, wMove);
   var mateCard = b.mb != null && b.mb > 0;
   var keepsMate = myMate != null && myMate > 0;
-  /* a safe winning move passes, except on a missed chance, where the
-     lesson is the tactic itself: there a lesser move is only "close" */
-  var chances = familyOf(patternOf(b)).key === 'chances';
-  var safeWin = wMove >= 70 && wBest >= 70 && wMove >= b.wa + 15 && !chances;
   var found = mateCard ? keepsMate : (wBest - wMove <= SOLVE_TOL || keepsMate);
-  var band = found ? 'found' : !mateCard && safeWin ? 'safe' : '';
-  return { kind: band ? 'solved' : closeTry(b, wMove, wBest, mateCard, chances, inLine, deep) ? 'close' : 'miss', band: band,
-           myCp: myCp, myMate: myMate, wMove: wMove, wBest: wBest, mateCard: mateCard, keepsMate: keepsMate, safeWin: safeWin };
+  /* the near band (release 4): never on a mate card (a mate kept is the
+     answer), and only a move better than the game move (inside a forcing
+     line any step) */
+  var near = !found && !mateCard && nearBand(wMove, wBest) && (inLine || b.wa == null || wMove > b.wa);
+  var band = found ? 'found' : near ? 'good' : '';
+  return { kind: band ? 'solved' : 'miss', band: band,
+           myCp: myCp, myMate: myMate, wMove: wMove, wBest: wBest, mateCard: mateCard, keepsMate: keepsMate };
 }
+/* the near band (release 4): within 10 points of the best and in the same
+   band of the game (both winning, 70% or more; both holding, 40% or
+   more; or both below) */
+function chanceBand(w) { return w >= 70 ? 2 : w >= 40 ? 1 : 0; }
+function nearBand(wMove, wBest) { return wBest - wMove <= STRONGER_TOL && chanceBand(wMove) === chanceBand(wBest); }
 /* a try among the key's three lines (V1.1), on the card's own position:
    its verdict at the key's depth, with no search; null when the key has
    no line for it (or is not the card's: its answer differs) */
@@ -1272,34 +1281,17 @@ function applyTry(a2, m, u, inLine, v) {
     solved(m, u, { win: v.wMove, best: v.wBest, mate: v.myMate, band: v.band, deep: !!v.deep, san: sanOf(a2.st, m), w: moveWords(a2.st, m) }, inLine);
     return;
   }
-  /* V1.9: at More help a try that takes the attacked piece to safety and
-     scores 10 points or more above the game move is a good move (it holds:
-     two stars); at Normal and Less help it stays a miss whose reason starts
-     "Safe, but" (R5.4, V2.2). Saved: read from the exchange on its square
-     after their reply (B7). A try that saved it is kept for the answer's
-     words (a.savedBy: "Qd7+ saved it too.") */
-  var save = !inLine && !a2.foil && (a2.tier === 1 || v.kind !== 'close') ? savingTry(a2, m, u, v) : null;
+  /* V1.9: a try that takes the attacked piece to safety and scores 10
+     points or more above the game move is kept for its reason: a wrong
+     try (release 4: the verdict is binary) whose row 2 says what it saved
+     ("Safe, but ...", at More help "That saves your queen. Look for
+     more."). Saved: read from the exchange on its square after their reply
+     (B7). A try that saved it is kept for the answer's words (a.savedBy:
+     "Qd7+ saved it too.") */
+  var save = !inLine && !a2.foil ? savingTry(a2, m, u, v) : null;
   if (save && !a2.savedBy) a2.savedBy = { san: sanOf(a2.st, m), p: save.p };
   var pv = r.pv && r.pv.length ? (r.pv[0] === u ? r.pv : [u].concat(r.pv)) : [u];
-  if (save && a2.tier !== 1) { backCheck(a2, m, pv, function (bk) { miss(m, u, { cp: v.myCp, mate: v.myMate, pv: r.pv || [], win: v.wMove, wBest: v.wBest, deep: !!v.deep, save: save, back: bk }, inLine); }); return; }
-  if (v.kind === 'close' || save) {
-    /* a good move that is not the best: not a miss (S5). The first one is
-       remembered, so a later solve or the answer counts as help; a second
-       says row 1 alone. B3: one inside a forcing line holds the line's step
-       too (a.lineGood: the line's own move there, "Nxa8 was stronger
-       later."), and the line goes on from the same position */
-    var again = !!a2.foundGood;
-    if (!again) {
-      track('close_shown');
-      a2.foundGood = { san: sanOf(a2.st, m), win: v.wMove };
-      keepProgress(a2);
-    }
-    if (inLine && !a2.lineGood) { var due2 = uciToMove(a2.st, a2.sol[a2.solIdx]); a2.lineGood = { san: due2 ? sanOf(a2.st, due2) : '' }; }
-    a2.cue = 'tap';
-    showTry(a2, m, 'close', null, save ? { save: save.p } : null, again);
-    return;
-  }
-  backCheck(a2, m, pv, function (bk) { miss(m, u, { cp: v.myCp, mate: v.myMate, pv: r.pv || [], win: v.wMove, wBest: v.wBest, deep: !!v.deep, back: bk }, inLine); });
+  backCheck(a2, m, pv, function (bk) { miss(m, u, { cp: v.myCp, mate: v.myMate, pv: r.pv || [], win: v.wMove, wBest: v.wBest, deep: !!v.deep, save: save, back: bk }, inLine); });
 }
 /* B6 (c): their reply takes a piece of yours that you could take back on
    its square, and the line plays something else: the take-back is searched
@@ -1349,24 +1341,6 @@ function savingTry(a, m, u, v) {
   if (r && (r.ep >= 0 ? r.ep : r.to) === tm.to && dzSeeMove(st.b, r.from, tm.to) > 0) return null;
   return { p: pType(a.pre.b[m.from]) };
 }
-/* the close rule (S5), the one path for a good move that is not the best:
-   a move that loses nothing by the card's own measure (within STRONGER_TOL
-   of b.eb; every card's game move lost more than that, so it is always
-   better than the game move); or one within STRONGER_TOL of the best move
-   in this search, or on a missed chance one that keeps a big edge, when it
-   is clearly better than the game move; on a mate card a move that still
-   wins big. Never inside a forcing line */
-function closeTry(b, wMove, wBest, mateCard, chances, inLine, deep) {
-  /* B3: within 10 points of the best and both at 70% or more, by the key
-     or the 1,000,000-node re-check (deep): a first try that beats the game
-     move (184434540700:103's Ra1), or a step inside a forcing line (the
-     knight line's gxf3) */
-  if (deep && !mateCard && wBest - wMove <= STRONGER_TOL && wMove >= 70 && wBest >= 70 && (inLine || wMove > b.wa)) return true;
-  if (inLine) return false;
-  if (mateCard) return wMove >= 80;
-  if (wMove >= winPct(b.eb) - STRONGER_TOL) return true;
-  return (wBest - wMove <= STRONGER_TOL || (chances && wMove >= 70)) && wMove >= b.wa + 10;
-}
 /* a miss explains itself: the try stays on the board with one line of why,
    and the engine's reply to it is one tap away (See it). inLine: the try
    was a step of a forcing line */
@@ -1387,9 +1361,8 @@ function miss(m, u, info, inLine) {
      never part of the verdict, or a miss would print the solution */
   var c = info && info.pv && info.pv.length ? classifyMistake(a.st, u, { pv: [] }, { pv: reply, mate: info.mate }, winPct(it.b.eb), info.win, it.b.p) : null;
   var concrete = !!c && !!(c.mateAgainst || c.lossG >= 1), r1 = c && c.gameLine && c.gameLine.nodes[1];
-  /* a wrong try is told in words at every level (M3). One that loses
-     nothing is a close move outside a forcing line (closeTry), never a
-     miss; inside one it is still a miss, and says so honestly */
+  /* a wrong try is told in words at every level (M3); one that loses
+     nothing says so honestly ("Nothing lost, but there's a better move.") */
   /* the try's line read to its decisive event (V2.2): the key's line for
      it, the re-check's, else the first search's (deep false: band words
      then need their margin) */
@@ -1404,16 +1377,18 @@ function miss(m, u, info, inLine) {
   escalate();
   showTry(a, m, 'miss', reply[0], why);
 }
+function foilOk(a, v) { return v.wBest - v.wMove < mistakeMinFor(a.it.g) && (v.wBest - v.wMove <= SOLVE_TOL || nearBand(v.wMove, v.wBest)); }
 /* a foil passed (F8.2): the move stays on the board, its verdict by what it
-   lost against the best move: 4 points or less "Good, nothing to fix" (a
-   filled tick), more "Playable" (the ring with a tick, as a good move that
-   is not the best). Never scheduled: finishCard writes no record */
+   lost against the best move (release 4: a find either way, its sound and
+   pop), "Found it"; more than 4 points below the best its row 2 says the
+   game move kept more (foilKind 'playable'). Never scheduled: finishCard writes no record */
 function foilPass(m, loss) {
   var a = ui.session.active;
   applyMove(a.st, m); a.lastMove = [m.from, m.to]; a.animMove = a.tapAnim || null; a.tapAnim = null;
   a.foilKind = loss <= FOIL_GOOD ? 'good' : 'playable';
   a.foilGame = moveUci(m) === a.playedUci;
-  a.cue = a.foilKind === 'good' ? 'good' : 'tap';
+  /* release 4: every move a foil accepts is a find, with its sound */
+  a.cue = 'good';
   finishCard(a.misses ? 'retry' : a.hints ? 'hint' : 'first');
 }
 /* a capture of yours inside a forcing line, kept for the settled board's
@@ -1441,8 +1416,11 @@ function solved(m, u, alt, lineDone) {
      is the answer: found, it climbs, its own mate row; never "works too" */
   var mateTry = other && first && alt.mate != null && alt.mate > 0 && !(b.mb != null && b.mb > 0 && b.mb <= alt.mate);
   a.mateTry = mateTry ? { san: alt.san, w: alt.w, n: alt.mate } : null;
-  a.alt = other && !mateTry && alt.band !== 'found' ? alt : null;
-  a.near = other && first && !mateTry && alt.band === 'found' ? alt : null;
+  /* release 4: the verdict is binary, so no move works too and holds
+     (a.alt stays null); a move of the near band (alt.band 'good') is found
+     as the answer's equal is, its row 2 "Rxa7 was a little better." */
+  a.alt = null;
+  a.near = other && first && !mateTry ? alt : null;
   /* the board then shows the player's own line (a.yours), which the story
      and the settled board tell */
   a.own = other;
@@ -2057,8 +2035,7 @@ function finishCard(result, beats) {
     a.answerWords = due ? { san: a.answerSan, w: moveWords(a.st, due) } : null;
   } else {
     a.view = { mode: 's0' };
-    /* a foil's "Playable" lands as a good move that is not the best */
-    if (a.lastMove) a.markMove = { from: a.lastMove[0], to: a.lastMove[1], kind: a.foilKind === 'playable' ? 'close' : 'good' };
+    if (a.lastMove) a.markMove = { from: a.lastMove[0], to: a.lastMove[1], kind: 'good' };
     a.settleFor = true;
   }
   saveSession();

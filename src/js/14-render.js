@@ -1082,9 +1082,10 @@ function recapScore(ss, keys, tier) {
   var n = 0, first = 0, found = 0, skipped = 0, by = {};
   keys.forEach(function (k) {
     var e = sumOf(ss, k);
-    /* a foil is counted apart (foilWords): it had nothing to find; a
-       practice position too (pracWords, F9.4); a lesson not at all (F9.3) */
-    if (!e || e.foil || e.prac || e.lesson) return;
+    /* a foil passed is counted as found (release 4: its good move spotted),
+       a foil missed or shown apart (foilWords); a practice position apart
+       (pracWords, F9.4); a lesson not at all (F9.3) */
+    if (!e || e.prac || e.lesson || (e.foil && !FOUND[e.c])) return;
     if (e.c === 'skip') { skipped++; return; }
     n++;
     var c = tier === 1 && !FOUND[e.c] && foundT1(ss, k, e) ? 'miss' : e.c;
@@ -1109,35 +1110,39 @@ function foundWords(by, skipped) {
   if (skipped) parts.push(was(skipped, 'skipped'));
   return parts.length ? parts.join(', ') + '.' : '';
 }
-/* the set's foils (F8.2), apart from the score: "2 had nothing to fix: 1
-   good move, 1 playable." (then with a hint, after a miss, missed, shown);
-   '' with none answered */
+/* the set's foils (F8.2): release 4, each passed is a good move spotted,
+   "2 good moves spotted." (then with a hint, after a miss: "3 good moves
+   spotted, 1 with a hint."), the ones missed or shown after it ("..., 1
+   missed."); with none passed as before, "1 had nothing to fix: 1
+   missed."; '' with none answered */
 function foilWords(ss, keys) {
-  var n = 0, by = { good: 0, playable: 0, hint: 0, miss: 0, left: 0, shown: 0 };
+  var n = 0, ok = 0, by = { hint: 0, miss: 0, left: 0, shown: 0 };
   keys.forEach(function (k) {
     var e = sumOf(ss, k);
     if (!e || !e.foil || e.c === 'skip') return;
     n++;
-    var c = e.c === 'first' ? (e.fk === 'playable' ? 'playable' : 'good') : e.c;
-    if (by[c] != null) by[c]++;
+    if (FOUND[e.c]) ok++;
+    if (by[e.c] != null) by[e.c]++;
   });
   if (!n) return '';
-  var parts = [];
-  if (by.good) parts.push(plur(by.good, 'good move'));
-  ['playable', 'hint', 'miss', 'left', 'shown'].forEach(function (c) { if (by[c]) parts.push(by[c] + ' ' + FOIL_THEN[c]); });
-  return n + ' had nothing to fix: ' + parts.join(', ') + '.';
+  var parts = [], bad = [];
+  ['hint', 'miss'].forEach(function (c) { if (by[c]) parts.push(by[c] + ' ' + FOIL_THEN[c]); });
+  ['left', 'shown'].forEach(function (c) { if (by[c]) bad.push(by[c] + ' ' + FOIL_THEN[c]); });
+  if (!ok) return n + ' had nothing to fix: ' + bad.join(', ') + '.';
+  return plur(ok, 'good move') + ' spotted' + parts.concat(bad).map(function (x) { return ', ' + x; }).join('') + '.';
 }
-var FOIL_THEN = { playable: 'playable', hint: 'with a hint', miss: 'after a miss', left: 'missed', shown: 'shown' };
+var FOIL_THEN = { hint: 'with a hint', miss: 'after a miss', left: 'missed', shown: 'shown' };
 /* a foil's tile (F8.2): its board with the game move's squares tinted as
-   a move played (never the red arrow: it was fine), "Nothing to fix", its
-   result as glyph and word ("Good move", "Playable", else the summary's
-   own); no ladder, and nothing to open */
+   a move played (never the red arrow: it was fine), "Spotted" (release 4:
+   a find; "Nothing to fix" when missed or shown), its result as glyph and
+   word ("Good move", else the summary's own); no ladder, and nothing to
+   open */
 function foilTileHtml(it, e) {
   var pre = stateAtPly(it.g.mv, it.b.p), pm = pre && uciToMove(pre, uciOfSan(it.g.mv, it.b.p));
   if (!pre) return '';
-  var c = e.c === 'first' ? (e.fk === 'playable' ? 'good' : 'first') : e.c, word = e.c === 'first' ? (e.fk === 'playable' ? 'Playable' : 'Good move') : CAT_WORD[e.c];
+  var c = e.c, word = e.c === 'first' ? 'Good move' : CAT_WORD[e.c];
   return '<div class="recap-item recap-foil">' + boardSvg(pre, { flip: it.g.color === 'black', mark: pm ? [pm.from, pm.to] : null, decor: true })
-    + '<span>Nothing to fix</span>' + resultGlyph(c) + '<span class="res' + (e.c === 'skip' || e.c === 'shown' || e.c === 'left' ? ' shown' : '') + '">' + word + '</span></div>';
+    + '<span>' + (FOUND[e.c] ? 'Spotted' : 'Nothing to fix') + '</span>' + resultGlyph(c) + '<span class="res' + (e.c === 'skip' || e.c === 'shown' || e.c === 'left' ? ' shown' : '') + '">' + word + '</span></div>';
 }
 /* what moved (V4.3), every tier: when the set's positions come back,
    "Back in 3 days: 2. Back tomorrow: 3." (the longest wait first), a
@@ -1211,7 +1216,7 @@ function trackHtml(p, o) {
     var c = (i === 2 ? 'tk-seal' : 'tk-pip') + (i < p ? ' on' : '') + (o.up === i ? ' fx-up' : '') + (o.down > i && i >= p ? ' fx-down' : '') + (o.pulse && i === 2 ? ' fx-pulse' : '');
     h += '<i class="' + c + '"' + (o.up === i && o.d ? ' style="--d:' + o.d + 'ms"' : '') + '></i>';
   }
-  var name = p >= 3 ? 'Learned' : o.neu ? 'New position' : 'Step ' + p + ' of 3 to learned';
+  var name = (p >= 3 ? 'Learned' : o.neu ? 'New position' : 'Step ' + p + ' of 3 to learned') + (o.say ? '. ' + o.say.replace(/\.$/, '') : '');
   return '<span class="track' + (o.sm ? ' track-sm' : '') + (o.learn ? ' tk-learn' : '') + '" role="img" aria-label="' + name + '">' + h + '</span>';
 }
 /* the rungs a tile or row shows: the step track */
@@ -1234,7 +1239,54 @@ function cardTrack(a) {
   a.tkP = p;
   var fx = a.tkFx && a.tkFx.key === key ? a.tkFx : null;
   if (fx && fx.to > fx.from && !fx.learn) t.say = 'Step ' + fx.to + ' of 3.';
+  /* release 4: a find that did not climb says why, in a short note beside
+     the track (bandFit drops it where the frame has no room) and in full in
+     the live region and the track's name; the next pip glows once without
+     filling */
+  var h = done && !studying() ? heldNote(a, rec) : null;
+  if (h) {
+    t.note = h.note; t.say = h.say; t.o.say = h.say;
+    if (!a.tkGlow) a.tkGlow = { key: key, at: Date.now(), i: Math.min(p, 2) };
+  }
   return t;
+}
+/* why a find did not climb (release 4), {note, say}, or null: found before
+   its due date ("Climbs on Thu" / "It climbs when it's due on Thu."), with
+   a hint, after a miss, with a slip in its forcing line, on its one more
+   try, or held at the last step (F8.3, F10.1). Never for a miss, the
+   answer shown, a skip or a climb */
+var HELD_SAY = {
+  hint: ['Alone climbs', 'Found with a hint. Alone next time climbs a step.', 'Alone next time', 'You used a hint. On your own next time, it climbs a step.'],
+  miss: ['First try climbs', 'Found after a miss. First try next time climbs a step.', 'First try next time', 'Found after a miss. Find it first try next time to climb a step.'],
+  line: ['Clean line climbs', 'One move in the line slipped. A clean line climbs a step.', 'No slip next time', 'One move in the line slipped. Next time with no slip, it climbs a step.'],
+  again: ['Climbs next time', 'Found on its one more try. Next time first try climbs a step.', 'Climbs next time', 'Found on its one more try. Find it first try next time to climb a step.'],
+  slow: ['Faster next time', 'A slow find holds the last step. A quicker one makes it learned.', 'Faster next time', 'You took a while. A quicker find next time makes it yours.'],
+  cued: ['Learned in a review', 'It becomes learned on a review with no arrow.', 'Learned in a review', 'It becomes yours on a review with no arrow.'],
+  guess: ['Guess their reply', 'Guess their reply right to make it learned.', 'Guess their reply', 'Guess their reply right to make it yours.']
+};
+function heldNote(a, rec) {
+  var ss = ui.session, again = ss_relearn(a), e = ss && ss.sum && ss.sum[a.key + (again ? '#r' : '')];
+  if (!e || a.foil || a.prac || a.lesson || a.revealed || a.explore || !FOUND[e.c]) return null;
+  var t1 = a.tier === 1, pick = function (k) { var x = HELD_SAY[k]; return { note: t1 ? x[2] : x[0], say: t1 ? x[3] : x[1] }; };
+  if (again) return pick('again');
+  if (e.m === 'up' || e.m === 'learned') return null;
+  if (e.c === 'miss') return pick('miss');
+  if (e.c === 'hint' || e.c === 'look') return pick(a.slips || a.lineHeld ? 'line' : 'hint');
+  if (a.held && HELD_SAY[a.held]) return pick(a.held);
+  /* found before its due date: it climbs when it is due */
+  if (e.m === '' && rec && rec.due != null && rec.due > Date.now()) {
+    var w = dueDay(rec.due);
+    return { note: 'Climbs ' + w, say: 'It climbs when it\'s due ' + w + '.' };
+  }
+  return null;
+}
+/* a due date as a day: "later today", "tomorrow", "on Thu" within the
+   week, else "in 9 days" */
+function dueDay(ts) {
+  var days = daysFrom(Date.now(), ts);
+  if (days <= 0) return 'later today';
+  if (days === 1) return 'tomorrow';
+  return days < 7 ? 'on ' + ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(ts).getDay()] : 'in ' + days + ' days';
 }
 /* the track's change, drawn on the band as written (paintBand): the pip
    climbed fills (a learned seal after the learned moment's spring), the
@@ -1242,6 +1294,9 @@ function cardTrack(a) {
    it (row 2 settling) carries on where it was and never plays it twice;
    the band's markup itself never carries it */
 function trackFx(a, band) {
+  /* release 4: a find that held, its next pip glowing once (600 ms) */
+  var gl = a.tkGlow, gt = gl && gl.key === cardStateKey(a) && band.querySelector ? band.querySelector('.bd-step .track') : null;
+  if (gt && gt.children && gt.children[gl.i] && Date.now() - gl.at < 600) { gt.children[gl.i].classList.add('fx-glow'); gt.children[gl.i].style.setProperty('--d', Math.round(gl.at - Date.now()) + 'ms'); }
   var fx = a.tkFx, tr = fx && fx.key === cardStateKey(a) && band.querySelector ? band.querySelector('.bd-step .track') : null;
   if (!tr || !tr.children) return;
   var e = Date.now() - fx.at, pips = tr.children, set = function (i, cls, d) { if (pips[i]) { pips[i].classList.add(cls); pips[i].style.setProperty('--d', Math.round(d) + 'ms'); } };
@@ -1890,7 +1945,7 @@ function boardOptsFor(a) {
     /* V1.2: a move in the found band settles with the main move beside it,
        a thin green arrow (B7: not at tier 1, where the move found has its
        own reason) */
-    if (a.view.mode === 's0' && a.near && a.tier !== 1 && !opts.anim) opts.arrows = (opts.arrows || []).concat([{ from: a.best.from, to: a.best.to, kind: 'main', key: 'main' }]);
+    if (a.view.mode === 's0' && a.near && (a.tier !== 1 || a.near.band === 'good') && !opts.anim) opts.arrows = (opts.arrows || []).concat([{ from: a.best.from, to: a.best.to, kind: 'main', key: 'main' }]);
     if (a.view.mode === 's0' && a.settle >= 1 && !opts.anim) {
       /* the ghost and the tokens fade in once, as this beat's effect */
       var s0 = s0Marks(a, view.st);
@@ -2818,7 +2873,7 @@ function displayFor(a) {
   /* the track in the live region: the last step before an answer, a step climbed after it */
   if (tk && !(a.phase === 'done' && a.explore)) live = [live, tk.pill ? 'Last step.' : '', tk.say].filter(Boolean).join(' ');
   return { disc: b.disc || null, kind: b.kind || 'neutral', row1: b.row1 || '', row2: b.row2 || '', cap: b.cap || '', chip: b.chip || '', tag: b.tag || '', src: b.src || '', sweep: !!b.sweep, pips: b.pips || null,
-           tk: tk, pill: tk && tk.pill ? LAST_STEP : '', buttons: buttons, strip: stripHtml(a, ss), live: live, keys: keyLine(a, buttons) };
+           tk: tk, pill: tk && tk.pill ? LAST_STEP : (tk && tk.note) || '', buttons: buttons, strip: stripHtml(a, ss), live: live, keys: keyLine(a, buttons) };
 }
 /* the desktop key line under the panel (2.0): only the keys that do
    something in this state, as the keydown handler (15-shell.js) reads
@@ -3097,7 +3152,7 @@ function tagRowHtml(d) {
   var t = d.chip || d.tag, cls = !t ? '' : d.chip ? (d.chip === CARD_COPY.T3() ? 'tag-honey' : 'tag-slate') : d.tag === CARD_COPY.G1() || d.tag === CARD_COPY.P1() || d.tag === CARD_COPY.S1() ? 'tag-slate' : d.tag === CARD_COPY.P2() ? 'tag-honey' : 'tag-ctx';
   /* a practice position's source line beside its tag (F9.4) */
   return '<div class="bd-tags">' + (t ? '<span class="tag ' + cls + '">' + esc(t) + '</span>' : '') + (t && !d.chip && d.src ? '<span class="tag-src">' + esc(d.src) + '</span>' : '')
-    + (d.tk ? '<span class="bd-step">' + (d.pill ? '<span class="tag tag-honey">' + d.pill + '</span>' : '') + trackHtml(d.tk.p, d.tk.o) + '</span>' : '') + '</div>';
+    + (d.tk ? '<span class="bd-step">' + (d.pill ? '<span class="tag ' + (d.pill === LAST_STEP ? 'tag-honey' : 'tag-slate tk-note') + '">' + esc(d.pill) + '</span>' : '') + trackHtml(d.tk.p, d.tk.o) + '</span>' : '') + '</div>';
 }
 /* the forcing pips (2.0): a 7 px dot per move of yours, filled for each
    one found, ringed for the one due now; they repeat nothing the band does

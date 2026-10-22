@@ -26,3 +26,5 @@ confirmed before the push.
 | 184363754280:56 | t1 | They play queen to c6, check. You lose ♕ for ♜. | As above, in words. | proposed: content |
 | 184430145348:107 | t1 | Rook to b1 misses their undefended pawn on a7. | Tier 1's words of the row above (Rb1+ and the pawn on a7). | proposed: content |
 | 184257113186:38 | t1 | Knight to e2 misses bishop to e3. It wins a queen for a knight. | Tier 1's words of the Explore row above (Ne2 and Be3). | proposed: content |
+| 184205946040:38 | t3 | Rxg5 wins the pawn. Be3 missed it. | Release 4: mid-line Be6+ (a near-band step, found) ends the card on the player's own line; tier 3's check line names the answer's own gain, the pawn Rxg5 takes, and the game move set beside it swings 6.3 pawns. P2 as Red1 above: the swing rule for an alternative's own reason. | proposed: content |
+| 184359604942:24 | t2, t3 | Nxa8 takes their rook. You win ♜♝ for ♙. | Release 4: gxf3 inside the knight line (a near-band step, found) ends the card on the player's own line; See why's count on that line is real where it is said and the player gives back 2 later on the 8,000,000-node line. P2 as the counts above. | proposed: content |

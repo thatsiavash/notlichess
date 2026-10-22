@@ -151,5 +151,37 @@ module.exports = function (h) {
     eq(JSON.stringify(r.tiles), JSON.stringify(['Step 1 of 3 to learned 1500', 'Step 2 of 3 to learned 1560']), 'each tile its track, the pips climbed filling in order after the learned moment, 60 ms apart');
   });
 
+  test('release 4, credit for every right answer: a find before its due date has the found sound and says why it did not climb ("Climbs on Thu" beside the track, "It climbs when it\'s due on Thu." in the live region and the track\'s name), its next pip glowing; a find with a hint, after a miss and on its one more try keep the found sound and say what climbs next time (More help plainer); a study\'s find keeps its tag and its sound', () => {
+    const A = boot();
+    const run = (tier, setup, settle) => JSON.parse(A.ev(`(function () { ${OPEN} ${REC} playerTier = function () { return ${tier}; };
+      store.del(srsKey()); srsMem = null; window.__snd = []; snd = function (n) { window.__snd.push(n); };
+      var it = model().byKey['${CARD1}'], a = openCard(it), ss = ui.session;
+      ${setup}
+      a.attempts = 1; solved(uciToMove(a.st, a.bestUci), a.bestUci, null); a.settle = ${settle == null ? 2 : settle}; a.animMove = null;
+      var d = displayFor(a), e = ss.sum[a.key + (ss_relearn(a) ? '#r' : '')];
+      return JSON.stringify({ row1: d.row1, note: d.tk ? d.tk.note || '' : null, say: d.tk ? d.tk.o.say || '' : null, live: d.live, m: e && e.m, cue: a.cue || window.__snd[0] || null, glow: !!a.tkGlow, tag: d.tag || '',
+        due: srsRec(it) && srsRec(it).due ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(srsRec(it).due).getDay()] : '' }); })()`));
+    /* found 3 days before its due date */
+    const early = run(2, `atRung(a.key, 1); var m0 = srsLoad(); m0[a.key].due = Date.now() + 3 * DAY; srsSave(m0); a = openCard(it); ss = ui.session;`);
+    eq(early.row1 + ' / ' + early.m + ' / ' + early.cue, 'Found it /  / good', 'an early find: found, nothing moved, the found sound');
+    eq(early.say, 'It climbs when it\'s due on ' + early.due + '.', 'it says why it did not climb');
+    ok(early.note === 'Climbs on ' + early.due || early.note === '', 'the short note beside the track, where the frame has room: ' + early.note);
+    ok(early.live.indexOf(early.say) >= 0 && early.glow, 'said in the live region, the next pip glowing: ' + early.live);
+    const hint = run(2, 'a.hints = 1;'), hint1 = run(1, 'a.hints = 1;');
+    eq(hint.row1 + ' / ' + hint.say + ' / ' + hint.cue, 'Found with a hint / Found with a hint. Alone next time climbs a step. / good', 'a find with a hint');
+    eq(hint1.say, 'You used a hint. On your own next time, it climbs a step.', 'More help, plainer');
+    const miss = run(2, 'a.misses = 1;');
+    eq(miss.row1 + ' / ' + miss.say + ' / ' + miss.cue, 'You got there / Found after a miss. First try next time climbs a step. / good', 'a find after a miss');
+    const again = run(2, `atRung(a.key, 1); ss.keys = [a.key, a.key]; ss.relearnOf = {}; ss.relearnOf[a.key] = 1; ss.idx = 1;`);
+    eq(again.say + ' / ' + again.cue, 'Found on its one more try. Next time first try climbs a step. / good', 'a find on its one more try');
+    const up = run(2, '');
+    eq(up.m + ' / ' + up.note, 'up / ', 'a find that climbs: no note');
+    ok(!/climbs/.test(up.say), 'nor a held word: ' + up.say);
+    const study = run(2, 'ss.study = true;', 0);
+    eq(study.tag + ' / ' + study.cue + ' / ' + study.note, 'Study: steps do not change. / good / ', 'a study\'s find: its tag on the found frame (the reason, once it settles, may take its place), its sound, no note');
+    /* each frame within the 15 words */
+    ok([early, hint, miss, again].every((x) => x.row1), 'row 1 on every frame');
+  });
+
   return T;
 };
